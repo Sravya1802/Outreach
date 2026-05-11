@@ -268,31 +268,39 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     return { ok: false, error: profileCheck.reason, needsReview: true };
   }
 
-  // Resume selection — Resume Library only.
-  // The user wants a single source of truth: the per-archetype PDFs they
-  // uploaded in Auto-Apply Setup → Resume Library (AIML / DS / SWE / DEVOPS /
-  // FULLSTACK / STARTUP / MISC). We deliberately do NOT consult:
-  //   - per-evaluation tailored PDFs (row.pdf_path)
-  //   - on-the-fly AI-tailored generation (tailorResume + generateResumePDF)
-  //   - filesystem default in profile.resume_dir
-  // pickResumeForRole maps the role's archetype hint (or JD/title keywords)
-  // to the closest library entry; if no match it falls back to 'startup',
-  // then the first available library resume.
-  const libraryResumes = await scanResumesFromStorage(userId);
-  const resume = pickResumeForRole(libraryResumes, {
-    jobTitle:       row.job_title,
-    jobDescription: row.job_description || '',
-    archetypeHint:  (row.report_json ? JSON.parse(row.report_json)?.archetype?.primary : '') || '',
-    strict:         true, // user opted into strict matching — no fuzzy fallback
-  });
-  if (resume) {
-    console.log(`[autoApply] library resume "${resume.filename}" (archetype=${resume.archetype}) for eval ${evalId}`);
+  // Resume selection — three-tier:
+  //   1. Per-eval override: if the user uploaded / generated a tailored PDF
+  //      for this specific evaluation (evaluations.pdf_path), honor it. This
+  //      is the "let me upload my own" path.
+  //   2. Resume Library archetype match: pick the library PDF whose folder
+  //      keywords match the JD.
+  //   3. Closest-library fallback: if no archetype matches, pickResumeForRole
+  //      scores every library entry against the JD and returns the highest;
+  //      only mark needs_review when the library is genuinely empty.
+  // Previously this was strict-library-only and paused submission on any
+  // archetype miss — too aggressive, since a SWE resume can still apply to a
+  // role that just doesn't trip the keyword list.
+  let resume = null;
+  if (row.pdf_path && fs.existsSync(row.pdf_path)) {
+    resume = { archetype: 'override', filename: path.basename(row.pdf_path), absPath: row.pdf_path };
+    console.log(`[autoApply] per-eval override resume "${resume.filename}" for eval ${evalId}`);
   } else {
-    await setStatus(userId, evalId, STATUS.needs_review, {
-      error: 'No archetype-matching resume in your Resume Library — submission paused. Upload the matching archetype PDF in Auto-Apply Setup → Resume Library, then re-queue this role.',
-      platform,
+    const libraryResumes = await scanResumesFromStorage(userId);
+    resume = pickResumeForRole(libraryResumes, {
+      jobTitle:       row.job_title,
+      jobDescription: row.job_description || '',
+      archetypeHint:  (row.report_json ? JSON.parse(row.report_json)?.archetype?.primary : '') || '',
+      strict:         false,
     });
-    return { ok: false, error: 'No matching library resume', needsReview: true };
+    if (resume) {
+      console.log(`[autoApply] library resume "${resume.filename}" (archetype=${resume.archetype}) for eval ${evalId}`);
+    } else {
+      await setStatus(userId, evalId, STATUS.needs_review, {
+        error: 'Your Resume Library is empty — upload at least one PDF in Auto-Apply Setup → Resume Library, or generate a tailored resume for this role.',
+        platform,
+      });
+      return { ok: false, error: 'Resume library empty', needsReview: true };
+    }
   }
 
   const supported = ['greenhouse', 'lever', 'ashby'];

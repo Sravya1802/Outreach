@@ -28,7 +28,13 @@ import { scrapeLinkedInJobs, scrapeWellfound, noteApifyError } from './apify.js'
 
 // ── Role-type classification (same heuristic as the rest of the app) ─────────
 const INTERN_PATTERN  = /\b(intern|internship|co-?op|co\s*op|summer\s*\d{4}|spring\s*\d{4}|fall\s*\d{4})\b/i;
-const NEW_GRAD_PATTERN = /\b(new\s*grad|early\s*career|entry[-\s]?level|graduate|jr\.?|junior|associate)\b/i;
+// Tightened to avoid false positives. The previous pattern accepted bare
+// "graduate" (matches "Graduate Research Engineer" — senior) and bare
+// "associate" (matches "Associate Director", "Sales Associate", etc.). Now
+// "graduate" only counts when preceded by "new" / "recent", and "associate"
+// requires explicit software/engineer pairing.
+const NEW_GRAD_PATTERN = /\b(new\s*grad|recent\s*grad|new\s*graduate|recent\s*graduate|early\s*career|entry[-\s]?level|jr\.?|junior)\b/i;
+const ASSOCIATE_ENG_PATTERN = /\bassociate\s+(software|engineer|developer|data|ml|machine|ai)\b/i;
 
 // Reject titles that contain CJK, Arabic, Cyrillic, or other non-Latin scripts.
 // ai-jobs.net sometimes returns Chinese-language listings; filter them out so
@@ -46,6 +52,7 @@ export function classifyRoleType(title = '') {
   const t = String(title).toLowerCase();
   if (INTERN_PATTERN.test(t)) return 'intern';
   if (NEW_GRAD_PATTERN.test(t)) return 'new_grad';
+  if (ASSOCIATE_ENG_PATTERN.test(t)) return 'new_grad';
   return null; // doesn't match either — skip
 }
 
@@ -177,7 +184,12 @@ async function scrapeAiJobs(roleType /* 'intern' | 'new_grad' */) {
       const card = $(el).closest('li, .list-group-item, .col, .card');
       const company = card.find('.text-muted, .small').first().text().trim() || '';
       const location = card.find('.location, [class*="location"]').first().text().trim() || '';
-      const role_type = classifyRoleType(title) || (roleType === 'intern' ? 'intern' : 'new_grad');
+      // Drop titles that don't match either pattern. Previously the fallback
+      // defaulted to whatever role type was requested, which let senior /
+      // unrelated roles slip into the new_grad pile when the source page
+      // returned a mixed bag.
+      const role_type = classifyRoleType(title);
+      if (!role_type || role_type !== roleType) return;
       out.push({
         title,
         company_name: company,
@@ -218,14 +230,15 @@ async function scrapeJobspresso(roleType) {
       const match = /^(.+?)\s+(?:at|@)\s+(.+?)$/i.exec(title) || [];
       const role    = match[1] || title;
       const company = match[2] || '';
-      const role_type_classified = classifyRoleType(role);
+      const role_type = classifyRoleType(role);
+      if (!role_type || role_type !== roleType) return;
       out.push({
         title:        role,
         company_name: company,
         location:     category.match(/(remote|anywhere|usa|united states|us)/i)?.[0] || 'Remote',
         apply_url:    link,
         source:       'jobspresso',
-        role_type:    role_type_classified || (roleType === 'intern' ? 'intern' : 'new_grad'),
+        role_type,
         posted_at:    pubDate ? new Date(pubDate).toISOString() : null,
         description:  null,
       });
@@ -267,7 +280,8 @@ async function scrapeRemoteRocketship(roleType) {
       const title   = parts[0];
       const company = parts[1] || '';
       const location = parts[2] || 'Remote';
-      const role_type = classifyRoleType(title) || (roleType === 'intern' ? 'intern' : 'new_grad');
+      const role_type = classifyRoleType(title);
+      if (!role_type || role_type !== roleType) return;
       out.push({
         title, company_name: company, location, apply_url,
         source: 'remote_rocketship', role_type, posted_at: null, description: null,
@@ -308,7 +322,8 @@ async function scrapeInternshipDaily(roleType) {
       let title = text, company = '';
       if (splitAt.length === 2) { title = splitAt[0].trim(); company = splitAt[1].trim(); }
       else if (splitDash.length >= 2) { company = splitDash[0].trim(); title = splitDash.slice(1).join(' - ').trim(); }
-      const role_type = classifyRoleType(title) || (roleType === 'intern' ? 'intern' : 'new_grad');
+      const role_type = classifyRoleType(title);
+      if (!role_type || role_type !== roleType) return;
       out.push({
         title,
         company_name: company,

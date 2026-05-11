@@ -944,6 +944,32 @@ router.post('/tailored-resume/:id', async (req, res) => {
   }
 });
 
+// ── POST /api/career/upload-resume/:id — per-eval custom resume override ─────
+// User uploads their own PDF for a specific evaluation. autoApplier reads
+// evaluations.pdf_path first, before consulting the archetype library. This
+// gives the "let me upload my own resume" flow the user asked for, without
+// touching the saved default or library.
+router.post('/upload-resume/:id', upload.single('resume'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const row = await one('SELECT id, company_name, job_title FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (!row) {
+      try { fs.unlinkSync(req.file.path); } catch (_) {}
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+    const safe = s => String(s || '').replace(/[^a-zA-Z0-9\-_.]/g, '_').slice(0, 40);
+    const filename = `eval-${row.id}-${safe(row.company_name)}-${safe(row.job_title)}.pdf`;
+    const destPath = path.join(RESUME_DIR, filename);
+    fs.copyFileSync(req.file.path, destPath);
+    fs.unlinkSync(req.file.path);
+    await run('UPDATE evaluations SET pdf_path = $1 WHERE id = $2 AND user_id = $3', [destPath, row.id, req.user.id]);
+    res.json({ ok: true, filename, source: 'upload' });
+  } catch (err) {
+    console.error('[careerOps] upload-resume error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/career/download/:id — download PDF ──────────────────────────────
 router.get('/download/:id', async (req, res) => {
   try {

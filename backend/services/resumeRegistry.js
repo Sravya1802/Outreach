@@ -132,11 +132,13 @@ export async function scanResumesFromStorage(userId) {
  * Returns the resume record (or null if no acceptable match).
  *
  * Matching logic:
- *   1. Match by keyword against ARCHETYPE_FOLDERS keywords
+ *   1. Match by keyword against ARCHETYPE_FOLDERS keywords (first-archetype-wins)
  *   2. Find the resume for that archetype
  *   3. If `strict=true` and no keyword match → return null (caller should
- *      mark the eval needs_review). If `strict=false` → fall back to
- *      'startup' / wellfound, then the first resume.
+ *      mark the eval needs_review). If `strict=false` → score each available
+ *      resume by counting keyword hits across the JD haystack and pick the
+ *      highest-scoring one ("closest resume"). Falls back to 'startup' / first
+ *      if every score is zero.
  */
 export function pickResumeForRole(resumes, { jobTitle = '', jobDescription = '', archetypeHint = '', strict = false } = {}) {
   if (!resumes || resumes.length === 0) return null;
@@ -150,6 +152,20 @@ export function pickResumeForRole(resumes, { jobTitle = '', jobDescription = '',
   }
 
   if (strict) return null;
+
+  // Non-strict fallback: score every resume by how many archetype keywords
+  // its archetype contributes to the haystack. Higher score = closer match.
+  // This is much more useful than the prior "always startup" default — a SWE
+  // role with no exact keyword still picks the SWE resume over a random one.
+  let best = null;
+  let bestScore = -1;
+  for (const r of resumes) {
+    const a = ARCHETYPE_FOLDERS.find(x => x.archetype === r.archetype);
+    if (!a) continue;
+    const score = a.keywords.reduce((n, kw) => n + (haystack.includes(kw) ? 1 : 0), 0);
+    if (score > bestScore) { best = r; bestScore = score; }
+  }
+  if (best && bestScore > 0) return best;
   return resumes.find(r => r.archetype === 'startup') || resumes[0];
 }
 

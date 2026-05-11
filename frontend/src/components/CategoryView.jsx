@@ -145,18 +145,21 @@ function YCCategoryView() {
           </div>
         </div>
 
-        {/* Filters */}
+        {/* Filters — themed Dropdowns so mobile doesn't fire the iOS picker. */}
         <div style={{ display:'flex', gap:10, marginTop:16, flexWrap:'wrap' }}>
           {[
-            { key:'location', label:'Location', opts:[['US','US Only'],['','']], custom: false,
-              opts2:[['US','US Only'],['','All']] },
-            { key:'industry', label:'Industry', opts2:[['','All Industries'], ...industries.slice(0,20).map(i => [i,i])] },
-            { key:'maxTeamSize', label:'Team Size', opts2:[['','Any Size'],['10','≤10'],['50','≤50'],['200','≤200']] },
+            { key:'location',    ariaLabel:'Filter by location',  opts2:[['US','US Only'],['','All']] },
+            { key:'industry',    ariaLabel:'Filter by industry',  opts2:[['','All Industries'], ...industries.slice(0,20).map(i => [i,i])] },
+            { key:'maxTeamSize', ariaLabel:'Filter by team size', opts2:[['','Any Size'],['10','≤10'],['50','≤50'],['200','≤200']] },
           ].map(f => (
-            <select key={f.key} value={filters[f.key]} onChange={e => applyFilter(f.key, e.target.value)}
-              style={{ padding:'7px 10px', borderRadius:8, border:'1px solid #e2e8f0', fontSize:12, color:'#0f172a', background:'#f8fafc', cursor:'pointer' }}>
-              {(f.opts2 || []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
+            <div key={f.key} style={{ minWidth: 140 }}>
+              <Dropdown
+                ariaLabel={f.ariaLabel}
+                value={filters[f.key]}
+                onChange={(v) => applyFilter(f.key, v)}
+                options={f.opts2.map(([v, l]) => ({ value: v, label: l }))}
+              />
+            </div>
           ))}
           <input value={filters.q} onChange={e => applyFilter('q', e.target.value)}
             placeholder="Search by name…"

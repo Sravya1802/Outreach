@@ -1748,12 +1748,19 @@ function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
           ))}
           <div>
             <div style={{ fontSize:10, color:'#94a3b8', marginBottom:3 }}>Location</div>
-            <select value={app.location_type||'onsite'} onChange={e=>setApp(a=>({...a,location_type:e.target.value}))}
-              style={{ width:'100%', padding:'7px 10px', borderRadius:7, border:'1px solid #e2e8f0', fontSize:12, outline:'none', boxSizing:'border-box', background:'#fff' }}>
-              <option value="onsite">On-site</option>
-              <option value="remote">Remote</option>
-              <option value="hybrid">Hybrid</option>
-            </select>
+            {/* Themed Dropdown so mobile doesn't trigger the iOS native
+                picker overlay — keeps the look consistent with the other
+                fields on this card on both web and mobile. */}
+            <Dropdown
+              ariaLabel="Work location type"
+              value={app.location_type || 'onsite'}
+              onChange={(v) => setApp(a => ({ ...a, location_type: v }))}
+              options={[
+                { value:'onsite', label:'On-site' },
+                { value:'remote', label:'Remote' },
+                { value:'hybrid', label:'Hybrid' },
+              ]}
+            />
           </div>
         </div>
 

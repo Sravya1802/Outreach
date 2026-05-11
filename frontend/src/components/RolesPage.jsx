@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api'
+import { useMediaQuery } from '../hooks'
 import Spin from './Spin'
 
 const SOURCE_LABELS = {
@@ -39,6 +40,11 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
   const params = useParams()
   // The router renders the same component for both routes; allow URL to override.
   const roleType = params.kind === 'new-grad-roles' ? 'new_grad' : (params.kind === 'intern-roles' ? 'intern' : defaultRoleType)
+  // Three-tier breakpoints: phone gets a stacked card layout (the 5-col
+  // grid table doesn't fit ≤480), tablet/narrow tightens columns, desktop
+  // keeps the full grid.
+  const isPhone  = useMediaQuery('(max-width: 480px)')
+  const isNarrow = useMediaQuery('(max-width: 900px)')
 
   const [rows, setRows]               = useState([])
   const [total, setTotal]             = useState(0)
@@ -143,14 +149,14 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
     // so each page provides its own vertical scroll container. Without
     // overflowY:auto here the table just gets clipped at the viewport edge.
     <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
-    <div style={{ padding: '20px 32px', maxWidth: 1200 }}>
+    <div style={{ padding: isPhone ? '14px 14px' : '20px 32px', maxWidth: 1200 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: 0 }}>{heading}</h1>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0', maxWidth: 720, lineHeight: 1.5 }}>{subtitle}</p>
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+          <h1 style={{ fontSize: isPhone ? 18 : 24, fontWeight: 800, color: '#0f172a', margin: 0 }}>{heading}</h1>
+          <p style={{ fontSize: isPhone ? 12 : 13, color: '#64748b', margin: '6px 0 0', maxWidth: 720, lineHeight: 1.5 }}>{subtitle}</p>
         </div>
         <button onClick={refreshNow} disabled={refreshing}
-          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: refreshing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: refreshing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {refreshing ? <Spin /> : '🔄'} Refresh now
         </button>
       </div>
@@ -204,22 +210,72 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
           )}
         </div>
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 110px 200px', padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            <div>Role</div>
-            <div>Company</div>
-            <div>Location</div>
-            <div>Posted</div>
-            <div style={{ textAlign: 'right' }}>Actions</div>
-          </div>
-          {rows.map((r, i) => (
-            <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1fr 110px 200px', padding: '12px 14px', borderBottom: i < rows.length - 1 ? '1px solid #f1f5f9' : 'none', alignItems: 'center', fontSize: 13, color: '#0f172a' }}>
+          {/* Header row hidden on phone — the stacked card layout below
+              already labels itself, so a separate column header is just
+              noise on a single-column list. */}
+          {!isPhone && (
+            <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1.6fr 1.2fr 90px 150px' : '2fr 1.2fr 1fr 110px 200px', padding: '10px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <div>Role</div>
+              <div>Company</div>
+              {!isNarrow && <div>Location</div>}
+              <div>Posted</div>
+              <div style={{ textAlign: 'right' }}>Actions</div>
+            </div>
+          )}
+          {rows.map((r, i) => isPhone ? (
+            // Phone: each role is a stacked card. Title + source on top,
+            // company + location + posted in the middle metadata row,
+            // action buttons full-width on the bottom.
+            <div key={r.id} style={{ padding: '12px 14px', borderBottom: i < rows.length - 1 ? '1px solid #f1f5f9' : 'none', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: '#0f172a' }}>
               <div style={{ minWidth: 0 }}>
-                <a href={r.apply_url} target="_blank" rel="noreferrer" style={{ color: '#0f172a', fontWeight: 600, textDecoration: 'none' }}>
+                <a href={r.apply_url} target="_blank" rel="noreferrer" style={{ color: '#0f172a', fontWeight: 700, fontSize: 14, textDecoration: 'none', wordBreak: 'break-word' }}>
                   {r.title}
                 </a>
                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{SOURCE_LABELS[r.source] || r.source}</div>
               </div>
-              <div style={{ color: '#475569', fontWeight: 500, minWidth: 0 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 12, color: '#64748b' }}>
+                <span style={{ color: '#475569', fontWeight: 600 }}>
+                  {r.company_name}
+                  {levelsFyiUrl(r.company_name) && (
+                    <a href={levelsFyiUrl(r.company_name)} target="_blank" rel="noreferrer"
+                       title="View salaries on levels.fyi"
+                       style={{ marginLeft: 4, fontSize: 11, color: '#10b981', textDecoration: 'none', fontWeight: 700 }}>
+                      💰
+                    </a>
+                  )}
+                </span>
+                {r.location && <span>· {r.location}</span>}
+                <span>· {fmtPosted(r.posted_at, r.scraped_at)}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => track(r)}
+                  disabled={r.tracked || actionRow?.id === r.id}
+                  style={{ ...btnStyle(r.tracked, '#6366f1'), flex: 1, minWidth: 0 }}>
+                  {actionRow?.id === r.id && actionRow?.action === 'track' ? <Spin /> : (r.tracked ? '✓ Tracked' : 'Track')}
+                </button>
+                <button
+                  onClick={() => autoApply(r)}
+                  disabled={r.autoQueued || actionRow?.id === r.id}
+                  style={{ ...btnStyle(r.autoQueued, '#10b981'), flex: 1, minWidth: 0 }}>
+                  {actionRow?.id === r.id && actionRow?.action === 'auto' ? <Spin /> : (r.autoQueued ? '✓ Queued' : '🤖 Auto')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1.6fr 1.2fr 90px 150px' : '2fr 1.2fr 1fr 110px 200px', padding: '12px 14px', borderBottom: i < rows.length - 1 ? '1px solid #f1f5f9' : 'none', alignItems: 'center', fontSize: 13, color: '#0f172a', gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <a href={r.apply_url} target="_blank" rel="noreferrer" style={{ color: '#0f172a', fontWeight: 600, textDecoration: 'none' }}>
+                  {r.title}
+                </a>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                  {SOURCE_LABELS[r.source] || r.source}
+                  {/* On tablet (no Location column) fold location in here so
+                      the user still sees it without horizontal scroll. */}
+                  {isNarrow && r.location && <> · {r.location}</>}
+                </div>
+              </div>
+              <div style={{ color: '#475569', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {r.company_name}
                 {levelsFyiUrl(r.company_name) && (
                   <a href={levelsFyiUrl(r.company_name)} target="_blank" rel="noreferrer"
@@ -229,7 +285,7 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
                   </a>
                 )}
               </div>
-              <div style={{ color: '#64748b', fontSize: 12 }}>{r.location || '—'}</div>
+              {!isNarrow && <div style={{ color: '#64748b', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.location || '—'}</div>}
               <div style={{ color: '#64748b', fontSize: 12 }}>{fmtPosted(r.posted_at, r.scraped_at)}</div>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button

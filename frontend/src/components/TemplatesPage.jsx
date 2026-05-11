@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { useMediaQuery } from '../hooks'
 import Spin from './Spin'
 
 const fieldStyle = {
@@ -35,6 +36,10 @@ function makeId() {
 }
 
 export default function TemplatesPage() {
+  // Phone stacks the email/linkedin pair; tablet keeps the side-by-side
+  // layout but with tighter outer padding.
+  const isPhone   = useMediaQuery('(max-width: 480px)')
+  const isNarrow  = useMediaQuery('(max-width: 900px)')
   const [templates, setTemplates] = useState({ email: '', linkedin: '', variants: [] })
   const [defaults, setDefaults] = useState({ email: '', linkedin: '' })
   const [loading, setLoading] = useState(true)
@@ -102,16 +107,16 @@ export default function TemplatesPage() {
   const linkedinVariants = (templates.variants || []).filter(v => v.kind === 'linkedin')
 
   return (
-    <div style={{ flex:1, overflowY:'auto', background:'#f8fafc', padding:'40px' }}>
+    <div style={{ flex:1, overflowY:'auto', background:'#f8fafc', padding: isPhone ? '14px' : isNarrow ? '24px' : '40px' }}>
       <div style={{ maxWidth:980, margin:'0 auto' }}>
-        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:20, marginBottom:24 }}>
-          <div>
-            <h1 style={{ fontSize:24, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Templates</h1>
-            <p style={{ fontSize:13, color:'#64748b', margin:0 }}>
+        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:14, marginBottom: isPhone ? 16 : 24, flexWrap:'wrap' }}>
+          <div style={{ minWidth:0, flex:'1 1 auto' }}>
+            <h1 style={{ fontSize: isPhone ? 18 : 24, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Templates</h1>
+            <p style={{ fontSize: isPhone ? 12 : 13, color:'#64748b', margin:0 }}>
               Email and LinkedIn style anchors used when the AI generates outreach. Save additional named variants to give the AI more tones to draw from.
             </p>
           </div>
-          <div style={{ display:'flex', gap:10 }}>
+          <div style={{ display:'flex', gap:8, flexShrink:0 }}>
             <button type="button" onClick={resetToDefaults} disabled={loading || saving}
               style={{ padding:'9px 14px', borderRadius:9, border:'1px solid #dbe3ef', background:'#fff', color:'#475569', fontSize:12, fontWeight:700, cursor: loading || saving ? 'default' : 'pointer' }}>
               Reset defaults
@@ -133,7 +138,7 @@ export default function TemplatesPage() {
           <div style={{ display:'flex', justifyContent:'center', paddingTop:80 }}><Spin /></div>
         ) : (
           <>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:18 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: isPhone ? 14 : 18 }}>
               <section style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:18 }}>
                 <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:6 }}>Cold Email — Primary</div>
                 <div style={{ fontSize:12, color:'#64748b', marginBottom:12 }}>
@@ -156,7 +161,7 @@ export default function TemplatesPage() {
 
             {/* Email variants */}
             <section style={{ marginTop:22, background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:18 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, gap:10, flexWrap:'wrap' }}>
                 <div>
                   <div style={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>Cold Email — Additional variants</div>
                   <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>
@@ -194,7 +199,7 @@ export default function TemplatesPage() {
 
             {/* LinkedIn variants */}
             <section style={{ marginTop:18, background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:18 }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, gap:10, flexWrap:'wrap' }}>
                 <div>
                   <div style={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>LinkedIn DM — Additional variants</div>
                   <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>

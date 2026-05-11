@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { useMediaQuery } from '../hooks'
+import Dropdown from './Dropdown'
 
 const SOURCES = [
   { key:'linkedin',    label:'LinkedIn Jobs',  desc:'Software engineering intern roles from LinkedIn',  color:'#0891b2', bg:'#ecfeff' },
@@ -31,6 +33,10 @@ function Spin({ color = '#6366f1', size = 14 }) {
 
 export default function ScraperPage() {
   const navigate = useNavigate()
+  // Tablet and below collapses the 1fr+340px sidebar; phone tightens
+  // padding and reflows the source-row controls.
+  const isPhone   = useMediaQuery('(max-width: 480px)')
+  const isNarrow  = useMediaQuery('(max-width: 1100px)')
   const [scraping, setScraping]         = useState(null)
   const [results, setResults]           = useState({})
   const [category, setCategory]         = useState('')
@@ -104,16 +110,19 @@ export default function ScraperPage() {
   return (
     <div style={{ flex:1, overflowY:'auto', background:'#f8fafc' }}>
       {/* Header */}
-      <div style={{ padding:'24px 40px 20px', background:'#fff', borderBottom:'1px solid #e2e8f0' }}>
-        <h1 style={{ fontSize:22, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Job Scraper</h1>
-        <p style={{ fontSize:13, color:'#64748b', margin:'0 0 16px' }}>Bulk scrape intern roles across all job sources</p>
+      <div style={{ padding: isPhone ? '14px 14px 12px' : '24px 40px 20px', background:'#fff', borderBottom:'1px solid #e2e8f0' }}>
+        <h1 style={{ fontSize: isPhone ? 18 : 22, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Job Scraper</h1>
+        <p style={{ fontSize: isPhone ? 12 : 13, color:'#64748b', margin:'0 0 14px' }}>Bulk scrape intern roles across all job sources</p>
 
-        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-          <select value={category} onChange={e => setCategory(e.target.value)}
-            style={{ flex:'1 1 160px', minWidth:0, padding:'8px 12px', borderRadius:8, border:'1px solid #e2e8f0', fontSize:13, color:'#0f172a', background:'#f8fafc', outline:'none' }}>
-            <option value="">All Categories</option>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <div style={{ flex:'1 1 200px', minWidth:0 }}>
+            <Dropdown
+              ariaLabel="Filter by category"
+              value={category}
+              onChange={(v) => setCategory(v)}
+              options={[{ value:'', label:'All Categories' }, ...CATEGORIES.map(c => ({ value: c, label: c }))]}
+            />
+          </div>
           <button onClick={() => scrape('all')} disabled={!!scraping}
             style={{ padding:'9px 18px', background: scraping ? '#f1f5f9' : 'linear-gradient(135deg,#6366f1,#7c3aed)', color: scraping ? '#64748b' : '#fff', border:'none', borderRadius:9, fontSize:13, fontWeight:700, cursor: scraping ? 'default':'pointer', display:'flex', alignItems:'center', gap:7, whiteSpace:'nowrap', flexShrink:0 }}>
             {scraping === 'all' ? <><Spin color="#64748b" /> Scraping…</> : '↺ Scrape All'}
@@ -121,7 +130,7 @@ export default function ScraperPage() {
         </div>
       </div>
 
-      <div style={{ padding:'28px 40px', display:'grid', gridTemplateColumns:'1fr 340px', gap:28 }}>
+      <div style={{ padding: isPhone ? '18px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 340px', gap: isPhone ? 18 : 28 }}>
 
         {/* Source grid */}
         <div>
@@ -131,7 +140,7 @@ export default function ScraperPage() {
               const res = results[src.key]
               const isScraping = scraping === src.key
               return (
-                <div key={src.key} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:'18px 20px', display:'flex', alignItems:'center', gap:16 }}>
+                <div key={src.key} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding: isPhone ? '14px 14px' : '18px 20px', display:'flex', alignItems:'center', gap: isPhone ? 12 : 16, flexWrap:'wrap' }}>
                   <div style={{ width:42, height:42, borderRadius:9, background:src.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:800, color:src.color, flexShrink:0 }}>
                     {src.key === 'linkedin' ? 'in' : src.key === 'wellfound' ? 'WF' : src.key === 'google_jobs' ? 'G' : src.key === 'github' ? 'GH' : src.key === 'handshake' ? 'HS' : 'YC'}
                   </div>

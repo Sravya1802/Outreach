@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { useMediaQuery } from '../hooks'
 
 const CATEGORIES = [
   { label:'YC Startups',              slug:'yc-startups',                  tint:'#F26625', bg:'rgba(242,102,37,0.08)' },
@@ -159,6 +160,11 @@ function formatActivityDetails(a) {
 
 export default function DashboardPage({ onStatsChange }) {
   const navigate = useNavigate()
+  // Three-tier breakpoints. iPad portrait (768) and iPad Pro portrait (1024)
+  // both fall into "narrow" — the 1fr+320px sidebar grid clips Recent
+  // Activity at those widths, so we collapse to a single column ≤1100.
+  const isPhone   = useMediaQuery('(max-width: 480px)')
+  const isNarrow  = useMediaQuery('(max-width: 1100px)')
   const [stats, setStats]       = useState(null)
   const [activity, setActivity] = useState([])
   // null sentinel = "still loading" so cards can render '—' instead of a
@@ -208,13 +214,13 @@ export default function DashboardPage({ onStatsChange }) {
   return (
     <div style={{ flex:1, overflowY:'auto', background:'#f8fafc' }}>
       {/* Header */}
-      <div style={{ padding:'32px 40px 24px', background:'#fff', borderBottom:'1px solid #e2e8f0' }}>
-        <h1 style={{ fontSize:24, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Dashboard</h1>
-        <p style={{ fontSize:13, color:'#64748b', margin:0 }}>Your Job search at a glance</p>
+      <div style={{ padding: isPhone ? '16px 14px 14px' : '32px 40px 24px', background:'#fff', borderBottom:'1px solid #e2e8f0' }}>
+        <h1 style={{ fontSize: isPhone ? 18 : 24, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Dashboard</h1>
+        <p style={{ fontSize: isPhone ? 12 : 13, color:'#64748b', margin:0 }}>Your Job search at a glance</p>
 
-        {/* Stats row */}
+        {/* Stats row — 5-up on desktop, 3-up on tablet/iPad, 2-up on phone */}
         {stats ? (
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:12, marginTop:24 }}>
+          <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: isPhone ? 8 : 12, marginTop: isPhone ? 14 : 24 }}>
             {statCards.map(s => (
               <div key={s.label}
                 onClick={s.action}
@@ -232,7 +238,7 @@ export default function DashboardPage({ onStatsChange }) {
         )}
       </div>
 
-      <div style={{ padding:'28px 40px', display:'grid', gridTemplateColumns:'1fr 320px', gap:28 }}>
+      <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 320px', gap: isPhone ? 18 : 28 }}>
 
         {/* Left column */}
         <div>
@@ -336,10 +342,10 @@ export default function DashboardPage({ onStatsChange }) {
             )
           })()}
 
-          {/* Quick Actions */}
+          {/* Quick Actions — 6-up desktop, 3-up tablet, 2-up phone. */}
           <div style={{ marginBottom:28 }}>
             <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Quick Actions</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:12 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: isPhone ? 8 : 12 }}>
               {[
                 { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',   action: () => navigate('/companies'),  tint:'#6366f1' },
                 { icon:'🎓', label:'Intern Roles',      sub:'Daily-scraped open internships', action: () => navigate('/apply/intern-roles'),   tint:'#f59e0b' },
@@ -369,7 +375,7 @@ export default function DashboardPage({ onStatsChange }) {
                 View all →
               </button>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: isPhone ? 8 : 10 }}>
               {CATEGORIES.map(cat => {
                 // YC card shows actual imported YC startups in YOUR DB (not the global YC API list).
                 // Return null while the relevant state is still loading so the cell renders

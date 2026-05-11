@@ -414,9 +414,16 @@ function RegularCategoryView({ categoryName }) {
           const renderRow = (c) => {
             const srcColor = SOURCE_COLORS[c.source?.split(',')[0]] || SOURCE_COLORS.manual_search
             return (
+              // Row layout: avatar | content | right-rail.
+              // The right rail is a flex column, status pill on top and the
+              // Apply/Careers actions below it — so the status sits in the
+              // visual top-right corner of the card on every breakpoint, and
+              // the two action buttons read as one consistent set below it.
+              // alignItems:flex-start keeps the rail pinned to the top so the
+              // status pill never floats down beside the avatar.
               <div key={c.id} className="cv-company-row"
                 onClick={() => navigate(`/company/${c.id}`)}
-                style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:'14px 16px', marginBottom:8, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', rowGap:10 }}>
+                style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:'14px 16px', marginBottom:8, display:'flex', alignItems:'flex-start', gap:12, flexWrap:'wrap', rowGap:10 }}>
                 <div style={{ width:38, height:38, borderRadius:8, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#4f46e5', flexShrink:0 }}>
                   {(c.name || '?')[0].toUpperCase()}
                 </div>
@@ -435,10 +442,7 @@ function RegularCategoryView({ categoryName }) {
                     {c.created_at && <span style={{ marginLeft:8, color:'#94a3b8' }}>{timeAgo(c.created_at)}</span>}
                   </div>
                 </div>
-                <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, flexWrap:'wrap' }}>
-                  {/* Status pill — sits at the right of the row, before
-                      the action buttons. Click opens a themed menu to
-                      change status. */}
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:8, marginLeft:'auto', flexShrink:0 }}>
                   <div onClick={e => e.stopPropagation()}>
                     <Dropdown
                       compact
@@ -455,26 +459,28 @@ function RegularCategoryView({ categoryName }) {
                       ]}
                     />
                   </div>
-                  <button onClick={async (e) => {
-                      e.stopPropagation()
-                      try {
-                        const r = await api.career.autoApplyCompanyQueue(c.id)
-                        if (r.queued > 0) alert(`✓ Queued ${r.queued} role(s) for auto-apply${r.skippedAlreadyInFlight ? ` (skipped ${r.skippedAlreadyInFlight} already in queue)` : ''}. Run "Auto-Apply Setup → Run Queue" to process now.`)
-                        else alert(`No scraped roles for ${r.company || c.name}. Open the company page and click Scrape, or use the larger "Scrape & Queue" button there.`)
-                      } catch (err) { alert('Auto-Apply failed: ' + err.message) }
-                    }}
-                    title="Queue all known scraped intern roles for auto-apply"
-                    style={btnPrimary}>
-                    Apply
-                  </button>
-                  {(c.url || c.domain) && (
-                    <a href={c.url || `https://${c.domain}/careers`} target="_blank" rel="noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      title="Open careers page"
-                      style={btnGhost}>
-                      Careers ↗
-                    </a>
-                  )}
+                  <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                    <button onClick={async (e) => {
+                        e.stopPropagation()
+                        try {
+                          const r = await api.career.autoApplyCompanyQueue(c.id)
+                          if (r.queued > 0) alert(`✓ Queued ${r.queued} role(s) for auto-apply${r.skippedAlreadyInFlight ? ` (skipped ${r.skippedAlreadyInFlight} already in queue)` : ''}. Run "Auto-Apply Setup → Run Queue" to process now.`)
+                          else alert(`No scraped roles for ${r.company || c.name}. Open the company page and click Scrape, or use the larger "Scrape & Queue" button there.`)
+                        } catch (err) { alert('Auto-Apply failed: ' + err.message) }
+                      }}
+                      title="Queue all known scraped intern roles for auto-apply"
+                      style={btnPrimary}>
+                      Apply
+                    </button>
+                    {(c.url || c.domain) && (
+                      <a href={c.url || `https://${c.domain}/careers`} target="_blank" rel="noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        title="Open careers page"
+                        style={btnGhost}>
+                        Careers ↗
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             )

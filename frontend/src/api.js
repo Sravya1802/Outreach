@@ -371,6 +371,13 @@ export const api = {
     openReportTab:        (id) => openAuthenticatedTab(`/career/evaluations/${id}/report.html`),
     downloadEvaluationPdf: (id, filename) => downloadAuthenticatedFile(`/career/download/${id}`, filename),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
+    // Upload a custom resume PDF for a specific evaluation. Backend writes
+    // evaluations.pdf_path, which autoApplier honors over library matching.
+    uploadEvalResume: async (id, file) => {
+      const fd = new FormData()
+      fd.append('resume', file)
+      return apiCall(`/career/upload-resume/${id}`, { method: 'POST', body: fd })
+    },
   },
 
   automations: {

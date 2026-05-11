@@ -297,7 +297,7 @@ function ResumeFolderTab() {
     <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:14, padding:'24px 28px' }}>
       <h2 style={{ fontSize:15, fontWeight:700, color:'#0f172a', margin:'0 0 6px' }}>Resume Folder</h2>
       <p style={{ fontSize:12, color:'#94a3b8', margin:'0 0 6px' }}>
-        The auto-apply worker picks the resume from the sub-folder whose name matches the role's archetype.
+        The auto-apply worker picks the resume from the sub-folder whose name matches the role's archetype. If no folder matches, it falls back to the closest one by keyword. Per-role custom resumes (📎 Upload on an evaluation card) override this entirely.
       </p>
       <p style={{ fontSize:11, fontFamily:'ui-monospace, monospace', color:'#64748b', background:'#f8fafc', padding:'6px 10px', borderRadius:6, display:'inline-block', marginBottom:18 }}>
         Scanning: {data.resumeDir || '(not set — update Profile)'}

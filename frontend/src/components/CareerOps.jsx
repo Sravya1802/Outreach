@@ -260,9 +260,9 @@ function EvaluationReport({ evaluation: e, onGeneratePDF, pdfLoading, pdfReady, 
               : 'Opens the job page — you submit'}
           </div>
           {/* Queue-only path: sets mode=auto + status=queued without running.
-              Uses the user's resume archetype library — Auto-Apply Setup tab
-              picks which of the 6 archetype PDFs matches this role's archetype
-              (e.batch detected '{e.archetype?.primary}') when the worker runs. */}
+              Resume selection at run time, in order: per-eval upload (if the
+              user attached one via the 📎 Upload button) → archetype library
+              match → closest library resume by keyword score. */}
           {applyStatus !== 'submitted' && applyStatus !== 'queued' && (
             <button onClick={onQueue} disabled={queuing}
               style={{ padding:'7px 14px', fontSize:11, fontWeight:700, background:'#fff', color:'#7c3aed', border:'1px solid #ddd6fe', borderRadius:8, cursor: queuing ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
@@ -597,6 +597,85 @@ function EvaluationReport({ evaluation: e, onGeneratePDF, pdfLoading, pdfReady, 
   )
 }
 
+// ── Archetype upload card ─────────────────────────────────────────────────────
+// One per role family (AI/ML, SWE, DS, DevOps, …). Supports click-to-upload
+// AND drag-and-drop. Shows the current file with a friendly size + delete; if
+// empty, the whole card becomes the dropzone so the affordance is obvious.
+function ArchetypeUploadCard({ archetype, label, hint, files, filled, isUploading, storageConfigured, onUpload, onDelete }) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef(null)
+  const disabled = !storageConfigured || isUploading
+  function handleFiles(fileList) {
+    const file = fileList?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf') {
+      alert('Only PDF files are accepted')
+      return
+    }
+    onUpload(file)
+  }
+  return (
+    <div
+      onDragOver={(e) => { if (disabled) return; e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); if (!disabled) handleFiles(e.dataTransfer.files) }}
+      style={{
+        padding:'12px 14px',
+        border:`1px ${dragOver ? 'dashed' : 'solid'} ${dragOver ? '#6366f1' : filled ? '#bbf7d0' : '#e2e8f0'}`,
+        borderRadius:10,
+        background: dragOver ? '#eef2ff' : filled ? '#f0fdf4' : '#fafbff',
+        transition:'all 0.12s',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+      onClick={(e) => {
+        // Only trigger upload when the empty card is clicked. If there's an
+        // existing file, ignore clicks on the card chrome — the user has to
+        // delete first, or use the "Replace" pill explicitly.
+        if (disabled || filled) return
+        if (e.target.closest('button, label, input')) return
+        inputRef.current?.click()
+      }}
+    >
+      <input ref={inputRef} type="file" accept="application/pdf" disabled={disabled}
+        onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
+        style={{ display:'none' }} />
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }}>
+        <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, background: filled ? '#dcfce7' : '#eef2ff', color: filled ? '#15803d' : '#4f46e5', textTransform:'uppercase' }}>{archetype}</span>
+        <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>{label}</span>
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); if (!disabled) inputRef.current?.click() }}
+          disabled={disabled}
+          style={{
+            marginLeft:'auto', cursor: disabled ? 'not-allowed' : 'pointer',
+            padding:'4px 10px', fontSize:11, fontWeight:700,
+            background: disabled ? '#f1f5f9' : '#eef2ff',
+            color:      disabled ? '#94a3b8' : '#4f46e5',
+            border:`1px solid ${disabled ? '#e2e8f0' : '#c7d2fe'}`,
+            borderRadius:6, opacity: isUploading ? 0.6 : 1, whiteSpace:'nowrap',
+          }}>
+          {isUploading ? '⏳ Uploading…' : filled ? '↻ Replace' : '＋ Upload PDF'}
+        </button>
+      </div>
+      <div style={{ fontSize:10, color:'#94a3b8', marginBottom:6, lineHeight:1.4 }}>{hint}</div>
+      {files.length === 0 ? (
+        <div style={{ fontSize:11, color:'#94a3b8', fontStyle:'italic' }}>
+          {dragOver ? 'Drop PDF to upload' : 'Drag a PDF here or click ＋ Upload'}
+        </div>
+      ) : files.map((f, i) => (
+        <div key={i} style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+          <span aria-hidden="true">📄</span>
+          <span style={{ fontSize:11, color:'#0f172a', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{f.filename}</span>
+          <span style={{ fontSize:10, color:'#94a3b8' }}>{Math.max(1, Math.round((f.sizeBytes || 0) / 1024))} KB</span>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(f) }}
+            style={{ padding:'2px 7px', fontSize:10, background:'none', border:'1px solid #fecaca', color:'#dc2626', borderRadius:5, cursor:'pointer' }}>
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Auto-Apply Setup (profile + resume library + queue runner) ───────────────
 // Exported so CompanyDetail's Job Automation tab can reuse the exact same form.
 export function AutoApplySetup() {
@@ -870,33 +949,31 @@ export function AutoApplySetup() {
             {storageStatus.ok ? '✓' : '✗'} {storageStatus.text}
           </div>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:10 }}>
-          {['aiml','ds','swe','devops','fullstack','startup','misc'].map(arch => {
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
+          {[
+            { key:'aiml',      label:'AI / ML',     hint:'AI engineer, ML, NLP, computer vision' },
+            { key:'ds',        label:'Data Science',hint:'Data scientist, analyst, BI, data eng' },
+            { key:'swe',       label:'Software Eng',hint:'Backend, systems, SDE, software dev' },
+            { key:'devops',    label:'DevOps / SRE',hint:'SRE, platform, infra, cloud, k8s' },
+            { key:'fullstack', label:'Full-Stack',  hint:'Web app, frontend + backend' },
+            { key:'startup',   label:'Startup',     hint:'Founding engineer, seed, YC, early-stage' },
+            { key:'misc',      label:'Misc',        hint:'Anything else — used as the closest-resume fallback' },
+          ].map(({ key: arch, label, hint }) => {
             const files = storageItems.filter(i => i.archetype === arch || i.folder === arch)
+            const filled = files.length > 0
+            const isUploading = storageUploading === arch
             return (
-              <div key={arch} style={{ padding:'12px 14px', border:'1px solid #e2e8f0', borderRadius:10, background:'#fafbff' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'#eef2ff', color:'#4f46e5', textTransform:'uppercase' }}>{arch}</span>
-                  <label style={{ marginLeft:'auto', cursor: storageConfigured ? 'pointer' : 'not-allowed', padding:'4px 10px', fontSize:11, fontWeight:700, background: storageConfigured ? '#eef2ff' : '#f1f5f9', color: storageConfigured ? '#4f46e5' : '#94a3b8', borderRadius:6, opacity: storageUploading === arch ? 0.6 : 1 }}>
-                    {storageUploading === arch ? '⏳' : '+ Upload'}
-                    <input type="file" accept="application/pdf" disabled={!storageConfigured || storageUploading === arch}
-                      onChange={e => uploadToLibrary(arch, e.target.files?.[0])}
-                      style={{ display:'none' }} />
-                  </label>
-                </div>
-                {files.length === 0 ? (
-                  <div style={{ fontSize:11, color:'#94a3b8' }}>No file</div>
-                ) : files.map((f, i) => (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
-                    <span style={{ fontSize:11, color:'#0f172a', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{f.filename}</span>
-                    <span style={{ fontSize:10, color:'#94a3b8' }}>{Math.max(1, Math.round((f.sizeBytes || 0) / 1024))} KB</span>
-                    <button onClick={() => deleteFromLibrary(f.archetype, f.filename)}
-                      style={{ padding:'2px 7px', fontSize:10, background:'none', border:'1px solid #fecaca', color:'#dc2626', borderRadius:5, cursor:'pointer' }}>
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <ArchetypeUploadCard key={arch}
+                archetype={arch}
+                label={label}
+                hint={hint}
+                files={files}
+                filled={filled}
+                isUploading={isUploading}
+                storageConfigured={storageConfigured}
+                onUpload={(file) => uploadToLibrary(arch, file)}
+                onDelete={(f) => deleteFromLibrary(f.archetype, f.filename)}
+              />
             )
           })}
         </div>
@@ -1110,6 +1187,11 @@ function EvalCard({ ev, onClick, onDelete, onQueue, selected, onToggleSelect }) 
   const initialQueued = ev.apply_mode === 'auto' && ['queued','submitted','needs_review','running'].includes(ev.apply_status || '')
   const [queued, setQueued] = useState(initialQueued)
   const [queuing, setQueuing] = useState(false)
+  // Per-eval resume override — when set, autoApplier uses this PDF instead
+  // of looking up an archetype match in the user's Resume Library.
+  const [hasOverride, setHasOverride] = useState(!!ev.pdf_path)
+  const [uploadingResume, setUploadingResume] = useState(false)
+  const resumeInputRef = useRef(null)
   async function handleQueueClick(e) {
     e.stopPropagation()
     if (queued || queuing) return
@@ -1117,6 +1199,17 @@ function EvalCard({ ev, onClick, onDelete, onQueue, selected, onToggleSelect }) 
     try { await onQueue(ev.id); setQueued(true) }
     catch (err) { alert('Queue failed: ' + err.message) }
     finally { setQueuing(false) }
+  }
+  async function handleResumeUpload(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadingResume(true)
+    try {
+      await api.career.uploadEvalResume(ev.id, file)
+      setHasOverride(true)
+    } catch (err) { alert('Upload failed: ' + err.message) }
+    finally { setUploadingResume(false) }
   }
   return (
     <div className="co-card" onClick={onClick}
@@ -1151,7 +1244,17 @@ function EvalCard({ ev, onClick, onDelete, onQueue, selected, onToggleSelect }) 
           style={{ padding:'6px 12px', fontSize:11, fontWeight:700, background:'#eef2ff', color:'#4f46e5', border:'1px solid #c7d2fe', borderRadius:7, cursor:'pointer', flexShrink:0, whiteSpace:'nowrap' }}>
           HTML ↗
         </button>
-        {ev.pdf_path && <span title="PDF generated" style={{ fontSize:18 }}>📄</span>}
+        {/* Per-eval resume override. Clicking opens a file picker; backend
+            writes evaluations.pdf_path so the auto-apply worker uploads
+            this exact PDF instead of an archetype-matched library file. */}
+        <input ref={resumeInputRef} type="file" accept="application/pdf"
+          style={{ display:'none' }} onClick={e => e.stopPropagation()} onChange={handleResumeUpload} />
+        <button onClick={e => { e.stopPropagation(); resumeInputRef.current?.click() }}
+          disabled={uploadingResume}
+          title={hasOverride ? 'Custom resume uploaded — click to replace' : 'Upload a custom resume to use for this role (overrides archetype library)'}
+          style={{ padding:'6px 12px', fontSize:11, fontWeight:700, background: hasOverride ? '#dcfce7' : '#fff', color: hasOverride ? '#15803d' : '#475569', border:`1px solid ${hasOverride ? '#86efac' : '#cbd5e1'}`, borderRadius:7, cursor: uploadingResume ? 'default' : 'pointer', flexShrink:0, whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:4 }}>
+          {uploadingResume ? <Spin size={11} /> : hasOverride ? '📎 Resume' : '📎 Upload'}
+        </button>
         <button onClick={e => { e.stopPropagation(); onDelete(ev.id) }}
           style={{ padding:'5px 10px', fontSize:11, background:'none', border:'1px solid #fecaca', color:'#dc2626', borderRadius:7, cursor:'pointer', flexShrink:0 }}>
           ✕

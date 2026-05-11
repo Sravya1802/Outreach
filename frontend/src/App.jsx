@@ -370,7 +370,7 @@ export default function App() {
           <div style={{ fontSize:16, fontWeight:800, letterSpacing:'-0.01em', color:'#f8fafc', marginBottom:1 }}>
             <span style={{ color:'#818cf8' }}>◈</span> OutreachOS
           </div>
-          <div style={{ fontSize:11, color:'#475569', marginTop:2 }}>Summer 2026 Internship</div>
+          <div style={{ fontSize:11, color:'#475569', marginTop:2 }}>Internship + New Grad Pipeline</div>
         </div>
 
         {/* Nav */}

@@ -229,7 +229,7 @@ export default function DashboardPage({ onStatsChange }) {
           {/* Quick Actions — 6-up desktop, 3-up tablet, 2-up phone. */}
           <div style={{ marginBottom:28 }}>
             <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Quick Actions</div>
-            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: isPhone ? 8 : 12 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(7, 1fr)', gap: isPhone ? 8 : 12 }}>
               {[
                 { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',   action: () => navigate('/companies'),  tint:'#6366f1' },
                 { icon:'🎓', label:'Intern Roles',      sub:'Daily-scraped open internships', action: () => navigate('/apply/intern-roles'),   tint:'#f59e0b' },
@@ -237,6 +237,7 @@ export default function DashboardPage({ onStatsChange }) {
                 { icon:'📥', label:'Scrape New Roles',  sub:'Bulk scraping across sources',   action: () => navigate('/scraper'),    tint:'#059669' },
                 { icon:'✉',  label:'Write Outreach',   sub:'Find contacts & draft emails',   action: () => navigate('/outreach'),   tint:'#0891b2' },
                 { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track applications',  action: () => navigate('/career-ops'), tint:'#7c3aed' },
+                { icon:'⚡', label:'Auto-Apply',        sub:'Queue & auto-apply to roles',    action: () => navigate('/apply/auto-apply'), tint:'#e11d48' },
               ].map(q => (
                 <div key={q.label} onClick={q.action}
                   style={{ padding:'18px 20px', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, cursor:'pointer', transition:'all 0.15s' }}
@@ -253,7 +254,7 @@ export default function DashboardPage({ onStatsChange }) {
           {/* Top Categories */}
           <div>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-              <div style={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>Top Categories</div>
+              <div style={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>Top Categories of Companies</div>
               <button onClick={() => navigate('/companies')}
                 style={{ fontSize:12, color:'#6366f1', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>
                 View all →

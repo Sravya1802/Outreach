@@ -153,6 +153,13 @@ export const api = {
   activity:   () => apiCall('/activity'),
   jobMetrics: () => apiCall('/dashboard/job-metrics'),
 
+  // Job-alert subscription (LinkedIn-style email digests of new roles)
+  alerts: {
+    get:  ()      => apiCall('/alerts/subscription'),
+    save: (sub)   => apiCall('/alerts/subscription', { method: 'PUT', body: sub }),
+    test: (email) => apiCall('/alerts/test', { method: 'POST', body: { email } }),
+  },
+
   credits: {
     status: (force = false) => apiCall('/credits/status' + (force ? '?refresh=true' : '')).catch(() => ({})),
   },

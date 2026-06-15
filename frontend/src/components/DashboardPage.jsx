@@ -28,119 +28,6 @@ function timeAgo(iso) {
 // activity_log.details is JSONB in Supabase — it comes back as an object,
 // not a string. Rendering the object directly throws React error #31 and
 // blanks the dashboard. Flatten to a short human-readable summary.
-// ── Automation card — surfaces the three "make it run automatically" toggles
-// (auto-queue threshold, nightly pipeline, auto-apply consent) so the user
-// doesn't have to dig into Auto-Apply → Setup to find them.
-function AutomationCard({ navigate }) {
-  const [autoQueue, setAutoQueue]   = useState(null) // { minGrade } | null while loading
-  const [nightly, setNightly]       = useState(null) // full settings | null
-  const [profile, setProfile]       = useState(null)
-  const [savingAQ, setSavingAQ]     = useState(false)
-  const [savingNightly, setSavingNightly] = useState(false)
-
-  useEffect(() => {
-    api.career.autoQueueSettings().then(setAutoQueue).catch(() => setAutoQueue({ minGrade: '' }))
-    api.career.nightlySettings().then(setNightly).catch(() => setNightly({ enabled: false }))
-    api.career.profile().then(setProfile).catch(() => setProfile({}))
-  }, [])
-
-  async function changeAutoQueue(minGrade) {
-    setSavingAQ(true)
-    try {
-      const r = await api.career.saveAutoQueueSettings({ minGrade })
-      setAutoQueue(r)
-    } catch { /* keep prior state on failure */ }
-    finally { setSavingAQ(false) }
-  }
-
-  async function toggleNightly() {
-    if (!nightly) return
-    setSavingNightly(true)
-    try {
-      const next = { ...nightly, enabled: !nightly.enabled }
-      const r = await api.career.saveNightlySettings(next)
-      setNightly(r || next)
-    } catch { /* keep prior state on failure */ }
-    finally { setSavingNightly(false) }
-  }
-
-  const consent = !!profile?.auto_apply_consent
-  const aqMin   = autoQueue?.minGrade || ''
-  const nightlyOn = !!nightly?.enabled
-
-  // Tint reflects degree of automation enabled — green if all three are on.
-  const fullyOn  = consent && aqMin && nightlyOn
-  const partlyOn = consent || aqMin || nightlyOn
-  const tint = fullyOn ? '#16a34a' : partlyOn ? '#7c3aed' : '#94a3b8'
-
-  return (
-    <div style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:10, display:'flex', alignItems:'center', gap:18, flexWrap:'wrap' }}>
-      <div style={{ minWidth:160 }}>
-        <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>
-          Automation
-        </div>
-        <div style={{ fontSize:13, fontWeight:600, color:'#0f172a' }}>
-          {fullyOn ? '✓ Fully automated'
-            : partlyOn ? 'Partially on'
-            : 'Off — fully manual'}
-        </div>
-      </div>
-
-      {/* Auto-queue threshold */}
-      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-        <label style={{ fontSize:10, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          Auto-queue when grade ≥
-        </label>
-        <select value={aqMin} onChange={e => changeAutoQueue(e.target.value)} disabled={savingAQ || autoQueue == null}
-          style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e2e8f0', background:'#fff', fontSize:12, fontWeight:600, color:'#0f172a', cursor:'pointer', minWidth:120 }}>
-          <option value="">Off</option>
-          <option value="A">A only</option>
-          <option value="B">A or B</option>
-          <option value="C">A / B / C</option>
-          <option value="D">A / B / C / D</option>
-          <option value="F">All grades</option>
-        </select>
-      </div>
-
-      {/* Nightly pipeline toggle */}
-      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-        <label style={{ fontSize:10, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          🌙 Nightly pipeline
-        </label>
-        <button onClick={toggleNightly} disabled={savingNightly || nightly == null}
-          style={{ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:700, cursor: savingNightly ? 'default' : 'pointer',
-            background: nightlyOn ? '#dcfce7' : '#f1f5f9',
-            color:      nightlyOn ? '#15803d' : '#64748b',
-            border:    `1px solid ${nightlyOn ? '#86efac' : '#e2e8f0'}` }}>
-          {savingNightly ? '…' : nightlyOn ? '✓ Enabled' : 'Disabled'}
-        </button>
-      </div>
-
-      {/* Consent — read-only indicator with deep-link */}
-      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-        <label style={{ fontSize:10, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>
-          Auto-apply consent
-        </label>
-        <button onClick={() => navigate('/apply/auto-apply')}
-          title={consent ? 'Required for auto-apply' : 'Click to give consent in Setup'}
-          style={{ padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer',
-            background: consent ? '#dcfce7' : '#fee2e2',
-            color:      consent ? '#15803d' : '#991b1b',
-            border:    `1px solid ${consent ? '#86efac' : '#fca5a5'}` }}>
-          {consent ? '✓ Given' : '✗ Required → Setup'}
-        </button>
-      </div>
-
-      <div style={{ flex:1, minWidth:120, fontSize:11, color:'#64748b', lineHeight:1.5 }}>
-        {!consent && '⚠ Auto-apply needs explicit consent before anything queues.'}
-        {consent && aqMin && nightlyOn && 'Each scraped role gets evaluated, queued if grade clears your threshold, and submitted nightly.'}
-        {consent && aqMin && !nightlyOn && 'Roles you evaluate auto-queue, but the worker only runs on demand.'}
-        {consent && !aqMin && nightlyOn && 'Nightly pipeline runs but evaluations are still queued by hand.'}
-      </div>
-    </div>
-  )
-}
-
 function formatActivityDetails(a) {
   const d = a.details
   if (!d) return a.action || ''
@@ -269,9 +156,6 @@ export default function DashboardPage({ onStatsChange }) {
               </div>
             )
           })()}
-
-          {/* Automation toggles — surfaces auto-queue + nightly pipeline + consent */}
-          <AutomationCard navigate={navigate} />
 
           {/* Last scrape — populated by /jobs/scrape (writes meta.last_scrape_summary) */}
           {stats?.lastScrape && (() => {

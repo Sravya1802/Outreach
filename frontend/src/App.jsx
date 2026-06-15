@@ -51,6 +51,7 @@ const AutoApplyPage       = lazyWithRetry(() => import('./components/AutoApplyPa
 const TemplatesPage       = lazyWithRetry(() => import('./components/TemplatesPage'),       'TemplatesPage')
 const ResetPassword       = lazyWithRetry(() => import('./components/ResetPassword'),       'ResetPassword')
 const RolesPage           = lazyWithRetry(() => import('./components/RolesPage'),           'RolesPage')
+const JobAlerts           = lazyWithRetry(() => import('./components/JobAlerts'),           'JobAlerts')
 
 
 // ── Settings page ─────────────────────────────────────────────────────────────
@@ -401,6 +402,10 @@ export default function App() {
             <span style={{ flex:1 }}>Career Ops</span>
           </NavLink>
 
+          <NavLink to="/discover/alerts" style={({ isActive }) => navStyle(isActive)}>
+            <span style={{ flex:1 }}>Job Alerts</span>
+          </NavLink>
+
           {/* APPLY — decide, apply, track */}
           {sectionLabel('Apply')}
 
@@ -505,6 +510,7 @@ export default function App() {
           <Route path="/discover/companies"  element={<CompanyDashboard key={session.user?.id || 'companies'} onStatsChange={setStats} statsSnapshot={stats} userId={session.user?.id} />} />
           <Route path="/discover/scraper"    element={<ScraperPage />} />
           <Route path="/discover/evaluate"   element={<CareerOps />} />
+          <Route path="/discover/alerts"     element={<JobAlerts />} />
 
           {/* APPLY section */}
           <Route path="/apply/auto-apply"    element={<AutoApplyPage />} />

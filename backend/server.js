@@ -28,9 +28,12 @@ import careerOpsRouter   from './routes/careerOps.js';
 import automationsRouter  from './routes/automations.js';
 import ycRouter           from './routes/yc.js';
 import scrapedRolesRouter from './routes/scrapedRoles.js';
+import alertsRouter        from './routes/alerts.js';
 import { requireAuth }    from './middleware/requireAuth.js';
 import { scrapeAllSources } from './services/scraper.js';
 import { scrapeAllSourcesAndPersist } from './services/multiSourceScraper.js';
+import { sendDailyRolesDigest, buildDigestData, runSubscriptionDigests } from './services/dailyDigest.js';
+import { mailerConfigured } from './services/mailer.js';
 import { importStartupSheet } from './services/startupSheet.js';
 import { checkAllCredits }   from './services/creditChecker.js';
 
@@ -93,6 +96,7 @@ app.use('/api/career',    careerOpsRouter);
 app.use('/api/automations', automationsRouter);
 app.use('/api/yc',         ycRouter);
 app.use('/api/scraped-roles', scrapedRolesRouter);
+app.use('/api/alerts',     alertsRouter);
 
 // ── Manual refresh endpoint (SSE) ────────────────────────────────────────────
 app.post('/api/jobs/refresh-all', async (req, res) => {
@@ -143,8 +147,16 @@ app.get('/api/stats', async (req, res) => {
       one("SELECT COUNT(*)::int AS n FROM job_contacts WHERE user_id = $1", [req.user.id]),
       one("SELECT COUNT(*)::int AS n FROM job_contacts WHERE email IS NOT NULL AND email != '' AND user_id = $1", [req.user.id]),
       one("SELECT COUNT(*)::int AS n FROM job_contacts WHERE linkedin_url IS NOT NULL AND linkedin_url != '' AND user_id = $1", [req.user.id]),
-      one("SELECT COUNT(*)::int AS n FROM outreach WHERE status = 'sent' AND user_id = $1", [req.user.id]),
-      one("SELECT COUNT(*)::int AS n FROM outreach WHERE status = 'replied' AND user_id = $1", [req.user.id]),
+      // Sent / replied live in the active pipeline tables (job_contacts + prospects),
+      // NOT the legacy `outreach` table — counting outreach made these read ~0.
+      one(`SELECT (
+              (SELECT COUNT(*) FROM job_contacts WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1)
+            )::int AS n`, [req.user.id]),
+      one(`SELECT (
+              (SELECT COUNT(*) FROM job_contacts WHERE status = 'replied' AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status = 'replied' AND user_id = $1)
+            )::int AS n`, [req.user.id]),
       one(`
         SELECT COUNT(DISTINCT trim(src))::int AS n
         FROM jobs
@@ -153,16 +165,33 @@ app.get('/api/stats', async (req, res) => {
       `, [req.user.id]),
       one("SELECT COUNT(*)::int AS n FROM jobs WHERE yc_batch IS NOT NULL AND yc_batch != '' AND user_id = $1", [req.user.id]),
     ]);
+    // "Evaluated" = roles you've actually scored (the evaluations table that
+    // feeds the auto-apply queue), not the separate company_applications
+    // tracker — that's why the card read 0 despite items being queued (#1a).
     let totalApplications = 0;
     try {
       const r = await one(
-        "SELECT COUNT(*)::int AS n FROM company_applications WHERE status != 'interested' AND user_id = $1",
+        "SELECT COUNT(*)::int AS n FROM evaluations WHERE user_id = $1",
         [req.user.id]
       );
       totalApplications = r?.n || 0;
     } catch (_) {}
     const totalSent = c5?.n || 0;
     const totalReplied = c6?.n || 0;
+
+    // Company review-status breakdown: "to check" (new/unset) vs "reviewed"
+    // (researching/contacted/responded). Powers the Companies KPIs (#3a/#3f).
+    let statusCounts = { toCheck: 0, reviewed: 0, skip: 0 };
+    try {
+      const sc = await one(`
+        SELECT
+          COUNT(*) FILTER (WHERE status IS NULL OR status = 'new')::int                    AS to_check,
+          COUNT(*) FILTER (WHERE status IN ('researching','contacted','responded'))::int   AS reviewed,
+          COUNT(*) FILTER (WHERE status = 'skip')::int                                      AS skip
+        FROM jobs WHERE user_id = $1
+      `, [req.user.id]);
+      if (sc) statusCounts = { toCheck: sc.to_check || 0, reviewed: sc.reviewed || 0, skip: sc.skip || 0 };
+    } catch (_) {}
 
     // Last scrape summary — written by /jobs/scrape; rendered on Dashboard
     let lastScrape = null;
@@ -184,6 +213,7 @@ app.get('/api/stats', async (req, res) => {
       activeSources: c7?.n || 0,
       ycImported: c8?.n || 0,
       totalApplications,
+      statusCounts,
       lastScrape,
     });
   } catch (err) {
@@ -314,6 +344,79 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
     });
   } catch (err) {
     console.error('[job-metrics]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Daily updates — fresh scraped roles (last 24h) + career-ops activity (#1e) ─
+app.get('/api/dashboard/daily-updates', async (req, res) => {
+  try {
+    const uid = req.user.id;
+    // scraped_roles is a shared catalog (no user_id). "Today" = scraped in last 24h.
+    let internToday = 0, newGradToday = 0, internRecent = [], newGradRecent = [];
+    try {
+      const counts = await all(`
+        SELECT role_type, COUNT(*)::int AS n
+        FROM scraped_roles
+        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
+        GROUP BY role_type
+      `);
+      for (const r of counts) {
+        if (r.role_type === 'new_grad') newGradToday = r.n; else internToday = r.n;
+      }
+      const recent = await all(`
+        SELECT role_type, title, company_name, apply_url, scraped_at
+        FROM scraped_roles
+        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
+        ORDER BY scraped_at DESC
+        LIMIT 30
+      `);
+      internRecent  = recent.filter(r => r.role_type !== 'new_grad').slice(0, 5);
+      newGradRecent = recent.filter(r => r.role_type === 'new_grad').slice(0, 5);
+    } catch (_) {}
+
+    // Career-ops activity (per-user).
+    let careerOps = { evaluatedToday: 0, queued: 0, totalEvaluations: 0 };
+    try {
+      const c = await one(`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')::int            AS evaluated_today,
+          COUNT(*) FILTER (WHERE apply_mode = 'auto' AND apply_status = 'queued')::int  AS queued,
+          COUNT(*)::int                                                                 AS total
+        FROM evaluations WHERE user_id = $1
+      `, [uid]);
+      if (c) careerOps = { evaluatedToday: c.evaluated_today || 0, queued: c.queued || 0, totalEvaluations: c.total || 0 };
+    } catch (_) {}
+
+    res.json({
+      intern:  { today: internToday,  recent: internRecent },
+      newGrad: { today: newGradToday, recent: newGradRecent },
+      careerOps,
+    });
+  } catch (err) {
+    console.error('[daily-updates]', err);
+    res.json({ intern: { today: 0, recent: [] }, newGrad: { today: 0, recent: [] }, careerOps: { evaluatedToday: 0, queued: 0, totalEvaluations: 0 } });
+  }
+});
+
+// ── Daily roles digest — preview counts + manual email trigger (#9) ───────────
+app.get('/api/dashboard/digest-preview', async (req, res) => {
+  try {
+    const data = await buildDigestData();
+    res.json({ ...data, emailConfigured: mailerConfigured() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post('/api/dashboard/send-digest', async (req, res) => {
+  try {
+    if (!mailerConfigured()) {
+      return res.status(400).json({ error: 'Email is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in the backend .env.' });
+    }
+    const result = await sendDailyRolesDigest({ force: true });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[send-digest]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -499,6 +602,29 @@ cron.schedule('0 7 * * *', async () => {
       } catch (e) { console.error(`[nightly-cron] user ${u.user_id} failed:`, e.message); }
     }
   } catch (err) { console.error('[nightly-cron] dispatcher failed:', err.message); }
+});
+
+// ── Cron: job-alert digests at 08:00 UTC (after the 06:15 scrape) ────────────
+// Fans out to every subscriber (meta['job_alert_subscription']). Daily subs get
+// the 24h window every day; weekly subs get a 7d window on Mondays only.
+// Skipped when email isn't configured or DIGEST_CRON_DISABLED is set.
+cron.schedule('0 8 * * *', async () => {
+  if (process.env.DIGEST_CRON_DISABLED) {
+    console.log('[digest-cron] skipped — DIGEST_CRON_DISABLED is set');
+    return;
+  }
+  if (!mailerConfigured()) {
+    console.log('[digest-cron] skipped — email not configured (GMAIL_USER / GMAIL_APP_PASSWORD)');
+    return;
+  }
+  try {
+    const daily = await runSubscriptionDigests({ weekly: false });
+    let weekly = null;
+    if (new Date().getUTCDay() === 1) weekly = await runSubscriptionDigests({ weekly: true }); // Mondays
+    console.log(`[digest-cron] daily ${JSON.stringify(daily)}${weekly ? ` · weekly ${JSON.stringify(weekly)}` : ''}`);
+  } catch (err) {
+    console.error('[digest-cron] failed:', err.message);
+  }
 });
 
 // ── DB wipe on start (one-shot, auto-disables itself) ────────────────────────

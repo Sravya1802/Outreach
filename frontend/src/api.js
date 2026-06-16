@@ -152,6 +152,7 @@ export const api = {
   stats:      () => statsWithContactSummary(),
   activity:   () => apiCall('/activity'),
   jobMetrics: () => apiCall('/dashboard/job-metrics'),
+  dailyUpdates: () => apiCall('/dashboard/daily-updates'),
 
   // Job-alert subscription (LinkedIn-style email digests of new roles)
   alerts: {

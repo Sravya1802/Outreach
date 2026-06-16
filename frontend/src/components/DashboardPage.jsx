@@ -45,6 +45,34 @@ function formatActivityDetails(a) {
   }
 }
 
+// One "Daily updates" row — a role type with its 24h count + a few fresh roles.
+function DailySection({ icon, label, tint, count, recent, onClick }) {
+  return (
+    <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
+      <div onClick={onClick} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ fontSize:14 }}>{icon}</span>
+          <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>{label}</span>
+        </div>
+        <span style={{ fontSize:13, fontWeight:800, color: tint }}>
+          +{count ?? 0}<span style={{ fontSize:10, color:'#94a3b8', fontWeight:600, marginLeft:4 }}>today</span>
+        </span>
+      </div>
+      {recent && recent.length > 0 ? (
+        recent.slice(0, 4).map((r, i) => (
+          <a key={i} href={r.apply_url} target="_blank" rel="noreferrer"
+            title={`${r.title} · ${r.company_name}`}
+            style={{ display:'block', fontSize:11, color:'#475569', textDecoration:'none', padding:'2px 0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            · {r.title} <span style={{ color:'#94a3b8' }}>· {r.company_name}</span>
+          </a>
+        ))
+      ) : (
+        <div style={{ fontSize:11, color:'#cbd5e1' }}>Nothing new in the last 24h</div>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage({ onStatsChange }) {
   const navigate = useNavigate()
   // Three-tier breakpoints. iPad portrait (768) and iPad Pro portrait (1024)
@@ -59,6 +87,7 @@ export default function DashboardPage({ onStatsChange }) {
   // got earlier — empty {} let the renderer fall through to (catCounts[k] || 0).
   const [catCounts, setCatCounts] = useState(null)
   const [queue, setQueue]       = useState(null)
+  const [daily, setDaily]       = useState(null)
   const [now, setNow]           = useState(() => Date.now())
 
   useEffect(() => {
@@ -73,6 +102,7 @@ export default function DashboardPage({ onStatsChange }) {
     }
     loadStats()
     api.activity().then(d => setActivity(d.activity || [])).catch(() => {})
+    api.dailyUpdates().then(setDaily).catch(() => {})
     window.addEventListener('stats-refresh', loadStats)
     return () => window.removeEventListener('stats-refresh', loadStats)
   // onStatsChange is a parent setter; rerunning this effect for identity churn
@@ -125,7 +155,7 @@ export default function DashboardPage({ onStatsChange }) {
         )}
       </div>
 
-      <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 320px', gap: isPhone ? 18 : 28 }}>
+      <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 300px 300px', gap: isPhone ? 18 : 24 }}>
 
         {/* Left column */}
         <div>
@@ -281,6 +311,34 @@ export default function DashboardPage({ onStatsChange }) {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        </div>
+
+        {/* Middle column — Daily updates (#1e) */}
+        <div>
+          <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
+          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
+            <DailySection icon="🎓" label="Intern roles" tint="#6366f1"
+              count={daily?.intern?.today} recent={daily?.intern?.recent}
+              onClick={() => navigate('/apply/intern-roles')} />
+            <DailySection icon="💼" label="New grad roles" tint="#10b981"
+              count={daily?.newGrad?.today} recent={daily?.newGrad?.recent}
+              onClick={() => navigate('/apply/new-grad-roles')} />
+            <div onClick={() => navigate('/career-ops')} style={{ padding:'12px 16px', cursor:'pointer' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:14 }}>🎯</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>Career Ops</span>
+                </div>
+                <span style={{ fontSize:13, fontWeight:800, color:'#7c3aed' }}>
+                  {daily?.careerOps?.evaluatedToday ?? 0}<span style={{ fontSize:10, color:'#94a3b8', fontWeight:600, marginLeft:4 }}>today</span>
+                </span>
+              </div>
+              <div style={{ fontSize:11, color:'#94a3b8', marginTop:6, lineHeight:1.5 }}>
+                {daily?.careerOps?.queued ?? 0} queued for auto-apply<br/>
+                {daily?.careerOps?.totalEvaluations ?? 0} total evaluations
+              </div>
             </div>
           </div>
         </div>

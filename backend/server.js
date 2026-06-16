@@ -161,18 +161,24 @@ app.get('/api/stats', async (req, res) => {
              COUNT(*) FILTER (WHERE email IS NOT NULL AND email != '')::int AS with_email,
              COUNT(*) FILTER (WHERE linkedin_url IS NOT NULL AND linkedin_url != '')::int AS with_linkedin
            FROM job_contacts WHERE user_id = $1`, [req.user.id]),
+      // Sent / replied live in the active pipeline tables (job_contacts +
+      // prospects), NOT the legacy `outreach` table — reading outreach made
+      // these read ~0 on the dashboard (#1a).
       one(`SELECT
-             COUNT(*) FILTER (WHERE status = 'sent')::int    AS sent,
-             COUNT(*) FILTER (WHERE status = 'replied')::int AS replied
-           FROM outreach WHERE user_id = $1`, [req.user.id]),
+             ((SELECT COUNT(*) FROM job_contacts WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1))::int AS sent,
+             ((SELECT COUNT(*) FROM job_contacts WHERE status = 'replied' AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status = 'replied' AND user_id = $1))::int AS replied`, [req.user.id]),
       // Source-distinct count needs LATERAL unnest — keep separate but
       // still parallel.
       one(`SELECT COUNT(DISTINCT trim(src))::int AS n
            FROM jobs
            CROSS JOIN LATERAL unnest(string_to_array(source, ',')) AS s(src)
            WHERE source IS NOT NULL AND source != '' AND trim(s.src) != '' AND user_id = $1`, [req.user.id]),
-      one(`SELECT COUNT(*)::int AS n FROM company_applications
-             WHERE status != 'interested' AND user_id = $1`, [req.user.id]).catch(() => null),
+      // "Evaluated" = roles actually scored (the evaluations table that feeds
+      // the auto-apply queue), not the separate company_applications tracker —
+      // that's why it read 0 despite items being queued (#1a).
+      one(`SELECT COUNT(*)::int AS n FROM evaluations WHERE user_id = $1`, [req.user.id]).catch(() => null),
       one("SELECT value FROM meta WHERE user_id = $1 AND key = 'last_scrape_summary'", [req.user.id]).catch(() => null),
     ]);
 
@@ -387,6 +393,57 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
   } catch (err) {
     console.error('[job-metrics]', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Daily updates — fresh scraped roles (last 24h) + career-ops activity (#1e) ─
+app.get('/api/dashboard/daily-updates', async (req, res) => {
+  try {
+    const uid = req.user.id;
+    // scraped_roles is a shared catalog (no user_id). "Today" = scraped in last 24h.
+    let internToday = 0, newGradToday = 0, internRecent = [], newGradRecent = [];
+    try {
+      const counts = await all(`
+        SELECT role_type, COUNT(*)::int AS n
+        FROM scraped_roles
+        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
+        GROUP BY role_type
+      `);
+      for (const r of counts) {
+        if (r.role_type === 'new_grad') newGradToday = r.n; else internToday = r.n;
+      }
+      const recent = await all(`
+        SELECT role_type, title, company_name, apply_url, scraped_at
+        FROM scraped_roles
+        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
+        ORDER BY scraped_at DESC
+        LIMIT 30
+      `);
+      internRecent  = recent.filter(r => r.role_type !== 'new_grad').slice(0, 5);
+      newGradRecent = recent.filter(r => r.role_type === 'new_grad').slice(0, 5);
+    } catch (_) {}
+
+    // Career-ops activity (per-user).
+    let careerOps = { evaluatedToday: 0, queued: 0, totalEvaluations: 0 };
+    try {
+      const c = await one(`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')::int            AS evaluated_today,
+          COUNT(*) FILTER (WHERE apply_mode = 'auto' AND apply_status = 'queued')::int  AS queued,
+          COUNT(*)::int                                                                 AS total
+        FROM evaluations WHERE user_id = $1
+      `, [uid]);
+      if (c) careerOps = { evaluatedToday: c.evaluated_today || 0, queued: c.queued || 0, totalEvaluations: c.total || 0 };
+    } catch (_) {}
+
+    res.json({
+      intern:  { today: internToday,  recent: internRecent },
+      newGrad: { today: newGradToday, recent: newGradRecent },
+      careerOps,
+    });
+  } catch (err) {
+    console.error('[daily-updates]', err);
+    res.json({ intern: { today: 0, recent: [] }, newGrad: { today: 0, recent: [] }, careerOps: { evaluatedToday: 0, queued: 0, totalEvaluations: 0 } });
   }
 });
 

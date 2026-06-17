@@ -88,6 +88,7 @@ export default function DashboardPage({ onStatsChange }) {
   const [catCounts, setCatCounts] = useState(null)
   const [queue, setQueue]       = useState(null)
   const [daily, setDaily]       = useState(null)
+  const [health, setHealth]     = useState(null)
   const [now, setNow]           = useState(() => Date.now())
 
   useEffect(() => {
@@ -103,6 +104,7 @@ export default function DashboardPage({ onStatsChange }) {
     loadStats()
     api.activity().then(d => setActivity(d.activity || [])).catch(() => {})
     api.dailyUpdates().then(setDaily).catch(() => {})
+    api.health().then(setHealth).catch(() => {})
     window.addEventListener('stats-refresh', loadStats)
     return () => window.removeEventListener('stats-refresh', loadStats)
   // onStatsChange is a parent setter; rerunning this effect for identity churn
@@ -261,13 +263,13 @@ export default function DashboardPage({ onStatsChange }) {
             <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Quick Actions</div>
             <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: isPhone ? 8 : 12 }}>
               {[
-                { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',   action: () => navigate('/companies'),  tint:'#6366f1' },
-                { icon:'🎓', label:'Intern Roles',      sub:'Daily-scraped open internships', action: () => navigate('/apply/intern-roles'),   tint:'#f59e0b' },
-                { icon:'💼', label:'New Grad Roles',    sub:'Daily-scraped new grad roles',   action: () => navigate('/apply/new-grad-roles'), tint:'#10b981' },
-                { icon:'📥', label:'Scrape New Roles',  sub:'Bulk scraping across sources',   action: () => navigate('/scraper'),    tint:'#059669' },
-                { icon:'✉',  label:'Write Outreach',   sub:'Find contacts & draft emails',   action: () => navigate('/outreach'),   tint:'#0891b2' },
-                { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track applications',  action: () => navigate('/career-ops'), tint:'#7c3aed' },
-                { icon:'⚡', label:'Auto-Apply',        sub:'Queue & auto-apply to roles',    action: () => navigate('/apply/auto-apply'), tint:'#e11d48' },
+                { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',  action: () => navigate('/discover/companies'), tint:'#6366f1' },
+                { icon:'📥', label:'Job Scraper',       sub:'Scrape roles across sources',   action: () => navigate('/discover/scraper'),   tint:'#059669' },
+                { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track applications', action: () => navigate('/discover/evaluate'),  tint:'#7c3aed' },
+                { icon:'🔔', label:'Job Alerts',        sub:'Email digests of new roles',    action: () => navigate('/discover/alerts'),    tint:'#0ea5e9' },
+                { icon:'⚡', label:'Auto-Apply',        sub:'Queue & auto-apply to roles',   action: () => navigate('/apply/auto-apply'),   tint:'#e11d48' },
+                { icon:'📊', label:'Pipeline',          sub:'Track application status',      action: () => navigate('/apply/pipeline'),     tint:'#10b981' },
+                { icon:'✉',  label:'Write Outreach',   sub:'Find contacts & draft emails',  action: () => navigate('/outreach/messages'),  tint:'#0891b2' },
               ].map(q => (
                 <div key={q.label} onClick={q.action}
                   style={{ padding:'18px 20px', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, cursor:'pointer', transition:'all 0.15s' }}
@@ -315,8 +317,19 @@ export default function DashboardPage({ onStatsChange }) {
           </div>
         </div>
 
-        {/* Right rail — Daily Updates (#1e) stacked above Recent Activity */}
+        {/* Right rail — API Status + Daily Updates (#1e) + Recent Activity */}
         <div>
+          <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>API Status</div>
+          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:'10px 16px', marginBottom:28 }}>
+            {[['Gemini AI', health?.has_gemini], ['Apify', health?.has_apify], ['Apollo', health?.has_apollo], ['LinkedIn', health?.has_linkedin]].map(([label, ok]) => (
+              <div key={label} style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 0' }}>
+                <span style={{ width:8, height:8, borderRadius:'50%', background: ok ? '#22c55e' : '#cbd5e1', flexShrink:0 }} />
+                <span style={{ fontSize:12, color:'#475569', flex:1 }}>{label}</span>
+                <span style={{ fontSize:11, fontWeight:700, color: ok ? '#16a34a' : '#94a3b8' }}>{ok ? 'Connected' : '—'}</span>
+              </div>
+            ))}
+          </div>
+
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
           <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
             <DailySection icon="🎓" label="Intern roles" tint="#6366f1"
@@ -325,7 +338,7 @@ export default function DashboardPage({ onStatsChange }) {
             <DailySection icon="💼" label="New grad roles" tint="#10b981"
               count={daily?.newGrad?.today} recent={daily?.newGrad?.recent}
               onClick={() => navigate('/apply/new-grad-roles')} />
-            <div onClick={() => navigate('/career-ops')} style={{ padding:'12px 16px', cursor:'pointer' }}>
+            <div onClick={() => navigate('/discover/evaluate')} style={{ padding:'12px 16px', cursor:'pointer' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ fontSize:14 }}>🎯</span>

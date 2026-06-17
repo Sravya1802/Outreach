@@ -146,9 +146,8 @@ export default function DashboardPage({ onStatsChange }) {
                 style={{ padding:'16px 18px', background:'#fff', borderRadius:14, border:'1px solid #e8ebf0', boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor: s.action ? 'pointer' : 'default', transition:'all 0.15s' }}
                 onMouseEnter={e => { if (s.action) { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)'; e.currentTarget.style.borderColor = s.tint+'55' } }}
                 onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)'; e.currentTarget.style.borderColor='#e8ebf0' }}>
-                <div style={{ width:34, height:34, borderRadius:10, background:`${s.tint}14`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, marginBottom:12 }}>{s.icon}</div>
-                <div style={{ fontSize:25, fontWeight:800, color:'#0f172a', lineHeight:1 }}>{s.value}</div>
-                <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginTop:7 }}>{s.label}</div>
+                <div style={{ fontSize:26, fontWeight:800, color: s.tint, lineHeight:1 }}>{s.value}</div>
+                <div style={{ fontSize:12.5, fontWeight:700, color:'#0f172a', marginTop:7 }}>{s.label}</div>
                 <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{s.sub}</div>
               </div>
             ))}

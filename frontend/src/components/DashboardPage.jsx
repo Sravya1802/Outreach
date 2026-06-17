@@ -267,51 +267,6 @@ export default function DashboardPage({ onStatsChange }) {
             </div>
           </div>
 
-          {/* Top Categories */}
-          <div>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-              <div style={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>Top Categories of Companies</div>
-              <button onClick={() => navigate('/companies')}
-                style={{ fontSize:12, color:'#6366f1', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}>
-                View all →
-              </button>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: isPhone ? 8 : 10 }}>
-              {(() => {
-                // YC card shows actual imported YC startups in YOUR DB (not the global YC API list).
-                const withCounts = CATEGORIES.map(cat => ({
-                  ...cat,
-                  count: cat.label === 'YC Startups'
-                    ? (stats == null ? null : (stats.ycImported ?? 0))
-                    : (catCounts == null ? null : (catCounts[cat.label] ?? 0)),
-                }))
-                const loading = stats == null || catCounts == null
-                // While loading, show all (with '—' placeholders). Once loaded,
-                // drop empty categories and lead with the biggest (#A).
-                const shown = loading
-                  ? withCounts
-                  : withCounts.filter(c => (c.count || 0) > 0).sort((a, b) => (b.count || 0) - (a.count || 0))
-                return shown.map(cat => {
-                  const count = cat.count
-                  return (
-                  <div key={cat.label}
-                    onClick={() => navigate(`/category/${cat.slug}`)}
-                    style={{ padding:'14px 16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = cat.tint+'55'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8ebf0'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:3 }}>
-                      <span style={{ width:7, height:7, borderRadius:'50%', background: cat.tint, flexShrink:0 }} />
-                      <div style={{ fontSize:19, fontWeight:800, color:'#0f172a' }}>
-                        {count != null ? count.toLocaleString() : '—'}
-                      </div>
-                    </div>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#475569', lineHeight:1.3 }}>{cat.label}</div>
-                  </div>
-                  )
-                })
-              })()}
-            </div>
-          </div>
         </div>
 
         {/* Right rail — API Status + Daily Updates (#1e) + Recent Activity */}

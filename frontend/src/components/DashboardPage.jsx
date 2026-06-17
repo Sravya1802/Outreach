@@ -118,11 +118,11 @@ export default function DashboardPage({ onStatsChange }) {
   }, [])
 
   const statCards = stats ? [
-    { label:'Companies',    value: stats.totalCompanies?.toLocaleString() ?? '—',  sub:'in database',       tint:'#6366f1', action: () => navigate('/companies') },
-    { label:'Contacts',     value: stats.totalContacts?.toLocaleString() ?? '—',   sub: stats.contactsWithEmail != null ? `${stats.contactsWithEmail.toLocaleString()} emails found` : 'people found', tint:'#059669', action: () => navigate('/outreach') },
-    { label:'Sent',         value: stats.totalSent?.toLocaleString() ?? '—',       sub:'outreach emails',   tint:'#0891b2', action: null },
-    { label:'Response Rate',value: stats.responseRate != null ? `${stats.responseRate}%` : '—', sub:'reply rate', tint:'#d97706', action: null },
-    { label:'Evaluated',    value: stats.totalApplications?.toLocaleString() ?? '—', sub:'applications',   tint:'#9333ea', action: () => navigate('/career-ops') },
+    { icon:'🏢', label:'Companies',    value: stats.totalCompanies?.toLocaleString() ?? '—',  sub:'in database',   tint:'#6366f1', action: () => navigate('/discover/companies') },
+    { icon:'👥', label:'Contacts',     value: stats.totalContacts?.toLocaleString() ?? '—',   sub: stats.contactsWithEmail != null ? `${stats.contactsWithEmail.toLocaleString()} with email` : 'people found', tint:'#059669', action: () => navigate('/outreach/messages') },
+    { icon:'📤', label:'Sent',         value: stats.totalSent?.toLocaleString() ?? '—',       sub:'outreach sent', tint:'#0891b2', action: () => navigate('/outreach/messages') },
+    { icon:'💬', label:'Response Rate',value: stats.responseRate != null ? `${stats.responseRate}%` : '—', sub:'reply rate', tint:'#d97706', action: null },
+    { icon:'🎯', label:'Evaluated',    value: stats.totalApplications?.toLocaleString() ?? '—', sub:'roles scored', tint:'#9333ea', action: () => navigate('/discover/evaluate') },
   ] : []
 
   const activityIcons = {
@@ -143,12 +143,13 @@ export default function DashboardPage({ onStatsChange }) {
             {statCards.map(s => (
               <div key={s.label}
                 onClick={s.action}
-                style={{ padding:'16px 18px', background:'#f8fafc', borderRadius:12, border:'1px solid #e2e8f0', cursor: s.action ? 'pointer' : 'default', transition:'all 0.15s' }}
-                onMouseEnter={e => { if (s.action) { e.currentTarget.style.borderColor = s.tint; e.currentTarget.style.background = '#fff' } }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = '#f8fafc' }}>
-                <div style={{ fontSize:22, fontWeight:800, color: s.tint }}>{s.value}</div>
-                <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', marginTop:2 }}>{s.label}</div>
-                <div style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{s.sub}</div>
+                style={{ padding:'16px 18px', background:'#fff', borderRadius:14, border:'1px solid #e8ebf0', boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor: s.action ? 'pointer' : 'default', transition:'all 0.15s' }}
+                onMouseEnter={e => { if (s.action) { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)'; e.currentTarget.style.borderColor = s.tint+'55' } }}
+                onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)'; e.currentTarget.style.borderColor='#e8ebf0' }}>
+                <div style={{ width:34, height:34, borderRadius:10, background:`${s.tint}14`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, marginBottom:12 }}>{s.icon}</div>
+                <div style={{ fontSize:25, fontWeight:800, color:'#0f172a', lineHeight:1 }}>{s.value}</div>
+                <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginTop:7 }}>{s.label}</div>
+                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{s.sub}</div>
               </div>
             ))}
           </div>
@@ -168,8 +169,8 @@ export default function DashboardPage({ onStatsChange }) {
             const urgent = (c.needs_review || 0) > 0
             const tint = urgent ? '#dc2626' : c.queued > 0 ? '#7c3aed' : '#64748b'
             return (
-              <div onClick={() => navigate('/career-ops')}
-                style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:10, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
+              <div onClick={() => navigate('/apply/auto-apply')}
+                style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
                 <div>
                   <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>
                     Auto-Apply Queue {urgent && <span style={{ color:'#dc2626' }}>· needs attention</span>}
@@ -204,7 +205,7 @@ export default function DashboardPage({ onStatsChange }) {
               .sort((a, b) => b[1] - a[1])
             const failedSources = Object.keys(ls.errors || {})
             return (
-              <div style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:10, display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', display:'flex', flexDirection:'column', gap:10 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
                   <div>
                     <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>
@@ -261,21 +262,22 @@ export default function DashboardPage({ onStatsChange }) {
           {/* Quick Actions — 6-up desktop, 3-up tablet, 2-up phone. */}
           <div style={{ marginBottom:28 }}>
             <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Quick Actions</div>
-            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: isPhone ? 8 : 12 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(4, minmax(0, 1fr))', gap: isPhone ? 8 : 12 }}>
               {[
                 { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',  action: () => navigate('/discover/companies'), tint:'#6366f1' },
                 { icon:'📥', label:'Job Scraper',       sub:'Scrape roles across sources',   action: () => navigate('/discover/scraper'),   tint:'#059669' },
-                { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track applications', action: () => navigate('/discover/evaluate'),  tint:'#7c3aed' },
+                { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track roles',        action: () => navigate('/discover/evaluate'),  tint:'#7c3aed' },
                 { icon:'🔔', label:'Job Alerts',        sub:'Email digests of new roles',    action: () => navigate('/discover/alerts'),    tint:'#0ea5e9' },
                 { icon:'⚡', label:'Auto-Apply',        sub:'Queue & auto-apply to roles',   action: () => navigate('/apply/auto-apply'),   tint:'#e11d48' },
                 { icon:'📊', label:'Pipeline',          sub:'Track application status',      action: () => navigate('/apply/pipeline'),     tint:'#10b981' },
+                { icon:'🏆', label:'Ranked Roles',      sub:'Best-fit roles by score',       action: () => navigate('/apply/ranked'),       tint:'#f59e0b' },
                 { icon:'✉',  label:'Write Outreach',   sub:'Find contacts & draft emails',  action: () => navigate('/outreach/messages'),  tint:'#0891b2' },
               ].map(q => (
                 <div key={q.label} onClick={q.action}
-                  style={{ padding:'18px 20px', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, cursor:'pointer', transition:'all 0.15s' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = q.tint; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}>
-                  <div style={{ fontSize:24, marginBottom:8 }}>{q.icon}</div>
+                  style={{ padding:'16px 16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.borderColor = q.tint+'55'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(16,24,40,0.08)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.borderColor = '#e8ebf0'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,0.04)' }}>
+                  <div style={{ width:38, height:38, borderRadius:10, background:`${q.tint}14`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, marginBottom:11 }}>{q.icon}</div>
                   <div style={{ fontSize:13, fontWeight:700, color:'#0f172a', marginBottom:3 }}>{q.label}</div>
                   <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.4 }}>{q.sub}</div>
                 </div>
@@ -303,13 +305,16 @@ export default function DashboardPage({ onStatsChange }) {
                 return (
                   <div key={cat.label}
                     onClick={() => navigate(`/category/${cat.slug}`)}
-                    style={{ padding:'14px 16px', background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, cursor:'pointer', transition:'all 0.15s' }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = cat.tint; e.currentTarget.style.transform = 'translateY(-2px)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.transform = 'none' }}>
-                    <div style={{ fontSize:18, fontWeight:800, color: cat.tint, marginBottom:2 }}>
-                      {count != null ? count.toLocaleString() : '—'}
+                    style={{ padding:'14px 16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = cat.tint+'55'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8ebf0'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:3 }}>
+                      <span style={{ width:7, height:7, borderRadius:'50%', background: cat.tint, flexShrink:0 }} />
+                      <div style={{ fontSize:19, fontWeight:800, color:'#0f172a' }}>
+                        {count != null ? count.toLocaleString() : '—'}
+                      </div>
                     </div>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#0f172a', lineHeight:1.3 }}>{cat.label}</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#475569', lineHeight:1.3 }}>{cat.label}</div>
                   </div>
                 )
               })}
@@ -320,7 +325,7 @@ export default function DashboardPage({ onStatsChange }) {
         {/* Right rail — API Status + Daily Updates (#1e) + Recent Activity */}
         <div>
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>API Status</div>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:'10px 16px', marginBottom:28 }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:'10px 16px', marginBottom:28 }}>
             {[['Gemini AI', health?.has_gemini], ['Apify', health?.has_apify], ['Apollo', health?.has_apollo], ['LinkedIn', health?.has_linkedin]].map(([label, ok]) => (
               <div key={label} style={{ display:'flex', alignItems:'center', gap:8, padding:'5px 0' }}>
                 <span style={{ width:8, height:8, borderRadius:'50%', background: ok ? '#22c55e' : '#cbd5e1', flexShrink:0 }} />
@@ -331,7 +336,7 @@ export default function DashboardPage({ onStatsChange }) {
           </div>
 
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', overflow:'hidden' }}>
             <DailySection icon="🎓" label="Intern roles" tint="#6366f1"
               count={daily?.intern?.today} recent={daily?.intern?.recent}
               onClick={() => navigate('/apply/intern-roles')} />
@@ -356,7 +361,7 @@ export default function DashboardPage({ onStatsChange }) {
           </div>
 
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'28px 0 14px' }}>Recent Activity</div>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', overflow:'hidden' }}>
             {activity.length === 0 ? (
               <div style={{ padding:'32px 20px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>
                 No activity yet. Start scraping companies!

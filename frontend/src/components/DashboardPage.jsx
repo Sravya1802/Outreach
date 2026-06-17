@@ -49,10 +49,14 @@ function formatActivityDetails(a) {
 function DailySection({ icon, label, tint, count, recent, onClick }) {
   return (
     <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
-      <div onClick={onClick} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', marginBottom:8 }}>
+      <div onClick={onClick}
+        style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', margin:'-4px -8px 6px', padding:'6px 8px', borderRadius:8, transition:'background 0.12s' }}
+        onMouseEnter={e => e.currentTarget.style.background = '#f6f7fb'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:14 }}>{icon}</span>
           <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>{label}</span>
+          <span style={{ fontSize:12, color: tint, fontWeight:800 }}>›</span>
         </div>
         <span style={{ fontSize:13, fontWeight:800, color: tint }}>
           +{count ?? 0}<span style={{ fontSize:10, color:'#94a3b8', fontWeight:600, marginLeft:4 }}>today</span>
@@ -245,19 +249,18 @@ export default function DashboardPage({ onStatsChange }) {
               {[
                 { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',  action: () => navigate('/discover/companies'), tint:'#6366f1' },
                 { icon:'📥', label:'Job Scraper',       sub:'Scrape roles across sources',   action: () => navigate('/discover/scraper'),   tint:'#059669' },
-                { icon:'🎯', label:'Career Ops',        sub:'Evaluate & track roles',        action: () => navigate('/discover/evaluate'),  tint:'#7c3aed' },
-                { icon:'🔔', label:'Job Alerts',        sub:'Email digests of new roles',    action: () => navigate('/discover/alerts'),    tint:'#0ea5e9' },
                 { icon:'⚡', label:'Auto-Apply',        sub:'Queue & auto-apply to roles',   action: () => navigate('/apply/auto-apply'),   tint:'#e11d48' },
-                { icon:'📊', label:'Pipeline',          sub:'Track application status',      action: () => navigate('/apply/pipeline'),     tint:'#10b981' },
-                { icon:'🏆', label:'Ranked Roles',      sub:'Best-fit roles by score',       action: () => navigate('/apply/ranked'),       tint:'#f59e0b' },
                 { icon:'✉',  label:'Write Outreach',   sub:'Find contacts & draft emails',  action: () => navigate('/outreach/messages'),  tint:'#0891b2' },
               ].map(q => (
                 <div key={q.label} onClick={q.action}
-                  style={{ padding:'16px 16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
+                  style={{ padding:'18px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
                   onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.borderColor = q.tint+'55'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(16,24,40,0.08)' }}
                   onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.borderColor = '#e8ebf0'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,0.04)' }}>
-                  <div style={{ width:38, height:38, borderRadius:10, background:`${q.tint}14`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, marginBottom:11 }}>{q.icon}</div>
-                  <div style={{ fontSize:13, fontWeight:700, color:'#0f172a', marginBottom:3 }}>{q.label}</div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                    <span style={{ fontSize:22 }}>{q.icon}</span>
+                    <span style={{ fontSize:16, fontWeight:800, color: q.tint }}>→</span>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:700, color:'#0f172a', marginBottom:3 }}>{q.label}</div>
                   <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.4 }}>{q.sub}</div>
                 </div>
               ))}

@@ -155,7 +155,7 @@ export default function DashboardPage({ onStatsChange }) {
         )}
       </div>
 
-      <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 300px 300px', gap: isPhone ? 18 : 24 }}>
+      <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1fr) 340px', gap: isPhone ? 18 : 28 }}>
 
         {/* Left column */}
         <div>
@@ -259,7 +259,7 @@ export default function DashboardPage({ onStatsChange }) {
           {/* Quick Actions — 6-up desktop, 3-up tablet, 2-up phone. */}
           <div style={{ marginBottom:28 }}>
             <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Quick Actions</div>
-            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(7, 1fr)', gap: isPhone ? 8 : 12 }}>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: isPhone ? 8 : 12 }}>
               {[
                 { icon:'🔍', label:'Browse Companies', sub:'Search & explore by category',   action: () => navigate('/companies'),  tint:'#6366f1' },
                 { icon:'🎓', label:'Intern Roles',      sub:'Daily-scraped open internships', action: () => navigate('/apply/intern-roles'),   tint:'#f59e0b' },
@@ -315,7 +315,7 @@ export default function DashboardPage({ onStatsChange }) {
           </div>
         </div>
 
-        {/* Middle column — Daily updates (#1e) */}
+        {/* Right rail — Daily Updates (#1e) stacked above Recent Activity */}
         <div>
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
           <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
@@ -341,11 +341,8 @@ export default function DashboardPage({ onStatsChange }) {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Right column — Activity feed */}
-        <div>
-          <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Recent Activity</div>
+          <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'28px 0 14px' }}>Recent Activity</div>
           <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
             {activity.length === 0 ? (
               <div style={{ padding:'32px 20px', textAlign:'center', color:'#94a3b8', fontSize:13 }}>

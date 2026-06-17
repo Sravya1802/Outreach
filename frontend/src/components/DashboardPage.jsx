@@ -48,7 +48,7 @@ function formatActivityDetails(a) {
 // One "Daily updates" row — a role type with its 24h count + a few fresh roles.
 function DailySection({ icon, label, tint, count, recent, onClick }) {
   return (
-    <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
+    <div style={{ padding:'16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)' }}>
       <div onClick={onClick}
         style={{ display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer', margin:'-4px -8px 6px', padding:'6px 8px', borderRadius:8, transition:'background 0.12s' }}
         onMouseEnter={e => e.currentTarget.style.background = '#f6f7fb'}
@@ -93,7 +93,6 @@ export default function DashboardPage({ onStatsChange }) {
   const [queue, setQueue]       = useState(null)
   const [daily, setDaily]       = useState(null)
   const [health, setHealth]     = useState(null)
-  const [now, setNow]           = useState(() => Date.now())
 
   useEffect(() => {
     const loadStats = () => {
@@ -116,10 +115,6 @@ export default function DashboardPage({ onStatsChange }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60000)
-    return () => clearInterval(timer)
-  }, [])
 
   const statCards = stats ? [
     { icon:'🏢', label:'Companies',    value: stats.totalCompanies?.toLocaleString() ?? '—',  sub:'in database',   tint:'#6366f1', action: () => navigate('/discover/companies') },
@@ -193,54 +188,35 @@ export default function DashboardPage({ onStatsChange }) {
             )
           })()}
 
-          {/* Last scrape — populated by /jobs/scrape (writes meta.last_scrape_summary) */}
-          {stats?.lastScrape && (() => {
-            const ls = stats.lastScrape
-            const ageMs = now - new Date(ls.at).getTime()
-            const ageStr = ageMs < 60000 ? 'just now'
-              : ageMs < 3600000 ? `${Math.floor(ageMs / 60000)}m ago`
-              : ageMs < 86400000 ? `${Math.floor(ageMs / 3600000)}h ago`
-              : `${Math.floor(ageMs / 86400000)}d ago`
-            const allInDb = ls.added === 0 && ls.found > 0
-            const tint = allInDb ? '#94a3b8' : ls.added > 0 ? '#16a34a' : '#dc2626'
-            return (
-              <div style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', display:'flex', flexDirection:'column', gap:10 }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
-                  <div>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>
-                      Last scrape · {ageStr}
-                    </div>
-                    <div style={{ fontSize:13, fontWeight:600, color:'#0f172a' }}>
-                      Found <strong>{ls.found}</strong>
-                      {ls.added > 0 && <> · <span style={{ color:'#16a34a' }}>+{ls.added} new</span></>}
-                      {ls.alreadyInDb > 0 && <> · <span style={{ color:'#64748b' }}>{ls.alreadyInDb} already in DB</span></>}
-                    </div>
+          {/* Daily Updates — fresh intern / new-grad roles + career ops (#1e, moved to left, 3-up) */}
+          <div style={{ marginBottom:28 }}>
+            <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
+            <div style={{ display:'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap:12 }}>
+              <DailySection icon="🎓" label="Intern roles" tint="#6366f1"
+                count={daily?.intern?.today} recent={daily?.intern?.recent}
+                onClick={() => navigate('/apply/intern-roles')} />
+              <DailySection icon="💼" label="New grad roles" tint="#10b981"
+                count={daily?.newGrad?.today} recent={daily?.newGrad?.recent}
+                onClick={() => navigate('/apply/new-grad-roles')} />
+              <div onClick={() => navigate('/discover/evaluate')}
+                style={{ padding:'16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:14 }}>🎯</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>Career Ops</span>
+                    <span style={{ fontSize:12, color:'#7c3aed', fontWeight:800 }}>›</span>
                   </div>
-                  <button onClick={() => navigate('/scraper')}
-                    style={{ background:'transparent', border:'none', fontSize:11, fontWeight:700, color: tint, cursor:'pointer', padding:0 }}>
-                    ↻ Scrape again
-                  </button>
+                  <span style={{ fontSize:13, fontWeight:800, color:'#7c3aed' }}>
+                    {daily?.careerOps?.evaluatedToday ?? 0}<span style={{ fontSize:10, color:'#94a3b8', fontWeight:600, marginLeft:4 }}>today</span>
+                  </span>
                 </div>
-
-                {/* Names of newly added companies — concrete proof of what happened */}
-                {(ls.newCompanyNames || []).length > 0 && (
-                  <div style={{ fontSize:12, color:'#475569', lineHeight:1.5 }}>
-                    <span style={{ color:'#94a3b8', fontWeight:600 }}>New: </span>
-                    {ls.newCompanyNames.slice(0, 8).map((n, i) => (
-                      <span key={i}>
-                        <button onClick={() => navigate(`/companies?search=${encodeURIComponent(n)}`)}
-                          style={{ background:'transparent', border:'none', padding:0, color:'#0f172a', fontWeight:600, cursor:'pointer', textDecoration:'underline' }}>
-                          {n}
-                        </button>
-                        {i < Math.min(7, ls.newCompanyNames.length - 1) && ', '}
-                      </span>
-                    ))}
-                    {ls.newCompanyNames.length > 8 && <span style={{ color:'#94a3b8' }}> + {ls.added - 8} more</span>}
-                  </div>
-                )}
+                <div style={{ fontSize:11, color:'#64748b', lineHeight:1.7 }}>
+                  {daily?.careerOps?.queued ?? 0} queued for auto-apply<br/>
+                  {daily?.careerOps?.totalEvaluations ?? 0} total evaluations
+                </div>
               </div>
-            )
-          })()}
+            </div>
+          </div>
 
           {/* Quick Actions — 6-up desktop, 3-up tablet, 2-up phone. */}
           <div style={{ marginBottom:28 }}>
@@ -280,31 +256,6 @@ export default function DashboardPage({ onStatsChange }) {
                 <span style={{ fontSize:11, fontWeight:700, color: ok ? '#16a34a' : '#94a3b8' }}>{ok ? 'Connected' : '—'}</span>
               </div>
             ))}
-          </div>
-
-          <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', marginBottom:14 }}>Daily Updates</div>
-          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', overflow:'hidden' }}>
-            <DailySection icon="🎓" label="Intern roles" tint="#6366f1"
-              count={daily?.intern?.today} recent={daily?.intern?.recent}
-              onClick={() => navigate('/apply/intern-roles')} />
-            <DailySection icon="💼" label="New grad roles" tint="#10b981"
-              count={daily?.newGrad?.today} recent={daily?.newGrad?.recent}
-              onClick={() => navigate('/apply/new-grad-roles')} />
-            <div onClick={() => navigate('/discover/evaluate')} style={{ padding:'12px 16px', cursor:'pointer' }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ fontSize:14 }}>🎯</span>
-                  <span style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>Career Ops</span>
-                </div>
-                <span style={{ fontSize:13, fontWeight:800, color:'#7c3aed' }}>
-                  {daily?.careerOps?.evaluatedToday ?? 0}<span style={{ fontSize:10, color:'#94a3b8', fontWeight:600, marginLeft:4 }}>today</span>
-                </span>
-              </div>
-              <div style={{ fontSize:11, color:'#94a3b8', marginTop:6, lineHeight:1.5 }}>
-                {daily?.careerOps?.queued ?? 0} queued for auto-apply<br/>
-                {daily?.careerOps?.totalEvaluations ?? 0} total evaluations
-              </div>
-            </div>
           </div>
 
           <div style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'28px 0 14px' }}>Recent Activity</div>

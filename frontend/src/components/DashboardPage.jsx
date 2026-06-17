@@ -295,14 +295,23 @@ export default function DashboardPage({ onStatsChange }) {
               </button>
             </div>
             <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: isPhone ? 8 : 10 }}>
-              {CATEGORIES.map(cat => {
+              {(() => {
                 // YC card shows actual imported YC startups in YOUR DB (not the global YC API list).
-                // Return null while the relevant state is still loading so the cell renders
-                // '—' instead of a flickering '0'.
-                const count = cat.label === 'YC Startups'
-                  ? (stats == null ? null : (stats.ycImported ?? 0))
-                  : (catCounts == null ? null : (catCounts[cat.label] ?? 0))
-                return (
+                const withCounts = CATEGORIES.map(cat => ({
+                  ...cat,
+                  count: cat.label === 'YC Startups'
+                    ? (stats == null ? null : (stats.ycImported ?? 0))
+                    : (catCounts == null ? null : (catCounts[cat.label] ?? 0)),
+                }))
+                const loading = stats == null || catCounts == null
+                // While loading, show all (with '—' placeholders). Once loaded,
+                // drop empty categories and lead with the biggest (#A).
+                const shown = loading
+                  ? withCounts
+                  : withCounts.filter(c => (c.count || 0) > 0).sort((a, b) => (b.count || 0) - (a.count || 0))
+                return shown.map(cat => {
+                  const count = cat.count
+                  return (
                   <div key={cat.label}
                     onClick={() => navigate(`/category/${cat.slug}`)}
                     style={{ padding:'14px 16px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', transition:'all 0.15s' }}
@@ -316,8 +325,9 @@ export default function DashboardPage({ onStatsChange }) {
                     </div>
                     <div style={{ fontSize:11, fontWeight:700, color:'#475569', lineHeight:1.3 }}>{cat.label}</div>
                   </div>
-                )
-              })}
+                  )
+                })
+              })()}
             </div>
           </div>
         </div>

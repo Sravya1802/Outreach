@@ -436,28 +436,6 @@ export default function App() {
 
         </nav>
 
-        {/* API Status */}
-        {health && (
-          <div style={{ padding:'12px 16px', borderTop:'1px solid #1e293b' }}>
-            <div style={{ fontSize:10, fontWeight:700, color:'#334155', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>
-              API Status
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-              {[
-                ['Gemini AI', serviceStatus(health.has_gemini, credits?.gemini)],
-                ['Apify',    serviceStatus(health.has_apify,  credits?.apify)],
-                ['Apollo',   serviceStatus(health.has_apollo, credits?.apollo)],
-                ['LinkedIn', serviceStatus(health.has_linkedin)],
-              ].map(([label, svc]) => (
-                <div key={label} title={svc.note} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <StatusDot status={svc.status} />
-                  <span style={{ fontSize:11, color: svc.status === 'ok' ? '#64748b' : svc.status === 'down' ? '#f87171' : svc.status === 'warn' ? '#f59e0b' : '#475569' }}>{label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Refresh */}
         <RefreshBadge />
 

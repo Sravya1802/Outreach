@@ -200,10 +200,6 @@ export default function DashboardPage({ onStatsChange }) {
               : `${Math.floor(ageMs / 86400000)}d ago`
             const allInDb = ls.added === 0 && ls.found > 0
             const tint = allInDb ? '#94a3b8' : ls.added > 0 ? '#16a34a' : '#dc2626'
-            const sourceEntries = Object.entries(ls.bySource || {})
-              .filter(([, n]) => n > 0)
-              .sort((a, b) => b[1] - a[1])
-            const failedSources = Object.keys(ls.errors || {})
             return (
               <div style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', display:'flex', flexDirection:'column', gap:10 }}>
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16 }}>
@@ -222,22 +218,6 @@ export default function DashboardPage({ onStatsChange }) {
                     ↻ Scrape again
                   </button>
                 </div>
-
-                {/* Per-source breakdown — confirms which scrapers are actually working */}
-                {sourceEntries.length > 0 && (
-                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                    {sourceEntries.map(([src, n]) => (
-                      <span key={src} style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#f0fdf4', color:'#166534', border:'1px solid #bbf7d0' }}>
-                        {src}: {n}
-                      </span>
-                    ))}
-                    {failedSources.map(src => (
-                      <span key={src} title={ls.errors[src]} style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:6, background:'#fef2f2', color:'#991b1b', border:'1px solid #fecaca' }}>
-                        {src}: failed
-                      </span>
-                    ))}
-                  </div>
-                )}
 
                 {/* Names of newly added companies — concrete proof of what happened */}
                 {(ls.newCompanyNames || []).length > 0 && (

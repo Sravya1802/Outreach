@@ -161,32 +161,29 @@ export default function DashboardPage({ onStatsChange }) {
         {/* Left column */}
         <div>
 
-          {/* Auto-Apply Queue summary — bubbles up needs_review urgency. */}
-          {queue && (queue.counts?.needs_review > 0 || queue.counts?.queued > 0 || queue.counts?.failed > 0) && (() => {
-            const c = queue.counts || {}
-            const urgent = (c.needs_review || 0) > 0
-            const tint = urgent ? '#dc2626' : c.queued > 0 ? '#7c3aed' : '#64748b'
-            return (
-              <div onClick={() => navigate('/apply/auto-apply')}
-                style={{ marginBottom:24, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:12, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, flexWrap:'wrap' }}>
-                <div>
-                  <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>
-                    Auto-Apply Queue {urgent && <span style={{ color:'#dc2626' }}>· needs attention</span>}
-                  </div>
-                  <div style={{ fontSize:13, fontWeight:600, color:'#0f172a', display:'flex', gap:10, flexWrap:'wrap' }}>
-                    {c.needs_review > 0 && <span style={{ color:'#dc2626' }}>⚠ {c.needs_review} needs review</span>}
-                    {c.queued > 0       && <span style={{ color:'#7c3aed' }}>{c.queued} queued</span>}
-                    {c.submitted > 0    && <span style={{ color:'#16a34a' }}>{c.submitted} submitted</span>}
-                    {c.failed > 0       && <span style={{ color:'#d97706' }}>{c.failed} failed</span>}
-                    {c.unsupported > 0  && <span style={{ color:'#64748b' }}>{c.unsupported} unsupported</span>}
-                  </div>
-                </div>
-                <div style={{ fontSize:11, fontWeight:700, color: tint }}>
-                  {urgent ? '→ Fix profile' : '→ Open queue'}
-                </div>
-              </div>
-            )
-          })()}
+          {/* Welcome / live-summary hero */}
+          <div style={{ marginBottom:28, padding: isPhone ? '18px' : '24px 26px', borderRadius:16, background:'linear-gradient(135deg,#6366f1,#7c3aed)', color:'#fff', boxShadow:'0 10px 28px rgba(99,102,241,0.28)' }}>
+            <div style={{ fontSize: isPhone ? 16 : 19, fontWeight:800, marginBottom:7 }}>
+              {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'} 👋
+            </div>
+            <div style={{ fontSize:13, color:'rgba(255,255,255,0.92)', lineHeight:1.6, marginBottom:18, maxWidth:620 }}>
+              {((daily?.intern?.today ?? 0) + (daily?.newGrad?.today ?? 0)) > 0
+                ? <><strong>{(daily?.intern?.today ?? 0) + (daily?.newGrad?.today ?? 0)}</strong> fresh roles today</>
+                : 'No new roles in the last 24h'}
+              {' · '}<strong>{queue?.counts?.queued ?? 0}</strong> queued for auto-apply
+              {' · '}<strong>{stats?.totalApplications ?? 0}</strong> roles evaluated
+            </div>
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+              <button onClick={() => navigate('/discover/scraper')}
+                style={{ padding:'9px 18px', fontSize:13, fontWeight:700, background:'#fff', color:'#4f46e5', border:'none', borderRadius:10, cursor:'pointer' }}>
+                📥 Scrape roles
+              </button>
+              <button onClick={() => navigate('/apply/auto-apply')}
+                style={{ padding:'9px 18px', fontSize:13, fontWeight:700, background:'rgba(255,255,255,0.16)', color:'#fff', border:'1px solid rgba(255,255,255,0.4)', borderRadius:10, cursor:'pointer' }}>
+                ⚡ Open queue
+              </button>
+            </div>
+          </div>
 
           {/* Daily Updates — fresh intern / new-grad roles + career ops (#1e, moved to left, 3-up) */}
           <div style={{ marginBottom:28 }}>
@@ -278,6 +275,29 @@ export default function DashboardPage({ onStatsChange }) {
               ))
             )}
           </div>
+
+          {/* Auto-Apply Queue — moved below Recent Activity */}
+          {queue && (queue.counts?.needs_review > 0 || queue.counts?.queued > 0 || queue.counts?.failed > 0) && (() => {
+            const c = queue.counts || {}
+            const urgent = (c.needs_review || 0) > 0
+            const tint = urgent ? '#dc2626' : c.queued > 0 ? '#7c3aed' : '#64748b'
+            return (
+              <div onClick={() => navigate('/apply/auto-apply')}
+                style={{ marginTop:28, padding:'14px 18px', background:'#fff', border:`1px solid ${tint}30`, borderLeft:`3px solid ${tint}`, borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor:'pointer' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.07em' }}>Auto-Apply Queue</span>
+                  <span style={{ fontSize:11, fontWeight:700, color: tint }}>{urgent ? '→ Fix profile' : '→ Open queue'}</span>
+                </div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#0f172a', display:'flex', gap:10, flexWrap:'wrap' }}>
+                  {c.needs_review > 0 && <span style={{ color:'#dc2626' }}>⚠ {c.needs_review} needs review</span>}
+                  {c.queued > 0       && <span style={{ color:'#7c3aed' }}>{c.queued} queued</span>}
+                  {c.submitted > 0    && <span style={{ color:'#16a34a' }}>{c.submitted} submitted</span>}
+                  {c.failed > 0       && <span style={{ color:'#d97706' }}>{c.failed} failed</span>}
+                  {c.unsupported > 0  && <span style={{ color:'#64748b' }}>{c.unsupported} unsupported</span>}
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
       </div>

@@ -164,9 +164,7 @@ export default function DashboardPage({ onStatsChange }) {
           {/* Welcome strip — slim greeting, no redundant numbers */}
           <div style={{ marginBottom:28, padding:'12px 20px', borderRadius:14, background:'linear-gradient(135deg,#6366f1,#7c3aed)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'space-between', gap:14, flexWrap:'wrap', boxShadow:'0 6px 16px rgba(99,102,241,0.20)' }}>
             <div style={{ display:'flex', alignItems:'baseline', gap:10, flexWrap:'wrap' }}>
-              <span style={{ fontSize:15, fontWeight:800 }}>
-                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'} 👋
-              </span>
+              <span style={{ fontSize:15, fontWeight:800 }}>Welcome back 👋</span>
               <span style={{ fontSize:12.5, color:'rgba(255,255,255,0.9)' }}>Let's land your next role.</span>
             </div>
             <button onClick={() => navigate('/discover/scraper')}

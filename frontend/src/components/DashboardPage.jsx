@@ -161,28 +161,18 @@ export default function DashboardPage({ onStatsChange }) {
         {/* Left column */}
         <div>
 
-          {/* Welcome / live-summary hero */}
-          <div style={{ marginBottom:28, padding: isPhone ? '18px' : '24px 26px', borderRadius:16, background:'linear-gradient(135deg,#6366f1,#7c3aed)', color:'#fff', boxShadow:'0 10px 28px rgba(99,102,241,0.28)' }}>
-            <div style={{ fontSize: isPhone ? 16 : 19, fontWeight:800, marginBottom:7 }}>
-              {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'} 👋
+          {/* Welcome strip — slim greeting, no redundant numbers */}
+          <div style={{ marginBottom:28, padding:'12px 20px', borderRadius:14, background:'linear-gradient(135deg,#6366f1,#7c3aed)', color:'#fff', display:'flex', alignItems:'center', justifyContent:'space-between', gap:14, flexWrap:'wrap', boxShadow:'0 6px 16px rgba(99,102,241,0.20)' }}>
+            <div style={{ display:'flex', alignItems:'baseline', gap:10, flexWrap:'wrap' }}>
+              <span style={{ fontSize:15, fontWeight:800 }}>
+                {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'} 👋
+              </span>
+              <span style={{ fontSize:12.5, color:'rgba(255,255,255,0.9)' }}>Let's land your next role.</span>
             </div>
-            <div style={{ fontSize:13, color:'rgba(255,255,255,0.92)', lineHeight:1.6, marginBottom:18, maxWidth:620 }}>
-              {((daily?.intern?.today ?? 0) + (daily?.newGrad?.today ?? 0)) > 0
-                ? <><strong>{(daily?.intern?.today ?? 0) + (daily?.newGrad?.today ?? 0)}</strong> fresh roles today</>
-                : 'No new roles in the last 24h'}
-              {' · '}<strong>{queue?.counts?.queued ?? 0}</strong> queued for auto-apply
-              {' · '}<strong>{stats?.totalApplications ?? 0}</strong> roles evaluated
-            </div>
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-              <button onClick={() => navigate('/discover/scraper')}
-                style={{ padding:'9px 18px', fontSize:13, fontWeight:700, background:'#fff', color:'#4f46e5', border:'none', borderRadius:10, cursor:'pointer' }}>
-                📥 Scrape roles
-              </button>
-              <button onClick={() => navigate('/apply/auto-apply')}
-                style={{ padding:'9px 18px', fontSize:13, fontWeight:700, background:'rgba(255,255,255,0.16)', color:'#fff', border:'1px solid rgba(255,255,255,0.4)', borderRadius:10, cursor:'pointer' }}>
-                ⚡ Open queue
-              </button>
-            </div>
+            <button onClick={() => navigate('/discover/scraper')}
+              style={{ padding:'7px 16px', fontSize:12.5, fontWeight:700, background:'#fff', color:'#4f46e5', border:'none', borderRadius:9, cursor:'pointer', whiteSpace:'nowrap' }}>
+              📥 Scrape roles
+            </button>
           </div>
 
           {/* Daily Updates — fresh intern / new-grad roles + career ops (#1e, moved to left, 3-up) */}

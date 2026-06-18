@@ -116,13 +116,13 @@ export default function DashboardPage({ onStatsChange }) {
   }, [])
 
 
-  const statCards = stats ? [
-    { icon:'🏢', label:'Companies',    value: stats.totalCompanies?.toLocaleString() ?? '—',  sub:'in database',   tint:'#6366f1', action: () => navigate('/discover/companies') },
-    { icon:'👥', label:'Contacts',     value: stats.totalContacts?.toLocaleString() ?? '—',   sub: stats.contactsWithEmail != null ? `${stats.contactsWithEmail.toLocaleString()} with email` : 'people found', tint:'#059669', action: () => navigate('/outreach/messages') },
-    { icon:'📤', label:'Sent',         value: stats.totalSent?.toLocaleString() ?? '—',       sub:'outreach sent', tint:'#0891b2', action: () => navigate('/outreach/messages') },
-    { icon:'💬', label:'Response Rate',value: stats.responseRate != null ? `${stats.responseRate}%` : '—', sub:'reply rate', tint:'#d97706', action: null },
-    { icon:'🎯', label:'Evaluated',    value: stats.totalApplications?.toLocaleString() ?? '—', sub:'roles scored', tint:'#9333ea', action: () => navigate('/discover/evaluate') },
-  ] : []
+  const statCards = [
+    { label:'Companies',    value: stats ? (stats.totalCompanies?.toLocaleString() ?? '0') : '—',  sub:'in database',   tint:'#6366f1', action: () => navigate('/discover/companies') },
+    { label:'Contacts',     value: stats ? (stats.totalContacts?.toLocaleString() ?? '0') : '—',   sub: stats?.contactsWithEmail != null ? `${stats.contactsWithEmail.toLocaleString()} with email` : 'people found', tint:'#059669', action: () => navigate('/outreach/messages') },
+    { label:'Sent',         value: stats ? (stats.totalSent?.toLocaleString() ?? '0') : '—',       sub:'outreach sent', tint:'#0891b2', action: () => navigate('/outreach/messages') },
+    { label:'Response Rate',value: stats ? (stats.responseRate != null ? `${stats.responseRate}%` : '0%') : '—', sub:'reply rate', tint:'#d97706', action: null },
+    { label:'Evaluated',    value: stats ? (stats.totalApplications?.toLocaleString() ?? '0') : '—', sub:'roles scored', tint:'#9333ea', action: () => navigate('/discover/evaluate') },
+  ]
 
   const activityIcons = {
     yc_import: '⭐', yc_import_all: '⭐', scrape: '🔍', find_people: '👤',
@@ -136,24 +136,20 @@ export default function DashboardPage({ onStatsChange }) {
         <h1 style={{ fontSize: isPhone ? 18 : 24, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Dashboard</h1>
         <p style={{ fontSize: isPhone ? 12 : 13, color:'#64748b', margin:0 }}>Your Job search at a glance</p>
 
-        {/* Stats row — 5-up on desktop, 3-up on tablet/iPad, 2-up on phone */}
-        {stats ? (
-          <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: isPhone ? 8 : 12, marginTop: isPhone ? 14 : 24 }}>
-            {statCards.map(s => (
-              <div key={s.label}
-                onClick={s.action}
-                style={{ padding:'16px 18px', background:'#fff', borderRadius:14, border:'1px solid #e8ebf0', boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor: s.action ? 'pointer' : 'default', transition:'all 0.15s' }}
-                onMouseEnter={e => { if (s.action) { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)'; e.currentTarget.style.borderColor = s.tint+'55' } }}
-                onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)'; e.currentTarget.style.borderColor='#e8ebf0' }}>
-                <div style={{ fontSize:26, fontWeight:800, color: s.tint, lineHeight:1 }}>{s.value}</div>
-                <div style={{ fontSize:12.5, fontWeight:700, color:'#0f172a', marginTop:7 }}>{s.label}</div>
-                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{s.sub}</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ marginTop:24, display:'flex', justifyContent:'center' }}><Spin /></div>
-        )}
+        {/* Stats row — renders immediately with '—' placeholders; numbers fill in when /stats returns */}
+        <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : isNarrow ? 'repeat(3, 1fr)' : 'repeat(5, 1fr)', gap: isPhone ? 8 : 12, marginTop: isPhone ? 14 : 24 }}>
+          {statCards.map(s => (
+            <div key={s.label}
+              onClick={stats ? s.action : undefined}
+              style={{ padding:'16px 18px', background:'#fff', borderRadius:14, border:'1px solid #e8ebf0', boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor: (stats && s.action) ? 'pointer' : 'default', transition:'all 0.15s' }}
+              onMouseEnter={e => { if (stats && s.action) { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 8px 20px rgba(16,24,40,0.08)'; e.currentTarget.style.borderColor = s.tint+'55' } }}
+              onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 1px 2px rgba(16,24,40,0.04)'; e.currentTarget.style.borderColor='#e8ebf0' }}>
+              <div style={{ fontSize:26, fontWeight:800, color: stats ? s.tint : '#cbd5e1', lineHeight:1 }}>{s.value}</div>
+              <div style={{ fontSize:12.5, fontWeight:700, color:'#0f172a', marginTop:7 }}>{s.label}</div>
+              <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={{ padding: isPhone ? '20px 14px' : '28px 40px', display:'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1fr) 340px', gap: isPhone ? 18 : 28 }}>

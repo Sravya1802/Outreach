@@ -35,6 +35,9 @@ const INTERN_PATTERN  = /\b(intern|internship|co-?op|co\s*op|summer\s*\d{4}|spri
 // requires explicit software/engineer pairing.
 const NEW_GRAD_PATTERN = /\b(new\s*grad|recent\s*grad|new\s*graduate|recent\s*graduate|early\s*career|entry[-\s]?level|jr\.?|junior)\b/i;
 const ASSOCIATE_ENG_PATTERN = /\bassociate\s+(software|engineer|developer|data|ml|machine|ai)\b/i;
+// Seniority markers — a real internship/new-grad role never carries these.
+// Used to keep senior/lead/manager/architect titles out of the new-grad pile.
+const SENIOR_PATTERN = /\b(senior|sr\.?|staff|principal|lead|director|vp|vice\s*president|head\s+of|manager|mgr|architect|distinguished|fellow|expert)\b/i;
 
 // Reject titles that contain CJK, Arabic, Cyrillic, or other non-Latin scripts.
 // ai-jobs.net sometimes returns Chinese-language listings; filter them out so
@@ -50,7 +53,8 @@ function isEnglishTitle(title = '') {
 
 export function classifyRoleType(title = '') {
   const t = String(title).toLowerCase();
-  if (INTERN_PATTERN.test(t)) return 'intern';
+  if (INTERN_PATTERN.test(t)) return 'intern';       // an internship is never "senior"
+  if (SENIOR_PATTERN.test(t)) return null;           // senior/lead/manager/architect → not new-grad
   if (NEW_GRAD_PATTERN.test(t)) return 'new_grad';
   if (ASSOCIATE_ENG_PATTERN.test(t)) return 'new_grad';
   return null; // doesn't match either — skip
@@ -348,9 +352,48 @@ async function scrapeInternshipDaily(roleType) {
   }
 }
 
+// ── 8. speedyapply (GitHub) — curated SWE + AI college-jobs lists ─────────────
+//    Clean, US-only internship (README.md) and new-grad (NEW_GRAD_USA.md)
+//    markdown tables. We trust the file's category instead of the title
+//    heuristic, since new-grad rows are often just "Software Engineer".
+async function scrapeSpeedyApply(roleType /* 'intern' | 'new_grad' */) {
+  const file = roleType === 'intern' ? 'README.md' : 'NEW_GRAD_USA.md';
+  const repos = ['2026-SWE-College-Jobs', '2026-AI-College-Jobs'];
+  const out = [];
+  for (const repo of repos) {
+    const url = `https://raw.githubusercontent.com/speedyapply/${repo}/main/${file}`;
+    let md = '';
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (OutreachOS scraper)' } });
+      if (res.ok) md = await res.text();
+    } catch { continue; }
+    let lastCompany = '';
+    for (const line of md.split('\n')) {
+      if (!line.startsWith('|')) continue;
+      const cells = line.split('|').map(c => c.trim());
+      // ['', Company, Position, Location, Salary, Posting(apply link), Age, '']
+      if (cells.length < 7) continue;
+      const [, companyCell, position, locationCell, , postingCell] = cells;
+      if (!position || position === 'Position' || /^[-: ]+$/.test(position)) continue; // header / separator row
+      // Company is wrapped in <a><strong>…</strong></a>; "↳" repeats the prior company.
+      let company = (companyCell.match(/<strong>(.*?)<\/strong>/i)?.[1] || companyCell).replace(/<[^>]+>/g, '').trim();
+      if (!company || company === '↳') company = lastCompany; else lastCompany = company;
+      const apply_url = (postingCell.match(/href="([^"]+)"/i)?.[1] || '').trim();
+      const title = position.replace(/<[^>]+>/g, '').trim();
+      const location = locationCell.replace(/<[^>]+>/g, '').trim();
+      if (!company || !title || !apply_url || !/^https?:\/\//i.test(apply_url)) continue;
+      // Never let an internship leak into the new-grad list.
+      if (roleType === 'new_grad' && INTERN_PATTERN.test(title)) continue;
+      out.push({ title, company_name: company, location: location || null, apply_url, source: 'speedyapply', role_type: roleType, posted_at: null, description: null });
+    }
+  }
+  return out;
+}
+
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 const SOURCE_FNS = {
+  speedyapply:       (rt) => scrapeSpeedyApply(rt),
   portals:           (rt) => scrapePortals(rt === 'intern' ? 'intern' : 'fulltime'),
   linkedin:          (rt) => scrapeLinkedIn(rt === 'intern' ? 'Intern 2026' : 'New Grad 2026'),
   wellfound:         (rt) => scrapeWellfoundRoles(rt === 'intern' ? 'intern 2026' : 'new grad 2026'),

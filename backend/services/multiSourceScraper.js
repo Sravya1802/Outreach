@@ -372,16 +372,22 @@ async function scrapeSpeedyApply(roleType /* 'intern' | 'new_grad' */) {
       if (!line.startsWith('|')) continue;
       const cells = line.split('|').map(c => c.trim());
       // ['', Company, Position, Location, Salary, Posting(apply link), Age, '']
-      if (cells.length < 7) continue;
-      const [, companyCell, position, locationCell, , postingCell] = cells;
+      if (cells.length < 6) continue;
+      const companyCell = cells[1], position = cells[2], locationCell = cells[3];
       if (!position || position === 'Position' || /^[-: ]+$/.test(position)) continue; // header / separator row
       // Company is wrapped in <a><strong>…</strong></a>; "↳" repeats the prior company.
       let company = (companyCell.match(/<strong>(.*?)<\/strong>/i)?.[1] || companyCell).replace(/<[^>]+>/g, '').trim();
       if (!company || company === '↳') company = lastCompany; else lastCompany = company;
-      const apply_url = (postingCell.match(/href="([^"]+)"/i)?.[1] || '').trim();
+      // Apply-link column varies across sections (FAANG+ has a Salary column, Quant/Other
+      // don't), so scan from col 4 for the first job href instead of a fixed index.
+      let apply_url = '';
+      for (let k = 4; k < cells.length; k++) {
+        const m = cells[k].match(/href="(https?:\/\/[^"]+)"/i);
+        if (m) { apply_url = m[1]; break; }
+      }
       const title = position.replace(/<[^>]+>/g, '').trim();
       const location = locationCell.replace(/<[^>]+>/g, '').trim();
-      if (!company || !title || !apply_url || !/^https?:\/\//i.test(apply_url)) continue;
+      if (!company || !title || !apply_url) continue;
       // Never let an internship leak into the new-grad list.
       if (roleType === 'new_grad' && INTERN_PATTERN.test(title)) continue;
       out.push({ title, company_name: company, location: location || null, apply_url, source: 'speedyapply', role_type: roleType, posted_at: null, description: null });

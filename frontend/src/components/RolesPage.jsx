@@ -173,12 +173,6 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
           placeholder="Search title or company…"
           style={{ flex: '1 1 280px', maxWidth: 360, padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, color: '#0f172a' }}
         />
-        <button onClick={() => setSource('')} style={pillStyle(!source)}>All sources ({total})</button>
-        {sourcePills.map(s => (
-          <button key={s.key} onClick={() => { setPage(0); setSource(s.key) }} style={pillStyle(source === s.key)}>
-            {s.label} ({s.count})
-          </button>
-        ))}
       </div>
 
       {loading && <div style={{ padding: 30, textAlign: 'center', color: '#64748b' }}><Spin /> Loading…</div>}

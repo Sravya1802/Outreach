@@ -403,10 +403,9 @@ const SOURCE_FNS = {
   portals:           (rt) => scrapePortals(rt === 'intern' ? 'intern' : 'fulltime'),
   linkedin:          (rt) => scrapeLinkedIn(rt === 'intern' ? 'Intern 2026' : 'New Grad 2026'),
   wellfound:         (rt) => scrapeWellfoundRoles(rt === 'intern' ? 'intern 2026' : 'new grad 2026'),
-  ai_jobs:           (rt) => scrapeAiJobs(rt),
-  jobspresso:        (rt) => scrapeJobspresso(rt),
   remote_rocketship: (rt) => scrapeRemoteRocketship(rt),
-  internshipdaily:   (rt) => scrapeInternshipDaily(rt),
+  // Pruned: ai_jobs (persistent "fetch failed"), jobspresso + internshipdaily
+  // (persistent timeouts). speedyapply now provides the clean primary feed.
 };
 
 async function runOneSource(name, roleType) {

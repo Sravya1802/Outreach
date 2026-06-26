@@ -61,8 +61,8 @@ export default function RolesPage({ defaultRoleType = 'intern' }) {
   const pageSize = 25
   const heading  = roleType === 'new_grad' ? '💼 New Grad Roles' : '🎓 Intern Roles'
   const subtitle = roleType === 'new_grad'
-    ? 'Entry-level roles scraped daily from LinkedIn, Wellfound, Greenhouse / Lever / Ashby, ai-jobs.net, Jobspresso, Remote Rocketship, and InternshipDaily.'
-    : 'Internships scraped daily from LinkedIn, Wellfound, Greenhouse / Lever / Ashby, ai-jobs.net, Jobspresso, Remote Rocketship, and InternshipDaily.'
+    ? 'Entry-level & new-grad roles, refreshed daily.'
+    : 'Open internships, refreshed daily.'
 
   // Load page of roles
   useEffect(() => {

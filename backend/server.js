@@ -315,7 +315,7 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
         -- evaluations still show.
         SELECT * FROM (
           SELECT DISTINCT ON (COALESCE(NULLIF(job_url, ''), id::text))
-            'evaluation' AS kind, id, company_name, job_title, grade, created_at,
+            'evaluation' AS kind, id, company_name, job_title, grade, apply_status, created_at,
             COALESCE(NULLIF(job_url, ''), id::text) AS dedup_key
           FROM evaluations WHERE user_id = $1
           ORDER BY COALESCE(NULLIF(job_url, ''), id::text), created_at DESC

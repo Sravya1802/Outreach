@@ -382,10 +382,6 @@ export default function App() {
             <span style={{ flex:1 }}>Dashboard</span>
           </NavLink>
 
-          <NavLink to="/job-dashboard" style={({ isActive }) => navStyle(isActive)}>
-            <span style={{ flex:1 }}>Job Dashboard</span>
-          </NavLink>
-
           {/* DISCOVER — find roles + score them */}
           {sectionLabel('Discover')}
 
@@ -420,6 +416,13 @@ export default function App() {
           <NavLink to="/apply/ranked" style={({ isActive }) => navStyle(isActive)}>
             <span style={{ flex:1 }}>Ranked Roles</span>
             <NavBadge n={stats?.totalApplications} />
+          </NavLink>
+
+          {/* INSIGHTS — analytics across the whole funnel */}
+          {sectionLabel('Insights')}
+
+          <NavLink to="/job-dashboard" style={({ isActive }) => navStyle(isActive)}>
+            <span style={{ flex:1 }}>Analytics</span>
           </NavLink>
 
           {/* OUTREACH — cold reach-outs */}

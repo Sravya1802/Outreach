@@ -12,11 +12,11 @@ function Spin({ color = '#6366f1', size = 18 }) {
 function KPICard({ label, value, sub, tint, onClick, compact = false }) {
   return (
     <div onClick={onClick}
-      style={{ padding: compact ? '14px 14px' : '18px 20px', background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, cursor: onClick ? 'pointer' : 'default', transition:'all 0.15s' }}
-      onMouseEnter={e => { if (onClick) { e.currentTarget.style.borderColor = tint; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.06)' } }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}>
-      <div style={{ fontSize: compact ? 20 : 24, fontWeight:800, color: tint, lineHeight:1.1 }}>{value}</div>
-      <div style={{ fontSize: compact ? 11 : 12, fontWeight:700, color:'#0f172a', marginTop:3 }}>{label}</div>
+      style={{ padding: compact ? '14px 14px' : '16px 18px', background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', cursor: onClick ? 'pointer' : 'default', transition:'all 0.15s' }}
+      onMouseEnter={e => { if (onClick) { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.borderColor = tint+'55'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(16,24,40,0.08)' } }}
+      onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.borderColor = '#e8ebf0'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,0.04)' }}>
+      <div style={{ fontSize: compact ? 20 : 25, fontWeight:800, color: tint, lineHeight:1 }}>{value}</div>
+      <div style={{ fontSize: compact ? 11 : 12.5, fontWeight:700, color:'#0f172a', marginTop:6 }}>{label}</div>
       {sub && <div style={{ fontSize:10, color:'#94a3b8', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>}
     </div>
   )
@@ -93,6 +93,7 @@ export default function JobDashboard() {
   const { summary, applyFunnel, applyModes, gradeDist, topOutreachCompanies, recentEvals, recentApplied } = m
   const funnelMax = Math.max(applyFunnel.evaluated, applyFunnel.applied, applyFunnel.responded, applyFunnel.interview, applyFunnel.offer, applyFunnel.rejected, 1)
   const gradeMax  = Math.max(...Object.values(gradeDist), 1)
+  const gradedTotal = Object.values(gradeDist).reduce((a, b) => a + b, 0)
 
   return (
     <div style={{ flex:1, overflowY:'auto', background:'#f8fafc' }}>
@@ -100,9 +101,9 @@ export default function JobDashboard() {
       <div style={{ padding: isPhone ? '14px 14px' : '24px 40px', background:'#fff', borderBottom:'1px solid #e2e8f0' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10 }}>
           <div style={{ flex:'1 1 200px', minWidth:0 }}>
-            <h1 style={{ fontSize: isPhone ? 18 : 22, fontWeight:800, color:'#0f172a', margin: isPhone ? 0 : '0 0 4px' }}>Job Dashboard</h1>
+            <h1 style={{ fontSize: isPhone ? 18 : 22, fontWeight:800, color:'#0f172a', margin: isPhone ? 0 : '0 0 4px' }}>Analytics</h1>
             {!isPhone && (
-              <p style={{ fontSize:13, color:'#64748b', margin:0 }}>Every company, contact, and application — tracked end-to-end</p>
+              <p style={{ fontSize:13, color:'#64748b', margin:0 }}>Your job search, tracked end-to-end — funnel, fit-scores & outreach.</p>
             )}
           </div>
           <button onClick={load}
@@ -116,11 +117,11 @@ export default function JobDashboard() {
 
         {/* Top-level KPIs — tighter cards on phone so 2 fit per row legibly */}
         <div style={{ display:'grid', gridTemplateColumns: isPhone ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: isPhone ? 8 : 12 }}>
-          <KPICard label="Companies" value={summary.totalCompanies.toLocaleString()} sub="in database" tint="#6366f1" compact={isPhone} onClick={() => navigate('/companies')} />
-          <KPICard label="Evaluations" value={summary.totalEvaluations} sub="A–F scored" tint="#7c3aed" compact={isPhone} onClick={() => navigate('/career-ops-workflow')} />
-          <KPICard label="Applied" value={applyFunnel.applied} sub={`${applyModes.manual} manual · ${applyModes.auto} auto`} tint="#0891b2" compact={isPhone} onClick={() => navigate('/pipeline')} />
-          <KPICard label="Contacts" value={summary.totalContacts} sub={`${summary.contactsWithEmail} emails`} tint="#059669" compact={isPhone} onClick={() => navigate('/outreach')} />
-          <KPICard label="Outreach Sent" value={summary.outreachSent} sub={`${summary.outreachGenerated} drafted`} tint="#d97706" compact={isPhone} />
+          <KPICard label="Companies" value={summary.totalCompanies.toLocaleString()} sub="in database" tint="#6366f1" compact={isPhone} onClick={() => navigate('/discover/companies')} />
+          <KPICard label="Evaluations" value={summary.totalEvaluations} sub={gradedTotal > 0 ? `${gradedTotal} A–F graded` : 'queued, not graded'} tint="#7c3aed" compact={isPhone} onClick={() => navigate('/discover/evaluate')} />
+          <KPICard label="Applied" value={applyFunnel.applied} sub={`${applyModes.manual} manual · ${applyModes.auto} auto`} tint="#0891b2" compact={isPhone} onClick={() => navigate('/apply/pipeline')} />
+          <KPICard label="Contacts" value={summary.totalContacts} sub={`${summary.contactsWithEmail} with email`} tint="#059669" compact={isPhone} onClick={() => navigate('/outreach/messages')} />
+          <KPICard label="Outreach Sent" value={summary.outreachSent} sub={`${summary.outreachGenerated} drafted`} tint="#d97706" compact={isPhone} onClick={() => navigate('/outreach/messages')} />
           <KPICard label="Response Rate" value={`${summary.responseRate}%`} sub={`${summary.outreachReplied}/${summary.outreachSent} replied`} tint="#dc2626" compact={isPhone} />
         </div>
 
@@ -128,7 +129,7 @@ export default function JobDashboard() {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
 
           {/* Application Funnel */}
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:20 }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
             <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Application Funnel</h2>
             <FunnelBar label="Evaluated"    count={applyFunnel.evaluated} max={funnelMax} tint="#6366f1" />
             <FunnelBar label="Applied"      count={applyFunnel.applied}   max={funnelMax} tint="#0891b2" />
@@ -142,7 +143,7 @@ export default function JobDashboard() {
           </div>
 
           {/* Grade Distribution */}
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:20 }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
             <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Fit-Score Distribution</h2>
             {['A','B','C','D','F'].map(g => (
               <FunnelBar key={g} label={`Grade ${g}`} count={gradeDist[g] || 0} max={gradeMax} tint={GRADE_COLOR[g]} />
@@ -156,7 +157,7 @@ export default function JobDashboard() {
         {/* Top outreach companies — pulls from three sources: contacts found,
             CareerOps evaluations, and tracked applications. Showing a column
             per source so the user sees which surface a company came from. */}
-        <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:20 }}>
+        <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
           <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Where your outreach effort went</h2>
           <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 14px' }}>Top companies across contacts, evaluations, and tracked applications.</p>
           {topOutreachCompanies.length === 0 ? (
@@ -192,7 +193,7 @@ export default function JobDashboard() {
 
         {/* Recent timeline — two columns */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:20 }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
             <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recent Evaluations</h2>
             {recentEvals.length === 0 ? (
               <div style={{ fontSize:13, color:'#94a3b8' }}>No evaluations yet.</div>
@@ -216,7 +217,7 @@ export default function JobDashboard() {
             )}
           </div>
 
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:20 }}>
+          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
             <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recently Applied</h2>
             {recentApplied.length === 0 ? (
               <div style={{ fontSize:13, color:'#94a3b8' }}>No applications submitted yet.</div>

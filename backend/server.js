@@ -227,11 +227,11 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
       // evaluations: 10 counters rolled into one scan.
       one(`SELECT
              COUNT(*)::int                                                                                    AS total,
-             COUNT(*) FILTER (WHERE apply_status IS NULL OR apply_status = 'not_started')::int                AS funnel_evaluated,
-             COUNT(*) FILTER (WHERE apply_status IN ('opened','queued','submitted'))::int                     AS funnel_applied,
+             COUNT(*)::int                                                                                    AS funnel_evaluated,
+             COUNT(*) FILTER (WHERE apply_status IN ('opened','queued','submitted','responded','interview','offer','rejected'))::int AS funnel_applied,
              COUNT(*) FILTER (WHERE apply_status = 'submitted')::int                                          AS funnel_submitted,
-             COUNT(*) FILTER (WHERE apply_status = 'responded')::int                                          AS funnel_responded,
-             COUNT(*) FILTER (WHERE apply_status = 'interview')::int                                          AS funnel_interview,
+             COUNT(*) FILTER (WHERE apply_status IN ('responded','interview','offer','rejected'))::int         AS funnel_responded,
+             COUNT(*) FILTER (WHERE apply_status IN ('interview','offer'))::int                               AS funnel_interview,
              COUNT(*) FILTER (WHERE apply_status = 'offer')::int                                              AS funnel_offer,
              COUNT(*) FILTER (WHERE apply_status = 'rejected')::int                                           AS funnel_rejected,
              COUNT(*) FILTER (WHERE apply_mode = 'manual' AND apply_status IS NOT NULL AND apply_status != 'not_started')::int AS mode_manual,

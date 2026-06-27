@@ -38,6 +38,9 @@ const ASSOCIATE_ENG_PATTERN = /\bassociate\s+(software|engineer|developer|data|m
 // Seniority markers — a real internship/new-grad role never carries these.
 // Used to keep senior/lead/manager/architect titles out of the new-grad pile.
 const SENIOR_PATTERN = /\b(senior|sr\.?|staff|principal|lead|director|vp|vice\s*president|head\s+of|manager|mgr|architect|distinguished|fellow|expert)\b/i;
+// Non-roles that occasionally appear in curated lists — events, sessions, etc.
+// (Residency/Fellowship are real paid roles, so they're intentionally NOT here.)
+export const NON_ROLE_PATTERN = /\b(networking\s*event|info(rmation)?\s*session|webinar|open\s*house|career\s*fair|job\s*fair|hiring\s*event|recruit(ing|ment)\s*event|virtual\s*event|meet\s*&?\s*greet|interest\s*form|talent\s*(community|network|pool)|coffee\s*chat)\b/i;
 
 // Reject titles that contain CJK, Arabic, Cyrillic, or other non-Latin scripts.
 // ai-jobs.net sometimes returns Chinese-language listings; filter them out so
@@ -436,6 +439,7 @@ export async function scrapeAllSourcesAndPersist() {
       for (const role of result.rows) {
         if (!role.apply_url || !role.title || !role.company_name) continue;
         if (!isEnglishTitle(role.title)) continue;    // drop non-English (CJK etc.) listings
+        if (NON_ROLE_PATTERN.test(role.title)) continue; // drop events / webinars / info sessions
         if (!isUSish(role.location)) continue;
         if (seen.has(role.apply_url)) continue;       // intra-run dedupe
         seen.add(role.apply_url);

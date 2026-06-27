@@ -412,15 +412,17 @@ app.get('/api/dashboard/daily-updates', async (req, res) => {
       for (const r of counts) {
         if (r.role_type === 'new_grad') newGradToday = r.n; else internToday = r.n;
       }
-      const recent = await all(`
-        SELECT role_type, title, company_name, apply_url, scraped_at
-        FROM scraped_roles
-        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
-        ORDER BY scraped_at DESC
-        LIMIT 30
-      `);
-      internRecent  = recent.filter(r => r.role_type !== 'new_grad').slice(0, 5);
-      newGradRecent = recent.filter(r => r.role_type === 'new_grad').slice(0, 5);
+      // Fetch the recent list PER role type — a shared LIMIT got crowded out by
+      // whichever type was scraped last, leaving the other card empty despite a
+      // non-zero count.
+      [internRecent, newGradRecent] = await Promise.all([
+        all(`SELECT title, company_name, apply_url FROM scraped_roles
+             WHERE is_active = 1 AND role_type = 'intern'   AND scraped_at > NOW() - INTERVAL '1 day'
+             ORDER BY scraped_at DESC LIMIT 5`),
+        all(`SELECT title, company_name, apply_url FROM scraped_roles
+             WHERE is_active = 1 AND role_type = 'new_grad' AND scraped_at > NOW() - INTERVAL '1 day'
+             ORDER BY scraped_at DESC LIMIT 5`),
+      ]);
     } catch (_) {}
 
     // Career-ops activity (per-user).

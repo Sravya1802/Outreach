@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api, rawApiFetch } from '../api'
-import { AutoApplySetup } from './CareerOps'
 import { useMediaQuery } from '../hooks'
 import TabPicker from './TabPicker'
 import Dropdown from './Dropdown'
@@ -524,9 +523,7 @@ function JobScraperTab({ company, onTabSwitch }) {
   const [manualUrlInput, setManualUrlInput] = useState('')
   const [savingUrl, setSavingUrl]           = useState(false)
   const [scrapingType, setScrapingType] = useState(null) // Track which scrape is running (intern, fulltime, or null)
-  const [autoApplyBusy, setAutoApplyBusy] = useState('')   // '' | 'queue' | 'scrape-and-queue'
-  const [autoApplyMsg, setAutoApplyMsg]   = useState(null) // { ok, text }
-  // Multi-select for "Queue selected for Auto-Apply" — keyed by role id.
+  // Multi-select for "Send selected to Auto-Apply" — keyed by role id.
   const [selected, setSelected]   = useState(new Set())
   const [bulkBusy, setBulkBusy]   = useState(false)
   const [bulkMsg, setBulkMsg]     = useState(null)
@@ -608,7 +605,7 @@ function JobScraperTab({ company, onTabSwitch }) {
       const r = await api.career.autoApplyCompanyQueue(company.id, { roleIds: ids })
       const queued  = r?.queued ?? 0
       const skipped = r?.skippedAlreadyInFlight ?? 0
-      setBulkMsg({ ok: true, text: `✓ Queued ${queued} role${queued === 1 ? '' : 's'} for auto-apply${skipped > 0 ? ` · ${skipped} already in queue` : ''}` })
+      setBulkMsg({ ok: true, text: `✓ Sent ${queued} role${queued === 1 ? '' : 's'} to Auto-Apply${skipped > 0 ? ` · ${skipped} already queued` : ''} — review & run them in the Job Automation tab.` })
       setSelected(new Set())
     } catch (err) {
       setBulkMsg({ ok: false, text: err.message || 'Queue failed' })
@@ -739,45 +736,8 @@ function JobScraperTab({ company, onTabSwitch }) {
           </button>
         </div>
 
-        {/* Auto-Apply panel — option C: both fast-queue and scrape-then-queue */}
-        <div style={{ marginTop:12, padding:14, background:'#fafbff', border:'1px solid #e0e7ff', borderRadius:10 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:'#4f46e5', marginBottom:8 }}>🤖 Auto-Apply this company</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button disabled={autoApplyBusy !== ''} onClick={async () => {
-                setAutoApplyBusy('queue'); setAutoApplyMsg(null)
-                try {
-                  const r = await api.career.autoApplyCompanyQueue(company.id)
-                  setAutoApplyMsg({ ok: true, text: r.queued > 0
-                    ? `Queued ${r.queued} role(s)${r.skippedAlreadyInFlight ? ` (skipped ${r.skippedAlreadyInFlight} already in queue)` : ''}. Open Career Ops → Auto-Apply Setup → Run Auto-Apply Queue to process.`
-                    : `No scraped roles available. Try "Scrape & Queue" → it will find roles first.` })
-                } catch (err) { setAutoApplyMsg({ ok: false, text: err.message || 'Queue failed' }) }
-                finally { setAutoApplyBusy('') }
-              }}
-              title="Queue all known scraped intern roles for the auto-apply worker"
-              style={{ padding:'10px 14px', background: autoApplyBusy === 'queue' ? '#e0e7ff' : '#fff', color:'#4f46e5', border:'1px solid #c7d2fe', borderRadius:8, fontSize:12, fontWeight:700, cursor: autoApplyBusy ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-              {autoApplyBusy === 'queue' ? <><Spin color="#4f46e5" size={13} /> Queuing…</> : '⚡ Queue known roles'}
-            </button>
-            <button disabled={autoApplyBusy !== ''} onClick={async () => {
-                setAutoApplyBusy('scrape-and-queue'); setAutoApplyMsg(null)
-                try {
-                  const r = await api.career.autoApplyCompanyScrapeAndQueue(company.id)
-                  setAutoApplyMsg({ ok: true, text: `Scraped + queued ${r.queued || 0} role(s)${r.skippedAlreadyInFlight ? ` (skipped ${r.skippedAlreadyInFlight} already in queue)` : ''} from ${r.totalRoles || 0} found.` })
-                  // refresh roles list
-                  api.jobs.roles(company.id).then(setRoles).catch(() => {})
-                } catch (err) { setAutoApplyMsg({ ok: false, text: err.message || 'Scrape + queue failed' }) }
-                finally { setAutoApplyBusy('') }
-              }}
-              title="Scrape this company's careers page first, then queue everything for auto-apply"
-              style={{ padding:'10px 14px', background: autoApplyBusy === 'scrape-and-queue' ? '#fef3c7' : 'linear-gradient(135deg,#f59e0b,#ef4444)', color: autoApplyBusy === 'scrape-and-queue' ? '#92400e' : '#fff', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor: autoApplyBusy ? 'default' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-              {autoApplyBusy === 'scrape-and-queue' ? <><Spin color="#92400e" size={13} /> Scraping + queuing…</> : '🔍 Scrape & Queue'}
-            </button>
-          </div>
-          {autoApplyMsg && (
-            <div style={{ marginTop:8, fontSize:11, fontWeight:600, color: autoApplyMsg.ok ? '#15803d' : '#dc2626' }}>
-              {autoApplyMsg.ok ? '✓' : '✗'} {autoApplyMsg.text}
-            </div>
-          )}
-        </div>
+        {/* Auto-apply moved to the Job Automation tab. From here you scrape and
+            select roles; select roles below to send them over to auto-apply. */}
       </div>
 
       {scrapeResult && (
@@ -872,7 +832,7 @@ function JobScraperTab({ company, onTabSwitch }) {
             return (
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10, padding:'10px 14px', background: selected.size > 0 ? '#eef2ff' : '#f8fafc', border:`1px solid ${selected.size > 0 ? '#a5b4fc' : '#e2e8f0'}`, borderRadius:10, transition:'all 0.12s' }}>
                 <div style={{ fontSize:12, fontWeight:600, color:'#475569' }}>
-                  {selected.size > 0 ? `${selected.size} selected` : 'Select roles to bulk-queue for auto-apply'}
+                  {selected.size > 0 ? `${selected.size} selected` : 'Select roles to send to Auto-Apply (run them in Job Automation)'}
                 </div>
                 <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
                   <button onClick={() => allSelected ? clearSelection() : selectAllVisible(queueable.map(r => r.id))}
@@ -881,7 +841,7 @@ function JobScraperTab({ company, onTabSwitch }) {
                   </button>
                   <button onClick={queueSelected} disabled={!selected.size || bulkBusy}
                     style={{ padding:'7px 14px', fontSize:12, fontWeight:700, background: selected.size ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : '#f1f5f9', color: selected.size ? '#fff' : '#94a3b8', border:'none', borderRadius:8, cursor: selected.size && !bulkBusy ? 'pointer' : 'default', display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
-                    {bulkBusy ? 'Queuing…' : `⚡ Queue ${selected.size || ''} for Auto-Apply`}
+                    {bulkBusy ? 'Sending…' : `⚡ Send ${selected.size || ''} to Auto-Apply`}
                   </button>
                 </div>
               </div>
@@ -1117,15 +1077,15 @@ function AutoApplyRoleRow({ role, company, preview, onApplied, profileComplete, 
 }
 
 function JobAutomationTab({ company, roles }) {
+  const navigate = useNavigate()
   const [cover, setCover]       = useState({ subject:'', body:'' })
   const [roleTitle, setRoleTitle] = useState('')
   const [extraCtx, setExtraCtx] = useState('')
   const [loading, setLoading]   = useState(false)
   const [copied, copy]          = useCopy()
-  // Show the profile/resume editor inline so the user can fill it without
-  // leaving the company page. Collapsed by default so the role list is
-  // front-and-center when a profile is already set up.
-  const [profileOpen, setProfileOpen] = useState(false)
+  // Profile/resume status only — the full editor lives on the Auto-Apply Setup
+  // page (/apply/auto-apply); we just link out so this tab stays focused on
+  // selecting roles and running auto-apply.
   const [profileMeta, setProfileMeta] = useState({ hasProfile: false, resumeCount: 0 })
   const [resumePreviews, setResumePreviews] = useState({}) // { [jobUrl]: { source, label, ... } }
   // Multi-select for queueing several roles to auto-apply at once.
@@ -1157,8 +1117,6 @@ function JobAutomationTab({ company, roles }) {
         const [p, lib] = await Promise.all([api.career.profile(), api.career.resumesLibrary()])
         const hasProfile = !!(p?.first_name && p?.email)
         setProfileMeta({ hasProfile, resumeCount: (lib?.resumes || []).length })
-        // Auto-open the profile if it isn't filled in yet — user needs to see it.
-        if (!hasProfile) setProfileOpen(true)
       } catch (_) {}
     })()
   }, [])
@@ -1195,30 +1153,26 @@ function JobAutomationTab({ company, roles }) {
         </p>
       </div>
 
-      {/* Profile editor — collapsible. The form lives in one place (CareerOps.jsx)
-          and is embedded here so the user never leaves the company page. */}
-      <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, marginBottom:20, overflow:'hidden' }}>
-        <button onClick={() => setProfileOpen(v => !v)}
-          style={{ width:'100%', padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', background: profileOpen ? '#f8fafc' : '#fff', border:'none', cursor:'pointer', borderBottom: profileOpen ? '1px solid #e2e8f0' : 'none' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <span style={{ fontSize:16 }}>⚙</span>
-            <div style={{ textAlign:'left' }}>
-              <div style={{ fontSize:13, fontWeight:700, color:'#0f172a' }}>Profile & Resumes</div>
-              <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>
-                {profileMeta.hasProfile
-                  ? <>✓ Profile filled · <strong>{profileMeta.resumeCount}</strong> resume{profileMeta.resumeCount !== 1 ? 's' : ''} detected · click to edit</>
-                  : <span style={{ color:'#d97706', fontWeight:700 }}>⚠ Profile incomplete — fill in name, email, phone, LinkedIn before running auto-apply</span>}
-              </div>
+      {/* Profile & resumes status — the full editor lives on the Auto-Apply
+          Setup page; this is just a status chip + link so the tab stays focused
+          on roles and auto-apply (no embedded bio form). */}
+      <button onClick={() => navigate('/apply/auto-apply')}
+        style={{ width:'100%', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'13px 16px', marginBottom:20, background: profileMeta.hasProfile ? '#fff' : '#fffbeb', border:`1px solid ${profileMeta.hasProfile ? '#e2e8f0' : '#fde68a'}`, borderRadius:12, cursor:'pointer' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:16 }}>⚙</span>
+          <div>
+            <div style={{ fontSize:13, fontWeight:700, color:'#0f172a' }}>Profile & Resumes</div>
+            <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>
+              {profileMeta.hasProfile
+                ? <>✓ Profile ready · <strong>{profileMeta.resumeCount}</strong> resume{profileMeta.resumeCount !== 1 ? 's' : ''} · used to auto-fill applications</>
+                : <span style={{ color:'#d97706', fontWeight:700 }}>⚠ Profile incomplete — set up name, email, phone & resume before auto-applying</span>}
             </div>
           </div>
-          <span style={{ fontSize:12, color:'#94a3b8', transition:'transform 0.15s', display:'inline-block', transform: profileOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
-        </button>
-        {profileOpen && (
-          <div style={{ padding:'16px 18px', background:'#f8fafc' }}>
-            <AutoApplySetup />
-          </div>
-        )}
-      </div>
+        </div>
+        <span style={{ fontSize:12, fontWeight:700, color:'#6366f1', whiteSpace:'nowrap' }}>
+          {profileMeta.hasProfile ? 'Edit in Setup →' : 'Set up →'}
+        </span>
+      </button>
 
       {scrapedRoles.length === 0 ? (
         <div style={{ padding:20, background:'#fef3c7', borderRadius:12, border:'1px solid #fde68a', marginBottom:24 }}>
@@ -1332,7 +1286,7 @@ const PIPELINE_STATUSES = [
 
 const SCORE_COLOR = s => s >= 4.2 ? '#16a34a' : s >= 3.8 ? '#ca8a04' : s >= 3 ? '#475569' : '#dc2626'
 
-function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
+function CareerOpsTab({ company, roles = [], autoAnalyze, onAnalyzeDone }) {
   // Narrow viewport (phone OR tablet ≤900px): sidebar stacks above the
   // eval panel instead of sitting side by side. The 280px sidebar can't
   // fit alongside a meaningful eval panel below ~900px.
@@ -1524,6 +1478,19 @@ function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
     e.target.value = ''
   }
 
+  // Pick which scraped role to evaluate — persists the role on the application
+  // so the next analysis scores fit for *that* role. Makes the Career Ops
+  // evaluation explicitly role-based instead of one fixed tracked role.
+  async function pickRole(roleTitle) {
+    const r = (roles || []).find(x => x.title === roleTitle)
+    if (!r) return
+    const pretty = ({ greenhouse:'Greenhouse', lever:'Lever', linkedin:'LinkedIn', workatastartup:'WaaS', google:'Google' })[r.source] || r.source || 'Job Scraper'
+    const patch = { job_title: r.title, job_url: r.apply_url || '', job_source: pretty }
+    setEval(null)
+    setApp(a => ({ ...a, ...patch }))
+    try { const updated = await api.career.updateCompany(company.id, { ...app, ...patch }); if (updated) setApp(updated) } catch (_) {}
+  }
+
   if (!app) return <div style={{ display:'flex', justifyContent:'center', paddingTop:60 }}><Spin size={28} /></div>
 
   const score   = app.fit_score ? Number(app.fit_score) : null
@@ -1583,9 +1550,23 @@ function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
           </div>
         </div>
 
-        {/* ── Tracked role ── */}
+        {/* ── Role to evaluate — pick which scraped role to score fit against ── */}
         <div>
-          <div style={{ fontSize:10, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Tracked Role</div>
+          <div style={{ fontSize:10, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Role to Evaluate</div>
+          {roles.length > 0 && (
+            <div style={{ marginBottom: hasRole ? 8 : 0 }}>
+              <Dropdown
+                ariaLabel="Pick a role to evaluate"
+                value={hasRole ? app.job_title : ''}
+                onChange={pickRole}
+                options={[
+                  { value:'', label: hasRole ? 'Switch to another role…' : 'Pick a scraped role to evaluate…' },
+                  ...roles.map((r, i) => ({ value: r.title, label: r.title, key: r.id ?? i })),
+                  ...(hasRole && !roles.some(r => r.title === app.job_title) ? [{ value: app.job_title, label: app.job_title }] : []),
+                ]}
+              />
+            </div>
+          )}
           {hasRole ? (
             <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px', border:'1px solid #e2e8f0' }}>
               <div style={{ fontSize:13, fontWeight:700, color:'#0f172a', marginBottom:1 }}>{app.job_title}</div>
@@ -1595,14 +1576,14 @@ function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
                   style={{ flex:1, padding:'6px 0', textAlign:'center', background:'#6366f1', color:'#fff', borderRadius:7, fontSize:11, fontWeight:700, textDecoration:'none' }}>Apply →</a>}
                 <button onClick={() => { setApp(a => ({ ...a, job_title:'', job_url:'', job_source:'' })); setEval(null); }}
                   style={{ flex:1, padding:'6px 0', background:'#fff', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:7, fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                  Change
+                  Clear
                 </button>
               </div>
             </div>
           ) : (
             <div style={{ padding:'12px', background:'#fafafa', borderRadius:10, border:'1.5px dashed #e2e8f0', textAlign:'center' }}>
-              <div style={{ fontSize:12, color:'#94a3b8' }}>No role tracked yet</div>
-              <div style={{ fontSize:11, color:'#cbd5e1', marginTop:3 }}>Go to Job Scraper → click + Track</div>
+              <div style={{ fontSize:12, color:'#94a3b8' }}>{roles.length > 0 ? 'Pick a role above to evaluate it' : 'No roles scraped yet'}</div>
+              <div style={{ fontSize:11, color:'#cbd5e1', marginTop:3 }}>{roles.length > 0 ? 'Your fit is scored for the role you choose' : 'Go to Job Scraper → Scrape, then pick a role here'}</div>
             </div>
           )}
         </div>
@@ -1706,7 +1687,7 @@ function CareerOpsTab({ company, autoAnalyze, onAnalyzeDone }) {
           ) : (
             <div style={{ padding:'10px 12px', background:'#f8fafc', borderRadius:10, border:'1px solid #e2e8f0', textAlign:'center' }}>
               <div style={{ fontSize:12, color:'#94a3b8' }}>
-                {!hasRole ? '① Track a role above' : '② Upload your resume above'}
+                {!hasRole ? '① Pick a role above' : '② Upload your resume above'}
               </div>
               <div style={{ fontSize:11, color:'#cbd5e1', marginTop:2 }}>
                 {!hasRole ? 'then upload resume to analyze' : 'to enable fit analysis'}
@@ -2480,7 +2461,7 @@ export default function CompanyDetail() {
       {/* Tab content */}
       <div style={{ flex:1, overflowY:'auto' }}>
         {tab === 'outreach'       && <OutreachTab company={company} contacts={contacts} />}
-        {tab === 'career-ops'     && <CareerOpsTab company={company} autoAnalyze={autoAnalyze} onAnalyzeDone={() => setAutoAnalyze(false)} />}
+        {tab === 'career-ops'     && <CareerOpsTab company={company} roles={roles} autoAnalyze={autoAnalyze} onAnalyzeDone={() => setAutoAnalyze(false)} />}
         {tab === 'job-scraper'    && <JobScraperTab company={company} onTabSwitch={(t, opts) => { if (opts?.analyze) setAutoAnalyze(true); setTab(t); }} />}
         {tab === 'job-automation' && <JobAutomationTab company={company} roles={roles} />}
       </div>

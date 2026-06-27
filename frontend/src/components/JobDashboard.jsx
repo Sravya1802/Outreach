@@ -90,7 +90,7 @@ export default function JobDashboard() {
     return <div style={{ flex:1, padding:40 }}>Failed to load metrics</div>
   }
 
-  const { summary, applyFunnel, applyModes, gradeDist, topOutreachCompanies, recentEvals, recentApplied } = m
+  const { summary, applyFunnel, applyModes, gradeDist } = m
   const funnelMax = Math.max(applyFunnel.evaluated, applyFunnel.applied, applyFunnel.responded, applyFunnel.interview, applyFunnel.offer, applyFunnel.rejected, 1)
   const gradeMax  = Math.max(...Object.values(gradeDist), 1)
   const gradedTotal = Object.values(gradeDist).reduce((a, b) => a + b, 0)
@@ -151,87 +151,6 @@ export default function JobDashboard() {
             <div style={{ marginTop:16, padding:'10px 12px', background:'#f0fdf4', borderRadius:8, fontSize:12, color:'#166534', border:'1px solid #bbf7d0' }}>
               <strong>{(gradeDist.A || 0) + (gradeDist.B || 0)}</strong> roles scored A or B — your best bets to apply first.
             </div>
-          </div>
-        </div>
-
-        {/* Top outreach companies — pulls from three sources: contacts found,
-            CareerOps evaluations, and tracked applications. Showing a column
-            per source so the user sees which surface a company came from. */}
-        <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
-          <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Where your outreach effort went</h2>
-          <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 14px' }}>Top companies across contacts, evaluations, and tracked applications.</p>
-          {topOutreachCompanies.length === 0 ? (
-            <div style={{ fontSize:13, color:'#94a3b8', padding:'14px 0' }}>No activity yet — find contacts, evaluate a role, or track an application to start.</div>
-          ) : (
-            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-              <thead>
-                <tr style={{ background:'#f8fafc' }}>
-                  {['Company','Contacts','Emails','Sent','Replied','Evals','Tracked'].map(h => (
-                    <th key={h} style={{ padding:'8px 12px', textAlign:h === 'Company' ? 'left' : 'right', fontWeight:700, color:'#475569', fontSize:11, textTransform:'uppercase', letterSpacing:'0.06em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {topOutreachCompanies.map((c, i) => (
-                  <tr key={i} style={{ borderTop:'1px solid #f1f5f9' }}>
-                    <td style={{ padding:'10px 12px', color:'#0f172a', fontWeight:600 }}>
-                      {c.name}
-                      {c.category && <div style={{ fontSize:11, color:'#94a3b8', fontWeight:400 }}>{c.category}</div>}
-                    </td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.contact_count ? '#475569' : '#cbd5e1', fontWeight:600 }}>{c.contact_count || '—'}</td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.email_count ? '#16a34a' : '#cbd5e1', fontWeight:600 }}>{c.email_count || '—'}</td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.sent_count ? '#0891b2' : '#cbd5e1', fontWeight:600 }}>{c.sent_count || '—'}</td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.replied_count ? '#dc2626' : '#cbd5e1', fontWeight:600 }}>{c.replied_count || '—'}</td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.eval_count ? '#7c3aed' : '#cbd5e1', fontWeight:600 }}>{c.eval_count || '—'}</td>
-                    <td style={{ padding:'10px 12px', textAlign:'right', color: c.app_count ? '#d97706' : '#cbd5e1', fontWeight:600 }}>{c.app_count || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Recent timeline — two columns */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
-          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
-            <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recent Evaluations</h2>
-            {recentEvals.length === 0 ? (
-              <div style={{ fontSize:13, color:'#94a3b8' }}>No evaluations yet.</div>
-            ) : (
-              recentEvals.slice(0, 8).map((e, i) => (
-                <button key={i} type="button"
-                  onClick={async () => {
-                    try { await api.career.openReportTab(e.id) }
-                    catch (err) { alert('Could not open report: ' + err.message) }
-                  }}
-                  style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', textAlign:'left', background:'none', border:'none', borderRadius:0, borderBottom: i < recentEvals.length - 1 ? '1px solid #f1f5f9' : 'none', cursor:'pointer', width:'100%' }}>
-                  <div style={{ width:26, height:26, borderRadius:'50%', border:`2px solid ${GRADE_COLOR[e.grade] || '#94a3b8'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <span style={{ fontSize:11, fontWeight:900, color: GRADE_COLOR[e.grade] || '#94a3b8' }}>{e.grade || '—'}</span>
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
-                    <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.created_at)}</div>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-
-          <div style={{ background:'#fff', border:'1px solid #e8ebf0', borderRadius:14, boxShadow:'0 1px 2px rgba(16,24,40,0.04)', padding:20 }}>
-            <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recently Applied</h2>
-            {recentApplied.length === 0 ? (
-              <div style={{ fontSize:13, color:'#94a3b8' }}>No applications submitted yet.</div>
-            ) : (
-              recentApplied.slice(0, 8).map((e, i) => (
-                <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom: i < recentApplied.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:'#ecfeff', color:'#0891b2', flexShrink:0 }}>{e.apply_status}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
-                    <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.applied_at)}</div>
-                  </div>
-                </div>
-              ))
-            )}
           </div>
         </div>
 

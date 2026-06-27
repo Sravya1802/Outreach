@@ -360,6 +360,45 @@ function RegularCategoryView({ categoryName }) {
 
       {/* Company list */}
       <div style={{ flex:1, overflowY:'auto', padding:'12px 32px' }}>
+        {/* Scrape bar — moved to the top so finding new companies is the first
+            action, with a live read on what's already been scraped here. */}
+        <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:12, padding:16, marginBottom:14 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap', marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>Scrape more companies</div>
+              <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Pull fresh {categoryName} companies from external sources.</div>
+            </div>
+            {(() => {
+              const checkedCount = companies.filter(c => c.intern_roles_checked_at).length
+              const rolesFound = companies.reduce((a, c) => a + (c.intern_roles_count || 0), 0)
+              if (!checkedCount) return null
+              return (
+                <span style={{ fontSize:11, fontWeight:700, color:'#15803d', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:20, padding:'4px 10px', whiteSpace:'nowrap' }}>
+                  ✓ {checkedCount} checked · {rolesFound} roles found
+                </span>
+              )
+            })()}
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+            {['All Sources','LinkedIn','Wellfound','Google Jobs','GitHub'].map(src => {
+              const key = src.toLowerCase().replace(' ','_')
+              const isLoading = scraping === key
+              return (
+                <button key={src} onClick={() => scrapeSource(key)} disabled={!!scraping}
+                  style={{ padding:'7px 14px', borderRadius:8, border:`1px solid ${src === 'All Sources' ? '#c7d2fe' : '#e2e8f0'}`, background: isLoading ? '#eff6ff' : (src === 'All Sources' ? '#eef2ff' : '#f8fafc'), color: src === 'All Sources' ? '#4f46e5' : (isLoading ? '#4f46e5' : '#475569'), fontSize:12, fontWeight:700, cursor: scraping ? 'default' : 'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                  {isLoading && <Spin color="#4f46e5" size={11} />}
+                  {src}
+                </button>
+              )
+            })}
+          </div>
+          {scrapeMsg && (
+            <div style={{ marginTop:10, fontSize:12, fontWeight:600, color: scrapeMsg.ok ? '#16a34a' : '#dc2626' }}>
+              {scrapeMsg.ok ? '✓ ' : '✗ '}{scrapeMsg.text}
+            </div>
+          )}
+        </div>
+
         {loading && companies.length === 0 ? (
           <div style={{ display:'flex', justifyContent:'center', paddingTop:60 }}><Spin size={28} /></div>
         ) : companies.length === 0 ? (
@@ -397,94 +436,57 @@ function RegularCategoryView({ categoryName }) {
           const unchecked = sorted.filter(c => !isChecked(c))
           const checked   = sorted.filter(c =>  isChecked(c))
 
-          // Unified button family — same pill shape (radius 20), same
-          // height (padding 5×14), same font (11/700). Difference is
-          // only fill vs outline so the hierarchy is fill-strength only:
-          //   primary  → indigo filled (the main action — Apply)
-          //   ghost    → indigo-outlined (secondary — Careers)
-          // Reads as one consistent set of action chips next to the
-          // status pill instead of three competing button shapes.
-          const btnBase = {
-            padding:'5px 14px', borderRadius:20, fontSize:11, fontWeight:700,
-            cursor:'pointer', whiteSpace:'nowrap', display:'inline-flex',
-            alignItems:'center', gap:5, transition:'all 0.12s', lineHeight:1.5,
-          }
-          const btnPrimary = { ...btnBase, border:'1px solid #4f46e5',
-            background:'#4f46e5', color:'#fff' }
-          const btnGhost   = { ...btnBase, border:'1px solid #c7d2fe',
-            background:'#fff', color:'#4f46e5', textDecoration:'none' }
-
+          // Decluttered row: avatar | name + one meta line | status | Careers.
+          // Dropped the source pill and the inline Apply button (auto-apply now
+          // lives on the company page's Job Automation tab) so each row reads as
+          // one clean line instead of a wall of competing chips.
           const renderRow = (c) => {
-            const srcColor = SOURCE_COLORS[c.source?.split(',')[0]] || SOURCE_COLORS.manual_search
+            const checked = !!c.intern_roles_checked_at
+            const roleCount = c.intern_roles_count || 0
+            const meta = [
+              c.location,
+              checked && roleCount > 0 ? `${roleCount} role${roleCount > 1 ? 's' : ''}` : null,
+              c.created_at ? timeAgo(c.created_at) : null,
+            ].filter(Boolean).join(' · ')
             return (
-              // Row layout: avatar | content | right-rail.
-              // The right rail is a flex column, status pill on top and the
-              // Apply/Careers actions below it — so the status sits in the
-              // visual top-right corner of the card on every breakpoint, and
-              // the two action buttons read as one consistent set below it.
-              // alignItems:flex-start keeps the rail pinned to the top so the
-              // status pill never floats down beside the avatar.
               <div key={c.id} className="cv-company-row"
                 onClick={() => navigate(`/company/${c.id}`)}
-                style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:'14px 16px', marginBottom:8, display:'flex', alignItems:'flex-start', gap:12, flexWrap:'wrap', rowGap:10 }}>
-                <div style={{ width:38, height:38, borderRadius:8, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#4f46e5', flexShrink:0 }}>
+                style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:10, padding:'12px 16px', marginBottom:8, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', rowGap:8 }}>
+                <div style={{ width:36, height:36, borderRadius:8, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, color:'#4f46e5', flexShrink:0 }}>
                   {(c.name || '?')[0].toUpperCase()}
                 </div>
-                <div style={{ flex:'1 1 200px', minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3, flexWrap:'wrap' }}>
-                    <span style={{ fontWeight:700, fontSize:14, color:'#0f172a' }}>{c.name}</span>
-                    {c.yc_batch && <span style={{ fontSize:9, padding:'2px 6px', borderRadius:4, background:'rgba(242,102,37,0.1)', color:'#F26625', fontWeight:700 }}>{c.yc_batch}</span>}
-                    {c.source && c.source.split(',')[0] !== 'job' && (
-                      <span className="cv-source-pill" style={{ background:srcColor.bg, color:srcColor.color, border:`1px solid ${srcColor.border}` }}>
-                        {c.source.split(',')[0]}
-                      </span>
-                    )}
+                <div style={{ flex:'1 1 180px', minWidth:0 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:2 }}>
+                    <span style={{ fontWeight:700, fontSize:14, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.name}</span>
+                    {c.yc_batch && <span style={{ fontSize:9, padding:'1px 6px', borderRadius:4, background:'rgba(242,102,37,0.1)', color:'#F26625', fontWeight:700, flexShrink:0 }}>{c.yc_batch}</span>}
+                    {checked && <span title="Roles scraped" style={{ fontSize:9, padding:'1px 6px', borderRadius:4, background:'#f0fdf4', color:'#15803d', fontWeight:700, flexShrink:0 }}>✓ scraped</span>}
                   </div>
-                  <div style={{ fontSize:11, color:'#64748b' }}>
-                    {(c.roles && c.roles !== 'job') || c.role_title} {c.location ? `· ${c.location}` : ''}
-                    {c.created_at && <span style={{ marginLeft:8, color:'#94a3b8' }}>{timeAgo(c.created_at)}</span>}
-                  </div>
+                  <div style={{ fontSize:11, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{meta || 'Not checked yet'}</div>
                 </div>
-                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:8, marginLeft:'auto', flexShrink:0 }}>
-                  <div onClick={e => e.stopPropagation()}>
-                    <Dropdown
-                      compact
-                      colorMap={STATUS_COLORS}
-                      ariaLabel={`Status for ${c.name}`}
-                      value={c.status || 'new'}
-                      onChange={(v) => updateStatus(c.id, v, { stopPropagation: () => {} })}
-                      options={[
-                        { value:'new',         label:'new' },
-                        { value:'researching', label:'researching' },
-                        { value:'contacted',   label:'contacted' },
-                        { value:'responded',   label:'responded' },
-                        { value:'skip',        label:'skip' },
-                      ]}
-                    />
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                    <button onClick={async (e) => {
-                        e.stopPropagation()
-                        try {
-                          const r = await api.career.autoApplyCompanyQueue(c.id)
-                          if (r.queued > 0) alert(`✓ Queued ${r.queued} role(s) for auto-apply${r.skippedAlreadyInFlight ? ` (skipped ${r.skippedAlreadyInFlight} already in queue)` : ''}. Run "Auto-Apply Setup → Run Queue" to process now.`)
-                          else alert(`No scraped roles for ${r.company || c.name}. Open the company page and click Scrape, or use the larger "Scrape & Queue" button there.`)
-                        } catch (err) { alert('Auto-Apply failed: ' + err.message) }
-                      }}
-                      title="Queue all known scraped intern roles for auto-apply"
-                      style={btnPrimary}>
-                      Apply
-                    </button>
-                    {(c.url || c.domain) && (
-                      <a href={c.url || `https://${c.domain}/careers`} target="_blank" rel="noreferrer"
-                        onClick={e => e.stopPropagation()}
-                        title="Open careers page"
-                        style={btnGhost}>
-                        Careers ↗
-                      </a>
-                    )}
-                  </div>
+                <div onClick={e => e.stopPropagation()} style={{ flexShrink:0, width:132 }}>
+                  <Dropdown
+                    compact
+                    colorMap={STATUS_COLORS}
+                    ariaLabel={`Status for ${c.name}`}
+                    value={c.status || 'new'}
+                    onChange={(v) => updateStatus(c.id, v, { stopPropagation: () => {} })}
+                    options={[
+                      { value:'new',         label:'new' },
+                      { value:'researching', label:'researching' },
+                      { value:'contacted',   label:'contacted' },
+                      { value:'responded',   label:'responded' },
+                      { value:'skip',        label:'skip' },
+                    ]}
+                  />
                 </div>
+                {(c.url || c.domain) && (
+                  <a href={c.url || `https://${c.domain}/careers`} target="_blank" rel="noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    title="Open careers page"
+                    style={{ flexShrink:0, fontSize:11, fontWeight:700, color:'#4f46e5', textDecoration:'none', padding:'6px 11px', border:'1px solid #c7d2fe', borderRadius:8, whiteSpace:'nowrap' }}>
+                    Careers ↗
+                  </a>
+                )}
               </div>
             )
           }
@@ -528,9 +530,14 @@ function RegularCategoryView({ categoryName }) {
 
           return (
             <div>
-              <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap' }}>
+              <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
                 {pileButton('unchecked', '🔍', 'Yet to check', unchecked.length, '#6366f1')}
                 {pileButton('checked',   '✓',  'Already checked', checked.length, '#16a34a')}
+              </div>
+              <div style={{ fontSize:11, color:'#94a3b8', marginBottom:14 }}>
+                {activePile === 'unchecked'
+                  ? "Roles haven't been scraped for these yet — open one to scrape its intern & new-grad roles."
+                  : 'Roles have already been scraped for these — the ✓ badge shows how many were found.'}
               </div>
               {visible.length > 0
                 ? visible.map(renderRow)
@@ -549,34 +556,6 @@ function RegularCategoryView({ categoryName }) {
             </button>
           </div>
         )}
-
-        {/* Scrape more section */}
-        <div style={{ marginTop:24, padding:20, background:'#fff', borderRadius:12, border:'1px solid #e2e8f0' }}>
-          <div style={{ fontSize:13, fontWeight:700, color:'#0f172a', marginBottom:4 }}>
-            Scrape more companies for "{categoryName}"
-          </div>
-          <div style={{ fontSize:11, color:'#64748b', marginBottom:14 }}>
-            Search external sources for new companies to add to this category
-          </div>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-            {['All Sources','LinkedIn','Wellfound','Google Jobs','GitHub'].map(src => {
-              const key = src.toLowerCase().replace(' ','_')
-              const isLoading = scraping === key
-              return (
-                <button key={src} onClick={() => scrapeSource(key)} disabled={!!scraping}
-                  style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #e2e8f0', background: isLoading ? '#eff6ff' : '#f8fafc', color: isLoading ? '#4f46e5' : '#475569', fontSize:12, fontWeight:600, cursor: scraping ? 'default' : 'pointer', display:'flex', alignItems:'center', gap:5 }}>
-                  {isLoading && <Spin color="#4f46e5" size={11} />}
-                  {src}
-                </button>
-              )
-            })}
-          </div>
-          {scrapeMsg && (
-            <div style={{ marginTop:10, fontSize:12, fontWeight:600, color: scrapeMsg.ok ? '#22c55e' : '#ef4444' }}>
-              {scrapeMsg.ok ? '✓ ' : '✗ '}{scrapeMsg.text}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )

@@ -82,6 +82,10 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
   const [showDropdown, setShowDropdown] = useState(false)
   const [hideEmpty, setHideEmpty] = useState(false)
   const [sortBy, setSortBy]       = useState('count') // count | az | za
+  const [scrapeCat, setScrapeCat] = useState('')      // category to scrape into
+  const [scraping, setScraping]   = useState(null)    // source key currently scraping
+  const [scrapeMsg, setScrapeMsg] = useState(null)    // { ok, text }
+  const [catalog, setCatalog]     = useState(null)    // { intern, newgrad } daily-scraped catalog summary
   const isPhone = useMediaQuery('(max-width: 480px)')
   const searchRef  = useRef(null)
   const debounce   = useRef(null)
@@ -115,6 +119,30 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
     }
   }
 
+  // Scrape companies straight from the dashboard into the chosen category.
+  // Reuses the same endpoints CategoryView uses; result is surfaced inline and
+  // the category grid counts refresh so "what got scraped" is visible at once.
+  async function scrapeInto(srcKey) {
+    if (!scrapeCat) { setScrapeMsg({ ok:false, text:'Pick a category first' }); return }
+    setScraping(srcKey)
+    setScrapeMsg(null)
+    const subcategory = `${scrapeCat.toLowerCase()} intern 2026`
+    try {
+      const r = srcKey === 'all_sources'
+        ? await api.companies.scrape({ category: scrapeCat, subcategory })
+        : await api.companies.scrapeSource(srcKey, { category: scrapeCat, subcategory })
+      const added = r.added || 0
+      const total = r.deduped || r.total || 0
+      const skipped = Math.max(0, total - added)
+      const parts = [`${total} found`, `+${added} new`]
+      if (skipped > 0) parts.push(`${skipped} already saved`)
+      setScrapeMsg({ ok:true, text:parts.join(' · '), cat:scrapeCat })
+      refreshCounts()
+    } catch (err) { setScrapeMsg({ ok:false, text: err.message }) }
+    setScraping(null)
+    setTimeout(() => setScrapeMsg(null), 9000)
+  }
+
   // Inject CSS
   useEffect(() => {
     const el = document.createElement('style')
@@ -129,6 +157,14 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
     fetch('https://yc-oss.github.io/api/companies/hiring.json')
       .then(r => r.json()).then(d => setYcCount(Array.isArray(d) ? d.length : null))
       .catch(() => setYcCount(null))
+    api.scrapedRoles.sources()
+      .then(d => {
+        const rows = d.sources || []
+        const intern  = rows.filter(r => r.role_type === 'intern').reduce((a, r) => a + (r.n || 0), 0)
+        const newgrad = rows.filter(r => r.role_type !== 'intern').reduce((a, r) => a + (r.n || 0), 0)
+        setCatalog({ intern, newgrad })
+      })
+      .catch(() => {})
     window.addEventListener('stats-refresh', refreshCounts)
     return () => window.removeEventListener('stats-refresh', refreshCounts)
   // refreshCounts intentionally reads the current cached state; userId is the
@@ -209,35 +245,41 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
           )}
         </div>
 
-        {/* Stats row — phone: compact cards in a single horizontally-scrolling
-            row so all 5 stay one line. Desktop: original 5-column equal grid. */}
+        {/* KPI row — each metric gets a tinted icon chip + accent so the
+            numbers read as a scannable dashboard, not a flat strip. Phone:
+            horizontal scroll-snap row. Desktop: auto-fit grid (wraps if narrow). */}
         {stats && (
           <div style={{
             display: isPhone ? 'flex' : 'grid',
-            gridTemplateColumns: isPhone ? undefined : 'repeat(5, 1fr)',
+            gridTemplateColumns: isPhone ? undefined : 'repeat(auto-fit, minmax(132px, 1fr))',
             gap: isPhone ? 8 : 12,
             marginTop: isPhone ? 10 : 20,
             overflowX: isPhone ? 'auto' : 'visible',
             scrollSnapType: isPhone ? 'x mandatory' : undefined,
-            paddingBottom: isPhone ? 4 : 0, // room for scrollbar without clipping shadow
+            paddingBottom: isPhone ? 4 : 0,
           }}>
             {[
-              { label:'Companies', value: stats.totalCompanies?.toLocaleString() ?? '—' },
-              { label:'Contacts',  value: stats.totalContacts?.toLocaleString() ?? '—' },
-              { label:'Sent',      value: stats.totalSent?.toLocaleString() ?? '—' },
-              { label:'Reply',     value: stats.responseRate != null ? `${stats.responseRate}%` : '—' },
-              { label:'Sources',   value: stats.activeSources?.toLocaleString() ?? '—' },
+              { icon:'🏢', label:'Companies',  value: stats.totalCompanies?.toLocaleString() ?? '—', tint:'#6366f1', bg:'#eef2ff' },
+              { icon:'🗂️', label:'Industries',  value: catCountsLoaded ? sortedCats.filter(c => c.count > 0).length : '—', tint:'#0891b2', bg:'#ecfeff' },
+              { icon:'👥', label:'Contacts',   value: stats.totalContacts?.toLocaleString() ?? '—', tint:'#7c3aed', bg:'#f5f3ff' },
+              { icon:'✉️', label:'Sent',        value: stats.totalSent?.toLocaleString() ?? '—', tint:'#0d9488', bg:'#f0fdfa' },
+              { icon:'↩️', label:'Reply Rate',  value: stats.responseRate != null ? `${stats.responseRate}%` : '—', tint:'#16a34a', bg:'#f0fdf4' },
+              { icon:'🔌', label:'Sources',    value: stats.activeSources?.toLocaleString() ?? '—', tint:'#ea580c', bg:'#fff7ed' },
             ].map(s => (
               <div key={s.label} className="dash-stat-card"
                 style={{
-                  padding: isPhone ? '8px 12px' : '14px 16px',
-                  background:'#f8fafc', borderRadius:10, border:'1px solid #e2e8f0',
+                  padding: isPhone ? '8px 10px' : '12px 14px',
+                  background:'#fff', borderRadius:12, border:'1px solid #e2e8f0',
+                  display:'flex', alignItems:'center', gap: isPhone ? 8 : 10,
                   flex: isPhone ? '0 0 auto' : undefined,
-                  minWidth: isPhone ? 88 : undefined,
+                  minWidth: isPhone ? 124 : undefined,
                   scrollSnapAlign: isPhone ? 'start' : undefined,
                 }}>
-                <div style={{ fontSize: isPhone ? 16 : 20, fontWeight:800, color:'#0f172a', lineHeight:1.1 }}>{s.value}</div>
-                <div style={{ fontSize: isPhone ? 10 : 11, color:'#94a3b8', marginTop:2, fontWeight:600, whiteSpace:'nowrap' }}>{s.label}</div>
+                <div style={{ width: isPhone ? 28 : 34, height: isPhone ? 28 : 34, borderRadius:9, background:s.bg, color:s.tint, display:'flex', alignItems:'center', justifyContent:'center', fontSize: isPhone ? 14 : 16, flexShrink:0 }}>{s.icon}</div>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize: isPhone ? 16 : 19, fontWeight:800, color:'#0f172a', lineHeight:1.1 }}>{s.value}</div>
+                  <div style={{ fontSize: isPhone ? 10 : 11, color:'#94a3b8', marginTop:1, fontWeight:600, whiteSpace:'nowrap' }}>{s.label}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -305,6 +347,57 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
 
       {/* Category grid */}
       <div style={{ padding: isPhone ? '14px 12px 24px' : '24px 40px 40px' }}>
+        {/* Scrape panel — scrape fresh companies into a category straight from
+            the dashboard, plus a live read on what's already been auto-scraped. */}
+        <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:14, padding: isPhone ? 16 : 20, marginBottom: isPhone ? 16 : 24, boxShadow:'0 1px 3px rgba(16,24,40,0.04)' }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+            <div>
+              <h2 style={{ fontSize:15, fontWeight:800, color:'#0f172a', margin:0 }}>⚡ Scrape new companies</h2>
+              <p style={{ fontSize:12, color:'#64748b', margin:'3px 0 0' }}>Pick a category, then pull fresh companies from any source.</p>
+            </div>
+            {catalog && (
+              <button onClick={() => navigate('/apply/intern-roles')}
+                title="Roles auto-scraped daily from GitHub job boards — view the catalog"
+                style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 12px', background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, fontSize:11, fontWeight:700, color:'#475569', cursor:'pointer' }}>
+                <span style={{ width:7, height:7, borderRadius:'50%', background:'#16a34a', flexShrink:0 }} />
+                Auto-scraped daily · {catalog.intern.toLocaleString()} intern · {catalog.newgrad.toLocaleString()} new-grad →
+              </button>
+            )}
+          </div>
+          <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ minWidth: isPhone ? '100%' : 210 }}>
+              <Dropdown
+                ariaLabel="Category to scrape into"
+                value={scrapeCat}
+                onChange={setScrapeCat}
+                options={[{ value:'', label:'Choose a category…' }, ...CATEGORIES.map(c => ({ value:c.label, label:c.label }))]}
+              />
+            </div>
+            {[['all_sources','All Sources'],['linkedin','LinkedIn'],['wellfound','Wellfound'],['google_jobs','Google Jobs'],['github','GitHub']].map(([key, label]) => {
+              const isLoading = scraping === key
+              const disabled = !!scraping || !scrapeCat
+              return (
+                <button key={key} disabled={disabled} onClick={() => scrapeInto(key)}
+                  style={{ padding:'8px 14px', borderRadius:9, border:`1px solid ${key === 'all_sources' ? '#c7d2fe' : '#e2e8f0'}`, background: isLoading ? '#eef2ff' : (key === 'all_sources' ? '#eef2ff' : '#f8fafc'), color: disabled && !isLoading ? '#cbd5e1' : (key === 'all_sources' ? '#4f46e5' : '#475569'), fontSize:12, fontWeight:700, cursor: disabled ? 'default' : 'pointer', display:'flex', alignItems:'center', gap:6, whiteSpace:'nowrap' }}>
+                  {isLoading && <Spin color="#4f46e5" size={11} />}
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          {scrapeMsg && (
+            <div style={{ marginTop:12, fontSize:12, fontWeight:600, color: scrapeMsg.ok ? '#16a34a' : '#dc2626', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+              <span>{scrapeMsg.ok ? '✓ ' : '✗ '}{scrapeMsg.text}</span>
+              {scrapeMsg.ok && scrapeMsg.cat && (
+                <button onClick={() => goToCategory(scrapeMsg.cat)}
+                  style={{ background:'none', border:'none', color:'#6366f1', fontWeight:700, cursor:'pointer', fontSize:12, padding:0 }}>
+                  View {scrapeMsg.cat} →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Controls — single row that wraps on phone so the count label,
             sort dropdown, and Hide-empty toggle each get full-width when
             stacked. Themed Dropdown matches the indigo aesthetic instead
@@ -406,20 +499,26 @@ export default function CompanyDashboard({ onStatsChange, statsSnapshot = null, 
                 </div>
               )
             }
+            const sharePct = totalInDb > 0 ? Math.round((cat.count / totalInDb) * 100) : 0
             return (
               <div key={cat.id} className="dash-cat-card"
                 onClick={() => goToCategory(cat.label)}
-                style={{ background:'#fff', border:`1px solid ${cat.count === 0 ? '#f1f5f9' : cat.border}`, borderRadius:12, padding:'18px 20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', opacity: cat.count === 0 ? 0.5 : 1 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                  <div style={{ width:38, height:38, borderRadius:8, background:cat.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, color:cat.tint, flexShrink:0 }}>
+                style={{ background:'#fff', border:`1px solid ${cat.count === 0 ? '#f1f5f9' : cat.border}`, borderLeft:`3px solid ${cat.count === 0 ? '#e2e8f0' : cat.tint}`, borderRadius:12, padding:'16px 18px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', opacity: cat.count === 0 ? 0.55 : 1 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div style={{ width:36, height:36, borderRadius:9, background:cat.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, color:cat.tint, flexShrink:0 }}>
                     {cat.abbr}
                   </div>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', lineHeight:1.3 }}>{cat.label}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:'#0f172a', lineHeight:1.25, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cat.label}</div>
+                    <div style={{ fontSize:10.5, color:'#94a3b8', marginTop:1 }}>
+                      {!catCountsLoaded ? ' ' : (cat.count > 0 ? `${sharePct}% of all companies` : 'none yet')}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:22, fontWeight:800, color: cat.count === 0 ? '#cbd5e1' : cat.tint, lineHeight:1, flexShrink:0 }}>
+                    {!catCountsLoaded ? ' ' : cat.count.toLocaleString()}
+                  </div>
                 </div>
-                <div style={{ fontSize:24, fontWeight:800, color: cat.count === 0 ? '#94a3b8' : cat.tint, marginBottom:4 }}>
-                  {!catCountsLoaded ? ' ' : cat.count.toLocaleString()}
-                </div>
-                <div style={{ fontSize:11, color:'#64748b', marginBottom:12, lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>
+                <div style={{ fontSize:11, color:'#64748b', margin:'10px 0', lineHeight:1.4, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', minHeight:31 }}>
                   {cat.desc}
                 </div>
                 <div style={{ height:4, background:'#f1f5f9', borderRadius:2 }}>

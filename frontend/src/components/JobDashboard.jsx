@@ -4,6 +4,16 @@ import { api } from '../api'
 import { useMediaQuery } from '../hooks'
 
 const GRADE_COLOR = { A:'#16a34a', B:'#0d9488', C:'#d97706', D:'#ea580c', F:'#dc2626' }
+const STATUS_META = {
+  queued:    { bg:'#f5f3ff', color:'#7c3aed', label:'Queued' },
+  opened:    { bg:'#eff6ff', color:'#2563eb', label:'Opened' },
+  submitted: { bg:'#ecfdf5', color:'#16a34a', label:'Applied' },
+  responded: { bg:'#fef3c7', color:'#d97706', label:'Responded' },
+  interview: { bg:'#faf5ff', color:'#9333ea', label:'Interview' },
+  offer:     { bg:'#f0fdf4', color:'#15803d', label:'Offer' },
+  rejected:  { bg:'#fef2f2', color:'#dc2626', label:'Rejected' },
+}
+const statusMeta = (s) => STATUS_META[s] || { bg:'#f1f5f9', color:'#64748b', label:'Evaluated' }
 
 function Spin({ color = '#6366f1', size = 18 }) {
   return <span style={{ display:'inline-block', width:size, height:size, border:`2px solid ${color}30`, borderTopColor:color, borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
@@ -189,8 +199,11 @@ export default function JobDashboard() {
 
         {/* Where your outreach effort went */}
         <div style={panelStyle}>
-          <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 4px' }}>Where your outreach effort went</h2>
-          <p style={{ fontSize:11, color:'#94a3b8', margin:'0 0 14px' }}>Top companies across contacts, evaluations, and tracked applications.</p>
+          <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between' }}>
+            <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:0 }}>Where your outreach effort went{topOutreachCompanies.length > 0 && <span style={{ color:'#94a3b8', fontWeight:600 }}> · {topOutreachCompanies.length}</span>}</h2>
+            <button onClick={() => navigate('/discover/companies')} style={{ fontSize:12, fontWeight:700, color:'#6366f1', background:'none', border:'none', cursor:'pointer' }}>View all →</button>
+          </div>
+          <p style={{ fontSize:11, color:'#94a3b8', margin:'4px 0 14px' }}>Top companies across contacts, evaluations, and tracked applications.</p>
           {topOutreachCompanies.length === 0 ? (
             <div style={{ fontSize:13, color:'#94a3b8', padding:'14px 0' }}>No activity yet — find contacts, evaluate a role, or track an application to start.</div>
           ) : (
@@ -205,7 +218,15 @@ export default function JobDashboard() {
               <tbody>
                 {topOutreachCompanies.map((c, i) => (
                   <tr key={i} style={{ borderTop:'1px solid #f1f5f9' }}>
-                    <td style={{ padding:'10px 12px', color:'#0f172a', fontWeight:600 }}>{c.name}{c.category && <div style={{ fontSize:11, color:'#94a3b8', fontWeight:400 }}>{c.category}</div>}</td>
+                    <td style={{ padding:'10px 12px' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div style={{ width:30, height:30, borderRadius:8, background:'#eef2ff', color:'#6366f1', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:800, flexShrink:0 }}>{(c.name || '?')[0].toUpperCase()}</div>
+                        <div style={{ minWidth:0 }}>
+                          <div style={{ color:'#0f172a', fontWeight:600 }}>{c.name}</div>
+                          {c.category && <div style={{ fontSize:11, color:'#94a3b8', fontWeight:400 }}>{c.category}</div>}
+                        </div>
+                      </div>
+                    </td>
                     <td style={{ padding:'10px 12px', textAlign:'right', color: c.contact_count ? '#475569' : '#cbd5e1', fontWeight:600 }}>{c.contact_count || '—'}</td>
                     <td style={{ padding:'10px 12px', textAlign:'right', color: c.email_count ? '#16a34a' : '#cbd5e1', fontWeight:600 }}>{c.email_count || '—'}</td>
                     <td style={{ padding:'10px 12px', textAlign:'right', color: c.sent_count ? '#0891b2' : '#cbd5e1', fontWeight:600 }}>{c.sent_count || '—'}</td>
@@ -222,37 +243,58 @@ export default function JobDashboard() {
         {/* Recent timeline — two columns */}
         <div style={{ display:'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: isPhone ? 14 : 16 }}>
           <div style={panelStyle}>
-            <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recent Evaluations</h2>
+            <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:12 }}>
+              <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:0 }}>Recent Evaluations{recentEvals.length > 0 && <span style={{ color:'#94a3b8', fontWeight:600 }}> · {recentEvals.length}</span>}</h2>
+              <button onClick={() => navigate('/discover/evaluate')} style={{ fontSize:12, fontWeight:700, color:'#6366f1', background:'none', border:'none', cursor:'pointer' }}>View all →</button>
+            </div>
             {recentEvals.length === 0 ? (
               <div style={{ fontSize:13, color:'#94a3b8' }}>No evaluations yet.</div>
-            ) : recentEvals.slice(0, 6).map((e, i) => (
-              <button key={i} type="button"
-                onClick={async () => { try { await api.career.openReportTab(e.id) } catch (err) { alert('Could not open report: ' + err.message) } }}
-                style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', textAlign:'left', background:'none', border:'none', borderBottom: i < Math.min(recentEvals.length, 6) - 1 ? '1px solid #f1f5f9' : 'none', cursor:'pointer', width:'100%' }}>
-                <div style={{ width:26, height:26, borderRadius:'50%', border:`2px solid ${GRADE_COLOR[e.grade] || '#94a3b8'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <span style={{ fontSize:11, fontWeight:900, color: GRADE_COLOR[e.grade] || '#94a3b8' }}>{e.grade || '—'}</span>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
-                  <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.created_at)}</div>
-                </div>
-              </button>
-            ))}
+            ) : recentEvals.slice(0, 6).map((e, i) => {
+              const st = statusMeta(e.apply_status)
+              return (
+                <button key={i} type="button"
+                  onClick={async () => { try { await api.career.openReportTab(e.id) } catch (err) { alert('Could not open report: ' + err.message) } }}
+                  style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', textAlign:'left', background:'none', border:'none', borderBottom: i < Math.min(recentEvals.length, 6) - 1 ? '1px solid #f1f5f9' : 'none', cursor:'pointer', width:'100%' }}>
+                  <div style={{ width:28, height:28, borderRadius:'50%', border:`2px solid ${e.grade ? GRADE_COLOR[e.grade] : '#e2e8f0'}`, background: e.grade ? `${GRADE_COLOR[e.grade]}12` : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <span style={{ fontSize:11, fontWeight:900, color: e.grade ? GRADE_COLOR[e.grade] : '#cbd5e1' }}>{e.grade || '·'}</span>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
+                    <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.created_at)}</div>
+                  </div>
+                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:st.bg, color:st.color, flexShrink:0 }}>{st.label}</span>
+                </button>
+              )
+            })}
           </div>
 
           <div style={panelStyle}>
-            <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:'0 0 14px' }}>Recently Applied</h2>
+            <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:12 }}>
+              <h2 style={{ fontSize:14, fontWeight:800, color:'#0f172a', margin:0 }}>Recently Applied</h2>
+              <button onClick={() => navigate('/apply/pipeline')} style={{ fontSize:12, fontWeight:700, color:'#6366f1', background:'none', border:'none', cursor:'pointer' }}>Pipeline →</button>
+            </div>
             {recentApplied.length === 0 ? (
-              <div style={{ fontSize:13, color:'#94a3b8' }}>No applications submitted yet.</div>
-            ) : recentApplied.slice(0, 6).map((e, i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom: i < Math.min(recentApplied.length, 6) - 1 ? '1px solid #f1f5f9' : 'none' }}>
-                <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:'#ecfeff', color:'#0891b2', flexShrink:0 }}>{e.apply_status}</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
-                  <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.applied_at)}</div>
-                </div>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', gap:8, padding:'22px 12px' }}>
+                <div style={{ fontSize:30 }}>📭</div>
+                <div style={{ fontSize:13, fontWeight:600, color:'#475569' }}>Nothing submitted yet</div>
+                {applyModes.auto > 0 ? (
+                  <button onClick={() => navigate('/apply/auto-apply')} style={{ marginTop:4, padding:'8px 16px', fontSize:12, fontWeight:700, background:'#f5f3ff', color:'#7c3aed', border:'1px solid #ddd6fe', borderRadius:9, cursor:'pointer' }}>⚡ {applyModes.auto} queued for auto-apply →</button>
+                ) : (
+                  <button onClick={() => navigate('/apply/auto-apply')} style={{ marginTop:4, padding:'8px 16px', fontSize:12, fontWeight:700, background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:9, cursor:'pointer' }}>Set up auto-apply →</button>
+                )}
               </div>
-            ))}
+            ) : recentApplied.slice(0, 6).map((e, i) => {
+              const st = statusMeta(e.apply_status)
+              return (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderBottom: i < Math.min(recentApplied.length, 6) - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:10, background:st.bg, color:st.color, flexShrink:0 }}>{st.label}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.job_title}</div>
+                    <div style={{ fontSize:11, color:'#94a3b8' }}>{e.company_name} · {timeAgo(e.applied_at)}</div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 

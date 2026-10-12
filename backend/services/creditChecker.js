@@ -47,6 +47,29 @@ async function checkApify() {
   const token = (process.env.APIFY_API_TOKEN || '').trim();
   if (!token || token.length < 10) return { configured: false };
   try {
+    // /users/me/limits is the only endpoint that reports real monthly spend
+    // against the hard cap — /users/me has no usage fields, so it read as $0.
+    const limitsRes = await fetch(`https://api.apify.com/v2/users/me/limits?token=${token}`, { signal: AbortSignal.timeout(8000) });
+    const limitsData = await limitsRes.json().catch(() => null);
+    const limits = limitsData?.data;
+    if (limitsRes.ok && limits?.limits?.maxMonthlyUsageUsd != null) {
+      const limitUsd = Number(limits.limits.maxMonthlyUsageUsd) || 0;
+      const usageUsd = Number(limits.current?.monthlyUsageUsd) || 0;
+      const balanceUsd = Math.max(0, limitUsd - usageUsd);
+      const resetDate = limits.monthlyUsageCycle?.endAt || null;
+      const exhausted = limitUsd > 0 && usageUsd >= limitUsd;
+      return {
+        configured: true,
+        usedUsd: usageUsd,
+        limitUsd,
+        balanceUsd,
+        resetDate,
+        warning: balanceUsd < Math.max(0.50, limitUsd * 0.1),
+        critical: balanceUsd < 0.05 || exhausted,
+        ...(exhausted ? { error: `Monthly limit reached ($${usageUsd.toFixed(2)} of $${limitUsd.toFixed(2)})${resetDate ? ` — resets ${resetDate.slice(0, 10)}` : ''}` } : {}),
+      };
+    }
+
     const res = await fetch(`https://api.apify.com/v2/users/me?token=${token}`, { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
     if (!res.ok) {

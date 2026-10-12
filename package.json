@@ -22,7 +22,7 @@
     "setup": "bash setup.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.17.1",
+    "@anthropic-ai/sdk": "0.128.0",
     "@google/generative-ai": "^0.3.0",
     "@supabase/supabase-js": "^2.104.0",
     "apify-client": "^2.9.0",

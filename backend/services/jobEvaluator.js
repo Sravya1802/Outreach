@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import Anthropic from '@anthropic-ai/sdk';
+import { CLAUDE_MODEL, claudeText, hasClaudeKey } from './claude.js';
 import OpenAI from 'openai';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,7 +37,7 @@ const SHARED_MD = loadMode('_shared');
 // Provider preference for evaluation quality (when Anthropic is unavailable):
 //   1. OpenAI gpt-4o — strong reasoning, JSON mode, ~$0.05 per eval
 //   2. Gemini 2.5 Pro — comparable reasoning, ~$0.04 per eval
-//   3. Anthropic Sonnet 4.6 with prompt caching — only if user provides key
+//   3. Anthropic (claude.js CLAUDE_MODEL) with prompt caching — only if user provides key
 //
 // We prefer the FULL gpt-4o (not -mini) here because the verdict / top-3 gaps /
 // calibrated probability schema needs real reasoning depth — mini is too
@@ -104,27 +104,15 @@ async function callAI({ system, user }) {
     }
   }
 
-  // Anthropic — only if user opts in by setting ANTHROPIC_API_KEY
-  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'optional_fallback') {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    for (let i = 0; i < 2; i++) {
-      try {
-        const msg = await Promise.race([
-          client.messages.create({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 8192,
-            temperature: 0.3,
-            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-            messages: [{ role: 'user', content: user }],
-          }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Claude timeout')), 90000)),
-        ]);
-        return msg.content[0].text;
-      } catch (err) {
-        errors.push(`Claude: ${err.message?.slice(0, 80)}`);
-        if (i === 0 && /timeout|ECONNRESET|ETIMEDOUT|fetch failed|529|overloaded/i.test(err.message)) continue;
-        break;
-      }
+  // Anthropic — only if user opts in by setting ANTHROPIC_API_KEY.
+  // The A–G rubric needs real reasoning, so high effort; the rubric system
+  // prompt is long and static, so it's prompt-cached. The SDK retries
+  // transient failures itself.
+  if (hasClaudeKey()) {
+    try {
+      return await claudeText({ system, user, effort: 'high', cacheSystem: true });
+    } catch (err) {
+      errors.push(`Claude (${CLAUDE_MODEL}): ${err.message?.slice(0, 80)}`);
     }
   }
 

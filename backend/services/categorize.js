@@ -806,17 +806,10 @@ async function callGemini(batch) {
 }
 
 async function callClaude(batch) {
-  const key = getAnthropicKey();
-  if (!key) throw new Error('ANTHROPIC_API_KEY not set');
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: key });
-  const msg = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
-    system:     SYSTEM_PROMPT,
-    messages:   [{ role: 'user', content: buildInput(batch) }],
-  });
-  return parseJSON(msg.content[0].text);
+  if (!getAnthropicKey()) throw new Error('ANTHROPIC_API_KEY not set');
+  const { claudeText } = await import('./claude.js');
+  // Bulk label assignment — low effort keeps it fast and cheap.
+  return parseJSON(await claudeText({ system: SYSTEM_PROMPT, user: buildInput(batch), effort: 'low' }));
 }
 
 async function callOpenAI(batch) {

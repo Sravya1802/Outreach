@@ -154,15 +154,9 @@ async function generateWithGemini(system, user) {
 }
 
 async function generateWithAnthropic(system, user) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const msg = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    system,
-    messages:   [{ role: 'user', content: user }],
-  });
-  return parseJSON(msg.content[0].text);
+  const { claudeText } = await import('./claude.js');
+  // Short outreach copy — medium effort is plenty.
+  return parseJSON(await claudeText({ system, user, effort: 'medium' }));
 }
 
 async function generateWithOpenAI(system, user) {

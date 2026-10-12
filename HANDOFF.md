@@ -124,6 +124,13 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-12 — Claude path modernized (OpenAI stays live)
+
+- **What:** User chose "modernize the Claude path only". `@anthropic-ai/sdk` 0.17 → **0.128.0** (pinned, backend + root package.json). New `backend/services/claude.js` is the single Claude helper: `claude-opus-5-5`, explicit `output_config.effort`, `max_tokens` 16000 (thinking counts toward it), server-side refusal fallback (`fallbacks: "default"` + beta `server-side-fallback-2026-07-01`), refusal/max_tokens checks before reading content, text read by block type, SDK-level timeout + retries.
+- **Call sites:** `ai.js` outreach (effort medium), `jobEvaluator.js` A–G evaluation (high, rubric prompt-cached; removed `temperature`, which 400s on current models), `resumeGenerator.js` tailoring (medium), `categorize.js` classification (low). OpenAI/Gemini code is untouched.
+- **Status:** inactive in prod. The VM's `ANTHROPIC_API_KEY` is empty and `AI_PROVIDER=openai`. To turn it on, set the key in `~/outreach/.env` and `pm2 restart outreach-backend --update-env`. For evaluation, Claude stays third in line after OpenAI and Gemini (existing order).
+- **Tests:** `backend/tests/claude.test.mjs` (mocked fetch: request shape, banned params, thinking-first content, refusal, truncation). Not verified against the live API: no Anthropic credentials on this Mac or the VM.
+
 ### 2026-10-12 — UI rebuild phase 1: foundation, shell, Home, Settings, Login
 
 - **What:** Start of the full frontend rebuild (plan in memory `project_ui_rebuild.md`). New TypeScript code (strict) lives in `frontend/src/{app,ui,lib,features,styles}`. The dark-first design tokens are in `styles/app.css`. The old pages still render inside the new shell via `app/LegacyPage.tsx`; their CSS is scoped to `.legacy` in `styles/legacy.css` (layered below Tailwind utilities). Delete that file once every page is rebuilt.

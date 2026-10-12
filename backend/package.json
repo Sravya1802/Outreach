@@ -8,7 +8,7 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.17.1",
+    "@anthropic-ai/sdk": "0.128.0",
     "@google/generative-ai": "^0.3.0",
     "apify-client": "^2.9.0",
     "axios": "^1.6.5",

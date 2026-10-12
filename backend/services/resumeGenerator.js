@@ -13,7 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeText, hasClaudeKey } from './claude.js';
 import OpenAI from 'openai';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,14 +37,8 @@ async function callAI(prompt) {
       return result.response.text();
     } catch (_) {}
   }
-  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'optional_fallback') {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const msg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    return msg.content[0].text;
+  if (hasClaudeKey()) {
+    return claudeText({ user: prompt, effort: 'medium' });
   }
   if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'optional_fallback') {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });

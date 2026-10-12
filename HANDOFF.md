@@ -137,6 +137,8 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
   2. `job-metrics` `funnel_applied` counts `opened` + `queued` as applied, which overstates applications. Fix during the Applications rebuild.
   3. CareerOps History classifies by `ev.jobTitle`, but rows are snake_case `job_title`.
   4. Local `.env` `VITE_SUPABASE_ANON_KEY` is the legacy JWT key, which Supabase disabled on 2026-04-27. Local dev sign-in fails until it's swapped for the `sb_publishable_` key prod uses.
+- **Deployed:** frontend `76373e4` on Vercel; backend fix on the VM as `ea82d8e` (backend file only). E2E against prod: 37 passed / 4 skipped. Note that main commit `1edc33d` also carries the frontend file deletions/rename that were staged at the time (harmless; both commits shipped together).
+- **VM:** the uncommitted HR-filter diff in `backend/routes/jobs.js` is still there. Backup at `~/jobs-hr-filter-wip-2026-10-12.patch`.
 - **Next phases:** Jobs (roles + companies + find + alerts) → Applications (one status model, board/table, auto-apply queue) → Outreach (contacts with draft/edit/mark sent + templates) → Company/Role detail pages → delete legacy.
 
 ### 2026-10-12 — Full data wipe (user-requested)

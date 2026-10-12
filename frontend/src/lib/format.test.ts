@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatNumber, greeting, initials, nameFromEmail, percent, timeAgo } from './format'
+import { formatNumber, greeting, initials, lowerFirst, nameFromEmail, percent, timeAgo } from './format'
 
 const NOW = new Date('2026-10-12T12:00:00Z').getTime()
 
@@ -30,6 +30,14 @@ describe('formatNumber', () => {
     expect(formatNumber(1499)).toBe((1499).toLocaleString())
     expect(formatNumber(undefined)).toBe('0')
     expect(formatNumber(Number.NaN)).toBe('0')
+  })
+})
+
+describe('lowerFirst', () => {
+  it('lowercases ordinary words but keeps proper nouns', () => {
+    expect(lowerFirst('Role evaluation & message writing')).toBe('role evaluation & message writing')
+    expect(lowerFirst('LinkedIn, Wellfound & Google Jobs scraping')).toBe('LinkedIn, Wellfound & Google Jobs scraping')
+    expect(lowerFirst('')).toBe('')
   })
 })
 

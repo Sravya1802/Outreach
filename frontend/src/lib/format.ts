@@ -42,6 +42,13 @@ export function nameFromEmail(email: string | null | undefined): string {
   return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
+/** Lowercase the first letter for mid-sentence use, but leave proper nouns ("LinkedIn …") alone. */
+export function lowerFirst(s: string): string {
+  const first = s.split(/[\s,]/)[0] ?? ''
+  const isProperNoun = /[A-Z]/.test(first.slice(1))
+  return isProperNoun ? s : s.charAt(0).toLowerCase() + s.slice(1)
+}
+
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   const first = parts[0]?.[0] ?? '?'

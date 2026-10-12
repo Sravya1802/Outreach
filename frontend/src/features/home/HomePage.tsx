@@ -7,7 +7,7 @@ import {
 } from '@/app/queries'
 import type { CatalogRole } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { formatNumber, greeting, nameFromEmail, percent, timeAgo } from '@/lib/format'
+import { formatNumber, greeting, lowerFirst, nameFromEmail, percent, timeAgo } from '@/lib/format'
 import { ButtonLink, Card, CardHeader, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/ui'
 import { activityDetail, activityTitle } from './activity'
 import { isProfileComplete, setupSteps } from './onboarding'
@@ -73,7 +73,7 @@ function Attention() {
   const c = queue.data?.counts
   if (c?.needs_review) items.push({ id: 'review', tone: 'warning', text: `${c.needs_review} auto-apply ${c.needs_review === 1 ? 'application needs' : 'applications need'} your review`, to: '/applications/auto-apply' })
   if (c?.failed) items.push({ id: 'failed', tone: 'danger', text: `${c.failed} auto-apply ${c.failed === 1 ? 'attempt' : 'attempts'} failed`, to: '/applications/auto-apply' })
-  for (const s of down) items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable — ${s.purpose.toLowerCase()} won’t work`, to: '/settings/integrations' })
+  for (const s of down) items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable — ${lowerFirst(s.purpose)} won’t work`, to: '/settings/integrations' })
 
   return (
     <Card>

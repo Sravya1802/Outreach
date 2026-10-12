@@ -1,0 +1,39 @@
+import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { cn } from '@/lib/cn'
+
+const control =
+  'w-full rounded-md border border-line bg-canvas px-2.5 text-[13px] text-fg placeholder:text-subtle ' +
+  'transition-colors hover:border-line-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft ' +
+  'disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger'
+
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
+  return <input ref={ref} className={cn(control, 'h-8', className)} {...rest} />
+})
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
+  return <textarea ref={ref} className={cn(control, 'min-h-20 py-2 leading-relaxed', className)} {...rest} />
+})
+
+export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select({ className, ...rest }, ref) {
+  return <select ref={ref} className={cn(control, 'h-8 cursor-pointer pr-7', className)} {...rest} />
+})
+
+/** Label + control + hint/error, wired up with ids for screen readers. */
+export function Field({ label, hint, error, children }: {
+  label: string
+  hint?: ReactNode
+  error?: string | null
+  children: (props: { id: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }) => ReactNode
+}) {
+  const id = useId()
+  const descId = hint || error ? `${id}-desc` : undefined
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-medium text-muted">{label}</label>
+      {children({ id, 'aria-describedby': descId, 'aria-invalid': error ? true : undefined })}
+      {(error || hint) && (
+        <p id={descId} className={cn('text-xs', error ? 'text-danger' : 'text-subtle')}>{error || hint}</p>
+      )}
+    </div>
+  )
+}

@@ -4,10 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Outreach System</title>
+    <title>OutreachOS</title>
+    <meta name="color-scheme" content="dark light" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // Apply the saved theme before first paint so there's no light/dark flash.
+      try { if (localStorage.getItem('ui-theme') === 'light') document.documentElement.dataset.theme = 'light' } catch (e) {}
+    </script>
   </head>
-  <body style="margin:0;padding:0;height:100%;background:#f8fafc;">
-    <div id="root" style="height:100%;"></div>
-    <script type="module" src="/src/main.jsx"></script>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

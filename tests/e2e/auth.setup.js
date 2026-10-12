@@ -72,7 +72,7 @@ setup('sign in and save storage state', async ({ page }) => {
 
   // Sanity: the dashboard renders something only an authed user sees.
   // Use a reasonably-stable selector that doesn't depend on data presence.
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 })
+  await expect(page).toHaveURL(/\/home/, { timeout: 10_000 })
 
   await page.context().storageState({ path: STORAGE_PATH })
 })

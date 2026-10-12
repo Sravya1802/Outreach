@@ -9,7 +9,7 @@ import { skipWithoutAuthEnv } from './auth-env.js'
 skipWithoutAuthEnv()
 
 const ROUTES = [
-  { path: '/dashboard',          heading: 'Dashboard' },
+  { path: '/home',               heading: /^(Good (morning|afternoon|evening)|Working late),/ },
   { path: '/discover/companies', heading: 'Companies' },
   { path: '/apply/auto-apply',   heading: 'Auto Apply' },
 ]

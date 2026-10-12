@@ -1,0 +1,117 @@
+/* Layer order: legacy page CSS sits above Tailwind's preflight but below
+   utilities, so new components always win and old pages keep their look. */
+@layer theme, base, legacy, components, utilities;
+
+@import "tailwindcss";
+@import "./legacy.css" layer(legacy);
+
+/* ── Design tokens ────────────────────────────────────────────────────────────
+   Raw values live on --ui-*; Tailwind colours point at them so one
+   data-theme switch re-themes every utility. Dark is the default. */
+:root {
+  color-scheme: dark;
+  --ui-canvas:        #09090b;
+  --ui-surface:       #111114;
+  --ui-raised:        #18181c;
+  --ui-hover:         #1f1f24;
+  --ui-border:        #26262c;
+  --ui-border-strong: #34343c;
+  --ui-fg:            #ededf0;
+  --ui-muted:         #a0a0ab;
+  --ui-subtle:        #6c6c78;
+  --ui-accent:        #7c7cf8;
+  --ui-accent-hover:  #9090fa;
+  --ui-accent-soft:   rgb(124 124 248 / 0.14);
+  --ui-on-accent:     #ffffff;
+  --ui-success:       #4ade80;
+  --ui-success-soft:  rgb(74 222 128 / 0.12);
+  --ui-warning:       #fbbf24;
+  --ui-warning-soft:  rgb(251 191 36 / 0.12);
+  --ui-danger:        #f87171;
+  --ui-danger-soft:   rgb(248 113 113 / 0.12);
+  --ui-info:          #60a5fa;
+  --ui-info-soft:     rgb(96 165 250 / 0.12);
+  --ui-shadow:        0 8px 30px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --ui-ring:          rgb(124 124 248 / 0.45);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ui-canvas:        #f7f7f8;
+  --ui-surface:       #ffffff;
+  --ui-raised:        #ffffff;
+  --ui-hover:         #f1f1f3;
+  --ui-border:        #e6e6ea;
+  --ui-border-strong: #d4d4da;
+  --ui-fg:            #17171c;
+  --ui-muted:         #55555f;
+  --ui-subtle:        #8e8e99;
+  --ui-accent:        #5b5bd6;
+  --ui-accent-hover:  #4b4bc4;
+  --ui-accent-soft:   rgb(91 91 214 / 0.10);
+  --ui-on-accent:     #ffffff;
+  --ui-success:       #15803d;
+  --ui-success-soft:  rgb(21 128 61 / 0.10);
+  --ui-warning:       #b45309;
+  --ui-warning-soft:  rgb(180 83 9 / 0.10);
+  --ui-danger:        #dc2626;
+  --ui-danger-soft:   rgb(220 38 38 / 0.08);
+  --ui-info:          #2563eb;
+  --ui-info-soft:     rgb(37 99 235 / 0.08);
+  --ui-shadow:        0 8px 30px rgb(15 15 20 / 0.10), 0 0 0 1px rgb(15 15 20 / 0.05);
+  --ui-ring:          rgb(91 91 214 / 0.35);
+}
+
+@theme inline {
+  --color-canvas:        var(--ui-canvas);
+  --color-surface:       var(--ui-surface);
+  --color-raised:        var(--ui-raised);
+  --color-hover:         var(--ui-hover);
+  --color-line:          var(--ui-border);
+  --color-line-strong:   var(--ui-border-strong);
+  --color-fg:            var(--ui-fg);
+  --color-muted:         var(--ui-muted);
+  --color-subtle:        var(--ui-subtle);
+  --color-accent:        var(--ui-accent);
+  --color-accent-hover:  var(--ui-accent-hover);
+  --color-accent-soft:   var(--ui-accent-soft);
+  --color-on-accent:     var(--ui-on-accent);
+  --color-success:       var(--ui-success);
+  --color-success-soft:  var(--ui-success-soft);
+  --color-warning:       var(--ui-warning);
+  --color-warning-soft:  var(--ui-warning-soft);
+  --color-danger:        var(--ui-danger);
+  --color-danger-soft:   var(--ui-danger-soft);
+  --color-info:          var(--ui-info);
+  --color-info-soft:     var(--ui-info-soft);
+  --shadow-pop:          var(--ui-shadow);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ui-canvas);
+    color: var(--ui-fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection { background: var(--ui-accent-soft); }
+  :focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--ui-border-strong) transparent; }
+}
+
+@keyframes ui-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-pop-in   { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes ui-slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ui-shimmer  { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

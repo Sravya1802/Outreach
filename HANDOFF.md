@@ -124,6 +124,38 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-12 — UI rebuild phase 1: foundation, shell, Home, Settings, Login
+
+- **What:** Start of the full frontend rebuild (plan in memory `project_ui_rebuild.md`). New TypeScript code (strict) lives in `frontend/src/{app,ui,lib,features,styles}`. The dark-first design tokens are in `styles/app.css`. The old pages still render inside the new shell via `app/LegacyPage.tsx`; their CSS is scoped to `.legacy` in `styles/legacy.css` (layered below Tailwind utilities). Delete that file once every page is rebuilt.
+- **New:** 5-section sidebar (Home/Jobs/Applications/Outreach/Settings) with section tabs; ⌘K command palette (pages, actions, company search); Home (setup checklist, needs-attention, KPIs, funnel, new roles, activity); Settings (account + password change, theme, integrations status, privacy export/erase with a confirm dialog); new Login and Reset Password.
+- **Data layer:** React Query (`app/queries.ts`, keys in `app/queryClient.ts`). Typed API in `lib/api.ts` wraps the legacy `src/api.js`, which is kept because the old pages and `tests/api-client.test.mjs` import it. Old pages' `stats-refresh`/`credits-refresh` window events invalidate the cache.
+- **URLs:** new paths in `app/nav.ts`. Every old path redirects via `LEGACY_REDIRECTS` and keeps its query string.
+- **Quality gate:** `npm run check --prefix frontend` = tsc + eslint (0 warnings on TS) + vitest + build. E2E specs updated for the new copy and URLs, plus new `tests/e2e/shell.spec.js`. Local run: 37 passed / 4 skipped (opt-in).
+- **Backend fix:** `services/creditChecker.js` now reads Apify `/v2/users/me/limits`. `/users/me` has no usage fields, so it always showed "$0 of $5, OK". Real state: $5.65 of $5 used, cycle resets 2026-10-24, so LinkedIn/Wellfound/Google Jobs scraping is down until then or until the limit is raised.
+- **Bugs found, not fixed yet:**
+  1. `/api/alerts/subscription` → 404 on the VM. The Job Alerts page is broken in prod.
+  2. `job-metrics` `funnel_applied` counts `opened` + `queued` as applied, which overstates applications. Fix during the Applications rebuild.
+  3. CareerOps History classifies by `ev.jobTitle`, but rows are snake_case `job_title`.
+  4. Local `.env` `VITE_SUPABASE_ANON_KEY` is the legacy JWT key, which Supabase disabled on 2026-04-27. Local dev sign-in fails until it's swapped for the `sb_publishable_` key prod uses.
+- **Next phases:** Jobs (roles + companies + find + alerts) → Applications (one status model, board/table, auto-apply queue) → Outreach (contacts with draft/edit/mark sent + templates) → Company/Role detail pages → delete legacy.
+
+### 2026-10-12 — Full data wipe (user-requested)
+
+- **What:** User asked to delete all data for every account, including maneeshreddy28@gmail.com's (1,480 jobs, 74 evaluations, 39 contacts) and the shared `scraped_roles` catalog (~10k rows). `TRUNCATE ... RESTART IDENTITY CASCADE` on all 14 `public` tables in one transaction. All rows are now 0.
+- **Kept:** all 5 `auth.users` (lakshmisravyar, maneeshreddy28, rsatyashreyas, 2× e2e), the Supabase storage `resume-library` (9 objects), and `~/outreach/resumes/` on the VM.
+- **Backup:** CSV export of every table at `~/outreach-backups/db-backup-2026-10-12.tgz` (Mac) and `~/db-backup-2026-10-12.tgz` (VM). To restore, `\copy public.<t> from '<t>.csv' with csv header`. Note that VM `pg_dump` is v14 and can't dump the v17 server.
+- **Note:** The "Accounts" section above is stale. There are 5 users, and before the wipe most data belonged to maneeshreddy28.
+- **Next:** Full frontend rebuild (user: UI dated, cluttered, confusing nav, feels buggy).
+
+### 2026-10-12 — Resume after 4-month gap: health check (read-only)
+
+- **What:** Checked the live stack. No code changed.
+- **Live:** Vercel frontend 200; backend `/api/health` 200 (`auth_mode: enforce`, all keys present); pm2 `outreach-backend` online, uptime 3 months, 28 restarts; disk 25%; Let's Encrypt cert valid until 2026-11-20 (should auto-renew; verify certbot timer if unsure).
+- **Broken:** Apify `Monthly usage hard limit exceeded` → LinkedIn / Wellfound actors fail on every scheduled run (falls back to Greenhouse direct scan); Indeed `all attempts failed`. This is account/quota, not code.
+- **Drift:** VM `~/outreach` sits at `76dbb10` (= main `327b4d7`) with the HR-contacts filter (`fc5ca6e`) hand-applied as an uncommitted diff to `backend/routes/jobs.js`. Main is 2 commits ahead (`c572eda`, `91bfe3a`, both frontend-only), so the backend is functionally current.
+- **Stale WIP:** `outreach-local` (phase-4-pg) has ~1.1k lines of uncommitted changes across 12 files (frontend + `jobs.js` careersUrl override + `multiSourceScraper.js`). Untouched. Need to decide whether any of it is still wanted or was superseded on main.
+- **Follow-up:** User to pick next task.
+
 ### 2026-05-13 — Include HR / recruiter contacts in Outreach decision-maker list
 
 - **What:** Outreach panel was hiding HR contacts (e.g. recruiters, talent partners, people-ops leads) behind the "non-tech filtered" message. `isEngineeringContact()` in [backend/routes/jobs.js:1266](backend/routes/jobs.js#L1266) is a two-stage filter: SKIP_TITLES blocklist, then ENGINEERING_TITLES allowlist. HR was being killed at BOTH stages — explicitly in SKIP_TITLES and implicitly by absence from ENGINEERING_TITLES.

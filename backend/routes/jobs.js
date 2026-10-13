@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { one, all, run, tx } from '../db.js';
 import * as apify from '../services/apify.js';
-import { findEmailsWithFallback, findDomainByCompany, extractDomain, findWorkingDomain, findEmailForPerson } from '../services/hunter.js';
-import * as apollo from '../services/apollo.js';
-import { findEmailByProspeo, findEmailsByWebsiteScrape } from '../services/emailfinders.js';
-import { findEmailsMultiSource } from '../services/emailfinders.js';
+import { normalizeHost, resolveCompanyDomain } from '../services/companyDomain.js';
+import { seniorityScore } from '../services/contactRules.js';
+import { findCompanyEmails, findPersonEmail, upsertContact } from '../services/contactFinder.js';
 import { generateOutreach } from '../services/ai.js';
+import { loadSenderProfile } from '../services/senderProfile.js';
+import { loadUserTemplates } from '../services/outreachTemplates.js';
 import { scrapeAllSources, scraperHealth } from '../services/scraper.js';
 import { classifyCompanies } from '../services/categorize.js';
+import { safeFetch } from '../services/safeFetch.js';
 
 function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
@@ -614,12 +616,12 @@ router.post('/:id/scrape-roles', async (req, res) => {
     // Step 0b: YC companies on WorkAtAStartup — extract from page structure
     if (!foundRoles.length && company.source === 'yc' && company.url?.includes('workatastartup.com')) {
       try {
-        const r = await fetch(company.url, {
+        const fetched = await safeFetch(company.url, {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; InternBot/1.0)' },
-          signal: AbortSignal.timeout(8000),
+          timeoutMs: 8000,
         });
-        if (r.ok) {
-          const html = await r.text();
+        if (fetched.res.ok) {
+          const html = await fetched.text();
           // Extract role titles from WaaS page — look for job postings
           const roleMatches = html.match(/(?:<h[23]|<strong|<span class="[^"]*job[^"]*")>([^<]{10,120}?(?:engineer|developer|analyst|scientist|designer|manager|researcher|program|intern)[^<]{0,40}?)<\/(?:h[23]|strong|span)/gi);
           if (roleMatches) {
@@ -809,12 +811,12 @@ router.post('/:id/scrape-roles', async (req, res) => {
 
         for (const careersUrl of careersUrls) {
           try {
-            const r = await fetch(careersUrl, {
+            const fetched = await safeFetch(careersUrl, {
               headers: { 'User-Agent': 'Mozilla/5.0 (compatible; InternBot/1.0)' },
-              signal: AbortSignal.timeout(8000),
+              timeoutMs: 8000,
             });
-            if (!r.ok) continue;
-            const html = await r.text();
+            if (!fetched.res.ok) continue;
+            const html = await fetched.text();
             // Extract text content — find lines that look like job titles
             const textLines = html
               .replace(/<[^>]+>/g, ' ')
@@ -937,7 +939,7 @@ export async function runReclassifyUnclassified(userId) {
   }
 
   const rows = await all(`
-    SELECT name, roles as jobTitle, '' as jobDescription
+    SELECT name, roles AS "jobTitle", '' AS "jobDescription"
     FROM jobs
     WHERE user_id = $1
       AND (category = 'Unclassified' OR category IS NULL OR confidence < 0.40)
@@ -1002,7 +1004,7 @@ router.get('/debug/categories', async (req, res) => {
 router.post('/reclassify-all', async (req, res) => {
   try {
     const rows = await all(`
-      SELECT name, roles as jobTitle, '' as jobDescription
+      SELECT name, roles AS "jobTitle", '' AS "jobDescription"
       FROM jobs
       WHERE user_id = $1 AND (category = 'Unclassified' OR category IS NULL OR confidence < 0.40)
       ORDER BY name
@@ -1112,482 +1114,212 @@ router.get('/:id/contacts', async (req, res) => {
   }
 });
 
-// ── Find people — SSE streaming (used by "Find People" button) ───────────────
-// Emits: start | source | complete | error events as Server-Sent Events
+// ── People & email finding ───────────────────────────────────────────────────
+// Domain resolution, provider order, status labels and dedupe live in
+// services/companyDomain.js, contactRules.js and contactFinder.js; these
+// handlers only do auth, locking, persistence and the response.
 
+// One lookup per company / contact at a time (double clicks, two tabs).
+const inFlight = new Set();
+function withLock(key, res, fn) {
+  if (inFlight.has(key)) {
+    res.status(409).json({ error: 'That lookup is already running — give it a moment.' });
+    return null;
+  }
+  inFlight.add(key);
+  return Promise.resolve().then(fn).finally(() => inFlight.delete(key));
+}
+
+const dbHelpers = { all, run };
+
+/** Domain we're confident in (no MX guessing) — what Apollo's org lookup should use. */
+async function trustedDomain(job) {
+  const r = await resolveCompanyDomain(job, { verify: async () => false });
+  return r?.domain || null;
+}
+
+async function savePeople(job, people, userId, limit = 10) {
+  let added = 0;
+  let updated = 0;
+  for (const p of people.slice(0, limit)) {
+    if (!p.name || p.name.toLowerCase() === 'unknown') continue;
+    const out = await upsertContact(dbHelpers, {
+      userId, jobId: job.id, seniorityScore: seniorityScore(p.title),
+      contact: { name: p.name, title: p.title, linkedin_url: p.linkedin_url || null, email: p.email || null, status: p.email ? 'unverified' : undefined, source: p.source || 'linkedin' },
+    });
+    if (out === 'inserted') added++;
+    else if (out === 'updated') updated++;
+  }
+  return { added, updated };
+}
+
+function describeReasons(reasons) {
+  return reasons.map(r => r.message).filter(Boolean).join(' · ');
+}
+
+// ── Find people — SSE stream ("Find People" button) ──────────────────────────
+// Emits start | source | complete | error. The work stops if the client leaves.
 router.get('/:id/find-people-stream', async (req, res) => {
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-  if (!job) { res.status(404).json({ error: 'Company not found' }); return; }
+  if (!job) return res.status(404).json({ error: 'Company not found' });
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
-  res.flushHeaders();
+  await withLock(`people:${req.user.id}:${job.id}`, res, async () => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
+    res.flushHeaders();
 
-  let closed = false;
-  req.on('close', () => { closed = true; });
-
-  function emit(event, data) {
-    if (closed) return;
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  }
-
-  try {
-    emit('start', { company: job.name });
-
-    const people = await apify.findPeopleAtLinkedInCompany(
-      job.name,
-      job.linkedin_company_url || null,
-      job.domain || null,
-      (progress) => emit('source', progress)
-    );
-
-    // Save contacts (preserve their individual source tags)
-    const insertSql = `
-      INSERT INTO job_contacts (job_id, name, title, linkedin_url, source, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (user_id, job_id, name) DO NOTHING
-    `;
-    let added = 0;
-    await tx(async (client) => {
-      for (const p of people.slice(0, 10)) {
-        if (!p.name || p.name.toLowerCase() === 'unknown') continue;
-        const r = await client.query(insertSql, [job.id, p.name, p.title || '', p.linkedin_url || '', p.source || 'linkedin', req.user.id]);
-        if (r.rowCount > 0) added++;
-      }
-    });
-
-    const bySource = {};
-    for (const p of people) { bySource[p.source] = (bySource[p.source] || 0) + 1; }
-
-    emit('complete', { added, total: people.length, bySource });
-    if (!closed) res.end();
-  } catch (err) {
-    console.error('find-people-stream error:', err.message);
-    try { emit('error', { error: err.message }); res.end(); } catch {}
-  }
-});
-
-// ── Find people — non-streaming POST (used by auto-trigger) ──────────────────
-
-router.post('/:id/find-linkedin', async (req, res) => {
-  try {
-    const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (!job) return res.status(404).json({ error: 'Company not found' });
-
-    const people = await apify.findPeopleAtLinkedInCompany(
-      job.name,
-      job.linkedin_company_url || null,
-      job.domain || null,
-      null // no progress callback for silent auto-trigger
-    );
-
-    const insertSql = `
-      INSERT INTO job_contacts (job_id, name, title, linkedin_url, source, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (user_id, job_id, name) DO NOTHING
-    `;
-
-    let added = 0;
-    await tx(async (client) => {
-      for (const p of people.slice(0, 8)) {
-        if (!p.name || p.name.toLowerCase() === 'unknown') continue;
-        const r = await client.query(insertSql, [job.id, p.name, p.title || '', p.linkedin_url || '', p.source || 'linkedin', req.user.id]);
-        if (r.rowCount > 0) added++;
-      }
-    });
-
-    const contacts = await all(
-      'SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 ORDER BY created_at DESC',
-      [job.id, req.user.id]
-    );
-
-    res.json({ added, contacts });
-  } catch (err) {
-    console.error('find-linkedin error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Domain plausibility check ─────────────────────────────────────────────────
-// Returns true if the domain is a plausible match for the company name.
-// Prevents Hunter company lookup from returning a totally wrong company's domain.
-function isDomainPlausibleForCompany(domain, companyName) {
-  const STOP = new Set(['the','for','of','and','in','at','to','a','an','inc','llc','ltd','corp','group','labs','technologies','solutions','services','systems']);
-  // Significant tokens from the company name (length >= 4, not stop words)
-  const nameTokens = companyName.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(t => t.length >= 4 && !STOP.has(t));
-
-  if (nameTokens.length === 0) return true; // Can't validate, allow through
-
-  const domainBase = domain.split('.')[0].toLowerCase();
-
-  // Token "matches" if the domain base is essentially that token
-  // (allowing small prefix/suffix of ≤3 chars, e.g. "mystripe" for "stripe", "datadoghq" for "datadog")
-  function tokenFits(token) {
-    if (domainBase === token) return true;
-    if (domainBase.startsWith(token) && domainBase.length - token.length <= 3) return true;
-    if (domainBase.endsWith(token) && domainBase.length - token.length <= 3) return true;
-    return false;
-  }
-
-  return nameTokens.some(t => tokenFits(t));
-}
-
-// ── Engineering title filter for Hunter results ───────────────────────────────
-
-const ENGINEERING_TITLES = [
-  'engineer', 'developer', 'architect',
-  'cto', 'chief technology',
-  'vp engineering', 'vp of engineering', 'vice president engineer',
-  'director of engineering', 'engineering director', 'head of engineering',
-  'engineering manager', 'tech lead', 'technical lead',
-  'principal', 'staff engineer', 'software', 'infrastructure',
-  'platform', 'backend', 'frontend', 'fullstack', 'full stack',
-  'data engineer', 'ml engineer', 'machine learning', 'ai engineer', 'research scientist',
-  'quantitative', 'quant', 'founder', 'co-founder', 'ceo', 'president',
-  'devops', 'sre', 'site reliability', 'security engineer', 'cloud',
-  'mobile', 'firmware', 'embedded', 'systems engineer', 'network engineer',
-  'human resources', 'hr manager', 'hr director', 'hr business',
-  'chief people', 'head of people', 'people operations', 'people ops',
-  'recruiter', 'recruiting', 'talent acquisition', 'talent partner', 'talent lead',
-  'hiring manager',
-];
-const SKIP_TITLES = [
-  'office manager', 'agency owner', 'owner', 'agent', 'advisor',
-  'financial advisor', 'insurance',
-  'marketing', 'sales', 'legal',
-  'accountant', 'controller', 'operations', 'administrative',
-  'executive assistant', 'coordinator', 'associate director of finance',
-  'paralegal', 'attorney', 'counsel', 'compliance', 'bookkeeper',
-  'copywriter', 'social media', 'public relations', 'brand',
-  'customer success', 'customer support',
-];
-
-function isEngineeringContact(title = '') {
-  const t = title.toLowerCase();
-  if (SKIP_TITLES.some(s => t.includes(s))) return false;
-  return ENGINEERING_TITLES.some(e => t.includes(e));
-}
-
-// ── Find email contacts via Hunter.io ─────────────────────────────────────────
-
-router.post('/:id/find-emails', async (req, res) => {
-  try {
-    const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (!job) return res.status(404).json({ error: 'Company not found' });
-
-    const { domain: domainOverride } = req.body || {};
-
-    console.log(`[Hunter] Company: ${job.name}`);
-    console.log(`[Hunter] careersUrl: ${job.url || '(none)'}`);
-    console.log(`[Hunter] stored domain: ${job.domain || '(none)'}`);
-    console.log(`[Hunter] domain override: ${domainOverride || '(none)'}`);
-
-    // Smart domain extraction — skips ATS domains (greenhouse, lever, etc.)
-    let domain = extractDomain(
-      { name: job.name, domain: job.domain, url: job.url },
-      domainOverride || null
-    );
-
-    console.log(`[Hunter] Extracted domain: ${domain}`);
-
-    // If domain looks like a last-resort slug (derived from name, no URL/override source),
-    // verify it via Hunter first; if it fails verification try findWorkingDomain
-    const isSlugGuess = domain && !domainOverride && !job.domain && !job.url;
-    if (!domain || domain.length < 4 || isSlugGuess) {
-      console.log(`[Hunter] domain uncertain — running findWorkingDomain`);
-      const verified = await findWorkingDomain(job.name, job.url || '').catch(() => null);
-      if (verified) {
-        domain = verified;
-        console.log(`[Hunter] findWorkingDomain resolved → ${domain}`);
-      } else if (!domain || domain.length < 4) {
-        // Last resort: Hunter's own company lookup (validate before using)
-        const candidate = await findDomainByCompany(job.name).catch(() => null);
-        if (candidate && isDomainPlausibleForCompany(candidate, job.name)) {
-          domain = candidate;
-        }
-      }
-    }
-
-    if (!domain) {
-      return res.status(400).json({
-        error: `Could not find email domain for ${job.name}. Enter it manually in the panel.`,
-        hint: 'domain_needed',
-      });
-    }
-
-    // Save resolved domain back to DB (only if it's a real company domain)
-    await run('UPDATE jobs SET domain = $1 WHERE id = $2 AND user_id = $3', [domain, job.id, req.user.id]);
-
-    // Search with fallback to .com/.io/.co variants
-    let { domain: usedDomain, emails } = await findEmailsWithFallback(domain, 10);
-    console.log(`[Hunter] ${emails.length} emails for ${usedDomain}`);
-
-    // If 0 results, try Hunter's own company name lookup to get the real domain
-    if (emails.length === 0 && !domainOverride) {
-      console.log(`[Hunter] 0 results — trying company name lookup for "${job.name}"`);
-      const hunterDomain = await findDomainByCompany(job.name).catch(() => null);
-      if (hunterDomain && hunterDomain !== usedDomain) {
-        // Validate: make sure Hunter didn't return a completely different company's domain
-        const plausible = isDomainPlausibleForCompany(hunterDomain, job.name);
-        console.log(`[Hunter] company lookup → ${hunterDomain} (plausible=${plausible})`);
-        if (plausible) {
-          const retry = await findEmailsWithFallback(hunterDomain, 10);
-          if (retry.emails.length > 0) {
-            usedDomain = retry.domain;
-            emails = retry.emails;
-            domain = hunterDomain;
-            console.log(`[Hunter] retry succeeded: ${emails.length} emails for ${usedDomain}`);
-            await run('UPDATE jobs SET domain = $1 WHERE id = $2 AND user_id = $3', [usedDomain, job.id, req.user.id]);
-          }
-        } else {
-          console.log(`[Hunter] rejected "${hunterDomain}" — doesn't match company "${job.name}"`);
-        }
-      }
-    }
-
-    // Filter to engineering/tech contacts only — skip recruiters, office managers, etc.
-    let engEmails = emails.filter(e => isEngineeringContact(e.title));
-
-    // If Hunter still has 0, OR returned contacts but ALL were non-engineering,
-    // try Prospeo → Serper email search → website scraper fallbacks
-    let emailSource = 'hunter';
-    if (emails.length === 0 || engEmails.length === 0) {
-      const reason = emails.length === 0 ? 'Hunter returned 0' : `Hunter found ${emails.length} but none are engineering roles`;
-      console.log(`[find-emails] ${reason} — trying Prospeo/Serper/Website fallbacks`);
-      const { emails: fallbackEmails, usedSource } = await findEmailsMultiSource(
-        usedDomain, job.name, ['hunter']
-      );
-      if (fallbackEmails.length > 0) {
-        emails = fallbackEmails;
-        emailSource = usedSource;
-        engEmails = fallbackEmails.filter(e => isEngineeringContact(e.title));
-        console.log(`[find-emails] fallback source "${usedSource}" returned ${fallbackEmails.length} emails, ${engEmails.length} engineering`);
-      }
-    }
-    const filteredOut = emails.length - engEmails.length;
-    if (filteredOut > 0) {
-      console.log(`[find-emails] filtered out ${filteredOut} non-engineering contacts (${emails.length} → ${engEmails.length})`);
-    }
-
-    const insertSql = `
-      INSERT INTO job_contacts (job_id, name, title, linkedin_url, email, source, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (user_id, job_id, name) DO NOTHING
-    `;
-
-    let added = 0;
-    await tx(async (client) => {
-      for (const e of engEmails) {
-        if (!e.email) continue;
-        const src = e.source || emailSource || 'hunter';
-        const r = await client.query(insertSql, [job.id, e.name || 'Unknown', e.title || '', e.linkedin_url || '', e.email, src, req.user.id]);
-        if (r.rowCount > 0) added++;
-      }
-    });
-
-    const contacts = await all(
-      "SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 AND email IS NOT NULL AND email != '' ORDER BY created_at DESC",
-      [job.id, req.user.id]
-    );
-
-    // When all sources found contacts but all were non-engineering, surface a clear message
-    const allFiltered = emails.length > 0 && engEmails.length === 0;
-
-    res.json({
-      added, found: engEmails.length, total: emails.length, filteredOut, domain: usedDomain, contacts,
-      ...(allFiltered && {
-        hint: 'all_filtered',
-        hintText: `Found ${emails.length} contact${emails.length !== 1 ? 's' : ''} across all sources but none are engineering/tech roles — try "Find People" to search LinkedIn directly`,
-      }),
-    });
-  } catch (err) {
-    console.error('find-emails error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Find email for a single contact (by name + company domain) ───────────────
-
-router.post('/contacts/:contactId/find-email', async (req, res) => {
-  try {
-    const contact = await one(`
-      SELECT jc.*, j.id AS job_id, j.name AS company_name, j.domain AS job_domain, j.url AS job_url
-      FROM job_contacts jc JOIN jobs j ON j.id = jc.job_id WHERE jc.id = $1 AND jc.user_id = $2
-    `, [req.params.contactId, req.user.id]);
-    if (!contact) return res.status(404).json({ error: 'Contact not found' });
-    if (contact.email) return res.json({ email: contact.email, cached: true });
-    if (!contact.name) return res.status(400).json({ error: 'Contact has no name to search' });
-
-    const parts = contact.name.trim().split(/\s+/);
-    if (parts.length < 2) return res.status(400).json({ error: 'Need first + last name — got just one word' });
-    const firstName = parts[0];
-    const lastName  = parts[parts.length - 1];
-
-    // Resolve company domain (same logic as find-emails)
-    let domain = extractDomain(
-      { name: contact.company_name, domain: contact.job_domain, url: contact.job_url }, null
-    );
-    if (!domain || domain.length < 4) {
-      domain = await findWorkingDomain(contact.company_name, contact.job_url || '').catch(() => null);
-    }
-    if (!domain) {
-      const candidate = await findDomainByCompany(contact.company_name).catch(() => null);
-      if (candidate) domain = candidate;
-    }
-    if (!domain) return res.status(400).json({ error: `Could not resolve domain for ${contact.company_name}` });
-
-    await run('UPDATE jobs SET domain = $1 WHERE id = $2 AND user_id = $3', [domain, contact.job_id, req.user.id]);
-
-    // Source 1 — Hunter email-finder (deterministic name+domain → email).
-    const triedSources = [];
-    let foundEmail = null;
-    let foundStatus = null;
-    let foundSource = null;
-    let foundConfidence = null;
+    const abort = new AbortController();
+    let closed = false;
+    req.on('close', () => { closed = true; abort.abort(); });
+    const emit = (event, data) => { if (!closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
 
     try {
-      const hunter = await findEmailForPerson(domain, firstName, lastName);
-      triedSources.push('hunter');
-      if (hunter?.email) {
-        foundEmail = hunter.email;
-        foundConfidence = hunter.confidence;
-        foundStatus = hunter.verification_status === 'valid' ? 'valid'
-                    : hunter.verification_status === 'invalid' ? 'invalid'
-                    : hunter.confidence >= 80 ? 'valid'
-                    : hunter.confidence >= 50 ? 'risky' : null;
-        foundSource = 'hunter';
-      }
-    } catch (e) {
-      console.warn('[find-email] Hunter failed:', e.message);
-    }
-
-    // Source 2 — Prospeo per-person email-finder. 1 credit, accurate
-    // first/last/domain → email mapping. Free tier covers 75 lookups/month.
-    if (!foundEmail) {
-      try {
-        const prospeo = await findEmailByProspeo({ firstName, lastName, domain });
-        triedSources.push('prospeo');
-        if (prospeo?.email) {
-          foundEmail = prospeo.email;
-          foundConfidence = prospeo.confidence;
-          foundStatus = prospeo.email_status === 'valid' ? 'valid'
-                      : prospeo.email_status === 'invalid' ? 'invalid'
-                      : (prospeo.confidence >= 80 ? 'valid' : prospeo.confidence >= 50 ? 'risky' : null);
-          foundSource = 'prospeo';
-        }
-      } catch (e) {
-        console.warn('[find-email] Prospeo failed:', e.message);
-      }
-    }
-
-    // Source 3 — Website scrape. Fetches /team /about /contact and regex-
-    // extracts emails matching the domain, then tries to match against the
-    // contact's name from surrounding HTML. Free, but lowest yield.
-    if (!foundEmail) {
-      try {
-        const scraped = await findEmailsByWebsiteScrape(domain);
-        triedSources.push('website-scrape');
-        const wantFull  = contact.name.toLowerCase().trim();
-        const wantFirst = firstName.toLowerCase();
-        const wantLast  = lastName.toLowerCase();
-        // Prefer exact name match, fall back to first+last appearing in name.
-        const match = scraped.find(s => (s.name || '').toLowerCase().trim() === wantFull)
-                   || scraped.find(s => {
-                        const n = (s.name || '').toLowerCase();
-                        return n.includes(wantFirst) && n.includes(wantLast);
-                      });
-        if (match?.email) {
-          foundEmail      = match.email;
-          foundStatus     = match.confidence >= 80 ? 'valid' : match.confidence >= 50 ? 'risky' : null;
-          foundConfidence = match.confidence;
-          foundSource     = 'website';
-        }
-      } catch (e) {
-        console.warn('[find-email] Website scrape failed:', e.message);
-      }
-    }
-
-    // Source 4 — Apollo enrichPerson by LinkedIn URL (if we have one).
-    // Apollo's enrichment is more accurate than Hunter for execs who use a
-    // non-standard email pattern. Tracks 403 separately so the user sees
-    // "Apollo plan doesn't include enrichment" instead of a silent miss.
-    let apolloPlanError = null;
-    if (!foundEmail && contact.linkedin_url) {
-      try {
-        const enriched = await apollo.enrichPerson(contact.linkedin_url);
-        triedSources.push('apollo-enrich');
-        if (enriched?.email) {
-          foundEmail = enriched.email;
-          foundStatus = enriched.email_status === 'verified' ? 'valid'
-                      : enriched.email_status === 'likely' ? 'risky'
-                      : null;
-          foundSource = 'apollo';
-        }
-      } catch (e) {
-        const status = e.response?.status;
-        console.warn('[find-email] Apollo enrichPerson failed:', status || '', e.message);
-        if (status === 403) apolloPlanError = 'Apollo /people/match returned 403 — your Apollo plan does not include people enrichment.';
-      }
-    }
-
-    // Source 5 — Apollo searchPeople by name + company, in case the
-    // LinkedIn URL is missing or didn't match. Filter by name match.
-    if (!foundEmail) {
-      try {
-        const people = await apollo.searchPeople(contact.company_name, []);
-        triedSources.push('apollo-search');
-        const wantFull = contact.name.toLowerCase().trim();
-        const match = people.find(p => (p.name || '').toLowerCase().trim() === wantFull);
-        if (match?.email) {
-          foundEmail = match.email;
-          foundStatus = match.email_status === 'verified' ? 'valid'
-                      : match.email_status === 'likely' ? 'risky'
-                      : null;
-          foundSource = 'apollo';
-        }
-      } catch (e) {
-        const status = e.response?.status;
-        console.warn('[find-email] Apollo searchPeople failed:', status || '', e.message);
-        if (status === 403 && !apolloPlanError) apolloPlanError = 'Apollo /mixed_people/search returned 403 — your Apollo plan does not include people search.';
-      }
-    }
-
-    if (!foundEmail) {
-      const lines = [`No email found. Tried: ${triedSources.join(', ') || 'no providers'}.`];
-      if (apolloPlanError) lines.push(apolloPlanError);
-      return res.json({
-        email: null,
-        domain,
-        triedSources,
-        apolloPlanError,
-        message: lines.join(' '),
+      emit('start', { company: job.name });
+      const people = await apify.findPeopleAtLinkedInCompany(
+        job.name,
+        job.linkedin_company_url || null,
+        await trustedDomain(job),
+        (progress) => emit('source', progress),
+        { signal: abort.signal },
+      );
+      if (closed) return;
+      const { added, updated } = await savePeople(job, people, req.user.id, 10);
+      const bySource = {};
+      for (const p of people) bySource[p.source] = (bySource[p.source] || 0) + 1;
+      emit('complete', {
+        added, updated, total: people.length, bySource,
+        message: people.length ? `+${added} new contact${added === 1 ? '' : 's'}${updated ? `, ${updated} updated` : ''} (${people.length} found)` : 'No matching people found — try adding the company LinkedIn URL',
       });
+    } catch (err) {
+      console.error('find-people-stream error:', err.message);
+      emit('error', { message: err.message, error: err.message });
+    } finally {
+      if (!closed) res.end();
     }
+  });
+});
 
-    await run(
-      "UPDATE job_contacts SET email = $1, email_status = $2, source = COALESCE(NULLIF(source, ''), $3) WHERE id = $4 AND user_id = $5",
-      [foundEmail, foundStatus, foundSource, contact.id, req.user.id]
+// ── Find people — non-streaming (auto-trigger) ───────────────────────────────
+router.post('/:id/find-linkedin', async (req, res) => {
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!job) return res.status(404).json({ error: 'Company not found' });
+  await withLock(`people:${req.user.id}:${job.id}`, res, async () => {
+    const people = await apify.findPeopleAtLinkedInCompany(job.name, job.linkedin_company_url || null, await trustedDomain(job), null);
+    const { added, updated } = await savePeople(job, people, req.user.id, 8);
+    const contacts = await all('SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 ORDER BY seniority_score DESC, created_at DESC', [job.id, req.user.id]);
+    res.json({ added, updated, contacts });
+  });
+});
+
+// ── Find emails for a company (bulk) ─────────────────────────────────────────
+router.post('/:id/find-emails', async (req, res) => {
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!job) return res.status(404).json({ error: 'Company not found' });
+  const override = req.body?.domain ? String(req.body.domain) : null;
+  if (override && !normalizeHost(override)) return res.status(400).json({ error: `"${override}" isn't a valid domain — use something like acme.com` });
+
+  await withLock(`emails:${req.user.id}:${job.id}`, res, async () => {
+    const result = await findCompanyEmails(job, { override });
+    if (!result.domain) {
+      return res.status(400).json({ error: describeReasons(result.reasons), hint: 'domain_needed', reasons: result.reasons });
+    }
+    // Remember the domain and where it came from; a guess stays marked as one.
+    await run('UPDATE jobs SET domain = $1, domain_source = $2 WHERE id = $3 AND user_id = $4',
+      [result.domain, result.domainSource === 'mx' ? 'guess' : result.domainSource, job.id, req.user.id]);
+
+    let added = 0;
+    let updated = 0;
+    const ordered = [...result.candidates].sort((a, b) => seniorityScore(b.title) - seniorityScore(a.title));
+    for (const c of ordered) {
+      const out = await upsertContact(dbHelpers, { userId: req.user.id, jobId: job.id, contact: c, seniorityScore: seniorityScore(c.title) });
+      if (out === 'inserted') added++;
+      else if (out === 'updated') updated++;
+    }
+    const contacts = await all(
+      'SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 AND email IS NOT NULL ORDER BY seniority_score DESC, created_at DESC',
+      [job.id, req.user.id],
     );
 
+    const sources = [...new Set(result.candidates.map(c => c.source))].join(', ');
+    const parts = [];
+    if (result.candidates.length) parts.push(`+${added} new email${added === 1 ? '' : 's'}${updated ? `, ${updated} updated` : ''} at ${result.domain}${sources ? ` (via ${sources})` : ''}`);
+    else parts.push(`No relevant emails found at ${result.domain}`);
+    if (result.filteredOut) parts.push(`${result.filteredOut} non-engineering/recruiting contact${result.filteredOut === 1 ? '' : 's'} skipped`);
+    if (!result.domainVerified) parts.push(`domain ${result.domain} was inferred — set it on the company if it's wrong`);
+    if (result.reasons.length) parts.push(describeReasons(result.reasons));
+
+    res.json({
+      added, updated,
+      found: result.candidates.length,
+      total: result.candidates.length + result.filteredOut,
+      filteredOut: result.filteredOut,
+      domain: result.domain,
+      domainSource: result.domainSource,
+      domainVerified: result.domainVerified,
+      pattern: result.pattern,
+      tried: result.tried,
+      reasons: result.reasons,
+      contacts,
+      message: parts.join(' · '),
+      ...(result.candidates.length === 0 && result.filteredOut > 0 && {
+        hint: 'all_filtered',
+        hintText: `Found ${result.filteredOut} contact${result.filteredOut === 1 ? '' : 's'} but none are engineering or recruiting roles — try "Find People" to search LinkedIn`,
+      }),
+    });
+  });
+});
+
+// ── Find email for one contact ───────────────────────────────────────────────
+const LOOKUP_RETRY_DAYS = 7;
+
+router.post('/contacts/:contactId/find-email', async (req, res) => {
+  const contact = await one(`
+    SELECT jc.*, j.name AS company_name, j.domain AS job_domain, j.url AS job_url, j.domain_source AS job_domain_source
+    FROM job_contacts jc JOIN jobs j ON j.id = jc.job_id AND j.user_id = $2
+    WHERE jc.id = $1 AND jc.user_id = $2
+  `, [req.params.contactId, req.user.id]);
+  if (!contact) return res.status(404).json({ error: 'Contact not found' });
+  const force = Boolean(req.body?.force);
+
+  if (!force && contact.email && ['valid', 'risky'].includes(contact.email_status)) {
+    return res.json({ email: contact.email, email_status: contact.email_status, contact, cached: true });
+  }
+  const lastLookup = contact.email_lookup_at ? new Date(contact.email_lookup_at).getTime() : 0;
+  if (!force && !contact.email && lastLookup && Date.now() - lastLookup < LOOKUP_RETRY_DAYS * 86_400_000) {
+    return res.json({
+      email: null, cached: true, contact,
+      message: `${contact.email_lookup_note || 'No email found last time.'} (looked up ${new Date(lastLookup).toLocaleDateString()} — retry to spend credits again)`,
+    });
+  }
+
+  await withLock(`email:${req.user.id}:${contact.id}`, res, async () => {
+    const job = { name: contact.company_name, domain: contact.job_domain, url: contact.job_url, domain_source: contact.job_domain_source };
+    const r = await findPersonEmail(contact, job);
+    const note = r.best ? null : [`No email found${r.tried.length ? ` (tried ${r.tried.join(', ')})` : ''}.`, describeReasons(r.reasons)].filter(Boolean).join(' ');
+
+    if (r.best) {
+      await run(`UPDATE job_contacts SET email = $1, email_status = $2, email_confidence = $3,
+                   source = COALESCE(NULLIF(source, ''), $4), email_lookup_at = NOW(), email_lookup_note = NULL
+                 WHERE id = $5 AND user_id = $6`,
+        [r.best.email, r.best.status, r.best.confidence, r.best.source, contact.id, req.user.id]);
+    } else {
+      await run('UPDATE job_contacts SET email_lookup_at = NOW(), email_lookup_note = $1 WHERE id = $2 AND user_id = $3', [note, contact.id, req.user.id]);
+    }
     const updated = await one('SELECT * FROM job_contacts WHERE id = $1 AND user_id = $2', [contact.id, req.user.id]);
     res.json({
-      email: foundEmail,
-      email_status: foundStatus,
+      email: r.best?.email || null,
+      email_status: r.best?.status || null,
+      confidence: r.best?.confidence ?? null,
+      source: r.best?.source || null,
+      domain: r.domain,
       contact: updated,
-      domain,
-      source: foundSource,
-      confidence: foundConfidence,
-      triedSources,
+      triedSources: r.tried,
+      reasons: r.reasons,
+      ...(note ? { message: note } : {}),
     });
-  } catch (err) {
-    console.error('contacts/find-email error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+  });
 });
 
 // ── Generate outreach for a contact ──────────────────────────────────────────
@@ -1609,7 +1341,10 @@ router.post('/contacts/:contactId/generate', async (req, res) => {
       recipientTitle:  contact.title || 'Decision Maker',
       companyName:     contact.company_name,
       companyCategory: contact.company_type,
+      isRecruiter:     /recruit|talent|people|hr\b|human resources/i.test(contact.title || ''),
       extraContext,
+      sender:          await loadSenderProfile(req.user.id),
+      customTemplates: await loadUserTemplates(req.user.id),
     };
 
     if (type === 'linkedin') {
@@ -1627,7 +1362,7 @@ router.post('/contacts/:contactId/generate', async (req, res) => {
     }
   } catch (err) {
     console.error('generate contact error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -1635,20 +1370,30 @@ router.post('/contacts/:contactId/generate', async (req, res) => {
 
 router.put('/contacts/:contactId', async (req, res) => {
   try {
-    const { status, generated_dm, generated_subject, generated_body, email } = req.body;
-    await run(`
+    const { status, generated_dm, generated_subject, generated_body } = req.body || {};
+    const CONTACT_STATUSES = ['pending', 'generated', 'sent', 'email_sent', 'dm_sent', 'replied', 'closed', 'skip'];
+    if (status && !CONTACT_STATUSES.includes(status)) return res.status(400).json({ error: `Unknown status "${status}"` });
+    let email = req.body?.email;
+    if (email !== undefined && email !== null && email !== '') {
+      email = String(email).trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That doesn\'t look like an email address' });
+    } else email = null;
+    const r = await run(`
       UPDATE job_contacts SET
         status            = COALESCE($1, status),
         generated_dm      = COALESCE($2, generated_dm),
         generated_subject = COALESCE($3, generated_subject),
         generated_body    = COALESCE($4, generated_body),
+        -- A hand-edited address hasn't been verified by anyone.
+        email_status      = CASE WHEN $5::text IS NOT NULL AND lower($5) IS DISTINCT FROM lower(email) THEN 'unverified' ELSE email_status END,
         email             = COALESCE($5, email)
       WHERE id = $6 AND user_id = $7
     `, [
       status || null, generated_dm || null,
       generated_subject || null, generated_body || null,
-      email || null, req.params.contactId, req.user.id
+      email, req.params.contactId, req.user.id
     ]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Contact not found' });
     res.json(await one('SELECT * FROM job_contacts WHERE id = $1 AND user_id = $2', [req.params.contactId, req.user.id]));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1659,7 +1404,8 @@ router.put('/contacts/:contactId', async (req, res) => {
 
 router.delete('/contacts/:contactId', async (req, res) => {
   try {
-    await run('DELETE FROM job_contacts WHERE id = $1 AND user_id = $2', [req.params.contactId, req.user.id]);
+    const r = await run('DELETE FROM job_contacts WHERE id = $1 AND user_id = $2', [req.params.contactId, req.user.id]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Contact not found' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1682,23 +1428,8 @@ router.post('/:id/scrape-linkedin-company', async (req, res) => {
 
     const urlToUse = linkedinUrl || job.linkedin_company_url || null;
 
-    // Find people — passes domain + cookie is read from env inside the function
-    const people = await apify.findPeopleAtLinkedInCompany(job.name, urlToUse, job.domain || null, null);
-
-    const insertSql = `
-      INSERT INTO job_contacts (job_id, name, title, linkedin_url, source, user_id)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (user_id, job_id, name) DO NOTHING
-    `;
-
-    let added = 0;
-    await tx(async (client) => {
-      for (const p of people.slice(0, 8)) {
-        if (!p.name || p.name.toLowerCase() === 'unknown') continue;
-        const r = await client.query(insertSql, [job.id, p.name, p.title || '', p.linkedin_url || '', p.source || 'linkedin', req.user.id]);
-        if (r.rowCount > 0) added++;
-      }
-    });
+    const people = await apify.findPeopleAtLinkedInCompany(job.name, urlToUse, await trustedDomain(job), null);
+    const { added } = await savePeople(job, people, req.user.id, 8);
 
     const contacts = await all(
       'SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 ORDER BY created_at DESC',

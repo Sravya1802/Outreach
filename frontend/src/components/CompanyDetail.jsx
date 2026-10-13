@@ -279,6 +279,10 @@ function OutreachTab({ company }) {
     setFindResultMsg(null)
     try {
       const res = await fetch(api.jobs.findPeopleStream(company.id))
+      if (!res.ok || !res.body) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Find People failed (HTTP ${res.status})`)
+      }
       const reader = res.body.getReader()
       const dec = new TextDecoder()
       let buf = ''
@@ -298,7 +302,10 @@ function OutreachTab({ company }) {
               setFindProgress(p => [...p.slice(-4), `${d.source}: ${d.status}${d.count != null ? ` (${d.count})` : ''}`])
             }
             if (currentEvent === 'complete') {
-              setFindResultMsg({ ok: true, text: `+${d.added || 0} new LinkedIn contacts (${d.total || 0} found)` })
+              setFindResultMsg({ ok: true, text: d.message || `+${d.added || 0} new LinkedIn contacts (${d.total || 0} found)` })
+            }
+            if (currentEvent === 'error') {
+              setFindResultMsg({ ok: false, text: d.message || d.error || 'Find People failed' })
             }
           } catch {}
         }
@@ -315,7 +322,8 @@ function OutreachTab({ company }) {
     setFindResultMsg(null)
     try {
       const r = await api.jobs.findEmails(company.id)
-      setFindResultMsg({ ok: true, text: `+${r.added || 0} new emails from ${r.domain || 'domain'}${r.filteredOut ? ` (${r.filteredOut} non-tech filtered)` : ''}` })
+      const ok = (r.added || 0) + (r.updated || 0) > 0 || !(r.reasons || []).length
+      setFindResultMsg({ ok, text: r.hintText || r.message || `+${r.added || 0} new emails from ${r.domain || 'domain'}` })
     } catch (err) {
       setFindResultMsg({ ok: false, text: err.message })
     }

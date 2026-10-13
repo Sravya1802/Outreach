@@ -3,6 +3,7 @@ import { one, all, run, tx } from '../db.js';
 import * as apollo from '../services/apollo.js';
 import * as apify from '../services/apify.js';
 import { generateOutreach } from '../services/ai.js';
+import { loadSenderProfile } from '../services/senderProfile.js';
 
 const router = Router();
 
@@ -198,6 +199,7 @@ router.post('/:id/generate', async (req, res) => {
       companyName:    prospect.company_name,
       companyStage:   prospect.company_type,
       extraContext,
+      sender:         await loadSenderProfile(req.user.id),
     };
 
     const [email, linkedin] = await Promise.all([

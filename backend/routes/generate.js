@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { one, run } from '../db.js';
 import { generateOutreach, generateWaaSMessage, generateCoverLetter } from '../services/ai.js';
 import { DEFAULT_OUTREACH_TEMPLATES, normalizeOutreachTemplates } from '../services/outreachTemplates.js';
+import { loadSenderProfile } from '../services/senderProfile.js';
 
 const router = Router();
 const TEMPLATE_META_KEY = 'outreach_templates';
@@ -40,7 +41,7 @@ router.get('/templates', async (req, res) => {
       customized: !!saved,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -55,7 +56,7 @@ router.put('/templates', async (req, res) => {
     );
     res.json({ templates, customized: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -82,6 +83,7 @@ router.post('/email', async (req, res) => {
       recipientName: name, recipientTitle: title, companyName: company,
       companyStage: stage, role, extraContext, hasApplied, rolesAvailable,
       specificAchievement, position, isRecruiter, customTemplates,
+      sender: await loadSenderProfile(req.user.id),
     });
 
     if (contactId) {
@@ -94,7 +96,7 @@ router.post('/email', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Generate email error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -121,6 +123,7 @@ router.post('/linkedin', async (req, res) => {
       recipientName: name, recipientTitle: title, companyName: company,
       companyStage: stage, role, extraContext, hasApplied, rolesAvailable,
       specificAchievement, position, isRecruiter, customTemplates,
+      sender: await loadSenderProfile(req.user.id),
     });
 
     if (contactId) {
@@ -133,7 +136,7 @@ router.post('/linkedin', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Generate LinkedIn error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -155,7 +158,7 @@ router.post('/both', async (req, res) => {
     }
 
     const customTemplates = await getUserTemplates(req.user.id);
-    const params = { recipientName: name, recipientTitle: title, companyName: company, companyStage: stage, role, extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, customTemplates };
+    const params = { recipientName: name, recipientTitle: title, companyName: company, companyStage: stage, role, extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, customTemplates, sender: await loadSenderProfile(req.user.id) };
 
     const [email, linkedin] = await Promise.all([
       generateOutreach({ ...params, type: 'cold_email' }),
@@ -170,7 +173,7 @@ router.post('/both', async (req, res) => {
     res.json({ email, linkedin });
   } catch (err) {
     console.error('Generate both error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -180,7 +183,7 @@ router.post('/waas', async (req, res) => {
     const { companyName, companyDescription, industry, ycBatch, contactName, extraContext } = req.body;
     if (!companyName) return res.status(400).json({ error: 'companyName required' });
 
-    const result = await generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext });
+    const result = await generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender: await loadSenderProfile(req.user.id) });
 
     if (req.body.contactId) {
       try {
@@ -194,7 +197,7 @@ router.post('/waas', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('Generate WaaS error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -219,11 +222,11 @@ router.post('/cover-letter', async (req, res) => {
       companyDescription = req.body.companyDescription || '';
     }
 
-    const result = await generateCoverLetter({ companyName, companyDescription, roleTitle, extraContext });
+    const result = await generateCoverLetter({ companyName, companyDescription, roleTitle, extraContext, sender: await loadSenderProfile(req.user.id) });
     res.json(result);
   } catch (err) {
     console.error('Cover letter error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

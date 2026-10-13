@@ -124,6 +124,26 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-12 — Backend hardening + email/people pipeline rebuild
+
+Two read-only audits (pipeline + rest of backend), verified against code, then fixed:
+- **Security:**
+  - `PUT /career/company/:id` accepted `resume_path`, which the delete/analyze routes then unlinked or read. That allowed deleting any server file (e.g. `.env`) or reading another user's resume. Now server-only, and every stored path goes through `isWithin()` (`services/safePaths.js`).
+  - Uploads check ownership and parse the id before multer runs (`middleware/ownedCompany.js`).
+  - `resume_dir` is no longer client-writable.
+  - SSRF: `services/safeFetch.js` (public IPs only, re-checked per redirect, size cap) now covers the evaluator, intern-roles, careers scraping and website email scraping. Auto-apply asserts a public URL. The scrape-and-queue loopback ignores `X-Forwarded-Host`. `detectPlatform` matches on hostname.
+  - Alerts only go to the account email; test sends are limited to 1/min; the digest escapes quotes.
+- **Multi-user:** outreach, cover letters and WaaS notes were written as the founder for every account. Now `services/senderProfile.js` builds the sender from the user's profile and resume, and returns 400 if both are empty. Default templates and the evaluator no longer contain founder details. Per-contact generation now uses saved templates.
+- **Auto-apply:** atomic row claim (no double submit), a per-user run lock, and pause/consent/daily cap enforced inside `processOneEvaluation` (every path). The nightly route clamps body overrides. Dry runs release their claim. Direct apply refuses already-submitted rows.
+- **Reliability:** `middleware/asyncSafe.js` routes rejected async handlers to the JSON error handler. Added a JSON 404 for `/api`, plus unhandledRejection/uncaughtException logging. Removed `maybeWipeDb` and the 06:00 daily-refresh cron and `refresh-all`, which spent roughly 100 Apify runs a day and discarded the results. Crons now use `{ timezone: 'Etc/UTC', noOverlap: true }`.
+- **Numbers:** `services/applyStatus.js` is the single status vocabulary. "Applied" now means actually submitted; added `inFlight`/`failed`; replies count as sent; the queue shows `submit_failed`/captcha/login rows. Quoted the `"jobTitle"`/`"jobDescription"` aliases, so reclassification sees titles. The per-source scrape buttons now post to `/jobs/scrape`.
+- **Email/people pipeline:** new modules `companyDomain.js` (tldts, about 100 ATS/job-board hosts, exact-name known-domain map, MX check for guesses), `contactRules.js`, `providerGuard.js` (typed errors + 1h quota cooldown), `emailProviders.js` (timeouts) and `contactFinder.js` (ordered waterfall plus `upsertContact` dedupe/enrich).
+  - Routes in `jobs.js` were rewritten with per-lookup locks, user-facing `reasons`/`message`, a 7-day negative cache for misses, and `force` to retry.
+  - Find People was rebuilt in `apify.js`: it uses the trusted domain or a plausibility-checked name lookup, aborts on disconnect, includes recruiters, and only takes Google results that name the company.
+  - Removed `hunter.js`, `emailfinders.js`, `domainResolver.js` and the legacy `/api/contacts` and `/api/emails` routers.
+- **Migration:** `supabase/migrations/012_contact_finding.sql` adds `jobs.domain_source`, `job_contacts.email_confidence/email_lookup_at/email_lookup_note`, and unique indexes on lower(email) and lower(linkedin_url).
+- **Tests:** backend 63 (`npm test --prefix backend`).
+
 ### 2026-10-12 — Claude path modernized (OpenAI stays live)
 
 - **What:** User chose "modernize the Claude path only". `@anthropic-ai/sdk` 0.17 → **0.128.0** (pinned, backend + root package.json). New `backend/services/claude.js` is the single Claude helper: `claude-opus-5-5`, explicit `output_config.effort`, `max_tokens` 16000 (thinking counts toward it), server-side refusal fallback (`fallbacks: "default"` + beta `server-side-fallback-2026-07-01`), refusal/max_tokens checks before reading content, text read by block type, SDK-level timeout + retries.

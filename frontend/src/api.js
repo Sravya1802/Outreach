@@ -188,9 +188,10 @@ export const api = {
     // Scrapes write to the canonical `jobs` table used by the Companies grid.
     // Pass { source } for a single source, or omit it for all sources.
     scrape:       (params) => apiCall('/jobs/scrape', { method: 'POST', body: params }),
-    // Back-compat only; ScraperPage uses jobs.scrape so per-source results
-    // appear in the main Companies grid.
-    scrapeSource: (src, params) => apiCall(`/companies/scrape/${encodeURIComponent(src)}`, { method: 'POST', body: params }),
+    // Single-source scrape. Goes to the same /jobs/scrape as everything else —
+    // the old /companies/scrape/:src wrote to a legacy table the Companies
+    // grid never reads, so these buttons always reported "+0 new".
+    scrapeSource: (src, params) => apiCall('/jobs/scrape', { method: 'POST', body: { ...params, source: src } }),
   },
 
   yc: {

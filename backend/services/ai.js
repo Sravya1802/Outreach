@@ -1,19 +1,18 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { cleanOutreachTemplate } from './outreachTemplates.js';
+import { describeSender, MissingSenderProfileError } from './senderProfile.js';
 
-const CANDIDATE = {
-  name:    'Sravya Rachakonda',
-  degree:  "Master's student in Computer Science",
-  website: 'https://sravyarachakonda.com',
-  seeking: 'Summer 2026 Software Engineering / AI/ML internship',
-  background: `Master's CS student with software engineering and CS research background.
-Focused on systems, ML infrastructure, and applied AI.
-Looking for Summer 2026 internships at top tech, quant, and AI companies.`,
-};
+// Every generator takes `sender` (services/senderProfile.js): the signed-in
+// user's own name, background and resume. Nothing about any real person is
+// hardcoded here.
+function requireSender(sender) {
+  if (!sender?.name) throw new MissingSenderProfileError();
+  return sender;
+}
 
 // ─── Seniority-aware prompt builders ─────────────────────────────────────────
 
-function buildEmailPrompt({ recipientName, recipientTitle, companyName, companyCategory, extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter }) {
+function buildEmailPrompt({ recipientName, recipientTitle, companyName, companyCategory, extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, sender }) {
   const hasTitle = recipientTitle && recipientTitle !== 'No title' && recipientTitle.trim();
   const roleContext = hasTitle
     ? `${recipientName} is a ${recipientTitle} at ${companyName} (${companyCategory || 'tech company'}).`
@@ -24,39 +23,29 @@ function buildEmailPrompt({ recipientName, recipientTitle, companyName, companyC
     : 'engineer/IC (lead with a specific technical hook tied to their team\'s work)';
 
   const scenarioBrief = hasApplied
-    ? `Sravya has ALREADY APPLIED for ${position || 'a role'} at ${companyName}. The email goal is a referral or visibility boost, NOT a fresh introduction. Acknowledge the application and ask for advice or referral.`
+    ? `The sender has ALREADY APPLIED for ${position || 'a role'} at ${companyName}. The email goal is a referral or visibility boost, NOT a fresh introduction. Acknowledge the application and ask for advice or referral.`
     : rolesAvailable
-      ? `Sravya is interested in a specific role: ${rolesAvailable}. The email goal is to surface intent + ask for a referral or advice.`
-      : `No specific role identified yet. Goal: get on their radar for Summer 2026 + ask for a quick intro or pointer.`;
+      ? `The sender is interested in a specific role: ${rolesAvailable}. The email goal is to surface intent + ask for a referral or advice.`
+      : `No specific role identified yet. Goal: get on their radar for ${sender.seeking} + ask for a quick intro or pointer.`;
 
-  const system = `You are writing cold outreach for Sravya Rachakonda, a Master's CS student. Your output gets sent verbatim — every email is per-recipient, never templated.
+  const system = `You are writing cold outreach for ${sender.name}. Your output gets sent verbatim — every email is per-recipient, never templated.
 
-About Sravya (use the most relevant 1-2 details for THIS company, not all):
-- ${CANDIDATE.degree} at UIC (University of Illinois Chicago)
-- 2 years at Mercedes-Benz R&D: distributed data pipelines, vehicle telemetry, Kafka/Spark, 500GB+/day
-- Current: LLM/RAG research at UIC Cancer Center — clinical data extraction
-- Skills: Python, Java, TypeScript, React, Node.js, AWS, Kafka, Spark
-- Website: ${CANDIDATE.website}
-- Seeking: ${CANDIDATE.seeking}
+About the sender (use the most relevant 1-2 details for THIS company, not all):
+${describeSender(sender)}
 
 The audience is a ${audienceMode}.
 
 Hard rules — FOLLOW EXACTLY:
 1. NEVER use these openers: "I'm a CS student interested in opportunities", "I hope this email finds you well", "I came across your profile and wanted to connect", "I'd love to chat for 15 minutes". Auto-deleted.
 2. NEVER use generic subject lines. Forbidden: "Internship inquiry", "Quick question", "Reaching out". Use formats:
-   - "Mercedes-Benz pipelines → your data infra at ${companyName}?"
-   - "Built RAG over clinical data — interested in your [team]"
-   - "Master's CS + Kafka/Spark — open to a 5-min chat at ${companyName}?"
-3. Open with ONE specific hook. Pick the angle that maps best to ${companyName}:
-   - Data/infra company → Mercedes-Benz pipeline work
-   - AI/ML/healthtech → Cancer Center RAG research
-   - Quant/finance → systems + reliability angle
-   - Startup → product velocity + full-stack range
+   - "[sender's most relevant project or role] → your [team] at ${companyName}?"
+   - "Built [specific thing from their resume] — interested in your [team]"
+3. Open with ONE specific hook: the single credential from the sender's background that maps best to what ${companyName} builds (data/infra, AI/ML, quant/finance, product/startup, …). Only use facts that appear above — never invent employers, numbers or projects.
 4. Body structure (4-5 sentences total):
    (a) Specific hook tied to their team/product/recipient's work
    (b) ONE relevant credential — quote a specific achievement, not generic skills
    (c) Clear ask — referral / intro / 5-min chat. Pick one.
-   (d) Sign-off as Sravya
+   (d) Sign-off as ${sender.firstName || sender.name}
 5. Length: 4-6 sentences MAX including sign-off. Cut anything extra.
 6. Voice: confident engineer, not eager candidate. No hedging ("just wanted to", "if it's not too much trouble").
 7. Use the recipient's first name only. Don't pad with their title.
@@ -73,7 +62,7 @@ Pick ONE specific hook angle for ${companyName} (data/infra vs AI vs startup vs 
   return { system, user };
 }
 
-function buildLinkedInPrompt({ recipientName, recipientTitle, companyName, companyCategory, extraContext, hasApplied, rolesAvailable, isRecruiter }) {
+function buildLinkedInPrompt({ recipientName, recipientTitle, companyName, companyCategory, extraContext, hasApplied, rolesAvailable, isRecruiter, sender }) {
   const hasTitle = recipientTitle && recipientTitle !== 'No title' && recipientTitle.trim();
   const roleContext = hasTitle
     ? `${recipientName} is a ${recipientTitle} at ${companyName} (${companyCategory || 'tech company'})`
@@ -84,22 +73,17 @@ function buildLinkedInPrompt({ recipientName, recipientTitle, companyName, compa
     ? `Already applied for ${rolesAvailable || 'a role'}. Goal: referral / visibility, not introduction.`
     : `No specific role yet. Goal: get on radar + ask for advice or pointer.`;
 
-  const system = `You write LinkedIn connection notes for Sravya Rachakonda, a Master's CS student targeting Summer 2026 internships. Your output is sent verbatim — every note is per-recipient, never templated.
+  const system = `You write LinkedIn connection notes for ${sender.name}, who is seeking ${sender.seeking}. Your output is sent verbatim — every note is per-recipient, never templated.
 
-About Sravya (pick ONE relevant detail per note):
-- 2 years Mercedes-Benz R&D: Kafka/Spark pipelines (500GB+/day)
-- Current: LLM/RAG over clinical data at UIC Cancer Center
-- Skills: Python, Java, TS, AWS, Kafka, Spark
+About the sender (pick ONE relevant detail per note; never invent facts):
+${describeSender(sender)}
 
 Audience: ${audienceMode}.
 
 Hard rules — FOLLOW EXACTLY:
 1. Under 280 characters HARD LIMIT (LinkedIn cuts off).
 2. Banned openers: "I'm a CS student interested in opportunities", "Hope you're doing well", "I'd love to connect", "I'd love to chat for 15 minutes". Auto-rejected.
-3. ONE punchy hook tying YOUR background to THEIR team/product. Pick the angle:
-   - Data/infra company → Mercedes-Benz pipeline angle
-   - AI/healthtech → Cancer Center RAG angle
-   - Quant/finance → systems reliability angle
+3. ONE punchy hook tying the sender's background to THEIR team/product — the credential that fits ${companyName} best.
 4. ONE clear ask — referral / intro / advice. Pick one.
 5. No emojis. Confident engineer voice, not fan voice.
 6. Use first name only.
@@ -171,7 +155,7 @@ async function generateWithOpenAI(system, user) {
 
 // ─── WaaS message prompt ──────────────────────────────────────────────────────
 
-function buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext }) {
+function buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender }) {
   const system = `You write short "reach out" messages for Work at a Startup (YC) company pages. The message goes directly to the founder/hiring manager. These must be casual, specific, and human — NOT corporate email templates.
 
 Rules:
@@ -179,17 +163,13 @@ Rules:
 2. Lowercase throughout — use "i" not "I". No capitals except proper nouns.
 3. NEVER start with "hi", "hey", "dear", or "hope this message finds you well"
 4. Open with ONE specific observation about THIS company (not generic praise)
-5. Connect one piece of Sravya's background to their work
+5. Connect one piece of the sender's background to their work (only facts listed below)
 6. End with a soft ask: "would love to chat about interning this summer" or similar
 7. NO portfolio URL — too formal for this format
 8. Sound like a real engineer typing a quick note, not a recruiter
 
-About Sravya Rachakonda (the person writing this):
-- Master's CS student at UIC (University of Illinois Chicago)
-- 2 years at Mercedes-Benz R&D: distributed data pipelines processing 500GB+ daily, vehicle telemetry systems
-- Current: LLM/RAG research at UIC Cancer Center — building retrieval-augmented generation for clinical data
-- Skills: Python, Java, TypeScript, React, Node.js, AWS, Kafka, Spark
-- Seeking Summer 2026 SWE intern
+About the person writing this:
+${describeSender(sender)}
 
 Return ONLY valid JSON: { "message": "..." }`;
 
@@ -200,7 +180,7 @@ YC Batch: ${ycBatch || 'Unknown'}
 Contact: ${contactName || 'the team'}
 ${extraContext ? `Extra context: ${extraContext}` : ''}
 
-Write the WaaS reach-out message. Be specific about ${companyName}. Connect to Sravya's most relevant background. Keep it under 200 words.`;
+Write the WaaS reach-out message. Be specific about ${companyName}. Connect to the sender's most relevant background. Keep it under 200 words.`;
 
   return { system, user };
 }
@@ -209,33 +189,33 @@ Write the WaaS reach-out message. Be specific about ${companyName}. Connect to S
 
 const TEMPLATES = {
   // HIGHEST response rate: when you've already applied
-  alreadyApplied: (name, position, company) => ({
+  alreadyApplied: (name, position, company, sig) => ({
     subject: `Just applied for the ${position} internship`,
-    body: `Hi ${name},\n\nI came across your profile and noticed you're a recruiter@${company}. I actually just applied for the ${position} internship and was wondering if you'd be open to a call sometime this week or next.\n\nI'd love to learn about your career growth and ${company}!\n\nBest,\nSravya Rachakonda\nsravyarachakonda.com`,
+    body: `Hi ${name},\n\nI came across your profile and noticed you're a recruiter@${company}. I actually just applied for the ${position} internship and was wondering if you'd be open to a call sometime this week or next.\n\nI'd love to learn about your career growth and ${company}!\n\nBest,\n${sig}`,
   }),
 
   // HIGH response rate: when FT positions exist but no internship listed
-  ftsAvailableNoInterns: (name, position, company) => ({
+  ftsAvailableNoInterns: (name, position, company, sig) => ({
     subject: `Internship inquiry for ${company}`,
-    body: `Hi ${name},\n\nI came across your profile and noticed you're a recruiter@${company}. I saw a lot of openings for ${position} roles and was wondering if you guys were looking for any interns?\n\nWould you be open to a call sometime this week or next? I'd love to learn about your career growth and ${company}!\n\nBest,\nSravya Rachakonda\nsravyarachakonda.com`,
+    body: `Hi ${name},\n\nI came across your profile and noticed you're a recruiter@${company}. I saw a lot of openings for ${position} roles and was wondering if you guys were looking for any interns?\n\nWould you be open to a call sometime this week or next? I'd love to learn about your career growth and ${company}!\n\nBest,\n${sig}`,
   }),
 
   // GOOD response: when no open role, asking decision maker directly
-  noRoleAvailable: (name, company) => ({
+  noRoleAvailable: (name, company, sig) => ({
     subject: `Quick question about ${company}`,
-    body: `Hi ${name},\n\nI came across your profile and noticed you're at ${company}. I'm actually looking for Summer 2026 internships and was wondering if you'd know about any opportunities?\n\nWould you be open to a call sometime? I'd love to learn about your career growth and ${company}!\n\nBest,\nSravya Rachakonda\nsravyarachakonda.com`,
+    body: `Hi ${name},\n\nI came across your profile and noticed you're at ${company}. I'm looking for internship opportunities and was wondering if you'd know about any opportunities?\n\nWould you be open to a call sometime? I'd love to learn about your career growth and ${company}!\n\nBest,\n${sig}`,
   }),
 
   // Seek advice + ask for introduction to hiring team
-  seekingAdvice: (name, position, company) => ({
+  seekingAdvice: (name, position, company, sig) => ({
     subject: `Advice on ${position} at ${company}`,
-    body: `Hi ${name},\n\nI came across the ${position} role at ${company} and it aligns perfectly with my background in AI/ML and software engineering. I'm genuinely interested in this opportunity.\n\nWould you have a few minutes to share your perspective on the role and team? If it seems like a good fit, I'd also appreciate if you could connect me with the right person on the hiring team.\n\nThank you for your time.\n\nBest regards,\nSravya Rachakonda\nsravyarachakonda.com`,
+    body: `Hi ${name},\n\nI came across the ${position} role at ${company} and it aligns closely with my background. I'm genuinely interested in this opportunity.\n\nWould you have a few minutes to share your perspective on the role and team? If it seems like a good fit, I'd also appreciate if you could connect me with the right person on the hiring team.\n\nThank you for your time.\n\nBest regards,\n${sig}`,
   }),
 
   // Short ask for advice (builds momentum)
-  quickQuestion: (name, question, company) => ({
+  quickQuestion: (name, question, company, sig) => ({
     subject: `${name}, 1-minute question`,
-    body: `Hi ${name},\n\nI saw you were at ${company} and wanted to ask:\n\n${question || 'If you were breaking into this space today, what skills would you focus on?'}\n\nYour input means a lot — even a one-line response would be great!\n\nThanks,\nSravya Rachakonda`,
+    body: `Hi ${name},\n\nI saw you were at ${company} and wanted to ask:\n\n${question || 'If you were breaking into this space today, what skills would you focus on?'}\n\nYour input means a lot — even a one-line response would be great!\n\nThanks,\n${sig}`,
   }),
 };
 
@@ -249,12 +229,12 @@ const LINKEDIN_TEMPLATES = {
 
   // HIGH response: asking about internships when FT roles visible
   ftsAvailableNoInterns: (name, position, company) => ({
-    message: `Hi ${name}, saw ${company} is hiring for ${position} roles. Any chance you're looking for interns? I'm a Master's student and would love to chat.`,
+    message: `Hi ${name}, saw ${company} is hiring for ${position} roles. Any chance you're looking for interns? Would love to chat.`,
   }),
 
   // Direct ask: no open role
   noRoleAvailable: (name, company) => ({
-    message: `Hi ${name}, I came across your profile at ${company}. I'm looking for Summer 2026 internships — any opportunities I should know about?`,
+    message: `Hi ${name}, I came across your profile at ${company}. I'm looking for internships — any opportunities I should know about?`,
   }),
 
   // Referral request: ask for introduction to right contact
@@ -319,7 +299,7 @@ function detectScenarioAndTemplate(params) {
   return { template: 'noRoleAvailable', data: [recipientName, companyName] };
 }
 
-export function generateOutreachTemplate({ recipientName, recipientTitle, companyName, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, extraContext, type }) {
+export function generateOutreachTemplate({ recipientName, recipientTitle, companyName, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, extraContext, type, sender }) {
   const scenario = detectScenarioAndTemplate({
     recipientName,
     recipientTitle,
@@ -335,7 +315,7 @@ export function generateOutreachTemplate({ recipientName, recipientTitle, compan
   const templateMap = type === 'linkedin' ? LINKEDIN_TEMPLATES : TEMPLATES;
   const templateFunc = templateMap[scenario.template];
   if (templateFunc) {
-    return templateFunc(...scenario.data);
+    return templateFunc(...scenario.data, sender?.signature || sender?.name || '');
   }
 
   return null;
@@ -343,26 +323,22 @@ export function generateOutreachTemplate({ recipientName, recipientTitle, compan
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export async function generateCoverLetter({ companyName, companyDescription, roleTitle, extraContext }) {
-  const system = `You write internship cover letters for Sravya Rachakonda. Format: 3 paragraphs, 300-500 words total. Professional but direct — not stiff.
+export async function generateCoverLetter({ companyName, companyDescription, roleTitle, extraContext, sender }) {
+  requireSender(sender);
+  const system = `You write internship cover letters for ${sender.name}. Format: 3 paragraphs, 300-500 words total. Professional but direct — not stiff.
 
-About Sravya:
-- Master's CS student at UIC (University of Illinois Chicago)
-- 2 years at Mercedes-Benz R&D: distributed data pipelines processing 500GB+ daily, vehicle telemetry, Kafka, Spark
-- Current: LLM/RAG research at UIC Cancer Center — building retrieval-augmented generation for clinical data
-- Skills: Python, Java, TypeScript, React, Node.js, AWS, Kafka, Spark
-- Website: sravyarachakonda.com
-- Seeking: Summer 2026 software engineering / AI/ML internship
+About the applicant:
+${describeSender(sender)}
 
 Paragraph 1: Specific opening — reference something real about this company. NOT "I am writing to express interest..."
-Paragraph 2: Lead with most relevant experience. Data/infra companies → Mercedes-Benz pipeline work. AI/health → Cancer Center LLM research. Connect to what this company actually does.
+Paragraph 2: Lead with the applicant's most relevant experience for this company (only facts listed above). Connect it to what this company actually does.
 Paragraph 3: Brief skills mention + clear ask for internship opportunity.
 
-Sign off as: Sravya Rachakonda
+Sign off as: ${sender.name}
 
 Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
 
-  const user = `Write a cover letter for a Summer 2026 internship at ${companyName}.
+  const user = `Write a cover letter for ${roleTitle ? `the ${roleTitle} role` : 'an internship'} at ${companyName}.
 ${roleTitle ? `Role: ${roleTitle}` : ''}
 ${companyDescription ? `About the company: ${companyDescription.slice(0, 500)}` : ''}
 ${extraContext ? `Extra context: ${extraContext}` : ''}
@@ -383,14 +359,12 @@ Make paragraph 1 specific to ${companyName}. Choose background based on company 
     }
   }
 
-  return {
-    subject: `Summer 2026 Internship Application — Sravya Rachakonda`,
-    body: `Dear Hiring Manager,\n\nI'm a Master's CS student at UIC with two years of industry experience at Mercedes-Benz R&D and current LLM/RAG research at UIC Cancer Center. I'm interested in joining ${companyName} as a Summer 2026 software engineering intern.\n\nAt Mercedes-Benz, I built distributed data pipelines processing 500GB+ daily using Kafka and Spark. I'm currently developing retrieval-augmented generation systems for clinical data. I believe this background aligns well with ${companyName}'s technical challenges.\n\nI'd welcome the opportunity to discuss how I can contribute to your team.\n\nSravya Rachakonda\nsravyarachakonda.com`,
-  };
+  throw new Error('Every AI provider failed to write the cover letter — try again in a minute.');
 }
 
-export async function generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext }) {
-  const { system, user } = buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext });
+export async function generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender }) {
+  requireSender(sender);
+  const { system, user } = buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender });
   const provider  = process.env.AI_PROVIDER || 'gemini';
   const providers = [provider, 'gemini', 'anthropic', 'openai'].filter((v, i, a) => a.indexOf(v) === i);
 
@@ -403,13 +377,11 @@ export async function generateWaaSMessage({ companyName, companyDescription, ind
       console.error(`[ai/waas] ${p} failed: ${err.message}`);
     }
   }
-  // Fallback
-  return {
-    message: `noticed ${companyName} is building something interesting — i've spent two years at mercedes-benz r&d working on distributed data pipelines and i'm currently doing llm/rag research at uic. would love to chat about interning this summer if you're looking for eng interns.`,
-  };
+  throw new Error('Every AI provider failed to write the message — try again in a minute.');
 }
 
-export async function generateOutreach({ type, recipientName, recipientTitle, companyName, companyCategory, companyStage, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, extraContext, customTemplates }) {
+export async function generateOutreach({ type, recipientName, recipientTitle, companyName, companyCategory, companyStage, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, extraContext, customTemplates, sender }) {
+  requireSender(sender);
   // ALWAYS use AI generation as the primary path. Per-recipient personalization
   // (company-specific hook, role-aware angle, recruiter vs IC framing) only
   // works when a model sees the full context. The static high-response
@@ -418,7 +390,7 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
   const category = companyCategory || companyStage || '';
   const params = {
     recipientName, recipientTitle, companyName, companyCategory: category,
-    extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter,
+    extraContext, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, sender,
   };
   const built = type === 'linkedin'
     ? buildLinkedInPrompt(params)
@@ -444,15 +416,12 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
   if (type !== 'linkedin') {
     const templateResult = generateOutreachTemplate({
       recipientName, recipientTitle, companyName, hasApplied, rolesAvailable,
-      specificAchievement, position, isRecruiter, extraContext, type,
+      specificAchievement, position, isRecruiter, extraContext, type, sender,
     });
     if (templateResult) return templateResult;
   }
 
-  // Last-resort fallback (should never be reached with valid API keys)
-  return {
-    subject: `Master's CS → ${companyName}?`,
-    body: `Hi ${recipientName},\n\nI came across ${companyName}'s work and wanted to reach out directly. I'm a Master's CS student with a background in software engineering and research, targeting Summer 2026.\n\nWould you be open to a quick intro, or point me to the right person on your team?\n\n— Sravya\n${CANDIDATE.website}`,
-    message: `Came across your work at ${companyName} — I'm a CS Master's student focused on [relevant area]. Any chance you'd share how your team approaches [specific challenge]?`,
-  };
+  // Every provider failed (LinkedIn has no static fallback): say so rather
+  // than return a placeholder the user might send.
+  throw new Error('Every AI provider failed to write the message — try again in a minute.');
 }

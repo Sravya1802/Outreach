@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as cheerio from 'cheerio';
 import { one, run } from '../db.js';
+import { safeFetch } from '../services/safeFetch.js';
 
 const router = Router();
 
@@ -138,12 +139,12 @@ async function fetchAshbyRoles(token) {
 }
 
 async function fetchHTMLRoles(careersUrl) {
-  const res = await fetch(careersUrl, {
-    signal: AbortSignal.timeout(10000),
+  const fetched = await safeFetch(careersUrl, {
+    timeoutMs: 10000,
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; InternFinder/1.0)' },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const html = await res.text();
+  if (!fetched.res.ok) throw new Error(`HTTP ${fetched.res.status}`);
+  const html = await fetched.text();
   const $ = cheerio.load(html);
 
   const roles = [];

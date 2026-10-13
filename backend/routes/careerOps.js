@@ -13,12 +13,15 @@ import { evaluateJob, fetchJobFromUrl } from '../services/jobEvaluator.js';
 import { tailorResume, generateResumePDF } from '../services/resumeGenerator.js';
 import { saveEvaluationReport, syncTracker } from '../services/reportManager.js';
 import { scanResumes, pickResumeForRole, detectPlatform } from '../services/resumeRegistry.js';
-import { processOneEvaluation, runQueueOnce } from '../services/autoApplier.js';
+import { processOneEvaluation, runQueueOnce, AUTO_APPLY_DAILY_CAP, submittedInLast24h } from '../services/autoApplier.js';
 import { runNightlyPipelineForUser } from '../services/nightlyPipeline.js';
 import {
   uploadLibraryArchetype, listLibrary, removeLibraryFile, isStorageConfigured,
 } from '../services/resumeStorage.js';
 import { buildBulkQueueFilter } from '../services/bulkQueueFilter.js';
+import { requireOwnedCompany } from '../middleware/ownedCompany.js';
+import { FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
+import { isWithin } from '../services/safePaths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESUME_DIR = path.join(__dirname, '..', 'data', 'resume');
@@ -244,7 +247,6 @@ router.put('/profile', async (req, res) => {
       'gpa','certifications','current_company','current_title','years_experience','skills','projects',
       'gender','race','veteran_status','disability_status','demographic_consent','auto_apply_consent',
       'auto_apply_paused',
-      'resume_dir',
     ];
     const data = { ...(req.body || {}) };
 
@@ -453,9 +455,9 @@ router.post('/auto-apply-company/:companyId/scrape-and-queue', async (req, res) 
     // Forward to the existing scrape-roles route handler — it knows about
     // Apple direct, YC WaaS, Greenhouse/Lever/Ashby, etc. We construct a
     // local sub-request rather than duplicating the logic.
-    const proto = req.headers['x-forwarded-proto'] || 'http';
-    const host  = req.headers['x-forwarded-host'] || req.get('host');
-    const scrapeUrl = `${proto}://${host}/api/jobs/${company.id}/scrape-roles`;
+    // Always loop back to this process — X-Forwarded-Host is client-controlled
+    // and this request forwards the caller's Authorization header.
+    const scrapeUrl = `http://127.0.0.1:${process.env.PORT || 3001}/api/jobs/${company.id}/scrape-roles`;
     const scrapeRes = await fetch(scrapeUrl, {
       method: 'POST',
       headers: {
@@ -486,11 +488,11 @@ router.post('/auto-apply-company/:companyId/scrape-and-queue', async (req, res) 
 // can fire hundreds of submissions in an hour and get the shared VM IP / our
 // Apify account flagged by Greenhouse / Lever, which would blast-radius every
 // other user. Override via env for test/admin accounts.
-const AUTO_APPLY_DAILY_CAP = Number(process.env.AUTO_APPLY_DAILY_CAP || 100);
 
 router.post('/auto-apply/run', async (req, res) => {
   try {
-    const { dryRun = false, headless = true, limit = 10 } = req.body || {};
+    const { dryRun = false, headless = true } = req.body || {};
+    let limit = Math.max(1, Math.min(50, Math.floor(Number(req.body?.limit)) || 10));
     const profile = await one('SELECT auto_apply_consent, auto_apply_paused FROM user_profile WHERE user_id = $1', [req.user.id]);
     if (!profile?.auto_apply_consent) {
       return res.status(400).json({ error: 'Auto Apply requires explicit consent in the profile before the worker can run.' });
@@ -499,16 +501,7 @@ router.post('/auto-apply/run', async (req, res) => {
       return res.status(409).json({ error: 'Auto Apply is paused. Resume it from the profile to run the worker.' });
     }
     if (!dryRun) {
-      const row = await one(
-        `SELECT COUNT(*)::int AS n
-           FROM evaluations
-          WHERE user_id = $1
-            AND apply_status = 'submitted'
-            AND applied_at IS NOT NULL
-            AND applied_at::timestamptz > now() - interval '24 hours'`,
-        [req.user.id]
-      );
-      const submittedToday = row?.n || 0;
+      const submittedToday = await submittedInLast24h(req.user.id);
       if (submittedToday >= AUTO_APPLY_DAILY_CAP) {
         return res.status(429).json({
           error: `Daily auto-apply cap reached (${submittedToday}/${AUTO_APPLY_DAILY_CAP}). Try again in 24 hours.`,
@@ -517,15 +510,12 @@ router.post('/auto-apply/run', async (req, res) => {
         });
       }
       // Don't let this run blow past the cap either.
-      const remaining = AUTO_APPLY_DAILY_CAP - submittedToday;
-      if (typeof limit === 'number' && limit > remaining) {
-        req.body.limit = remaining;
-      }
+      limit = Math.min(limit, AUTO_APPLY_DAILY_CAP - submittedToday);
     }
     const summary = await runQueueOnce({
       dryRun,
-      headless,
-      limit: req.body?.limit ?? limit,
+      headless: headless !== false,
+      limit,
       userId: req.user.id,
     });
     res.json(summary);
@@ -740,9 +730,11 @@ router.post('/auto-apply-direct', async (req, res) => {
         RETURNING id
       `, [req.user.id, jobUrl, jobTitle, companyName]);
       row = await one('SELECT * FROM evaluations WHERE id = $1 AND user_id = $2', [r.insertId, req.user.id]);
+    } else if (row.apply_status === 'submitted') {
+      return res.status(409).json({ error: 'You already applied to this job', evaluationId: row.id, applyStatus: row.apply_status });
     } else {
       // Re-queue for another attempt
-      await run("UPDATE evaluations SET apply_mode='auto', apply_status='queued' WHERE id = $1 AND user_id = $2", [row.id, req.user.id]);
+      await run("UPDATE evaluations SET apply_mode='auto', apply_status='queued' WHERE id = $1 AND user_id = $2 AND apply_status IS DISTINCT FROM 'submitted'", [row.id, req.user.id]);
     }
 
     const result = await processOneEvaluation(req.user.id, row.id, { dryRun, headless });
@@ -789,9 +781,9 @@ router.get('/pipeline', async (req, res) => {
 
     // Map of raw apply_status → column id. Anything not here falls into "evaluated".
     const STATUS_MAP = {
+      // Only statuses that really reached the employer count as applied;
+      // opened/queued/in-progress rows stay in "evaluated" until they do.
       not_started: 'evaluated',
-      opened:      'applied',
-      queued:      'applied',
       submitted:   'applied',
       responded:   'responded',
       interview:   'interview',
@@ -933,7 +925,7 @@ router.post('/tailored-resume/:id', async (req, res) => {
     console.log(`[careerOps] Generating tailored resume for ${row.company_name} - ${row.job_title} (candidate: ${candidateName})`);
 
     const tailored = await tailorResume(resumeText, row.job_description, row.job_title, row.company_name);
-    const { pdfPath, relativePath } = await generateResumePDF(tailored, row.company_name, row.job_title, candidateName);
+    const { pdfPath, relativePath } = await generateResumePDF(tailored, row.company_name, row.job_title, candidateName, { userId: req.user.id, evalId: row.id });
 
     await run('UPDATE evaluations SET pdf_path = $1 WHERE id = $2 AND user_id = $3', [pdfPath, row.id, req.user.id]);
 
@@ -1195,24 +1187,26 @@ router.get('/auto-apply-queue', async (req, res) => {
              apply_error, apply_resume_used, created_at, pdf_path
       FROM evaluations
       WHERE user_id = $1
-        AND (apply_status IN ('queued','needs_review','platform_unsupported','failed','submitted')
-             AND apply_mode = 'auto')
+        AND apply_mode = 'auto'
+        AND apply_status IN ('queued','in_progress','needs_review','captcha_needed','login_needed','submit_failed','platform_unsupported','submitted')
       ORDER BY
-        CASE apply_status
-          WHEN 'needs_review' THEN 1
-          WHEN 'queued'       THEN 2
-          WHEN 'failed'       THEN 3
-          WHEN 'submitted'    THEN 4
+        CASE
+          WHEN apply_status IN ('needs_review','captcha_needed','login_needed') THEN 1
+          WHEN apply_status IN ('queued','in_progress') THEN 2
+          WHEN apply_status IN ${sqlList(FAILED_STATUSES)} THEN 3
+          WHEN apply_status = 'submitted' THEN 4
           ELSE 5
         END,
         created_at DESC
       LIMIT 200
     `, [req.user.id]);
     const counts = {
-      queued:        rows.filter(r => r.apply_status === 'queued').length,
-      needs_review:  rows.filter(r => r.apply_status === 'needs_review').length,
+      // The worker writes submit_failed (not "failed"), and captcha/login rows
+      // need the user just like needs_review — the old filter hid all of them.
+      queued:        rows.filter(r => r.apply_status === 'queued' || r.apply_status === 'in_progress').length,
+      needs_review:  rows.filter(r => ['needs_review', 'captcha_needed', 'login_needed'].includes(r.apply_status)).length,
       submitted:     rows.filter(r => r.apply_status === 'submitted').length,
-      failed:        rows.filter(r => r.apply_status === 'failed').length,
+      failed:        rows.filter(r => r.apply_status === 'submit_failed').length,
       unsupported:   rows.filter(r => r.apply_status === 'platform_unsupported').length,
     };
     res.json({ items: rows, counts });
@@ -1240,16 +1234,19 @@ router.get('/nightly-settings', async (req, res) => {
     res.json({ settings: { ...NIGHTLY_DEFAULTS, ...cur } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+function normalizeNightlySettings(incoming = {}) {
+  return {
+    enabled:  !!incoming.enabled,
+    roleType: ['intern','fulltime','all'].includes(incoming.roleType) ? incoming.roleType : NIGHTLY_DEFAULTS.roleType,
+    minScore: Math.max(0, Math.min(100, Number(incoming.minScore) || NIGHTLY_DEFAULTS.minScore)),
+    maxApps:  Math.max(1, Math.min(200, Number(incoming.maxApps) || NIGHTLY_DEFAULTS.maxApps)),
+    useLibraryResume: incoming.useLibraryResume !== false,
+  };
+}
+
 router.put('/nightly-settings', async (req, res) => {
   try {
-    const incoming = req.body || {};
-    const merged = {
-      enabled:  !!incoming.enabled,
-      roleType: ['intern','fulltime','all'].includes(incoming.roleType) ? incoming.roleType : NIGHTLY_DEFAULTS.roleType,
-      minScore: Math.max(0, Math.min(100, Number(incoming.minScore) || NIGHTLY_DEFAULTS.minScore)),
-      maxApps:  Math.max(1, Math.min(200, Number(incoming.maxApps) || NIGHTLY_DEFAULTS.maxApps)),
-      useLibraryResume: incoming.useLibraryResume !== false,
-    };
+    const merged = normalizeNightlySettings(req.body || {});
     await run(
       `INSERT INTO meta (user_id, key, value)
        VALUES ($1, 'nightly_pipeline_settings', $2)
@@ -1270,7 +1267,9 @@ router.put('/nightly-settings', async (req, res) => {
 router.post('/nightly-pipeline', async (req, res) => {
   try {
     const settingsRow = await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'nightly_pipeline_settings'", [req.user.id]);
-    const cfg = { ...NIGHTLY_DEFAULTS, ...(settingsRow?.value ? JSON.parse(settingsRow.value) : {}), ...(req.body || {}) };
+    // Manual overrides go through the same clamps as saved settings.
+    const saved = settingsRow?.value ? JSON.parse(settingsRow.value) : {};
+    const cfg = normalizeNightlySettings({ ...NIGHTLY_DEFAULTS, ...saved, ...(req.body || {}) });
     const summary = await runNightlyPipelineForUser(req.user.id, cfg);
     if (summary.error) return res.status(400).json({ error: summary.error });
     res.json(summary);
@@ -1480,11 +1479,20 @@ router.delete('/privacy/sensitive-profile', async (req, res) => {
 
 // ── Document upload storage ───────────────────────────────────────────────────
 const DOC_BASE = path.join(__dirname, '..', 'data', 'documents');
+// Where routes/companies.js writes per-company resume uploads.
+const COMPANY_RESUME_DIR = path.join(__dirname, '..', 'data', 'resumes');
+
+/** On-disk path of a documents row, or null if it would escape DOC_BASE. */
+function documentPath(req, doc) {
+  const p = path.join(DOC_BASE, req.user.id, String(doc.company_id), path.basename(String(doc.filename || '')));
+  return isWithin(DOC_BASE, p) ? p : null;
+}
 fs.mkdirSync(DOC_BASE, { recursive: true });
 
 const docStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(DOC_BASE, String(req.params.companyId || 'profile'));
+    // companyId is validated + ownership-checked by requireOwnedCompany before multer.
+    const dir = path.join(DOC_BASE, req.user.id, req.params.companyId);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -1592,7 +1600,7 @@ router.get('/:companyId/documents', async (req, res) => {
 });
 
 // ── POST /api/career/:companyId/documents — upload document ────────────────────
-router.post('/:companyId/documents', docUpload.single('file'), async (req, res) => {
+router.post('/:companyId/documents', requireOwnedCompany('companyId'), docUpload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const result = await run(`
@@ -1612,8 +1620,8 @@ router.delete('/:companyId/documents/:docId', async (req, res) => {
   try {
     const doc = await one("SELECT * FROM documents WHERE id = $1 AND company_id = $2 AND user_id = $3", [req.params.docId, req.params.companyId, req.user.id]);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
-    const filePath = path.join(DOC_BASE, String(req.params.companyId), doc.filename);
-    try { fs.unlinkSync(filePath); } catch (_) {}
+    const filePath = documentPath(req, doc);
+    if (filePath) { try { fs.unlinkSync(filePath); } catch (_) {} }
     await run("DELETE FROM documents WHERE id = $1 AND user_id = $2", [req.params.docId, req.user.id]);
     res.json({ ok: true });
   } catch (err) {
@@ -1626,8 +1634,9 @@ router.get('/:companyId/documents/:docId/download', async (req, res) => {
   try {
     const doc = await one("SELECT * FROM documents WHERE id = $1 AND company_id = $2 AND user_id = $3", [req.params.docId, req.params.companyId, req.user.id]);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
-    const filePath = path.join(DOC_BASE, String(req.params.companyId), doc.filename);
-    res.setHeader('Content-Disposition', `inline; filename="${doc.original_name}"`);
+    const filePath = documentPath(req, doc);
+    if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing' });
+    res.setHeader('Content-Disposition', `inline; filename="${String(doc.original_name || 'document').replace(/["\r\n]/g, '')}"`);
     res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
     res.sendFile(filePath);
   } catch (err) {
@@ -1659,12 +1668,14 @@ router.get('/company/:id', async (req, res) => {
 });
 
 // ── PUT /api/career/company/:id — upsert application tracking ─────────────────
-router.put('/company/:id', async (req, res) => {
+router.put('/company/:id', requireOwnedCompany('id'), async (req, res) => {
   try {
+    // resume_path / resume_original_name / resume_size are written only by the
+    // upload routes. Accepting them here let a client point resume_path at any
+    // server file, which the delete/analyze routes then unlinked or read.
     const {
       status, applied_date, follow_up_date, notes, fit_score, salary,
       location_type, start_date, end_date, fit_assessment,
-      resume_path, resume_original_name, resume_size,
       job_title, job_url, job_source,
     } = req.body;
     await run(`
@@ -1706,9 +1717,9 @@ router.put('/company/:id', async (req, res) => {
       start_date || null,
       end_date || null,
       fit_assessment || null,
-      resume_path || null,
-      resume_original_name || null,
-      resume_size != null ? Number(resume_size) : null,
+      null, // resume_path — server-managed (COALESCE keeps the existing value)
+      null, // resume_original_name
+      null, // resume_size
       job_title || null,
       job_url || null,
       job_source || null,
@@ -1738,7 +1749,7 @@ router.post('/company/:id/score-fit', async (req, res) => {
     let resumeText = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_text']))?.value;
     if (!resumeText) {
       // Check if resume file exists on disk and parse it on-the-fly
-      if (row?.resume_path) {
+      if (row?.resume_path && isWithin(COMPANY_RESUME_DIR, row.resume_path)) {
         try {
           const text = await extractPdfText(row.resume_path);
           if (text && text.length > 50) {

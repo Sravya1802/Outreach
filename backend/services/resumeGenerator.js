@@ -248,21 +248,22 @@ function esc(str) {
 
 // ── Generate PDF with Puppeteer ───────────────────────────────────────────────
 
-export async function generateResumePDF(tailoredData, companyName, jobTitle, candidateName) {
+export async function generateResumePDF(tailoredData, companyName, jobTitle, candidateName, { userId = null, evalId = null } = {}) {
   const name = (candidateName || tailoredData.candidateName || 'candidate')
     .toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const company = (companyName || 'company')
     .toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const date = new Date().toISOString().slice(0, 10);
 
-  const filename = `cv-${name}-${company}-${date}.pdf`;
-  const pdfPath  = path.join(OUTPUT_DIR, filename);
+  // Per-user folder + evaluation id: names built from candidate/company/date
+  // collided (two roles at one company on one day, or two users with the same
+  // name) and could serve or attach someone else's resume.
+  const filename = evalId ? `eval-${evalId}.pdf` : `cv-${name}-${company}-${date}-${Date.now()}.pdf`;
+  const dir      = userId ? path.join(OUTPUT_DIR, String(userId)) : OUTPUT_DIR;
+  fs.mkdirSync(dir, { recursive: true });
+  const pdfPath  = path.join(dir, filename);
 
   const { html, paperFormat } = buildHtml(tailoredData, companyName);
-
-  // Write temp HTML for debugging
-  const tmpHtml = path.join(OUTPUT_DIR, `_tmp-${name}-${company}.html`);
-  fs.writeFileSync(tmpHtml, html, 'utf8');
 
   // `networkidle0` waits for all network requests to settle and can hang
   // indefinitely if a font/asset request stalls. `load` is sufficient since

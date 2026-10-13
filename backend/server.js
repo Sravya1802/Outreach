@@ -13,13 +13,10 @@ config({ path: path.join(__dirname, '..', '.env') });
 validateConfig();
 
 import companiesRouter  from './routes/companies.js';
-import contactsRouter   from './routes/contacts.js';
-import emailsRouter     from './routes/emails.js';
 import generateRouter   from './routes/generate.js';
 import prospectsRouter  from './routes/prospects.js';
 import db, { one, all, run, pingDb } from './db.js';
 import jobsRouter from './routes/jobs.js';
-import { runReclassifyUnclassified } from './routes/jobs.js';
 import internRolesRouter from './routes/internRoles.js';
 import unifiedRouter    from './routes/unified.js';
 import creditsRouter    from './routes/credits.js';
@@ -30,12 +27,12 @@ import ycRouter           from './routes/yc.js';
 import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
 import { requireAuth }    from './middleware/requireAuth.js';
+import { installAsyncSafety } from './middleware/asyncSafe.js';
+import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
 import { scrapeAllSources } from './services/scraper.js';
 import { scrapeAllSourcesAndPersist } from './services/multiSourceScraper.js';
 import { runSubscriptionDigests } from './services/dailyDigest.js';
 import { mailerConfigured } from './services/mailer.js';
-import { importStartupSheet } from './services/startupSheet.js';
-import { checkAllCredits }   from './services/creditChecker.js';
 
 const app = express();
 
@@ -89,8 +86,6 @@ app.get('/api/health', (req, res) => {
 app.use('/api', requireAuth);
 
 app.use('/api/companies',  companiesRouter);
-app.use('/api/contacts',   contactsRouter);
-app.use('/api/emails',     emailsRouter);
 app.use('/api/generate',   generateRouter);
 app.use('/api/prospects',  prospectsRouter);
 app.use('/api/jobs',       jobsRouter);
@@ -104,31 +99,6 @@ app.use('/api/yc',         ycRouter);
 app.use('/api/scraped-roles', scrapedRolesRouter);
 app.use('/api/alerts',     alertsRouter);
 
-// ── Manual refresh endpoint (SSE) ────────────────────────────────────────────
-app.post('/api/jobs/refresh-all', async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  let closed = false;
-  req.on('close', () => { closed = true; });
-
-  function emit(event, data) {
-    if (!closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  }
-
-  try {
-    emit('progress', { message: 'Starting full refresh...' });
-    await runDailyRefresh(req.user.id, msg => emit('progress', { message: msg }));
-    emit('complete', { message: 'Refresh complete!' });
-    if (!closed) res.end();
-  } catch (err) {
-    emit('error', { error: err.message });
-    if (!closed) res.end();
-  }
-});
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────
 app.get('/api/jobs/last-refresh', async (req, res) => {
@@ -165,10 +135,10 @@ app.get('/api/stats', async (req, res) => {
       // prospects), NOT the legacy `outreach` table — reading outreach made
       // these read ~0 on the dashboard (#1a).
       one(`SELECT
-             ((SELECT COUNT(*) FROM job_contacts WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1) +
-              (SELECT COUNT(*) FROM prospects    WHERE status IN ('sent','email_sent','dm_sent') AND user_id = $1))::int AS sent,
-             ((SELECT COUNT(*) FROM job_contacts WHERE status = 'replied' AND user_id = $1) +
-              (SELECT COUNT(*) FROM prospects    WHERE status = 'replied' AND user_id = $1))::int AS replied`, [req.user.id]),
+             ((SELECT COUNT(*) FROM job_contacts WHERE status IN ${sqlList(OUTREACH_SENT)} AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status IN ${sqlList(OUTREACH_SENT)} AND user_id = $1))::int AS sent,
+             ((SELECT COUNT(*) FROM job_contacts WHERE status IN ${sqlList(OUTREACH_REPLIED)} AND user_id = $1) +
+              (SELECT COUNT(*) FROM prospects    WHERE status IN ${sqlList(OUTREACH_REPLIED)} AND user_id = $1))::int AS replied`, [req.user.id]),
       // Source-distinct count needs LATERAL unnest — keep separate but
       // still parallel.
       one(`SELECT COUNT(DISTINCT trim(src))::int AS n
@@ -221,17 +191,20 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
              COUNT(*) FILTER (WHERE email IS NOT NULL AND email != '')::int           AS with_email,
              COUNT(*) FILTER (WHERE linkedin_url IS NOT NULL AND linkedin_url != '')::int AS with_linkedin,
              COUNT(*) FILTER (WHERE generated_subject IS NOT NULL OR generated_dm IS NOT NULL)::int AS outreach_generated,
-             COUNT(*) FILTER (WHERE status IN ('sent','dm_sent','email_sent'))::int  AS outreach_sent,
-             COUNT(*) FILTER (WHERE status = 'replied')::int                          AS outreach_replied
+             COUNT(*) FILTER (WHERE status IN ${sqlList(OUTREACH_SENT)})::int    AS outreach_sent,
+             COUNT(*) FILTER (WHERE status IN ${sqlList(OUTREACH_REPLIED)})::int AS outreach_replied
            FROM job_contacts WHERE user_id = $1`, [uid]),
       // evaluations: 10 counters rolled into one scan.
       one(`SELECT
              COUNT(*)::int                                                                                    AS total,
              COUNT(*)::int                                                                                    AS funnel_evaluated,
-             COUNT(*) FILTER (WHERE apply_status IN ('opened','queued','submitted','responded','interview','offer','rejected'))::int AS funnel_applied,
-             COUNT(*) FILTER (WHERE apply_status = 'submitted')::int                                          AS funnel_submitted,
-             COUNT(*) FILTER (WHERE apply_status IN ('responded','interview','offer','rejected'))::int         AS funnel_responded,
-             COUNT(*) FILTER (WHERE apply_status IN ('interview','offer'))::int                               AS funnel_interview,
+             -- "Applied" = actually sent to the employer; queued/opened rows are in flight, not applied.
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(APPLIED)})::int   AS funnel_applied,
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(APPLIED)})::int   AS funnel_submitted,
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(IN_FLIGHT)})::int AS funnel_in_flight,
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(FAILED)})::int    AS funnel_failed,
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(RESPONDED)})::int AS funnel_responded,
+             COUNT(*) FILTER (WHERE apply_status IN ${sqlList(INTERVIEW)})::int AS funnel_interview,
              COUNT(*) FILTER (WHERE apply_status = 'offer')::int                                              AS funnel_offer,
              COUNT(*) FILTER (WHERE apply_status = 'rejected')::int                                           AS funnel_rejected,
              COUNT(*) FILTER (WHERE apply_mode = 'manual' AND apply_status IS NOT NULL AND apply_status != 'not_started')::int AS mode_manual,
@@ -354,6 +327,8 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
       interview: funnelInterviewR?.n || 0,
       offer:     funnelOfferR?.n || 0,
       rejected:  funnelRejectedR?.n || 0,
+      inFlight:  evalAgg?.funnel_in_flight || 0,
+      failed:    evalAgg?.funnel_failed || 0,
     };
     const applyModes = {
       manual: modeManualR?.n || 0,
@@ -462,115 +437,42 @@ app.get('/api/activity', async (req, res) => {
   }
 });
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({ error: err.message });
+// Every route above is registered by now: make rejected async handlers reach
+// the error handler below instead of crashing the process.
+installAsyncSafety(app);
+
+// Unknown API routes get JSON (and a log line) instead of Express's HTML page.
+app.use('/api', (req, res) => {
+  console.warn(`[404] ${req.method} ${req.originalUrl.split('?')[0]}`);
+  res.status(404).json({ error: `No route for ${req.method} ${req.path}` });
 });
 
-// ── Daily refresh logic ───────────────────────────────────────────────────────
-// userId scopes the per-user state reads/writes (subcategory list, meta upsert,
-// startup-sheet import). Cron passes null for now — see TODO below.
-async function runDailyRefresh(userId, onProgress = null) {
-  function log(msg) {
-    console.log('[DailyRefresh]', msg);
-    if (onProgress) onProgress(msg);
-  }
-
-  log('Daily refresh starting — ' + new Date().toISOString());
-
-  // 1. Re-scrape previously-scraped subcategories
-  try {
-    // TODO(auth): source of userId — cron has none; when userId is null we
-    // fall back to a union across all users' jobs so the scraper still picks
-    // up representative subcategories. Once a multi-tenant scheduler exists
-    // this should iterate per user instead.
-    const subs = userId
-      ? await all(`
-          SELECT category, subcategory, COUNT(*)::int AS count
-          FROM jobs
-          WHERE source NOT IN ('startup_sheet') AND subcategory IS NOT NULL AND user_id = $1
-          GROUP BY category, subcategory
-          HAVING COUNT(*) > 2
-          LIMIT 20
-        `, [userId])
-      : await all(`
-          SELECT category, subcategory, COUNT(*)::int AS count
-          FROM jobs
-          WHERE source NOT IN ('startup_sheet') AND subcategory IS NOT NULL
-          GROUP BY category, subcategory
-          HAVING COUNT(*) > 2
-          LIMIT 20
-        `);
-
-    log(`Refreshing ${subs.length} subcategories...`);
-    for (const sub of subs) {
-      try {
-        log(`Scraping: ${sub.category} > ${sub.subcategory}`);
-        await scrapeAllSources(sub.subcategory, sub.category);
-        await new Promise(r => setTimeout(r, 2000));
-      } catch (err) {
-        log(`Failed: ${sub.subcategory} — ${err.message}`);
-      }
-    }
-  } catch (err) {
-    log('Subcategory refresh failed: ' + err.message);
-  }
-
-  // 2. Re-import startup sheet
-  if (process.env.STARTUP_SHEET_URL && userId) {
-    try {
-      log('Refreshing startup sheet...');
-      await importStartupSheet(userId, msg => log(msg));
-    } catch (err) {
-      log('Startup sheet refresh failed: ' + err.message);
-    }
-  } else if (process.env.STARTUP_SHEET_URL) {
-    // TODO(auth): source of userId — cron-triggered refresh skips the startup
-    // sheet import until we have a way to attribute new rows to a user.
-    log('Skipping startup sheet refresh: no userId in cron context');
-  }
-
-  // 3. Reclassify unclassified companies (per-user only)
-  if (userId) {
-    try {
-      log('Reclassifying unclassified companies...');
-      await runReclassifyUnclassified(userId);
-    } catch (err) {
-      log('Reclassify failed: ' + err.message);
-    }
-  } else {
-    log('Skipping reclassify: no userId in cron context');
-  }
-
-  // 4. Refresh credit status cache
-  try {
-    await checkAllCredits(true);
-    log('Credit status refreshed');
-  } catch (err) {
-    log('Credit check failed: ' + err.message);
-  }
-
-  // 5. Record last refresh time (upsert) — user-scoped meta key
-  if (userId) {
-    await run(
-      "INSERT INTO meta (key, value, user_id) VALUES ('lastRefresh', $1, $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value",
-      [new Date().toISOString(), userId],
-    );
-  }
-  log('Daily refresh complete — ' + new Date().toISOString());
-}
-
-// ── Cron: run every day at 6 AM UTC ──────────────────────────────────────────
-// TODO(auth): source of userId — the cron has no request context. For now we
-// call runDailyRefresh(null) which skips per-user writes; a multi-tenant
-// scheduler should iterate over active users and invoke this once per user.
-cron.schedule('0 6 * * *', () => {
-  if (process.env.NIGHTLY_CRON_DISABLED) {
-    console.log('[Cron] Daily refresh skipped — NIGHTLY_CRON_DISABLED is set');
-    return;
-  }
-  runDailyRefresh(null).catch(err => console.error('[Cron] Daily refresh FAILED:', err.message));
+app.use((err, req, res, _next) => {
+  console.error(`[error] ${req.method} ${req.originalUrl.split('?')[0]}:`, err.stack || err);
+  if (res.headersSent) return res.end(); // e.g. mid-SSE stream
+  // Multer upload limits / filters are client errors, not 500s.
+  const status = err.status || err.statusCode || (err.name === 'MulterError' ? 400 : 500);
+  res.status(status).json({ error: err.message || 'Internal error' });
 });
+
+// Last-resort logging. A rejection is logged and the process keeps serving;
+// an uncaught exception leaves state unknown, so log and let pm2 restart us.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason?.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err?.stack || err);
+  process.exit(1);
+});
+
+// The old 06:00 "daily refresh" cron re-ran every Apify scraper for up to 20
+// categories pooled across all users and threw the results away (cron has no
+// user to save them for) — ~100 paid actor runs a day for nothing. Removed;
+// role discovery is the 06:15 multi-source scrape below.
+
+// Crons run in UTC regardless of the VM's timezone, and a run that's still
+// going when the next one fires is skipped rather than doubled.
+const CRON_OPTS = { timezone: 'Etc/UTC', noOverlap: true };
 
 // ── Cron: daily multi-source scraped-roles refresh (06:15 UTC) ───────────────
 // Hits every supported source (Greenhouse / Lever / Ashby / LinkedIn /
@@ -600,7 +502,7 @@ cron.schedule('15 6 * * *', async () => {
   } catch (err) {
     console.error('[multi-scrape] dispatcher failed:', err.message);
   }
-});
+}, CRON_OPTS);
 
 // ── Cron: nightly auto-apply pipeline at 07:00 UTC (≈2am Central) ────────────
 // Runs scan → evaluate → fit-filter (score ≥ minScore) → queue → submit for
@@ -630,7 +532,7 @@ cron.schedule('0 7 * * *', async () => {
       } catch (e) { console.error(`[nightly-cron] user ${u.user_id} failed:`, e.message); }
     }
   } catch (err) { console.error('[nightly-cron] dispatcher failed:', err.message); }
-});
+}, CRON_OPTS);
 
 // ── Cron: job-alert digests at 08:00 UTC (after the 06:15 scrape) ────────────
 // Fans out to every subscriber (meta['job_alert_subscription']). Daily subs get
@@ -653,38 +555,12 @@ cron.schedule('0 8 * * *', async () => {
   } catch (err) {
     console.error('[digest-cron] failed:', err.message);
   }
-});
-
-// ── DB wipe on start (one-shot, auto-disables itself) ────────────────────────
-// NOTE: wipe is a dev-only bootstrap; it intentionally clears all rows across
-// all users and is gated by WIPE_DB_ON_START=true.
-async function maybeWipeDb() {
-  if (process.env.WIPE_DB_ON_START !== 'true') return;
-  try {
-    await run('DELETE FROM job_contacts');
-    await run('DELETE FROM jobs');
-    await run('DELETE FROM prospects');
-    await run('DELETE FROM contacts');
-    await run('DELETE FROM outreach');
-    await run('DELETE FROM companies');
-    await run('DELETE FROM meta');
-    console.log('[WIPE_DB] All tables wiped.');
-    // Flip the flag to false so it never runs again on next restart
-    const envPath = path.join(__dirname, '..', '.env');
-    const fs = await import('fs');
-    const content = fs.default.readFileSync(envPath, 'utf8');
-    fs.default.writeFileSync(envPath, content.replace(/^WIPE_DB_ON_START=true/m, 'WIPE_DB_ON_START=false'));
-    console.log('[WIPE_DB] Flag auto-disabled in .env');
-  } catch (err) {
-    console.error('[WIPE_DB] Failed:', err.message);
-  }
-}
+}, CRON_OPTS);
 
 const PORT = process.env.PORT || 3001;
 
 async function startup() {
   await pingDb();
-  await maybeWipeDb();
 
   app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);

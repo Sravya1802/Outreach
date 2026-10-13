@@ -19,10 +19,13 @@ const DEFAULTS = {
   keywords: '',
 };
 
-function normalize(incoming = {}, fallbackEmail = '') {
+// Alerts only ever go to the account's own (Supabase-verified) sign-in email.
+// Accepting an arbitrary address let anyone use the server's Gmail to mail
+// strangers every day.
+function normalize(incoming = {}, accountEmail = '') {
   return {
     subscribed: !!incoming.subscribed,
-    email: String(incoming.email || fallbackEmail || '').trim().slice(0, 200),
+    email: String(accountEmail || '').trim().slice(0, 200),
     frequency: incoming.frequency === 'weekly' ? 'weekly' : 'daily',
     roleType: ['all', 'intern', 'new_grad'].includes(incoming.roleType) ? incoming.roleType : 'all',
     keywords: String(incoming.keywords || '').slice(0, 300),
@@ -36,7 +39,7 @@ router.get('/subscription', async (req, res) => {
   try {
     const row = await one(`SELECT value FROM meta WHERE user_id = $1 AND key = $2`, [req.user.id, KEY]);
     const cur = row?.value ? JSON.parse(row.value) : {};
-    const sub = { ...DEFAULTS, email: req.user.email || '', ...cur };
+    const sub = { ...DEFAULTS, ...cur, email: req.user.email || '' };
     res.json({ subscription: sub, emailConfigured: mailerConfigured() });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -61,17 +64,23 @@ router.put('/subscription', async (req, res) => {
   }
 });
 
-// POST send a test alert to the subscriber's email right now.
+// POST send a test alert to the account email right now (1 per user per minute).
+const lastTestAt = new Map();
 router.post('/test', async (req, res) => {
   try {
+    const now = Date.now();
+    if (now - (lastTestAt.get(req.user.id) || 0) < 60_000) {
+      return res.status(429).json({ error: 'You can send one test alert per minute.' });
+    }
     if (!mailerConfigured()) {
       return res.status(400).json({ error: 'Email sending is not configured on the server (GMAIL_USER / GMAIL_APP_PASSWORD).' });
     }
     const row = await one(`SELECT value FROM meta WHERE user_id = $1 AND key = $2`, [req.user.id, KEY]);
     const cur = row?.value ? JSON.parse(row.value) : {};
-    const sub = { ...DEFAULTS, email: req.user.email || '', ...cur };
-    const email = String(req.body?.email || sub.email || '').trim();
-    if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'No valid email to send to.' });
+    const sub = { ...DEFAULTS, ...cur };
+    const email = String(req.user.email || '').trim();
+    if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Your account has no email address to send to.' });
+    lastTestAt.set(req.user.id, now);
     const windowDays = sub.frequency === 'weekly' ? 7 : 1;
     const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays });
     const result = await sendDigestToEmail(email, data, { windowDays });

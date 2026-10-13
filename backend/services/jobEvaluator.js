@@ -12,14 +12,10 @@ import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CLAUDE_MODEL, claudeText, hasClaudeKey } from './claude.js';
 import OpenAI from 'openai';
+import { safeFetch, UnsafeUrlError } from './safeFetch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODES_DIR = path.join(__dirname, '..', 'career-ops-src', 'modes');
-
-const CANDIDATE = {
-  name: 'Sravya Rachakonda',
-  role: 'CS student / New Grad — Summer 2026 internships',
-};
 
 // Load santifer's canonical mode files once at module load.
 // Prefer the English-translated versions (*.en.md); fall back to the original
@@ -348,14 +344,21 @@ export async function fetchJobFromUrl(url) {
     // `{ default: cheerio }` resolves to undefined → `cheerio.load(...)` throws
     // "Cannot read properties of undefined (reading 'load')".
     const { load } = await import('cheerio');
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(10000),
-    });
+    let fetched;
+    try {
+      fetched = await safeFetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+        timeoutMs: 10000,
+      });
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) return { text: null, url, error: `${err.message} — paste the job description instead` };
+      throw err;
+    }
+    const { res } = fetched;
     if (!res.ok) {
       return { text: null, url, error: `HTTP ${res.status} ${res.statusText} — site blocked the fetch (try Paste JD instead)` };
     }
-    const html = await res.text();
+    const html = await fetched.text();
     const $ = load(html);
 
     $('script, style, nav, footer, header, iframe, .cookie-banner').remove();
@@ -443,8 +446,7 @@ ${OFERTA_MD}`;
 
   // User message — per-call payload (CV + JD + schema). Not cached.
   const user = `CANDIDATE
-Name: ${CANDIDATE.name}
-Target: ${CANDIDATE.role}
+Target: internship / new-grad roles (the candidate's name and background are in the CV below)
 
 CV (verbatim — cite exact lines, do NOT invent content not present here):
 """

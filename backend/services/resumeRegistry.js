@@ -175,17 +175,25 @@ export function pickResumeForRole(resumes, { jobTitle = '', jobDescription = '',
  * the right form-filling strategy.
  */
 export function detectPlatform(url = '') {
-  const u = url.toLowerCase();
-  if (!u) return 'unknown';
-  if (u.includes('greenhouse.io') || u.includes('boards.greenhouse.io')) return 'greenhouse';
-  if (u.includes('lever.co'))         return 'lever';
-  if (u.includes('ashbyhq.com'))      return 'ashby';
-  if (u.includes('myworkdayjobs.com') || u.includes('workday.com')) return 'workday';
-  if (u.includes('linkedin.com/jobs')) return 'linkedin';
-  if (u.includes('smartrecruiters.com')) return 'smartrecruiters';
-  if (u.includes('workable.com'))     return 'workable';
-  if (u.includes('jobvite.com'))      return 'jobvite';
-  if (u.includes('jobs.apple.com'))   return 'apple';
-  if (u.includes('amazon.jobs'))      return 'amazon';
+  // Match on the parsed hostname: a substring test let
+  // "http://169.254.169.254/?greenhouse.io" pass as Greenhouse.
+  let host = '';
+  let pathname = '';
+  try {
+    const parsed = new URL(String(url));
+    host = parsed.hostname.toLowerCase();
+    pathname = parsed.pathname.toLowerCase();
+  } catch { return 'unknown'; }
+  const on = (domain) => host === domain || host.endsWith(`.${domain}`);
+  if (on('greenhouse.io'))       return 'greenhouse';
+  if (on('lever.co'))            return 'lever';
+  if (on('ashbyhq.com'))         return 'ashby';
+  if (on('myworkdayjobs.com') || on('workday.com')) return 'workday';
+  if (on('linkedin.com') && pathname.startsWith('/jobs')) return 'linkedin';
+  if (on('smartrecruiters.com')) return 'smartrecruiters';
+  if (on('workable.com'))        return 'workable';
+  if (on('jobvite.com'))         return 'jobvite';
+  if (host === 'jobs.apple.com') return 'apple';
+  if (on('amazon.jobs'))         return 'amazon';
   return 'unknown';
 }

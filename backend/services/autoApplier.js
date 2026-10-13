@@ -25,6 +25,7 @@ import fs from 'fs';
 import db, { one, all, run } from '../db.js';
 import { scanResumesFromStorage, pickResumeForRole, detectPlatform } from './resumeRegistry.js';
 import { validateProfileForApply } from './applyValidation.js';
+import { assertPublicUrl } from './safeFetch.js';
 
 // Status values we write back to evaluations.apply_status during processing.
 const STATUS = {
@@ -37,6 +38,23 @@ const STATUS = {
   failed:        'submit_failed',
   needs_review:  'needs_review',
 };
+
+// Max real submissions per user per rolling 24h, across every entry point
+// (queue runner, nightly pipeline, direct apply, per-evaluation apply).
+export const AUTO_APPLY_DAILY_CAP = Number(process.env.AUTO_APPLY_DAILY_CAP || 100);
+
+export async function submittedInLast24h(userId) {
+  const row = await one(
+    `SELECT COUNT(*)::int AS n FROM evaluations
+      WHERE user_id = $1 AND apply_status = 'submitted' AND applied_at IS NOT NULL
+        AND applied_at::timestamptz > now() - interval '24 hours'`,
+    [userId]
+  );
+  return row?.n || 0;
+}
+
+// One queue run per user at a time in this process (cron + manual + clicks).
+const runningUsers = new Set();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,6 +278,20 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     return { ok: false, error: 'Auto Apply consent required', needsReview: true };
   }
 
+  // Guards that hold on every path that can really submit.
+  if (!dryRun) {
+    if (row.apply_status === STATUS.submitted) {
+      return { ok: false, platform, error: 'Already submitted', alreadySubmitted: true };
+    }
+    if (profile.auto_apply_paused) {
+      return { ok: false, platform, error: 'Auto Apply is paused — resume it in your profile', paused: true };
+    }
+    const sentToday = await submittedInLast24h(userId);
+    if (sentToday >= AUTO_APPLY_DAILY_CAP) {
+      return { ok: false, platform, error: `Daily auto-apply cap reached (${sentToday}/${AUTO_APPLY_DAILY_CAP})`, capReached: true };
+    }
+  }
+
   // Validate profile + JD compatibility (presence, email/phone format,
   // sponsorship mismatch). Anything failing → needs_review with reason.
   const profileCheck = validateProfileForApply(profile, row.job_description || '');
@@ -309,7 +341,22 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     return { ok: false, platform, error: 'Platform not supported' };
   }
 
-  await setStatus(userId, evalId, STATUS.in_progress, { platform, resumeUsed: resume.filename, incrementAttempts: true });
+  // Claim the row atomically: two concurrent runs (cron + manual, double
+  // click) must never both reach the employer's submit button.
+  const previousStatus = row.apply_status || STATUS.queued;
+  const claimed = await one(
+    `UPDATE evaluations
+        SET apply_status = $3, apply_platform = $4, apply_resume_used = $5,
+            apply_attempts = COALESCE(apply_attempts, 0) + 1
+      WHERE id = $1 AND user_id = $2
+        AND apply_status IS DISTINCT FROM 'submitted'
+        AND apply_status IS DISTINCT FROM 'in_progress'
+      RETURNING id`,
+    [evalId, userId, STATUS.in_progress, platform, resume.filename]
+  );
+  if (!claimed) {
+    return { ok: false, platform, error: 'Already being processed or submitted', skipped: true };
+  }
 
   // Lazy import so Playwright isn't loaded for non-auto-apply requests
   const { chromium } = await import('playwright');
@@ -319,6 +366,7 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     const ctx  = await browser.newContext();
     const page = await ctx.newPage();
 
+    await assertPublicUrl(row.job_url); // never drive the browser at internal hosts
     await page.goto(row.job_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
 
@@ -356,7 +404,8 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     }
 
     if (dryRun) {
-      await setStatus(userId, evalId, STATUS.in_progress, {
+      // Release the claim so a real run can pick this row up later.
+      await setStatus(userId, evalId, previousStatus === STATUS.in_progress ? STATUS.queued : previousStatus, {
         error: '(dry run) form filled and required-field scan passed; submit skipped',
         platform,
         resumeUsed: resume.filename,
@@ -410,8 +459,15 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
 // Backward-compat: positional userId OR object form `{ userId }`. Both supported.
 export async function runQueueOnce(userIdOrOpts, opts) {
   const o = typeof userIdOrOpts === 'object' ? userIdOrOpts : { userId: userIdOrOpts, ...(opts || {}) };
-  const { headless = true, dryRun = false, limit = 10, userId, useLibraryResume = false } = o;
+  const { headless = true, dryRun = false, userId, useLibraryResume = false } = o;
   if (!userId) throw new Error('runQueueOnce requires userId');
+  // Numbers only, 1..50 per run — the daily cap is enforced per submission below.
+  const limit = Math.max(1, Math.min(50, Math.floor(Number(o.limit)) || 10));
+  if (runningUsers.has(userId)) {
+    return { processed: 0, submitted: 0, failed: 0, skipped: 0, needsReview: 0, results: [], error: 'An auto-apply run is already in progress' };
+  }
+  runningUsers.add(userId);
+  try {
   const rows = await all(`
     SELECT id FROM evaluations
     WHERE apply_mode = 'auto'
@@ -430,6 +486,10 @@ export async function runQueueOnce(userIdOrOpts, opts) {
     else if (r.error === 'Captcha present' || r.error === 'Login required' || r.error === 'Platform not supported') summary.skipped++;
     else summary.failed++;
     summary.results.push({ evalId: id, ...r });
+    if (r.capReached || r.paused) { summary.stoppedReason = r.error; break; }
   }
   return summary;
+  } finally {
+    runningUsers.delete(userId);
+  }
 }

@@ -1,4 +1,7 @@
 import { ApifyClient } from 'apify-client';
+import { isDomainPlausibleForCompany } from './companyDomain.js';
+import { isRelevantContact, isUsableEmail, nameKey, seniorityScore } from './contactRules.js';
+import { apolloOrganization, isConfigured, serperSearch as providerSerperSearch } from './emailProviders.js';
 
 // Token is read lazily so dotenv has time to load before first use
 function getToken() { return process.env.APIFY_API_TOKEN || ''; }
@@ -613,283 +616,179 @@ export async function findLinkedInDecisionMakers(companyName, companyStage) {
   }
 }
 
-// Seniority score for ranking (higher = more senior/relevant)
-function seniorityScore(title = '') {
-  const t = title.toLowerCase();
-  if (/\b(founder|co-founder|ceo|chief executive)\b/.test(t))          return 10;
-  if (/\b(cto|chief technology|cpo|chief product)\b/.test(t))           return 9;
-  if (/\bvp\b|\bvice president\b/.test(t))                              return 8;
-  if (/\bdirector\b/.test(t))                                           return 7;
-  if (/\bhead of\b/.test(t))                                            return 6;
-  if (/\bprincipal\b|\bstaff\b/.test(t))                               return 5;
-  if (/\bmanager\b|\blead\b/.test(t))                                   return 4;
-  if (/\bsenior\b|\bsr\.?\b/.test(t))                                   return 3;
-  if (/\bengineer\b/.test(t))                                           return 2;
-  return 1;
-}
-
-// Returns true if the title looks like a decision maker / senior engineer
-function isSeniorTitle(title = '') {
-  const t = title.toLowerCase();
-  // Skip non-targets
-  if (/\b(intern|coordinator|recruiter|recruiting|admin|assistant|receptionist|hr|office manager|marketing|sales|account manager|product marketing)\b/.test(t)) return false;
-  // Keep decision makers & engineers
-  return /\b(engineer|director|vp|vice president|head of|manager|cto|ceo|founder|co-founder|principal|staff|lead|president)\b/.test(t);
+/**
+ * Parse a Google result for a LinkedIn profile ("Jane Doe - Staff Engineer at
+ * Acme | LinkedIn") into { name, title } — or null unless it plausibly says
+ * the person is at `companyName` (the old parser kept ex-employees and
+ * people at similarly named companies).
+ */
+export function parseLinkedInSerpResult(item, companyName) {
+  const link = item?.link || '';
+  if (!/linkedin\.com\/in\//i.test(link)) return null;
+  const title = String(item.title || '').replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
+  const [namePart, ...rest] = title.split(/\s+[-–—]\s+/);
+  const name = (namePart || '').replace(/[,(].*$/, '').trim();
+  if (!name || name.length < 3 || /linkedin/i.test(name) || name.split(/\s+/).length > 5) return null;
+  const roleText = rest.join(' - ');
+  const hay = `${roleText} ${item.snippet || ''}`.toLowerCase();
+  const company = String(companyName || '').toLowerCase().replace(/\b(inc|llc|ltd|corp)\b\.?/g, '').trim();
+  if (!company || !hay.includes(company)) return null;
+  if (/\b(former|formerly|ex-|previously|past)\b[^.]{0,40}/i.test(hay) && !roleText.toLowerCase().includes(company)) return null;
+  const role = roleText.replace(new RegExp(`\\s*(?:at|@)\\s+${company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*$`, 'i'), '').trim();
+  return { name, title: role, linkedin_url: link.split('?')[0] };
 }
 
 /**
- * Find decision makers at a company using 3 layers:
- *   L1 Apollo  — organizations/enrich → get org ID → mixed_people/search
- *   L2 Apify   — LinkedIn company people scraper (requires li_at cookie)
- *   L3 Google  — guaranteed fallback, always runs if < 3 results
+ * Find people worth contacting at a company:
+ *   L1 Apollo  — organization (by trusted domain, else by name with a
+ *                plausibility check) → people search
+ *   L2 Apify   — LinkedIn company people actors (quota-aware via runActor)
+ *   L3 Google  — LinkedIn profiles that name the company in their headline
+ * Later layers only run while fewer than 3 people were found, and nothing
+ * runs after the caller aborts (client closed the stream).
  *
  * @param {string}   companyName
- * @param {string}   linkedinCompanyUrl  optional; improves Apify slug resolution
- * @param {string}   domain              optional company domain for Apollo lookup
- * @param {Function} onProgress          optional callback({ source, status, count, message })
+ * @param {string}   linkedinCompanyUrl  optional; improves the LinkedIn slug
+ * @param {string}   domain              trusted company domain, or null
+ * @param {Function} onProgress          ({ source, status, count, message })
+ * @param {{signal?: AbortSignal}} [opts]
  */
-export async function findPeopleAtLinkedInCompany(
-  companyName,
-  linkedinCompanyUrl = null,
-  domain = null,
-  onProgress = null
-) {
-  const NON_US = /\b(germany|deutschland|uk|united kingdom|france|india|canada|australia|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|spain|italy|portugal|brazil|singapore|japan|china|korea|israel|poland|czech|romania|ukraine|russia|mexico)\b/i;
-
-  const allPeople = [];
-  const seen      = new Set();
+export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUrl = null, domain = null, onProgress = null, { signal } = {}) {
+  const NON_US = /\b(germany|deutschland|united kingdom|france|india|canada|australia|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|spain|italy|portugal|brazil|singapore|japan|china|korea|israel|poland|czech|romania|ukraine|russia|mexico)\b/i;
+  const people = [];
+  const seenNames = new Set();
+  const seenLinks = new Set();
+  const aborted = () => Boolean(signal?.aborted);
 
   function notify(source, status, count = 0, message = null) {
     console.log(`[people/${source}] ${status}${count > 0 ? ` count=${count}` : ''}${message ? ` — ${message}` : ''}`);
-    if (onProgress) onProgress({ source, status, count, message });
+    if (onProgress) onProgress({ source, status, count, ...(message ? { message: `${source}: ${message}` } : {}) });
   }
-
-  function addPeople(list, sourceName) {
+  function addPeople(list, source) {
     let added = 0;
     for (const p of list) {
-      if (!p.name || p.name.length < 3) continue;
-      const key = p.name.toLowerCase().replace(/\s+/g, '');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      allPeople.push({ ...p, source: sourceName });
+      const key = nameKey(p.name);
+      const link = (p.linkedin_url || '').toLowerCase().replace(/\/$/, '');
+      if (!key || key.length < 4 || seenNames.has(key) || (link && seenLinks.has(link))) continue;
+      if (!isRelevantContact(p.title)) continue;
+      seenNames.add(key);
+      if (link) seenLinks.add(link);
+      people.push({ ...p, source });
       added++;
     }
     return added;
   }
 
-  // ── Layer 1: Apollo — organizations/enrich → org ID → mixed_people/search ─
-  const apolloKey = (process.env.APOLLO_API_KEY || '').trim();
-  if (!apolloKey || apolloKey === 'your_apollo_key_here' || apolloKey.length < 10) {
-    notify('apollo', 'skip', 0, 'APOLLO_API_KEY not configured');
-  } else {
+  // ── L1 Apollo ──────────────────────────────────────────────────────────────
+  if (!isConfigured('apollo')) {
+    notify('apollo', 'skip', 0, 'not configured');
+  } else if (!aborted()) {
     notify('apollo', 'running');
     try {
-      // Step 1: Get Apollo org ID via domain enrichment
-      const enrichDomain = domain ||
-        companyName.toLowerCase()
-          .replace(/\b(inc|llc|ltd|corp|group|technologies|solutions|services)\b\.?/gi, '')
-          .replace(/[^a-z0-9]/g, '').trim() + '.com';
-
-      console.log(`[people/apollo] organizations/enrich domain="${enrichDomain}"`);
-      const enrichRes = await fetch(`https://api.apollo.io/v1/organizations/enrich?domain=${encodeURIComponent(enrichDomain)}`, {
-        method:  'GET',
-        headers: { 'Content-Type': 'application/json', 'X-Api-Key': apolloKey },
-        signal:  AbortSignal.timeout(12000),
-      });
-      const enrichText = await enrichRes.text();
-      console.log(`[people/apollo] enrich status=${enrichRes.status} body=${enrichText.slice(0, 600)}`);
-
-      let orgId = null;
-      try { orgId = JSON.parse(enrichText).organization?.id; } catch {}
-
-      if (!orgId) {
-        notify('apollo', 'done', 0, `Org not found in Apollo for domain ${enrichDomain}`);
+      let org = await apolloOrganization(domain ? { domain } : { name: companyName });
+      if (org && !domain && org.domain && !isDomainPlausibleForCompany(org.domain, companyName)) {
+        notify('apollo', 'done', 0, `closest match was ${org.name} (${org.domain}) — not this company`);
+        org = null;
+      }
+      if (!org) {
+        if (domain) notify('apollo', 'done', 0, `no organization found for ${domain}`);
       } else {
-        // Step 2: Search people at that org
-        console.log(`[people/apollo] mixed_people/search org_id=${orgId}`);
-        // Fetch up to 3 pages (75 contacts) from Apollo
-        const allApolloRaw = [];
-        for (let pg = 1; pg <= 3; pg++) {
-          try {
-            const pgRes = await fetch('https://api.apollo.io/v1/mixed_people/search', {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Api-Key': apolloKey },
-              body:    JSON.stringify({
-                organization_ids:   [orgId],
-                person_seniorities: ['director', 'vp', 'c_suite', 'founder', 'senior', 'manager', 'entry'],
-                page:               pg,
-                per_page:           25,
-              }),
-              signal: AbortSignal.timeout(15000),
-            });
-            const pgData = await pgRes.json().catch(() => ({}));
-            if (!pgRes.ok || !Array.isArray(pgData.people)) break;
-            allApolloRaw.push(...pgData.people);
-            if (pgData.people.length < 25) break; // no more pages
-          } catch { break; }
+        const raw = [];
+        for (let page = 1; page <= 3 && !aborted(); page++) {
+          const res = await fetch('https://api.apollo.io/v1/mixed_people/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Key': process.env.APOLLO_API_KEY },
+            body: JSON.stringify({ organization_ids: [org.id], person_seniorities: ['founder', 'c_suite', 'vp', 'head', 'director', 'manager', 'senior', 'entry'], page, per_page: 25 }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!res.ok) throw new Error(`Apollo people search HTTP ${res.status}`);
+          const data = await res.json();
+          const batch = Array.isArray(data.people) ? data.people : [];
+          raw.push(...batch);
+          if (batch.length < 25) break;
         }
-        const peopleRes = { ok: allApolloRaw.length >= 0 };
-        const peopleText = '';
-        console.log(`[people/apollo] fetched ${allApolloRaw.length} total across pages`);
-
-        let peopleData = { people: allApolloRaw };
-
-        if (!peopleRes.ok || !Array.isArray(peopleData.people)) {
-          notify('apollo', 'done', 0,
-            `Status error: no people array`);
-        } else {
-          const mapped = peopleData.people
-            .map(p => ({
-              name:         (p.name || `${p.first_name || ''} ${p.last_name || ''}`.trim()).trim(),
-              title:        p.title || '',
-              linkedin_url: p.linkedin_url || '',
-              email:        p.email || null,
-            }))
-            .filter(p => p.name && p.name.length > 2);
-          const n = addPeople(mapped, 'apollo');
-          notify('apollo', 'done', n, n === 0 ? 'People found but none added (duplicates or filtered)' : null);
-        }
+        const n = addPeople(raw.map(p => ({
+          name: (p.name || `${p.first_name || ''} ${p.last_name || ''}`).trim(),
+          title: p.title || '',
+          linkedin_url: p.linkedin_url || null,
+          email: isUsableEmail(p.email) ? p.email : null,
+        })), 'apollo');
+        notify('apollo', 'done', n, n === 0 && raw.length ? `${raw.length} people, none in engineering/recruiting` : null);
       }
     } catch (err) {
-      console.error(`[people/apollo] exception: ${err.message}`);
       notify('apollo', 'error', 0, err.message);
     }
   }
 
-  // ── Layer 2: Apify LinkedIn people scraper ──────────────────────────────────
-  if (allPeople.length < 3) {
+  // ── L2 LinkedIn actors (Apify) ─────────────────────────────────────────────
+  if (people.length < 3 && !aborted()) {
     const cookie = (process.env.LINKEDIN_SESSION_COOKIE || '').trim();
-    const slugMatch = (linkedinCompanyUrl || '').match(/linkedin\.com\/company\/([^/?#]+)/);
-    const slug = slugMatch
-      ? slugMatch[1]
-      : companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
-    notify('linkedin', 'running', 0, `slug=${slug}`);
-
-    // Try actors that actually exist on Apify store (verified)
-    const ACTOR_CONFIGS = [
-      {
-        actorId: 'powerai/linkedin-company-people-scraper',
-        input: {
-          url:           `https://www.linkedin.com/company/${slug}/people/`,
-          maxResults:    25,
-          ...(cookie.length > 20 ? { cookie, sessionCookie: cookie, li_at: cookie } : {}),
-        },
-      },
-      {
-        actorId: 'george.the.developer/linkedin-company-employees-scraper',
-        input: {
-          companyUrl:    `https://www.linkedin.com/company/${slug}`,
-          maxResults:    25,
-          ...(cookie.length > 20 ? { cookie, sessionCookie: cookie, li_at: cookie } : {}),
-        },
-      },
+    const slug = (linkedinCompanyUrl || '').match(/linkedin\.com\/company\/([^/?#]+)/)?.[1]
+      || companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const auth = cookie.length > 20 ? { cookie, sessionCookie: cookie, li_at: cookie } : {};
+    const actors = [
+      ['powerai/linkedin-company-people-scraper', { url: `https://www.linkedin.com/company/${slug}/people/`, maxResults: 25, ...auth }],
+      ['george.the.developer/linkedin-company-employees-scraper', { companyUrl: `https://www.linkedin.com/company/${slug}`, maxResults: 25, ...auth }],
     ];
-
-    const client    = getClient();
-    let linkedinRaw = [];
-
-    for (const { actorId, input } of ACTOR_CONFIGS) {
-      if (linkedinRaw.length > 0) break;
+    notify('linkedin', 'running', 0, `company page /${slug}`);
+    let n = 0;
+    let lastError = null;
+    for (const [actorId, input] of actors) {
+      if (n > 0 || aborted()) break;
       try {
-        console.log(`[people/linkedin] trying ${actorId}`);
-        const run = await client.actor(actorId).call(input, { waitSecs: 90 });
-        console.log(`[people/linkedin] ${actorId} → ${run.status}`);
-        if (run.status === 'SUCCEEDED') {
-          const { items } = await client.dataset(run.defaultDatasetId).listItems();
-          console.log(`[people/linkedin] ${actorId} returned ${items.length} items`);
-          linkedinRaw = items
-            .map(p => ({
-              name:         (p.fullName || p.name || '').trim(),
-              title:        (p.headline || p.title || p.jobTitle || '').trim(),
-              linkedin_url: p.profileUrl || p.url || p.linkedin_url || '',
-              email:        null,
-            }))
-            .filter(p => p.name && p.name.length > 2);
-        }
+        const items = await runActor(actorId, input, 90);
+        n = addPeople(items.map(p => ({
+          name: String(p.fullName || p.name || '').trim(),
+          title: String(p.headline || p.title || p.jobTitle || '').trim(),
+          linkedin_url: p.profileUrl || p.url || p.linkedin_url || null,
+        })), 'linkedin');
       } catch (err) {
-        noteApifyError(actorId, err);
-        console.warn(`[people/linkedin] ${actorId} failed: ${err.message}`);
+        lastError = err;
+        if (err.code === 'APIFY_QUOTA_BURNED') break; // same answer for every actor
       }
     }
-
-    const seniorFiltered = linkedinRaw.filter(p => isSeniorTitle(p.title));
-    const n = addPeople(seniorFiltered, 'linkedin');
-    console.log(`[people/linkedin] added ${n} (${linkedinRaw.length} raw → ${seniorFiltered.length} senior)`);
-    notify('linkedin', 'done', n,
-      n === 0 && linkedinRaw.length === 0
-        ? (cookie.length < 20 ? 'No li_at cookie — actors may need auth' : 'No results from LinkedIn actors')
-        : null);
-  } else {
-    notify('linkedin', 'skip', 0, 'Apollo returned enough results');
+    notify('linkedin', lastError && n === 0 ? 'error' : 'done', n,
+      n === 0 ? (lastError ? lastError.message.slice(0, 160) : (auth.cookie ? 'no results' : 'no LinkedIn session cookie set')) : null);
+  } else if (!aborted()) {
+    notify('linkedin', 'skip', 0, 'enough people already');
   }
 
-  // ── Layer 3: Google via Serper.dev — guaranteed fallback, no Apify credits ──
-  if (allPeople.length < 3) {
-    notify('google', 'running');
-    try {
+  // ── L3 Google (Serper) ─────────────────────────────────────────────────────
+  if (people.length < 3 && !aborted()) {
+    if (!isConfigured('serper')) {
+      notify('google', 'skip', 0, 'not configured');
+    } else {
+      notify('google', 'running');
       const queries = [
-        `site:linkedin.com/in "${companyName}" software engineer`,
-        `site:linkedin.com/in "${companyName}" CTO OR "VP Engineering" OR "Director of Engineering" OR Founder`,
-        `site:linkedin.com/in "${companyName}" engineering manager OR principal engineer OR staff engineer`,
-        `site:linkedin.com/in "${companyName}" machine learning OR data engineer OR AI researcher`,
-        `"${companyName}" engineer OR developer OR scientist LinkedIn profile`,
+        `site:linkedin.com/in "${companyName}" "software engineer"`,
+        `site:linkedin.com/in "${companyName}" CTO OR "VP Engineering" OR "Head of Engineering" OR founder`,
+        `site:linkedin.com/in "${companyName}" recruiter OR "talent acquisition" OR "university recruiting"`,
+        `site:linkedin.com/in "${companyName}" "engineering manager" OR "staff engineer" OR "machine learning"`,
       ];
-
-      const googlePeople = [];
-      for (const query of queries) {
-        if (googlePeople.length >= 15) break;
-        console.log(`[people/google] Serper: "${query}"`);
-        const data = await serperSearch(query, 10);
-        const organic = data.organic || [];
-
-        for (const item of organic) {
-          const link = item.link || '';
-          if (!link.includes('linkedin.com/in')) continue;
-          if (NON_US.test((item.snippet || '').toLowerCase())) continue;
-
-          const titleText = item.title || '';
-          // Google formats: "First Last - Title at Company | LinkedIn"
-          const name = titleText.split(/[-–|·]/)[0].trim().replace(/\s*linkedin\s*/i, '').trim();
-          const titleMatch = titleText.match(/(founder|co-founder|cto|ceo|vp|vice president|director|head of|manager|principal|staff|engineer|researcher|scientist|quant|analyst)[^-|·|]*/i);
-          const title = titleMatch?.[0]?.trim().replace(/\s*at\s+.*/i, '').trim() || '';
-
-          if (!name || name.length < 3 || name.toLowerCase() === 'linkedin') continue;
-          googlePeople.push({ name, title, linkedin_url: link, email: null });
+      const found = [];
+      const errors = [];
+      for (const q of queries) {
+        if (found.length >= 15 || aborted()) break;
+        try {
+          const data = await providerSerperSearch(q, 10);
+          for (const item of data.organic || []) {
+            if (NON_US.test(item.snippet || '')) continue;
+            const p = parseLinkedInSerpResult(item, companyName);
+            if (p) found.push(p);
+          }
+        } catch (err) {
+          errors.push(err.message);
+          if (err.code === 'QUOTA' || err.code === 'AUTH' || err.code === 'SKIPPED') break;
         }
       }
-
-      const n = addPeople(googlePeople, 'google');
-      console.log(`[people/google] added ${n}`);
-      notify('google', 'done', n,
-        n === 0
-          ? `No profiles found — try manually: site:linkedin.com/in "${companyName}" engineer`
-          : null);
-    } catch (err) {
-      console.error(`[people/google] exception: ${err.message}`);
-      notify('google', 'error', 0, err.message.includes('SERPER_API_KEY') ? 'Add SERPER_API_KEY to .env (serper.dev — 2,500 free searches/mo)' : err.message);
+      const n = addPeople(found, 'google');
+      notify('google', errors.length && n === 0 ? 'error' : 'done', n, n === 0 ? (errors[0] || `no LinkedIn profiles mention ${companyName}`) : null);
     }
-  } else {
-    notify('google', 'skip', 0, 'Enough results from prior layers');
   }
 
-  // ── Filter, sort, return ──────────────────────────────────────────────────
-  const SKIP = [
-    'recruiter', 'talent acquisition', 'human resources', 'hr manager',
-    'marketing', 'sales rep', 'sales manager', 'account executive',
-    'legal counsel', 'accountant', 'executive assistant', 'office manager',
-  ];
-  const filtered = allPeople
-    .filter(p => {
-      const t = (p.title || '').toLowerCase();
-      if (SKIP.some(s => t.includes(s))) return false;
-      return isSeniorTitle(p.title) || p.source === 'google';
-    })
-    .sort((a, b) => seniorityScore(b.title) - seniorityScore(a.title));
-
-  const sources = [...new Set(allPeople.map(p => p.source))].join(', ');
-  console.log(`[people] final: ${filtered.length} contacts (sources: ${sources || 'none'})`);
-  return filtered;
+  people.sort((a, b) => seniorityScore(b.title) - seniorityScore(a.title));
+  console.log(`[people] final: ${people.length} contacts (sources: ${[...new Set(people.map(p => p.source))].join(', ') || 'none'})`);
+  return people;
 }
 
 export async function scrapeLinkedInProfile(linkedinUrl) {

@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import * as apify from '../services/apify.js';
 import { findYCCompany } from '../services/yc.js';
 import { ApifyClient } from 'apify-client';
+import { requireOwnedCompany } from '../middleware/ownedCompany.js';
+import { isWithin } from '../services/safePaths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESUME_DIR = path.join(__dirname, '..', 'data', 'resumes');
@@ -14,7 +16,8 @@ fs.mkdirSync(RESUME_DIR, { recursive: true });
 
 const resumeStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(RESUME_DIR, String(req.params.id));
+    // <user>/<company> — id is validated by requireOwnedCompany before multer runs.
+    const dir = path.join(RESUME_DIR, req.user.id, req.params.id);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -40,7 +43,7 @@ function getApifyClient() {
 const router = Router();
 
 // POST /api/companies/:id/career-ops/resume — upload resume for company Career Ops
-router.post('/:id/career-ops/resume', resumeUpload.single('resume'), async (req, res) => {
+router.post('/:id/career-ops/resume', requireOwnedCompany('id'), resumeUpload.single('resume'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No resume uploaded' });
 
@@ -123,7 +126,8 @@ router.delete('/:id/career-ops/resume', async (req, res) => {
     if (!row?.resume_path) return res.status(404).json({ error: 'Resume not found' });
     // Skip filesystem unlink for storage:// paths — those reference Supabase
     // Storage objects which the user manages via the library UI.
-    if (!row.resume_path.startsWith('storage://')) {
+    // Only delete files the server itself wrote; a stored path is never trusted.
+    if (isWithin(RESUME_DIR, row.resume_path)) {
       try { fs.unlinkSync(row.resume_path); } catch (_) {}
     }
     await run(`

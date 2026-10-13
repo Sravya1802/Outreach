@@ -143,6 +143,13 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
   - Removed `hunter.js`, `emailfinders.js`, `domainResolver.js` and the legacy `/api/contacts` and `/api/emails` routers.
 - **Migration:** `supabase/migrations/012_contact_finding.sql` adds `jobs.domain_source`, `job_contacts.email_confidence/email_lookup_at/email_lookup_note`, and unique indexes on lower(email) and lower(linkedin_url).
 - **Tests:** backend 63 (`npm test --prefix backend`).
+- **Deployed:** migration 012 applied. The VM backend is now synced to main (`f489d84` = main `c16386a`; it had drifted — missing alerts/mailer/digest code, which caused the Job Alerts 404). Health 200. Live checks: resume_path injection is ignored, bogus ids get 400, the evaluator refuses metadata/localhost URLs, and a real Find Emails run on Anthropic used the known domain and saved 2 verified contacts with no duplicates on repeat (test rows removed). E2E against prod: 37 passed / 4 skipped.
+- **Still open:**
+  - Alert emails aren't configured on the server (`GMAIL_USER`/`GMAIL_APP_PASSWORD` missing → `emailConfigured:false`).
+  - Domain-search results aren't cached, so a repeat bulk click spends another Hunter credit.
+  - Per-user credit budgets for the shared provider keys.
+  - `scraper.js` `runApifyActor` lacks the quota short-circuit.
+  - The Gemini free tier is at quota 0 (fallback is dead).
 
 ### 2026-10-12 — Claude path modernized (OpenAI stays live)
 

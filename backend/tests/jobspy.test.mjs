@@ -20,6 +20,11 @@ test('maps JobSpy rows to catalog rows', () => {
   assert.equal(li.location, 'Remote · Boston, MA')
   assert.equal(li.salary_range, '$120k/yr')
   assert.equal(toCatalogRow({ site: 'indeed', title: 'x' }, 'intern'), null)
+  // No salary posted: null, '' and NaN must not render as "$0".
+  for (const blank of [null, '', 'nan', 0]) {
+    const r = toCatalogRow({ site: 'linkedin', title: 'SWE Intern', company: 'Cisco', job_url: 'https://www.linkedin.com/jobs/view/2', min_amount: blank, max_amount: blank }, 'intern')
+    assert.equal(r.salary_range, null, `blank=${JSON.stringify(blank)}`)
+  }
 })
 
 test('runs the Python fetcher and parses its JSON', async () => {

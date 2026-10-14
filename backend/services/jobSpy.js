@@ -40,9 +40,15 @@ export function runJobSpy(request, { python = PYTHON, spawnImpl = spawn } = {}) 
   });
 }
 
+// null/''/NaN/0 all mean "not posted" (Number(null) is 0, which rendered as "$0").
+const amount = v => {
+  const n = v == null || v === '' ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : NaN;
+};
+
 function salaryRange(j) {
-  const lo = Number(j.min_amount);
-  const hi = Number(j.max_amount);
+  const lo = amount(j.min_amount);
+  const hi = amount(j.max_amount);
   if (!Number.isFinite(lo) && !Number.isFinite(hi)) return null;
   const unit = { hourly: 'hr', yearly: 'yr', monthly: 'mo', weekly: 'wk', daily: 'day' }[String(j.interval || '').toLowerCase()] || '';
   const fmt = n => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)));

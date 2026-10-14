@@ -39,9 +39,10 @@ function Card({ r, now, onMove, onEdit, busy }: {
         </p>
       )}
       <div className="mt-3 flex items-center gap-1.5">
-        <Select value={stageFor(r.apply_status)} aria-label={`Stage for ${r.company_name}`} className="h-7 flex-1 text-[12px]" disabled={busy}
-          onChange={e => onMove(r.id, e.target.value as PipelineColumn)}>
-          {STAGES.map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
+        <Select value="" aria-label={`Move ${r.company_name} to another stage`} className="h-7 flex-1 text-[12px]" disabled={busy}
+          onChange={e => { if (e.target.value) onMove(r.id, e.target.value as PipelineColumn) }}>
+          <option value="" disabled>Move to…</option>
+          {STAGES.filter(st => st.id !== stageFor(r.apply_status)).map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
         </Select>
         <button type="button" onClick={() => onEdit(r)} aria-label={`Notes and next step for ${r.company_name}`} title="Notes and next step"
           className={cn('grid size-7 shrink-0 place-items-center rounded-[4px] hover:bg-hover', r.notes || r.next_step || r.next_step_at ? 'text-accent' : 'text-subtle hover:text-fg')}>

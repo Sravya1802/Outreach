@@ -163,7 +163,7 @@ export default function PipelinePage() {
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <Segmented label="View" value={view} onChange={v => set('view', v === 'board' ? 'board' : null)}
             options={[{ value: 'list', label: 'List' }, { value: 'board', label: 'Board' }]} />
-          <label className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+          <label className="relative min-w-40 flex-1 sm:w-60 sm:flex-none">
             <span className="sr-only">Search applications</span>
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden="true" />
             <Input type="search" value={query} placeholder="Search company, role, notes" className="pl-9"

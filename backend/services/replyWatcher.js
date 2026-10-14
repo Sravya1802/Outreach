@@ -11,7 +11,7 @@
  */
 
 import { all, one, run } from '../db.js';
-import { connectionFor, imapClient, markError, sendToSelf } from './gmail.js';
+import { connectionFor, friendlyGmailError, imapClient, markError, sendToSelf } from './gmail.js';
 import { cancelForContact } from './outbox.js';
 
 const LOOKBACK_DAYS = 2;
@@ -92,7 +92,7 @@ export async function checkInbox(userId) {
     await client.connect();
   } catch (err) {
     await markError(userId, err);
-    throw err;
+    throw Object.assign(new Error(friendlyGmailError(err)), { status: 502 });
   }
   try {
     const lock = await client.getMailboxLock('INBOX', { readOnly: true });
@@ -201,7 +201,8 @@ export async function checkAllInboxes() {
   let events = 0;
   try {
     const users = await all(
-      "SELECT user_id FROM gmail_connections WHERE status = 'ok' OR last_checked_at IS NULL OR last_checked_at < NOW() - INTERVAL '1 hour'",
+      // A rejected password isn't retried (Google locks accounts that keep failing); reconnecting sets it back to ok.
+      "SELECT user_id FROM gmail_connections WHERE status = 'ok'",
     );
     for (const u of users) {
       try {

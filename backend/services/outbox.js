@@ -109,6 +109,12 @@ export async function sendOne(id) {
   if (contact?.email_status === 'invalid') return cancel(row.id, 'Address bounced');
   const conn = await one('SELECT daily_cap, status FROM gmail_connections WHERE user_id = $1', [row.user_id]);
   if (!conn) return cancel(row.id, 'Gmail disconnected');
+  if (conn.status === 'error') {
+    // Hold until the user reconnects; don't keep logging in with a rejected password.
+    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000) });
+    await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, attempts = GREATEST(attempts - 1, 0), error = 'Waiting for you to reconnect Gmail in Settings' WHERE id = $1", [row.id, at]);
+    return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
+  }
 
   // Cap and spacing push the email later instead of dropping it.
   if (await sentInLastDay(row.user_id) >= (conn.daily_cap || 20)) {
@@ -135,7 +141,9 @@ export async function sendOne(id) {
     }
     if (row.step === 0) await queueFollowups({ ...row, sent_at: new Date(), message_id: messageId });
   } catch (err) {
-    const final = row.attempts >= MAX_ATTEMPTS || err.status === 400;
+    // A rejected password isn't the email's fault: it waits for a reconnect instead of counting toward failure.
+    const authFailed = /app password/.test(String(err.message));
+    const final = !authFailed && (row.attempts >= MAX_ATTEMPTS || err.status === 400);
     await run(
       `UPDATE email_outbox SET status = $2, error = $3, send_after = CASE WHEN $2 = 'scheduled' THEN NOW() + INTERVAL '30 minutes' ELSE send_after END WHERE id = $1`,
       [row.id, final ? 'failed' : 'scheduled', String(err.message).slice(0, 300)],

@@ -19,8 +19,8 @@ export const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e ?? '').
 
 /** What to tell the user when Google says no. */
 export function friendlyGmailError(err) {
-  const m = `${err?.code || ''} ${err?.responseCode || ''} ${err?.message || ''} ${err?.response || ''}`;
-  if (/EAUTH|535|AUTHENTICATIONFAILED|Invalid credentials|Username and Password not accepted|authentication failed/i.test(m)) {
+  const m = `${err?.code || ''} ${err?.responseCode || ''} ${err?.message || ''} ${err?.response || ''} ${err?.responseText || ''} ${err?.serverResponseCode || ''}`;
+  if (err?.authenticationFailed || /EAUTH|535|AUTHENTICATIONFAILED|Invalid credentials|Username and Password not accepted|authentication failed/i.test(m)) {
     return 'Google didn’t accept that app password. Use a 16-letter app password made for this Google account, not your normal password.';
   }
   if (/Application-specific password required/i.test(m)) return 'This account needs an app password. Turn on 2-Step Verification, then create one.';

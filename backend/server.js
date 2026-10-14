@@ -530,9 +530,9 @@ cron.schedule('15 6 * * *', async () => {
 async function logPayEnrichment() {
   try {
     const r = await enrichPostedPay();
-    console.log(`[pay] ${r.boards} boards, checked ${r.checked}, filled ${r.filled}${r.failedBoards ? `, ${r.failedBoards} boards failed` : ''}`);
+    console.log(`[details] ${r.boards} boards + ${r.postings} postings, checked ${r.checked}: pay ${r.pay}, sponsorship ${JSON.stringify(r.sponsorship)}${r.failed ? `, ${r.failed} failed` : ''}`);
   } catch (err) {
-    console.error('[pay] failed:', err.message);
+    console.error('[details] failed:', err.message);
   }
 }
 

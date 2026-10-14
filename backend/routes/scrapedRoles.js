@@ -41,6 +41,9 @@ router.get('/', async (req, res) => {
     const field     = ['swe', 'ai'].includes(req.query.field) ? req.query.field : '';
     const search    = typeof req.query.search === 'string' ? req.query.search.slice(0, 200).trim() : '';
     const hasPay    = req.query.pay === '1';
+    // visa: sponsors = says it sponsors; open = hides "no sponsorship" and
+    // "citizens only" (keeps roles that don't say); citizens = US citizens only.
+    const visa      = ['sponsors', 'open', 'citizens'].includes(req.query.visa) ? req.query.visa : '';
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(100, Math.max(10, Number(req.query.pageSize) || 50));
 
@@ -51,6 +54,9 @@ router.get('/', async (req, res) => {
     if (tier)   { where.push(`tier = $${p++}`);   params.push(tier); }
     if (field)  { where.push(`$${p++} = ANY(tracks)`); params.push(field); }
     if (hasPay) where.push('salary_range IS NOT NULL');
+    if (visa === 'sponsors') where.push("sponsorship = 'sponsors'");
+    if (visa === 'open') where.push("(sponsorship IS NULL OR sponsorship = 'sponsors')");
+    if (visa === 'citizens') where.push("sponsorship = 'citizens_only'");
     if (search) {
       where.push(`(title ILIKE $${p} OR company_name ILIKE $${p})`);
       params.push(`%${search}%`);
@@ -58,11 +64,19 @@ router.get('/', async (req, res) => {
     }
 
     const sql = `
-      SELECT id, role_type, region, tracks, title, company_name, company_url, location, apply_url, source, tier,
-             description, salary_range, posted_at, scraped_at
-      FROM scraped_roles
+      SELECT r.id, r.role_type, r.region, r.tracks, r.title, r.company_name, r.company_url, r.location, r.apply_url, r.source, r.tier,
+             r.salary_range, r.posted_at, r.scraped_at, r.sponsorship, r.sponsorship_quote, (r.jd_checked_at IS NOT NULL) AS jd_read,
+             -- The same job listed by another source (matched on company + title).
+             ARRAY(
+               SELECT DISTINCT o.source FROM scraped_roles o
+                WHERE o.is_active = 1 AND o.id <> r.id AND o.source <> r.source AND o.role_type = r.role_type
+                  AND lower(o.company_name) = lower(r.company_name)
+                  AND regexp_replace(lower(o.title), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(r.title), '[^a-z0-9]+', '', 'g')
+             ) AS also_on
+      FROM scraped_roles r
       WHERE ${where.join(' AND ')}
-      ORDER BY COALESCE(posted_at, scraped_at) DESC
+      -- Newest day first; within a day, SpeedyApply's curated lists lead.
+      ORDER BY date_trunc('day', COALESCE(r.posted_at, r.scraped_at)) DESC, (r.source = 'speedyapply') DESC, COALESCE(r.posted_at, r.scraped_at) DESC
       LIMIT $${p++} OFFSET $${p++}
     `;
     params.push(pageSize, page * pageSize);

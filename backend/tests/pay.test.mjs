@@ -3,7 +3,7 @@ import test from 'node:test'
 import { formatPay, payFromText } from '../services/payParse.js'
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z' // payEnricher imports db.js; no queries here
-const { boardFor, payFromAshby, payFromGreenhouse, payFromLever } = await import('../services/payEnricher.js')
+const { boardFor, payFromAshby, payFromGreenhouse, payFromLever, postingApiFor } = await import('../services/payEnricher.js')
 const { toCatalogRow } = await import('../services/jobSpy.js')
 
 test('formats pay across currencies and intervals', () => {
@@ -53,4 +53,15 @@ test('reads each board API’s pay fields', () => {
 test('JobSpy rows keep their currency', () => {
   const r = toCatalogRow({ site: 'indeed', title: 'Software Engineer Intern', company: 'Zoho', job_url: 'https://in.indeed.com/viewjob?jk=9', min_amount: 25000, max_amount: 30000, interval: 'monthly', currency: 'INR' }, 'intern', 'india')
   assert.equal(r.salary_range, '₹25k–30k/mo')
+})
+
+test('per-posting APIs for Workday and SmartRecruiters', () => {
+  assert.deepEqual(postingApiFor('https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/SoC-Engineer_JR2001234'),
+    { ats: 'workday', url: 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/job/US-CA-Santa-Clara/SoC-Engineer_JR2001234' })
+  assert.deepEqual(postingApiFor('https://acme.wd1.myworkdayjobs.com/Careers/job/Remote/Intern_R-1'),
+    { ats: 'workday', url: 'https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Careers/job/Remote/Intern_R-1' })
+  assert.deepEqual(postingApiFor('https://jobs.smartrecruiters.com/Visa/744000012345678-software-engineer-intern'),
+    { ats: 'smartrecruiters', url: 'https://api.smartrecruiters.com/v1/companies/Visa/postings/744000012345678' })
+  assert.equal(postingApiFor('https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite'), null)
+  assert.equal(postingApiFor('https://www.linkedin.com/jobs/view/1'), null)
 })

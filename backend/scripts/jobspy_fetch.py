@@ -16,7 +16,7 @@ import math
 import sys
 
 FIELDS = ["title", "company", "location", "job_url", "job_url_direct", "date_posted",
-          "min_amount", "max_amount", "interval", "currency", "is_remote"]
+          "min_amount", "max_amount", "interval", "currency", "is_remote", "description"]
 
 
 def clean(value):

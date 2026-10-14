@@ -83,7 +83,8 @@ export function toCatalogRow(j, roleType, region = 'usa') {
     role_type: roleType,
     region,
     source: j.site, // 'indeed' | 'linkedin'
-    description: null,
+    // Indeed returns the full description (LinkedIn only with a slow extra fetch).
+    description: j.description ? String(j.description).slice(0, 4000) : null,
   };
 }
 

@@ -4,6 +4,7 @@
 // company board covers every role on it.
 import { all, run } from '../db.js';
 import { formatPay, payFromText } from './payParse.js';
+import { classifySponsorship } from './sponsorship.js';
 
 const TIMEOUT_MS = 20_000;
 const RECHECK_DAYS = 7;
@@ -79,21 +80,68 @@ async function getJson(url, fetchImpl) {
   return res.json();
 }
 
-/** One company board → Map(jobId → pay text|null). */
-export async function fetchBoardPay({ ats, board }, fetchImpl = fetch) {
+const ghText = j => String(j?.content || '');
+const ashbyText = j => j?.descriptionHtml || j?.descriptionPlain || '';
+const leverText = p => [p?.descriptionPlain, p?.additionalPlain, ...(p?.lists || []).map(l => `${l.text}\n${l.content}`)].filter(Boolean).join('\n');
+
+/** One company board → Map(jobId → { pay, text }). */
+export async function fetchBoard({ ats, board }, fetchImpl = fetch) {
   const out = new Map();
   const b = encodeURIComponent(board);
   if (ats === 'greenhouse') {
     const d = await getJson(`https://boards-api.greenhouse.io/v1/boards/${b}/jobs?content=true&pay_transparency=true`, fetchImpl);
-    for (const j of d?.jobs || []) out.set(String(j.id), payFromGreenhouse(j));
+    for (const j of d?.jobs || []) out.set(String(j.id), { pay: payFromGreenhouse(j), text: ghText(j) });
   } else if (ats === 'ashby') {
     const d = await getJson(`https://api.ashbyhq.com/posting-api/job-board/${b}?includeCompensation=true`, fetchImpl);
-    for (const j of d?.jobs || []) out.set(String(j.id), payFromAshby(j));
+    for (const j of d?.jobs || []) out.set(String(j.id), { pay: payFromAshby(j), text: ashbyText(j) });
   } else if (ats === 'lever') {
     const d = await getJson(`https://api.lever.co/v0/postings/${b}?mode=json`, fetchImpl);
-    for (const p of Array.isArray(d) ? d : []) out.set(String(p.id), payFromLever(p));
+    for (const p of Array.isArray(d) ? d : []) out.set(String(p.id), { pay: payFromLever(p), text: leverText(p) });
   }
   return out;
+}
+
+/** Back-compat: one board → Map(jobId → pay text|null). */
+export async function fetchBoardPay(b, fetchImpl = fetch) {
+  const m = await fetchBoard(b, fetchImpl);
+  return new Map([...m].map(([k, v]) => [k, v.pay]));
+}
+
+/**
+ * Per-posting APIs for boards without a whole-board feed:
+ *   Workday:         https://{tenant}.wdN.myworkdayjobs.com/[locale/]{site}/job/{…}
+ *                    → /wday/cxs/{tenant}/{site}/job/{…}
+ *   SmartRecruiters: https://jobs.smartrecruiters.com/{Company}/{postingId}-{slug}
+ *                    → api.smartrecruiters.com/v1/companies/{Company}/postings/{postingId}
+ */
+export function postingApiFor(url) {
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (/\.myworkdayjobs\.com$/.test(host)) {
+    const p = /^[a-z]{2}-[A-Z]{2}$/.test(parts[0] || '') ? parts.slice(1) : parts;
+    const i = p.indexOf('job');
+    if (i < 1 || i === p.length - 1) return null;
+    return { ats: 'workday', url: `https://${host}/wday/cxs/${host.split('.')[0]}/${p[0]}/job/${p.slice(i + 1).join('/')}` };
+  }
+  if (host === 'jobs.smartrecruiters.com' && parts.length >= 2) {
+    const id = (parts[1].match(/^(\d{6,})/) || [])[1];
+    return id ? { ats: 'smartrecruiters', url: `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(parts[0])}/postings/${id}` } : null;
+  }
+  return null;
+}
+
+export async function fetchPosting({ ats, url }, fetchImpl = fetch) {
+  const d = await getJson(url, fetchImpl);
+  if (!d) return null;
+  if (ats === 'workday') {
+    const text = d?.jobPostingInfo?.jobDescription || '';
+    return { pay: payFromText(text), text };
+  }
+  const sec = d?.jobAd?.sections || {};
+  const text = [sec.jobDescription?.text, sec.qualifications?.text, sec.additionalInformation?.text].filter(Boolean).join('\n');
+  return { pay: payFromText(text), text };
 }
 
 async function mapLimit(items, limit, fn) {
@@ -103,45 +151,89 @@ async function mapLimit(items, limit, fn) {
   }));
 }
 
+const SUPPORTED_HOSTS = String.raw`^https?://(job-boards\.greenhouse\.io|boards\.greenhouse\.io|jobs\.ashbyhq\.com|jobs\.lever\.co|[a-z0-9-]+\.wd[0-9]+\.myworkdayjobs\.com|jobs\.smartrecruiters\.com)/`;
+
+async function saveDetails(id, { pay, text }) {
+  const sp = classifySponsorship(text);
+  await run(
+    `UPDATE scraped_roles
+        SET salary_range = COALESCE(salary_range, $2),
+            sponsorship = COALESCE($3, sponsorship),
+            sponsorship_quote = COALESCE($4, sponsorship_quote),
+            pay_checked_at = NOW(), jd_checked_at = NOW()
+      WHERE id = $1`,
+    [id, pay ? pay.slice(0, 100) : null, sp.status, sp.quote],
+  );
+  return { pay: Boolean(pay), sponsorship: sp.status };
+}
+
 /**
- * Look up posted pay for active roles that have none and weren't checked in
- * the last week. Every looked-at row gets pay_checked_at so it isn't re-fetched
- * daily. Returns { boards, checked, filled, failedBoards }.
+ * Read each active role's job description once a week: fill posted pay where
+ * missing and record what it says about visa sponsorship. Whole-board feeds
+ * (Greenhouse, Ashby, Lever) cost one request per company; Workday and
+ * SmartRecruiters one per posting; rows that already carry a description
+ * (e.g. Indeed via JobSpy) are read from the database.
+ * Returns { boards, postings, checked, pay, sponsorship: {…counts} }.
  */
-export async function enrichPostedPay({ limit = 3000, fetchImpl = fetch, log = console } = {}) {
+export async function enrichPostingDetails({ limit = 4000, perPostingLimit = 600, fetchImpl = fetch, log = console } = {}) {
+  const stats = { boards: 0, postings: 0, checked: 0, pay: 0, failed: 0, sponsorship: { sponsors: 0, no_sponsorship: 0, citizens_only: 0, unknown: 0 } };
+  const tally = r => {
+    stats.checked++;
+    if (r.pay) stats.pay++;
+    stats.sponsorship[r.sponsorship || 'unknown']++;
+  };
+  const due = `is_active = 1 AND (jd_checked_at IS NULL OR jd_checked_at < NOW() - ($1::int * INTERVAL '1 day'))`;
+
+  // 1. Descriptions already stored with the row.
+  const stored = await all(`SELECT id, description FROM scraped_roles WHERE ${due} AND description IS NOT NULL AND length(description) > 200 LIMIT $2`, [RECHECK_DAYS, limit]);
+  for (const r of stored) tally(await saveDetails(r.id, { pay: payFromText(r.description), text: r.description }));
+
+  // 2. Supported job boards.
   const rows = await all(
-    `SELECT id, apply_url FROM scraped_roles
-      WHERE is_active = 1 AND salary_range IS NULL
-        AND (pay_checked_at IS NULL OR pay_checked_at < NOW() - ($1::int * INTERVAL '1 day'))
-        AND apply_url ~* '^https?://(job-boards\\.greenhouse\\.io|boards\\.greenhouse\\.io|jobs\\.ashbyhq\\.com|jobs\\.lever\\.co)/'
+    `SELECT id, apply_url FROM scraped_roles WHERE ${due} AND (description IS NULL OR length(description) <= 200) AND apply_url ~* $3
       ORDER BY scraped_at DESC LIMIT $2`,
-    [RECHECK_DAYS, limit],
+    [RECHECK_DAYS, limit, SUPPORTED_HOSTS],
   );
   const groups = new Map();
+  const single = [];
   for (const r of rows) {
     const b = boardFor(r.apply_url);
-    if (!b) continue;
-    const key = `${b.ats}:${b.board.toLowerCase()}`;
-    if (!groups.has(key)) groups.set(key, { ats: b.ats, board: b.board, rows: [] });
-    groups.get(key).rows.push({ id: r.id, jobId: b.id });
+    if (b) {
+      const key = `${b.ats}:${b.board.toLowerCase()}`;
+      if (!groups.has(key)) groups.set(key, { ats: b.ats, board: b.board, rows: [] });
+      groups.get(key).rows.push({ id: r.id, jobId: b.id });
+      continue;
+    }
+    const api = postingApiFor(r.apply_url);
+    if (api && single.length < perPostingLimit) single.push({ id: r.id, ...api });
   }
-  let filled = 0; let checked = 0; let failedBoards = 0;
+  stats.boards = groups.size;
   await mapLimit([...groups.values()], 4, async g => {
-    let pay;
-    try { pay = await fetchBoardPay(g, fetchImpl); } catch (err) {
-      failedBoards++;
-      log.warn?.(`[pay] ${g.ats}/${g.board}: ${err.message}`);
+    let board;
+    try { board = await fetchBoard(g, fetchImpl); } catch (err) {
+      stats.failed++;
+      log.warn?.(`[details] ${g.ats}/${g.board}: ${err.message}`);
       return;
     }
-    const found = g.rows.map(r => ({ ...r, pay: pay.get(String(r.jobId)) || null }));
-    const withPay = found.filter(r => r.pay);
-    for (const r of withPay) {
-      await run('UPDATE scraped_roles SET salary_range = $2, pay_checked_at = NOW() WHERE id = $1 AND salary_range IS NULL', [r.id, r.pay.slice(0, 100)]);
+    for (const r of g.rows) {
+      const hit = board.get(String(r.jobId));
+      if (hit) tally(await saveDetails(r.id, hit));
+      else await run('UPDATE scraped_roles SET jd_checked_at = NOW(), pay_checked_at = NOW() WHERE id = $1', [r.id]); // closed or moved
     }
-    const without = found.filter(r => !r.pay).map(r => r.id);
-    if (without.length) await run('UPDATE scraped_roles SET pay_checked_at = NOW() WHERE id = ANY($1::bigint[])', [without]);
-    filled += withPay.length;
-    checked += found.length;
   });
-  return { boards: groups.size, checked, filled, failedBoards };
+  stats.postings = single.length;
+  await mapLimit(single, 3, async p => {
+    try {
+      const hit = await fetchPosting(p, fetchImpl);
+      if (hit) tally(await saveDetails(p.id, hit));
+      else await run('UPDATE scraped_roles SET jd_checked_at = NOW() WHERE id = $1', [p.id]);
+    } catch (err) {
+      stats.failed++;
+      if (stats.failed <= 5) log.warn?.(`[details] ${p.ats} ${p.url}: ${err.message}`);
+    }
+  });
+  return stats;
 }
+
+/** Kept for the cron and older callers. */
+export const enrichPostedPay = enrichPostingDetails;

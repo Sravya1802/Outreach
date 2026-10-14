@@ -333,7 +333,33 @@ export interface SensitiveProfilePreview {
 
 // ── Applications (evaluations) ───────────────────────────────────────────────
 
-export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null }
+/** One PDF kept in cloud storage (resume_files). */
+export interface ResumeFile {
+  id: number
+  kind: 'master' | 'tailored' | 'uploaded' | 'library'
+  filename: string
+  size_bytes: number | null
+  /** The account's country setting when the file was made. */
+  market: 'usa' | 'india' | 'other' | null
+  evaluation_id: number | null
+  is_current: boolean
+  created_at: string
+}
+export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluation_id'> {
+  evaluation_id: number
+  company_name: string
+  job_title: string
+  job_url: string | null
+  apply_status: ApplyStatus | null
+  applied_at: string | null
+  /** True once this exact file went out with the application. */
+  sent: boolean
+  location: string | null
+  region: 'usa' | 'india' | 'intl' | null
+}
+export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
+
+export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null; file?: ResumeFile | null; inCloud?: boolean }
 
 /** Raw apply_status values the backend writes. */
 export type ApplyStatus = 'not_started' | 'opened' | 'queued' | 'in_progress' | 'submitted' | 'responded' | 'interview' | 'offer' | 'rejected'
@@ -353,6 +379,11 @@ export interface EvaluationSummary {
   created_at: string
   apply_error?: string | null
   apply_platform?: string | null
+  /** Pipeline only: the resume sent (or to be sent) with this application. */
+  resume_file_id?: number | null
+  resume_filename?: string | null
+  resume_kind?: ResumeFile['kind'] | null
+  resume_sent?: boolean
 }
 
 /** The parts of the evaluation report the new pages show (the JSON has more). */
@@ -453,6 +484,8 @@ export const api = {
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
+  resumeHistory: (): Promise<ResumeHistory> => legacy.career.resumeFiles(),
+  downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   uploadResume: async (file: File): Promise<ResumeStatus> => {
     const r = await legacy.career.uploadResume(file)
     if (!r.success) throw new Error(r.error || 'Upload failed')

@@ -406,6 +406,8 @@ export const api = {
     //    so the JWT never appears in URLs, history, or referrers.
     openReportTab:        (id) => openAuthenticatedTab(`/career/evaluations/${id}/report.html`),
     downloadEvaluationPdf: (id, filename) => downloadAuthenticatedFile(`/career/download/${id}`, filename),
+    resumeFiles: () => apiCall('/career/resume/files'),
+    downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
     // Upload a custom resume PDF for a specific evaluation. Backend writes
     // evaluations.pdf_path, which autoApplier honors over library matching.

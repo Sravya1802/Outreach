@@ -38,6 +38,7 @@ export const qk = {
   answers: ['profile-answers'] as const,
   githubStatus: ['github-status'] as const,
   resume: ['resume-status'] as const,
+  resumeHistory: ['resume-history'] as const,
   evaluations: ['evaluations'] as const,
   evaluation: (id: number) => ['evaluation', id] as const,
   pipeline: ['pipeline'] as const,

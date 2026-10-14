@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Trash2 } from 'lucide-react'
+import { Download, ExternalLink, Trash2 } from 'lucide-react'
 import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
@@ -45,6 +45,10 @@ export default function PipelinePage() {
   const move = useMutation({
     mutationFn: ({ id, column }: { id: number; column: PipelineColumn }) => api.setApplyStatus(id, STAGES.find(s => s.id === column)?.status ?? 'not_started'),
     onSuccess: refresh,
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const download = useMutation({
+    mutationFn: (r: EvaluationSummary) => api.downloadResumeFile(r.resume_file_id ?? 0, r.resume_filename || 'resume.pdf'),
     onError: (e: Error) => toast.error(e.message),
   })
   const remove = useMutation({
@@ -92,11 +96,12 @@ export default function PipelinePage() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse border-t border-rule text-[14px]">
+          <table className="w-full min-w-[860px] border-collapse border-t border-rule text-[14px]">
             <thead>
               <tr className="text-left text-[13px] text-subtle">
                 <th className="py-3 pr-3 font-medium">Score</th>
                 <th className="px-3 py-3 font-medium">Company and role</th>
+                <th className="px-3 py-3 font-medium">Resume</th>
                 <th className="px-3 py-3 font-medium">Stage</th>
                 <th className="px-3 py-3 font-medium">Updated</th>
                 <th className="py-3 pl-3"><span className="sr-only">Actions</span></th>
@@ -113,6 +118,16 @@ export default function PipelinePage() {
                       <Link to={`/applications/evaluate?id=${r.id}`} className="hover:text-accent">
                         <b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span>
                       </Link>
+                    </td>
+                    <td className="max-w-[220px] px-3 py-3">
+                      {r.resume_file_id ? (
+                        <button type="button" onClick={() => download.mutate(r)} title={`Download ${r.resume_filename}`}
+                          className="flex max-w-full items-center gap-1.5 text-left text-[13px] text-muted hover:text-accent">
+                          <Download className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{r.resume_filename}</span>
+                        </button>
+                      ) : <span className="text-[13px] text-subtle">—</span>}
+                      {r.resume_file_id && <p className="mt-0.5 text-[12px] text-subtle">{r.resume_sent ? 'Sent with the application' : 'Ready to send'}</p>}
                     </td>
                     <td className="px-3 py-3">
                       <Select value={col} aria-label={`Stage for ${r.company_name}`} className="h-8 w-40 text-[13px]"

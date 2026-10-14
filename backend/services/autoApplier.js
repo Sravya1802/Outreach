@@ -26,6 +26,7 @@ import db, { one, all, run } from '../db.js';
 import { scanResumesFromStorage, pickResumeForRole, detectPlatform } from './resumeRegistry.js';
 import { validateProfileForApply } from './applyValidation.js';
 import { assertPublicUrl } from './safeFetch.js';
+import { fileForUser, fileToTemp, recordLibraryFile, markSubmittedWith } from './resumeFiles.js';
 
 // Status values we write back to evaluations.apply_status during processing.
 const STATUS = {
@@ -313,7 +314,16 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
   // archetype miss — too aggressive, since a SWE resume can still apply to a
   // role that just doesn't trip the keyword list.
   let resume = null;
-  if (row.pdf_path && fs.existsSync(row.pdf_path)) {
+  const chosenFile = row.resume_file_id ? await fileForUser(userId, row.resume_file_id) : null;
+  if (chosenFile) {
+    try {
+      resume = { archetype: 'override', filename: chosenFile.filename, absPath: await fileToTemp(chosenFile), source: 'storage', fileId: chosenFile.id };
+      console.log(`[autoApply] stored resume "${resume.filename}" (#${chosenFile.id}) for eval ${evalId}`);
+    } catch (err) {
+      await setStatus(userId, evalId, STATUS.needs_review, { error: `Couldn’t fetch the resume for this role from cloud storage: ${err.message}`, platform });
+      return { ok: false, error: 'Resume download failed', needsReview: true };
+    }
+  } else if (row.pdf_path && fs.existsSync(row.pdf_path)) {
     resume = { archetype: 'override', filename: path.basename(row.pdf_path), absPath: row.pdf_path };
     console.log(`[autoApply] per-eval override resume "${resume.filename}" for eval ${evalId}`);
   } else {
@@ -324,7 +334,15 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
       archetypeHint:  (row.report_json ? JSON.parse(row.report_json)?.archetype?.primary : '') || '',
       strict:         false,
     });
+    // Every archetype was downloaded to pick from; keep only the chosen one.
+    for (const r of libraryResumes) {
+      if (r !== resume && r.source === 'storage') { try { fs.unlinkSync(r.absPath); } catch (_) {} }
+    }
     if (resume) {
+      try {
+        const file = await recordLibraryFile(userId, { objectPath: `${userId}/${resume.folder}/${resume.filename}`, filename: resume.filename, sizeBytes: resume.sizeBytes });
+        resume.fileId = file.id;
+      } catch (err) { console.warn(`[autoApply] couldn't index library resume: ${err.message}`); }
       console.log(`[autoApply] library resume "${resume.filename}" (archetype=${resume.archetype}) for eval ${evalId}`);
     } else {
       await setStatus(userId, evalId, STATUS.needs_review, {
@@ -335,8 +353,12 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     }
   }
 
+  // Temp copies from cloud storage are deleted on every way out.
+  const dropTemp = () => { if (resume?.source === 'storage' && resume.absPath) { try { fs.unlinkSync(resume.absPath); } catch (_) {} } };
+
   const supported = ['greenhouse', 'lever', 'ashby'];
   if (!supported.includes(platform)) {
+    dropTemp();
     await setStatus(userId, evalId, STATUS.unsupported, { error: `Platform "${platform}" not yet supported for auto-apply — please apply manually`, platform, incrementAttempts: true });
     return { ok: false, platform, error: 'Platform not supported' };
   }
@@ -355,6 +377,7 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     [evalId, userId, STATUS.in_progress, platform, resume.filename]
   );
   if (!claimed) {
+    dropTemp();
     return { ok: false, platform, error: 'Already being processed or submitted', skipped: true };
   }
 
@@ -431,6 +454,7 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
 
     if (looksSubmitted) {
       await setStatus(userId, evalId, STATUS.submitted, { platform, resumeUsed: resume.filename });
+      await markSubmittedWith(userId, evalId, resume.fileId).catch(err => console.warn(`[autoApply] couldn't record resume used: ${err.message}`));
       return { ok: true, platform, resume: resume.filename };
     }
     // Not obviously confirmed — mark as in_progress with note, so user can verify.
@@ -443,9 +467,7 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
     if (browser) { try { await browser.close(); } catch (_) {} }
     // Unlink temp files we downloaded from Supabase Storage. Skip FS-resident
     // and tailored PDFs — those are persistent.
-    if (resume?.source === 'storage' && resume.absPath) {
-      try { fs.unlinkSync(resume.absPath); } catch (_) {}
-    }
+    dropTemp();
   }
 }
 

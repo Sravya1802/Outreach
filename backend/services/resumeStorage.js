@@ -14,8 +14,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+// Read at call time: imports run before server.js loads .env.
+const supabaseUrl = () => process.env.SUPABASE_URL;
+const serviceKey  = () => process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
 export const BUCKETS = {
   library:  'resume-library',
@@ -24,15 +25,15 @@ export const BUCKETS = {
 };
 
 function assertConfigured() {
-  if (!SUPABASE_URL || !SERVICE_KEY) {
+  if (!supabaseUrl() || !serviceKey()) {
     throw new Error('Resume storage not configured: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the backend .env');
   }
 }
 
 function authHeaders(extra = {}) {
   return {
-    Authorization: `Bearer ${SERVICE_KEY}`,
-    apikey: SERVICE_KEY,
+    Authorization: `Bearer ${serviceKey()}`,
+    apikey: serviceKey(),
     ...extra,
   };
 }
@@ -50,7 +51,7 @@ function safeFilename(s) {
  */
 async function uploadBytes(bucket, objectPath, buffer, contentType = 'application/pdf') {
   assertConfigured();
-  const url = `${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
+  const url = `${supabaseUrl()}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': contentType, 'x-upsert': 'true' }),
@@ -67,15 +68,19 @@ async function uploadBytes(bucket, objectPath, buffer, contentType = 'applicatio
  * Download an object to a temp file. Returns the temp path (caller must
  * unlink when done — Playwright reads the file then we clean up).
  */
-async function downloadToTemp(bucket, objectPath) {
+async function downloadBytes(bucket, objectPath) {
   assertConfigured();
-  const url = `${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
+  const url = `${supabaseUrl()}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
   const res = await fetch(url, { headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`storage download failed (${res.status}): ${text || res.statusText}`);
   }
-  const buf = Buffer.from(await res.arrayBuffer());
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function downloadToTemp(bucket, objectPath) {
+  const buf = await downloadBytes(bucket, objectPath);
   const tmpPath = path.join(os.tmpdir(), `resume-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${path.basename(objectPath)}`);
   await fs.promises.writeFile(tmpPath, buf);
   return tmpPath;
@@ -83,7 +88,7 @@ async function downloadToTemp(bucket, objectPath) {
 
 async function listObjects(bucket, prefix) {
   assertConfigured();
-  const url = `${SUPABASE_URL}/storage/v1/object/list/${bucket}`;
+  const url = `${supabaseUrl()}/storage/v1/object/list/${bucket}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -99,7 +104,7 @@ async function listObjects(bucket, prefix) {
 
 async function removeObject(bucket, objectPath) {
   assertConfigured();
-  const url = `${SUPABASE_URL}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
+  const url = `${supabaseUrl()}/storage/v1/object/${bucket}/${encodeURI(objectPath)}`;
   const res = await fetch(url, { method: 'DELETE', headers: authHeaders() });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -186,5 +191,8 @@ export async function downloadTailoredPdf(userId, evalId, filename) {
 }
 
 export function isStorageConfigured() {
-  return Boolean(SUPABASE_URL && SERVICE_KEY);
+  return Boolean(supabaseUrl() && serviceKey());
 }
+
+// Generic access for resumeFiles.js, which keeps the per-file index.
+export { uploadBytes as putObject, downloadBytes as getObject, downloadToTemp as objectToTemp, removeObject as deleteObject };

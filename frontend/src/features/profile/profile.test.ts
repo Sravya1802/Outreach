@@ -3,6 +3,7 @@ import { normalizeQuestion, similarity } from './match'
 import { unansweredCommon } from './commonQuestions'
 import { toForm, toPatch } from './fields'
 import { topLanguages } from './repoFormat'
+import { countryLabel, countryOf, formatBytes } from './resumeFiles'
 
 describe('question matching (mirrors the backend)', () => {
   it('normalizes length hints and punctuation away', () => {
@@ -51,5 +52,21 @@ describe('experience entries', () => {
     expect(readExperiences('[{"company":"Lab"}]')[0]?.company).toBe('Lab')
     expect(readExperiences('not json')).toEqual([])
     expect(readExperiences(undefined)).toEqual([])
+  })
+})
+
+describe('resume files', () => {
+  it('formats sizes', () => {
+    expect(formatBytes(0)).toBe('')
+    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(50459)).toBe('49 KB')
+    expect(formatBytes(1.25 * 1024 * 1024)).toBe('1.3 MB')
+  })
+  it('places an application in a country, listing first', () => {
+    expect(countryOf({ region: 'india', market: 'usa' })).toBe('india')
+    expect(countryOf({ region: 'intl', market: 'usa' })).toBe('other')
+    expect(countryOf({ region: null, market: 'india' })).toBe('india')
+    expect(countryOf({ region: null, market: null })).toBe('usa')
+    expect(countryLabel('other')).toBe('International')
   })
 })

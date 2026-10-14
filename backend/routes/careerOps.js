@@ -7,6 +7,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { one, all, run, tx } from '../db.js';
 import { evaluateJob, fetchJobFromUrl } from '../services/jobEvaluator.js';
@@ -24,10 +25,13 @@ import { FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
+import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, resumeHistory } from '../services/resumeFiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const RESUME_DIR = path.join(__dirname, '..', 'data', 'resume');
-fs.mkdirSync(RESUME_DIR, { recursive: true });
+// Uploads land here only until they're copied to Supabase Storage
+// (services/resumeFiles.js); no resume stays on the server's disk.
+const UPLOAD_TMP = path.join(os.tmpdir(), 'outreach-uploads');
+fs.mkdirSync(UPLOAD_TMP, { recursive: true });
 
 const router = Router();
 
@@ -48,7 +52,7 @@ async function extractPdfText(bufferOrPath) {
 
 // ── Multer config for PDF upload ──────────────────────────────────────────────
 const upload = multer({
-  dest: RESUME_DIR,
+  dest: UPLOAD_TMP,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') cb(null, true);
@@ -62,7 +66,8 @@ router.get('/resume', async (req, res) => {
     const text = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_text']))?.value;
     const name = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_name']))?.value;
     const date = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_date']))?.value;
-    res.json({ hasResume: !!text, name, date, textPreview: text?.slice(0, 300) });
+    const file = await currentMaster(req.user.id);
+    res.json({ hasResume: !!text, name, date, textPreview: text?.slice(0, 300), file, inCloud: !!file });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -80,10 +85,17 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
       return res.status(400).json({ error: 'Could not extract text from PDF. Make sure it is not a scanned image.' });
     }
 
-    // Save original PDF
-    const destPath = path.join(RESUME_DIR, 'original.pdf');
-    fs.copyFileSync(req.file.path, destPath);
-    fs.unlinkSync(req.file.path); // remove temp
+    // Store the PDF in the cloud first; the parsed text only counts once
+    // the file is safely kept.
+    const buffer = fs.readFileSync(req.file.path);
+    fs.unlinkSync(req.file.path);
+    let file;
+    try {
+      file = await saveMaster(req.user.id, buffer, req.file.originalname);
+    } catch (err) {
+      console.error('[careerOps] resume cloud save failed:', err.message);
+      return res.status(502).json({ error: 'Couldn’t save your resume to cloud storage. Try again in a minute.' });
+    }
 
     // Store in DB meta table
     const upsertSql = "INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value";
@@ -92,10 +104,38 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
     await run(upsertSql, [req.user.id, 'user_resume_date', new Date().toISOString()]);
 
     console.log(`[careerOps] Resume uploaded: ${req.file.originalname}, ${text.length} chars`);
-    res.json({ ok: true, name: req.file.originalname, chars: text.length, preview: text.slice(0, 300) });
+    res.json({ ok: true, name: req.file.originalname, chars: text.length, preview: text.slice(0, 300), file });
   } catch (err) {
     console.error('[careerOps] resume upload error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+function sendPdf(res, buffer, filename) {
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', buffer.length);
+  res.end(buffer);
+}
+
+// ── GET /api/career/resume/files — master versions + resume per application ──
+router.get('/resume/files', async (req, res) => {
+  try {
+    res.json(await resumeHistory(req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/career/resume/files/:id/download — one stored PDF ───────────────
+router.get('/resume/files/:id/download', async (req, res) => {
+  try {
+    const file = await fileForUser(req.user.id, req.params.id);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    sendPdf(res, await fileBytes(file), file.filename);
+  } catch (err) {
+    console.error('[careerOps] resume file download error:', err.message);
+    res.status(502).json({ error: 'Couldn’t fetch that file from cloud storage' });
   }
 });
 
@@ -690,17 +730,19 @@ router.post('/auto-apply/resume-preview', async (req, res) => {
     const previews = {};
     for (const url of jobUrls) {
       const ev = await one(`
-        SELECT id, pdf_path, job_description, report_json
-        FROM evaluations
-        WHERE job_url = $1 AND user_id = $2
-        ORDER BY id DESC
+        SELECT e.id, e.pdf_path, e.job_description, e.report_json, f.filename AS file_name
+        FROM evaluations e LEFT JOIN resume_files f ON f.id = e.resume_file_id
+        WHERE e.job_url = $1 AND e.user_id = $2
+        ORDER BY e.id DESC
         LIMIT 1
       `, [url, req.user.id]);
       if (!ev) {
         previews[url] = { source: 'fallback', label: 'Will use common-folder resume (no evaluation yet)' };
         continue;
       }
-      if (ev.pdf_path && fs.existsSync(ev.pdf_path)) {
+      if (ev.file_name) {
+        previews[url] = { source: 'tailored', evalId: ev.id, filename: ev.file_name, label: `Tailored resume: ${ev.file_name}` };
+      } else if (ev.pdf_path && fs.existsSync(ev.pdf_path)) {
         previews[url] = {
           source: 'tailored',
           evalId: ev.id,
@@ -776,11 +818,14 @@ router.post('/auto-apply/:id', async (req, res) => {
 router.get('/pipeline', async (req, res) => {
   try {
     const rows = await all(`
-      SELECT id, job_title, company_name, job_url, grade, score,
-             apply_mode, apply_status, applied_at, created_at
-      FROM evaluations
-      WHERE user_id = $1
-      ORDER BY COALESCE(applied_at, created_at::text) DESC
+      SELECT e.id, e.job_title, e.company_name, e.job_url, e.grade, e.score,
+             e.apply_mode, e.apply_status, e.applied_at, e.created_at,
+             f.id AS resume_file_id, f.filename AS resume_filename, f.kind AS resume_kind,
+             (e.applied_resume_file_id IS NOT NULL) AS resume_sent
+      FROM evaluations e
+      LEFT JOIN resume_files f ON f.id = COALESCE(e.applied_resume_file_id, e.resume_file_id) AND f.user_id = e.user_id
+      WHERE e.user_id = $1
+      ORDER BY COALESCE(e.applied_at, e.created_at::text) DESC
     `, [req.user.id]);
 
     const columns = {
@@ -938,11 +983,16 @@ router.post('/tailored-resume/:id', async (req, res) => {
     console.log(`[careerOps] Generating tailored resume for ${row.company_name} - ${row.job_title} (candidate: ${candidateName})`);
 
     const tailored = await tailorResume(resumeText, row.job_description, row.job_title, row.company_name);
-    const { pdfPath, relativePath } = await generateResumePDF(tailored, row.company_name, row.job_title, candidateName, { userId: req.user.id, evalId: row.id });
+    const { pdfPath } = await generateResumePDF(tailored, row.company_name, row.job_title, candidateName, { userId: req.user.id, evalId: row.id });
+    const safe = s => String(s || '').replace(/[^a-zA-Z0-9\-_.]/g, '_').slice(0, 40);
+    let file;
+    try {
+      file = await saveForEvaluation(req.user.id, row.id, fs.readFileSync(pdfPath), `${safe(row.company_name)}-${safe(row.job_title)}.pdf`, 'tailored');
+    } finally {
+      try { fs.unlinkSync(pdfPath); } catch (_) {}
+    }
 
-    await run('UPDATE evaluations SET pdf_path = $1 WHERE id = $2 AND user_id = $3', [pdfPath, row.id, req.user.id]);
-
-    res.json({ ok: true, pdfPath: relativePath, downloadUrl: `/api/career/download/${row.id}` });
+    res.json({ ok: true, file, downloadUrl: `/api/career/download/${row.id}` });
   } catch (err) {
     console.error('[careerOps] tailored-resume error:', err && err.stack || err.message);
     res.status(500).json({ error: err.message || 'Tailor failed' });
@@ -963,12 +1013,11 @@ router.post('/upload-resume/:id', upload.single('resume'), async (req, res) => {
       return res.status(404).json({ error: 'Evaluation not found' });
     }
     const safe = s => String(s || '').replace(/[^a-zA-Z0-9\-_.]/g, '_').slice(0, 40);
-    const filename = `eval-${row.id}-${safe(row.company_name)}-${safe(row.job_title)}.pdf`;
-    const destPath = path.join(RESUME_DIR, filename);
-    fs.copyFileSync(req.file.path, destPath);
+    const filename = `${safe(row.company_name)}-${safe(row.job_title)}.pdf`;
+    const buffer = fs.readFileSync(req.file.path);
     fs.unlinkSync(req.file.path);
-    await run('UPDATE evaluations SET pdf_path = $1 WHERE id = $2 AND user_id = $3', [destPath, row.id, req.user.id]);
-    res.json({ ok: true, filename, source: 'upload' });
+    const file = await saveForEvaluation(req.user.id, row.id, buffer, filename, 'uploaded');
+    res.json({ ok: true, filename: file.filename, file, source: 'upload' });
   } catch (err) {
     console.error('[careerOps] upload-resume error:', err.message);
     res.status(500).json({ error: err.message });
@@ -978,11 +1027,17 @@ router.post('/upload-resume/:id', upload.single('resume'), async (req, res) => {
 // ── GET /api/career/download/:id — download PDF ──────────────────────────────
 router.get('/download/:id', async (req, res) => {
   try {
-    const row = await one('SELECT pdf_path, job_title, company_name FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    const row = await one('SELECT pdf_path, resume_file_id, applied_resume_file_id, job_title, company_name FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    const filename = `${row?.company_name}-${row?.job_title}-resume.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+    const fileId = row?.applied_resume_file_id || row?.resume_file_id;
+    if (fileId) {
+      const file = await fileForUser(req.user.id, fileId);
+      if (!file) return res.status(404).json({ error: 'PDF not found.' });
+      return sendPdf(res, await fileBytes(file), filename);
+    }
+    // Rows from before cloud storage still point at a file on this server.
     if (!row || !row.pdf_path) return res.status(404).json({ error: 'PDF not found. Generate it first.' });
     if (!fs.existsSync(row.pdf_path)) return res.status(404).json({ error: 'PDF file missing from disk.' });
-
-    const filename = `${row.company_name}-${row.job_title}-tailored-resume.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/pdf');
     fs.createReadStream(row.pdf_path).pipe(res);

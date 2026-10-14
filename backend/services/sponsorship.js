@@ -35,12 +35,19 @@ const SPONSORS = [
   /\b(?:eligible|welcome)\b[^.]{0,30}\b(?:CPT|OPT)\b/i,
 ];
 
+// Sentence boundary: a period, ! or ? followed by space or end, except after a
+// single capital letter ("U.S.", "D.C.") so abbreviations don't cut a sentence.
+const BOUNDARY = /(?<!\b[A-Z])[.!?](?=\s|$)|\n/g;
+
 function sentenceAround(text, index) {
-  const start = Math.max(text.lastIndexOf('. ', index) + 1, text.lastIndexOf('\n', index) + 1, 0);
-  const endDot = text.indexOf('. ', index);
-  const endNl = text.indexOf('\n', index);
-  const ends = [endDot === -1 ? text.length : endDot + 1, endNl === -1 ? text.length : endNl].filter(n => n > index);
-  return text.slice(start, Math.min(...ends)).trim().slice(0, 300);
+  let start = 0;
+  let end = text.length;
+  BOUNDARY.lastIndex = 0;
+  for (let m; (m = BOUNDARY.exec(text));) {
+    if (m.index < index) start = m.index + 1;
+    else { end = m[0] === '\n' ? m.index : m.index + 1; break; }
+  }
+  return text.slice(start, end).trim().slice(0, 300);
 }
 
 /** Plain text from description HTML (handles Greenhouse's escaped HTML). */

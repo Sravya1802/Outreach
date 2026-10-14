@@ -41,3 +41,9 @@ test('keeps the deciding sentence and reads escaped HTML', () => {
   assert.equal(r.quote, 'We are unable to sponsor visas at this time.')
   assert.equal(plainText('<li>One</li><li>Two &amp; three</li>'), 'One\nTwo & three')
 })
+
+test('quotes the whole sentence, through abbreviations like U.S.', () => {
+  const r = classifySponsorship('Great team. Due to export regulations, the applicant must be a U.S. citizen or permanent resident. Apply now.')
+  assert.equal(r.status, 'citizens_only')
+  assert.equal(r.quote, 'Due to export regulations, the applicant must be a U.S. citizen or permanent resident.')
+})

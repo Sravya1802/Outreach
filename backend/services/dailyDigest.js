@@ -7,7 +7,8 @@ import { sendMail, mailerConfigured, notifyRecipient } from './mailer.js';
 
 // Build the WHERE clause + params for a filtered, windowed roles query.
 function buildFilter({ windowDays = 1, roleType = 'all', keywords = '' } = {}) {
-  const clauses = ['is_active = 1', `scraped_at > NOW() - ($1::int * INTERVAL '1 day')`];
+  // Alerts cover the USA lists; international roles are browse-only for now.
+  const clauses = ['is_active = 1', "region = 'usa'", `scraped_at > NOW() - ($1::int * INTERVAL '1 day')`];
   const params = [Math.max(1, Number(windowDays) || 1)];
   if (roleType === 'intern' || roleType === 'new_grad') {
     params.push(roleType);

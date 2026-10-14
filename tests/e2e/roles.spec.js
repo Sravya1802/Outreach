@@ -4,14 +4,18 @@ import { skipWithoutAuthEnv } from './auth-env.js'
 
 skipWithoutAuthEnv()
 
-test('roles page renders and keeps search in the URL', async ({ page }) => {
+test('roles page: four lists, field switch, filters kept in the URL', async ({ page }) => {
   await page.goto('/jobs/roles/intern')
   await expect(page.getByRole('heading', { name: 'Roles', level: 1 })).toBeVisible()
-  await expect(page.getByRole('radio', { name: /Internships/ })).toHaveAttribute('aria-checked', 'true')
+  const lists = page.getByRole('navigation', { name: 'Lists' })
+  await expect(lists.getByRole('link')).toHaveCount(4)
+  await expect(lists.getByRole('link', { name: /Internships\s*USA/ })).toHaveAttribute('aria-current', 'page')
   await page.getByLabel('Search roles').fill('software')
   await expect(page).toHaveURL(/q=software/)
-  await page.getByRole('radio', { name: /New grad/ }).click()
-  await expect(page).toHaveURL(/\/jobs\/roles\/new-grad\?q=software/)
+  await page.getByRole('radio', { name: 'AI / ML' }).click()
+  await expect(page).toHaveURL(/field=ai/)
+  await lists.getByRole('link', { name: /New grad\s*International/ }).click()
+  await expect(page).toHaveURL(/\/jobs\/roles\/new-grad-intl\?.*q=software.*field=ai|\/jobs\/roles\/new-grad-intl\?.*field=ai.*q=software/)
 })
 
 test('email alerts dialog opens from roles', async ({ page }) => {

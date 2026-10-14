@@ -36,14 +36,19 @@ router.get('/', async (req, res) => {
   try {
     const role_type = req.query.role_type === 'new_grad' ? 'new_grad' : 'intern';
     const source    = typeof req.query.source === 'string' ? req.query.source.slice(0, 40) : '';
+    const tier      = ['faang', 'quant', 'other'].includes(req.query.tier) ? req.query.tier : '';
+    const region    = req.query.region === 'intl' ? 'intl' : 'usa';
+    const field     = ['swe', 'ai'].includes(req.query.field) ? req.query.field : '';
     const search    = typeof req.query.search === 'string' ? req.query.search.slice(0, 200).trim() : '';
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(100, Math.max(10, Number(req.query.pageSize) || 50));
 
-    const where = ['is_active = 1', 'role_type = $1'];
-    const params = [role_type];
-    let p = 2;
+    const where = ['is_active = 1', 'role_type = $1', 'region = $2'];
+    const params = [role_type, region];
+    let p = 3;
     if (source) { where.push(`source = $${p++}`); params.push(source); }
+    if (tier)   { where.push(`tier = $${p++}`);   params.push(tier); }
+    if (field)  { where.push(`$${p++} = ANY(tracks)`); params.push(field); }
     if (search) {
       where.push(`(title ILIKE $${p} OR company_name ILIKE $${p})`);
       params.push(`%${search}%`);
@@ -51,7 +56,7 @@ router.get('/', async (req, res) => {
     }
 
     const sql = `
-      SELECT id, role_type, title, company_name, location, apply_url, source,
+      SELECT id, role_type, region, tracks, title, company_name, company_url, location, apply_url, source, tier,
              description, salary_range, posted_at, scraped_at
       FROM scraped_roles
       WHERE ${where.join(' AND ')}
@@ -110,10 +115,12 @@ router.get('/', async (req, res) => {
 router.get('/sources', async (req, res) => {
   try {
     const rows = await all(
-      `SELECT source, role_type, COUNT(*)::int AS n
+      `SELECT source, role_type, region, COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE 'swe' = ANY(tracks))::int AS swe,
+              COUNT(*) FILTER (WHERE 'ai'  = ANY(tracks))::int AS ai
          FROM scraped_roles
         WHERE is_active = 1
-        GROUP BY source, role_type
+        GROUP BY source, role_type, region
         ORDER BY source`
     );
     res.json({ sources: rows });

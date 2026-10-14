@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countsByType, kindToRoleType, postedLabel, roleTypeToKind, sourceLabel } from './catalog'
+import { countsByList, listForKind, postedLabel, sourceLabel } from './catalog'
 
 describe('catalog helpers', () => {
   it('labels sources', () => {
@@ -7,11 +7,10 @@ describe('catalog helpers', () => {
     expect(sourceLabel('remote_rocketship')).toBe('Remote Rocketship')
     expect(sourceLabel('some_new-source')).toBe('Some New Source')
   })
-  it('maps URL kinds', () => {
-    expect(kindToRoleType('intern')).toBe('intern')
-    expect(kindToRoleType('new-grad')).toBe('new_grad')
-    expect(kindToRoleType('other')).toBeNull()
-    expect(roleTypeToKind('new_grad')).toBe('new-grad')
+  it('maps URL kinds to the four lists', () => {
+    expect(listForKind('intern')).toMatchObject({ roleType: 'intern', region: 'usa' })
+    expect(listForKind('new-grad-intl')).toMatchObject({ roleType: 'new_grad', region: 'intl' })
+    expect(listForKind('other')).toBeNull()
   })
   it('formats posted dates', () => {
     const now = new Date('2026-10-13T12:00:00Z').getTime()
@@ -20,8 +19,12 @@ describe('catalog helpers', () => {
     expect(postedLabel('2026-10-08T08:00:00Z', '', now)).toBe('5d ago')
     expect(postedLabel('garbage', 'garbage', now)).toBe('')
   })
-  it('sums counts per role type', () => {
-    expect(countsByType([{ role_type: 'intern', n: 3 }, { role_type: 'new_grad', n: 2 }, { role_type: 'intern', n: 4 }])).toEqual({ intern: 7, new_grad: 2 })
+  it('sums counts per list', () => {
+    expect(countsByList([
+      { role_type: 'intern', region: 'usa', n: 3 }, { role_type: 'new_grad', region: 'usa', n: 2 },
+      { role_type: 'intern', region: 'intl', n: 4 }, { role_type: 'intern', n: 1 },
+    ])).toEqual({ intern: 4, 'new-grad': 2, 'intern-intl': 4, 'new-grad-intl': 0 })
+    expect(countsByList([{ role_type: 'intern', region: 'usa', n: 5, swe: 4, ai: 2 }], 'ai').intern).toBe(2)
   })
 })
 

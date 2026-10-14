@@ -30,7 +30,7 @@ import { requireAuth }    from './middleware/requireAuth.js';
 import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
 import { scrapeAllSources } from './services/scraper.js';
-import { scrapeAllSourcesAndPersist } from './services/multiSourceScraper.js';
+import { scrapeAllSourcesAndPersist, syncSpeedyApply } from './services/multiSourceScraper.js';
 import { runSubscriptionDigests } from './services/dailyDigest.js';
 import { mailerConfigured } from './services/mailer.js';
 
@@ -504,6 +504,19 @@ cron.schedule('15 6 * * *', async () => {
   }
 }, CRON_OPTS);
 
+// ── Cron: SpeedyApply lists at 12:30 UTC ─────────────────────────────────────
+// github.com/speedyapply regenerates its SWE + AI college-jobs lists daily at
+// 12:00 UTC; pull them right after so the catalog has today's list.
+cron.schedule('30 12 * * *', async () => {
+  if (process.env.MULTI_SCRAPE_DISABLED || process.env.NIGHTLY_CRON_DISABLED) return;
+  try {
+    const r = await syncSpeedyApply();
+    console.log(`[speedyapply-cron] ${r.repos.join(', ')} — parsed=${r.parsed} kept=${r.kept} written=${r.written}${r.files.some(f => f.error) ? ` errors=${JSON.stringify(r.files.filter(f => f.error))}` : ''}`);
+  } catch (err) {
+    console.error('[speedyapply-cron] failed:', err.message);
+  }
+}, CRON_OPTS);
+
 // ── Cron: nightly auto-apply pipeline at 07:00 UTC (≈2am Central) ────────────
 // Runs scan → evaluate → fit-filter (score ≥ minScore) → queue → submit for
 // every user who has nightly_pipeline_settings.enabled=true. Honors per-user
@@ -534,11 +547,11 @@ cron.schedule('0 7 * * *', async () => {
   } catch (err) { console.error('[nightly-cron] dispatcher failed:', err.message); }
 }, CRON_OPTS);
 
-// ── Cron: job-alert digests at 08:00 UTC (after the 06:15 scrape) ────────────
+// ── Cron: job-alert digests at 13:00 UTC (after the 12:30 SpeedyApply sync) ───
 // Fans out to every subscriber (meta['job_alert_subscription']). Daily subs get
 // a 24h window every day; weekly subs get a 7d window on Mondays only.
 // Skipped when email isn't configured or DIGEST_CRON_DISABLED is set.
-cron.schedule('0 8 * * *', async () => {
+cron.schedule('0 13 * * *', async () => {
   if (process.env.DIGEST_CRON_DISABLED) {
     console.log('[digest-cron] skipped — DIGEST_CRON_DISABLED is set');
     return;

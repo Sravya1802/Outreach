@@ -3,13 +3,14 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, BellRing, Check, RefreshCw, Search, Sparkles, Zap } from 'lucide-react'
 import { qk } from '@/app/queryClient'
-import { api, type CatalogListing, type CatalogPage, type RoleType } from '@/lib/api'
+import { api, type CatalogListing, type CatalogPage, type Field, type Tier } from '@/lib/api'
+import { cn } from '@/lib/cn'
 import { formatNumber } from '@/lib/format'
 import {
   Badge, Button, ButtonLink, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pager, Segmented, Select, Skeleton, useToast,
 } from '@/ui'
 import { AlertsDialog } from './AlertsDialog'
-import { countsByType, kindToRoleType, postedLabel, roleTypeToKind, sourceLabel } from './catalog'
+import { countsByList, LISTS, listForKind, postedLabel, sourceLabel, type CatalogList } from './catalog'
 
 const PAGE_SIZE = 50
 
@@ -22,7 +23,8 @@ function useDebounced<T>(value: T, ms: number): T {
   return v
 }
 
-function RoleRow({ role, onTrack, onAutoApply, busy }: {
+function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
+  field?: Field
   role: CatalogListing
   onTrack: () => void
   onAutoApply: () => void
@@ -35,7 +37,11 @@ function RoleRow({ role, onTrack, onAutoApply, busy }: {
           <span className="truncate">{role.title}</span>
           <ArrowUpRight className="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
         </a>
-        <p className="truncate text-xs text-muted">
+        <p className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted">
+          {role.tier === 'faang' && <Badge tone="accent">FAANG+</Badge>}
+          {role.tier === 'quant' && <Badge tone="info">Quant</Badge>}
+          {role.salary_range && <Badge tone="success">{role.salary_range}</Badge>}
+          {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''} · {postedLabel(role.posted_at, role.scraped_at)}</span>
         </p>
@@ -64,7 +70,8 @@ function RoleRow({ role, onTrack, onAutoApply, busy }: {
   )
 }
 
-function RolesList({ roleType }: { roleType: RoleType }) {
+function RolesList({ list }: { list: CatalogList }) {
+  const roleType = list.roleType
   const toast = useToast()
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -72,6 +79,10 @@ function RolesList({ roleType }: { roleType: RoleType }) {
   const [searchInput, setSearchInput] = useState(params.get('q') ?? '')
   const search = useDebounced(searchInput.trim(), 300)
   const source = params.get('source') ?? ''
+  const tierParam = params.get('tier')
+  const tier: Tier | undefined = tierParam === 'faang' || tierParam === 'quant' ? tierParam : undefined
+  const fieldParam = params.get('field')
+  const field: Field | undefined = fieldParam === 'swe' || fieldParam === 'ai' ? fieldParam : undefined
   const page = Math.max(0, Number(params.get('page')) || 0)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [busy, setBusy] = useState<Record<number, 'track' | 'auto'>>({})
@@ -85,11 +96,11 @@ function RolesList({ roleType }: { roleType: RoleType }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, source: source || undefined, search: search || undefined, page, pageSize: PAGE_SIZE }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, page, pageSize: PAGE_SIZE }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
-  const counts = countsByType(sources.data ?? [])
-  const sourceOptions = (sources.data ?? []).filter(s => s.role_type === roleType).sort((a, b) => b.n - a.n)
+  const counts = countsByList(sources.data ?? [], field)
+  const sourceOptions = (sources.data ?? []).filter(s => s.role_type === roleType && (s.region ?? 'usa') === list.region).sort((a, b) => b.n - a.n)
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(params)
@@ -138,14 +149,14 @@ function RolesList({ roleType }: { roleType: RoleType }) {
 
   const rows = listing.data?.rows ?? []
   const total = listing.data?.total ?? 0
-  const catalogEmpty = sources.isSuccess && counts.intern + counts.new_grad === 0
-  const filtered = Boolean(search || source)
+  const catalogEmpty = sources.isSuccess && Object.values(counts).every(n => n === 0)
+  const filtered = Boolean(search || source || tier || field)
 
   return (
     <Page wide>
       <PageHeader
         title="Roles"
-        description="Internship and new-grad openings, refreshed every morning from job boards and company career pages."
+        description="Internship and new-grad openings from SpeedyApply's daily lists, job boards and company career pages."
         actions={
           <>
             <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} loading={refresh.isPending} onClick={() => refresh.mutate()}>Refresh</Button>
@@ -154,20 +165,42 @@ function RolesList({ roleType }: { roleType: RoleType }) {
         }
       />
 
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="mb-3 flex items-center gap-3">
         <Segmented
-          label="Role type"
-          value={roleType}
-          onChange={(t) => navigate({ pathname: `/jobs/roles/${roleTypeToKind(t)}`, search: search ? `?q=${encodeURIComponent(search)}` : '' })}
-          options={[
-            { value: 'intern', label: <>Internships {sources.isSuccess && <span className="text-subtle tabular-nums">{formatNumber(counts.intern)}</span>}</> },
-            { value: 'new_grad', label: <>New grad {sources.isSuccess && <span className="text-subtle tabular-nums">{formatNumber(counts.new_grad)}</span>}</> },
-          ]}
+          label="Field"
+          value={field ?? 'all'}
+          onChange={(v) => setParam('field', v === 'all' ? '' : v)}
+          options={[{ value: 'all', label: 'All roles' }, { value: 'swe', label: 'Software engineering' }, { value: 'ai', label: 'AI / ML' }]}
         />
+      </div>
+      <nav aria-label="Lists" className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {LISTS.map(l => {
+          const active = l.kind === list.kind
+          return (
+            <Link key={l.kind} to={{ pathname: `/jobs/roles/${l.kind}`, search: new URLSearchParams({ ...(search ? { q: search } : {}), ...(field ? { field } : {}) }).toString() }}
+              aria-current={active ? 'page' : undefined}
+              className={cn('rounded-lg border px-3.5 py-2.5 transition-colors',
+                active ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:border-line-strong hover:bg-raised')}>
+              <span className={cn('block text-[13px] font-medium', active ? 'text-fg' : 'text-muted')}>{l.label}</span>
+              <span className="flex items-baseline justify-between gap-2 text-xs text-subtle">
+                {l.region_label}
+                {sources.isSuccess ? <span className="tabular-nums">{formatNumber(counts[l.kind])}</span> : <Skeleton className="h-3 w-8" />}
+              </span>
+            </Link>
+          )
+        })}
+      </nav>
+
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle" />
           <Input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search titles and companies…" aria-label="Search roles" className="pl-8" />
         </div>
+        <Select value={tier ?? ''} onChange={e => setParam('tier', e.target.value)} aria-label="Company tier" className="sm:w-40">
+          <option value="">All companies</option>
+          <option value="faang">FAANG+ only</option>
+          <option value="quant">Quant / trading</option>
+        </Select>
         <Select value={source} onChange={e => setParam('source', e.target.value)} aria-label="Source" className="sm:w-48">
           <option value="">All sources</option>
           {sourceOptions.map(s => <option key={s.source} value={s.source}>{sourceLabel(s.source)} ({formatNumber(s.n)})</option>)}
@@ -192,12 +225,12 @@ function RolesList({ roleType }: { roleType: RoleType }) {
           ) : (
             <EmptyState icon={<Search />} title={filtered ? 'No roles match' : 'No roles of this type yet'}
               description={filtered ? 'Try a different search or source.' : 'Check back after the next morning refresh.'}
-              action={filtered ? <ButtonLink to={`/jobs/roles/${roleTypeToKind(roleType)}`} size="sm">Clear filters</ButtonLink> : undefined} />
+              action={filtered ? <ButtonLink to={`/jobs/roles/${list.kind}`} size="sm">Clear filters</ButtonLink> : undefined} />
           )
         ) : (
           <ul className={`divide-y divide-line transition-opacity ${listing.isPlaceholderData ? 'opacity-60' : ''}`}>
             {rows.map(role => (
-              <RoleRow key={role.id} role={role} busy={busy[role.id] ?? null}
+              <RoleRow key={role.id} role={role} field={field} busy={busy[role.id] ?? null}
                 onTrack={() => track.mutate(role)} onAutoApply={() => autoApply.mutate(role)} />
             ))}
           </ul>
@@ -221,8 +254,8 @@ function RolesList({ roleType }: { roleType: RoleType }) {
 
 export default function RolesPage() {
   const { kind } = useParams()
-  const roleType = kindToRoleType(kind)
-  if (!roleType) return <Navigate to="/jobs/roles/intern" replace />
-  // key: switching Internships ↔ New grad starts a fresh list state.
-  return <RolesList key={roleType} roleType={roleType} />
+  const list = listForKind(kind)
+  if (!list) return <Navigate to="/jobs/roles/intern" replace />
+  // key: switching lists starts a fresh list state.
+  return <RolesList key={list.kind} list={list} />
 }

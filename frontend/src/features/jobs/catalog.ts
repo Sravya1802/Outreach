@@ -1,4 +1,4 @@
-import type { RoleType } from '@/lib/api'
+import type { Field, Region, RoleType } from '@/lib/api'
 
 const SOURCE_LABELS: Record<string, string> = {
   speedyapply: 'SpeedyApply', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby', linkedin: 'LinkedIn',
@@ -13,10 +13,17 @@ export function sourceLabel(source: string): string {
   return key.split(/[_-]+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || source
 }
 
-/** URL slug ↔ API role type. */
-export const kindToRoleType = (kind: string | undefined): RoleType | null =>
-  kind === 'intern' ? 'intern' : kind === 'new-grad' ? 'new_grad' : null
-export const roleTypeToKind = (t: RoleType): 'intern' | 'new-grad' => (t === 'intern' ? 'intern' : 'new-grad')
+export interface CatalogList { kind: string; roleType: RoleType; region: Region; label: string; region_label: string }
+
+/** The four lists SpeedyApply publishes, each its own tab and URL. */
+export const LISTS: CatalogList[] = [
+  { kind: 'intern', roleType: 'intern', region: 'usa', label: 'Internships', region_label: 'USA' },
+  { kind: 'new-grad', roleType: 'new_grad', region: 'usa', label: 'New grad', region_label: 'USA' },
+  { kind: 'intern-intl', roleType: 'intern', region: 'intl', label: 'Internships', region_label: 'International' },
+  { kind: 'new-grad-intl', roleType: 'new_grad', region: 'intl', label: 'New grad', region_label: 'International' },
+]
+
+export const listForKind = (kind: string | undefined): CatalogList | null => LISTS.find(l => l.kind === kind) ?? null
 
 /** Short "posted" label: "today", "3d ago", "Sep 21". Falls back to scraped date. */
 export function postedLabel(postedAt: string | null, scrapedAt: string, now: number = Date.now()): string {
@@ -30,9 +37,12 @@ export function postedLabel(postedAt: string | null, scrapedAt: string, now: num
   return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-/** Total listings per role type from the per-source counts. */
-export function countsByType(rows: { role_type: RoleType; n: number }[]): Record<RoleType, number> {
-  const out: Record<RoleType, number> = { intern: 0, new_grad: 0 }
-  for (const r of rows) out[r.role_type] = (out[r.role_type] ?? 0) + r.n
+/** Listings per list (role type × region) from the per-source counts. */
+export function countsByList(rows: { role_type: RoleType; region?: Region; n: number; swe?: number; ai?: number }[], field?: Field): Record<string, number> {
+  const out: Record<string, number> = Object.fromEntries(LISTS.map(l => [l.kind, 0]))
+  for (const r of rows) {
+    const list = LISTS.find(l => l.roleType === r.role_type && l.region === (r.region ?? 'usa'))
+    if (list) out[list.kind] = (out[list.kind] ?? 0) + (field ? (r[field] ?? 0) : r.n)
+  }
   return out
 }

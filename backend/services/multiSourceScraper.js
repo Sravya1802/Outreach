@@ -21,6 +21,7 @@
  * `MULTI_SCRAPE_DISABLED` env var.
  */
 
+import { fetchSpeedyApplyListings } from './speedyApply.js';
 import * as cheerio from 'cheerio';
 import { all, run } from '../db.js';
 import { scanGreenhouse, scanLever, scanAshby } from '../routes/careerOps.js';
@@ -356,53 +357,19 @@ async function scrapeInternshipDaily(roleType) {
 }
 
 // ── 8. speedyapply (GitHub) — curated SWE + AI college-jobs lists ─────────────
-//    Clean, US-only internship (README.md) and new-grad (NEW_GRAD_USA.md)
-//    markdown tables. We trust the file's category instead of the title
-//    heuristic, since new-grad rows are often just "Software Engineer".
-async function scrapeSpeedyApply(roleType /* 'intern' | 'new_grad' */) {
-  const file = roleType === 'intern' ? 'README.md' : 'NEW_GRAD_USA.md';
-  const repos = ['2026-SWE-College-Jobs', '2026-AI-College-Jobs'];
-  const out = [];
-  for (const repo of repos) {
-    const url = `https://raw.githubusercontent.com/speedyapply/${repo}/main/${file}`;
-    let md = '';
-    try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (OutreachOS scraper)' } });
-      if (res.ok) md = await res.text();
-    } catch { continue; }
-    let lastCompany = '';
-    for (const line of md.split('\n')) {
-      if (!line.startsWith('|')) continue;
-      const cells = line.split('|').map(c => c.trim());
-      // ['', Company, Position, Location, Salary, Posting(apply link), Age, '']
-      if (cells.length < 6) continue;
-      const companyCell = cells[1], position = cells[2], locationCell = cells[3];
-      if (!position || position === 'Position' || /^[-: ]+$/.test(position)) continue; // header / separator row
-      // Company is wrapped in <a><strong>…</strong></a>; "↳" repeats the prior company.
-      let company = (companyCell.match(/<strong>(.*?)<\/strong>/i)?.[1] || companyCell).replace(/<[^>]+>/g, '').trim();
-      if (!company || company === '↳') company = lastCompany; else lastCompany = company;
-      // Apply-link column varies across sections (FAANG+ has a Salary column, Quant/Other
-      // don't), so scan from col 4 for the first job href instead of a fixed index.
-      let apply_url = '';
-      for (let k = 4; k < cells.length; k++) {
-        const m = cells[k].match(/href="(https?:\/\/[^"]+)"/i);
-        if (m) { apply_url = m[1]; break; }
-      }
-      const title = position.replace(/<[^>]+>/g, '').trim();
-      const location = locationCell.replace(/<[^>]+>/g, '').trim();
-      if (!company || !title || !apply_url) continue;
-      // Never let an internship leak into the new-grad list.
-      if (roleType === 'new_grad' && INTERN_PATTERN.test(title)) continue;
-      out.push({ title, company_name: company, location: location || null, apply_url, source: 'speedyapply', role_type: roleType, posted_at: null, description: null });
-    }
-  }
-  return out;
+//    Parsed by services/speedyApply.js (mirrors their generator; keeps salary,
+//    posting age, company site and FAANG+/Quant tier). Fetched once per run —
+//    one request set returns both internships and new-grad rows.
+let speedyApplyRun = null;
+function speedyApplyRows(roleType) {
+  speedyApplyRun ??= fetchSpeedyApplyListings();
+  return speedyApplyRun.then(r => r.rows.filter(row => row.role_type === roleType));
 }
 
 // ── Orchestrator ──────────────────────────────────────────────────────────────
 
 const SOURCE_FNS = {
-  speedyapply:       (rt) => scrapeSpeedyApply(rt),
+  speedyapply:       (rt) => speedyApplyRows(rt),
   portals:           (rt) => scrapePortals(rt === 'intern' ? 'intern' : 'fulltime'),
   linkedin:          (rt) => scrapeLinkedIn(rt === 'intern' ? 'Intern 2026' : 'New Grad 2026'),
   wellfound:         (rt) => scrapeWellfoundRoles(rt === 'intern' ? 'intern 2026' : 'new grad 2026'),
@@ -424,9 +391,96 @@ async function runOneSource(name, roleType) {
  * Run every scraper for every role type, dedupe on apply_url, and upsert.
  * Returns a per-source summary `{ source: { intern, new_grad } }` plus totals.
  */
+/** Keep a scraped row? (language, not an event, US-ish location) */
+function keepRole(role) {
+  if (!role.apply_url || !role.title || !role.company_name) return false;
+  if (!isEnglishTitle(role.title)) return false;    // drop non-English (CJK etc.) listings
+  if (NON_ROLE_PATTERN.test(role.title)) return false; // drop events / webinars / info sessions
+  // Curated international lists are kept on purpose; everything else must look US.
+  return role.region === 'intl' || isUSish(role.location);
+}
+
+const UPSERT_CHUNK = 200;
+
+// AI/ML vs SWE for sources that don't say (SpeedyApply rows carry their list).
+const AI_TITLE = /\b(ai|a\.i\.|ml|machine learning|deep learning|data scien\w*|llms?|nlp|computer vision|generative|genai|research scientist|applied scientist|reinforcement learning|robot learning)\b/i;
+export function classifyTracks(role) {
+  if (Array.isArray(role.tracks) && role.tracks.length) return role.tracks;
+  return [AI_TITLE.test(role.title || '') ? 'ai' : 'swe'];
+}
+
+/**
+ * Upsert catalog rows in chunks (one multi-row statement per 200). The DB is
+ * in another region from the server, so the old one-statement-per-row loop
+ * made a ~3,000-row refresh take ~10 minutes.
+ * @returns {Promise<number>} rows written
+ */
+export async function persistCatalogRows(rows) {
+  let written = 0;
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK);
+    const params = [];
+    const values = chunk.map((role, j) => {
+      const b = j * 13;
+      params.push(
+        role.role_type,
+        String(role.title).slice(0, 500),
+        String(role.company_name).slice(0, 200),
+        role.location ? String(role.location).slice(0, 200) : null,
+        String(role.apply_url).slice(0, 1000),
+        role.source,
+        role.description ? String(role.description).slice(0, 4000) : null,
+        role.posted_at || null,
+        role.salary_range ? String(role.salary_range).slice(0, 100) : null,
+        role.company_url ? String(role.company_url).slice(0, 500) : null,
+        role.tier || null,
+        role.region === 'intl' ? 'intl' : 'usa',
+        classifyTracks(role),
+      );
+      return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, $${b + 11}, $${b + 12}, $${b + 13}::text[], NOW(), NOW(), 1)`;
+    });
+    try {
+      const r = await run(
+        `INSERT INTO scraped_roles
+           (role_type, title, company_name, location, apply_url, source, description, posted_at, salary_range, company_url, tier, region, tracks, scraped_at, last_seen_at, is_active)
+         VALUES ${values.join(', ')}
+         ON CONFLICT (apply_url) DO UPDATE
+           SET last_seen_at = NOW(),
+               is_active    = 1,
+               title        = EXCLUDED.title,
+               company_name = EXCLUDED.company_name,
+               location     = EXCLUDED.location,
+               description  = COALESCE(EXCLUDED.description,  scraped_roles.description),
+               -- Age-derived dates drift by hours run to run; keep the earliest.
+               posted_at    = LEAST(scraped_roles.posted_at, EXCLUDED.posted_at),
+               salary_range = COALESCE(EXCLUDED.salary_range, scraped_roles.salary_range),
+               company_url  = COALESCE(EXCLUDED.company_url,  scraped_roles.company_url),
+               tier         = COALESCE(EXCLUDED.tier,         scraped_roles.tier),
+               region       = EXCLUDED.region,
+               tracks       = EXCLUDED.tracks`,
+        params,
+      );
+      written += r.rowCount || 0;
+    } catch (err) {
+      console.warn(`[multi-scrape] chunk upsert failed (${chunk.length} rows): ${err.message}`);
+    }
+  }
+  return written;
+}
+
+async function deactivateStaleRows() {
+  // Haven't been seen by any source in 14 days → no longer listed.
+  await run(
+    `UPDATE scraped_roles SET is_active = 0
+      WHERE is_active = 1 AND last_seen_at < NOW() - INTERVAL '14 days'`
+  ).catch(() => {});
+}
+
 export async function scrapeAllSourcesAndPersist() {
   const summary = { total: 0, inserted: 0, updated: 0, perSource: {}, errors: {} };
   const seen = new Set();
+  const keep = [];
+  speedyApplyRun = null; // fresh fetch each run
 
   for (const roleType of ['intern', 'new_grad']) {
     const results = await Promise.all(
@@ -437,56 +491,27 @@ export async function scrapeAllSourcesAndPersist() {
       summary.perSource[result.name][roleType] = result.count;
       if (result.error) summary.errors[result.name] = result.error;
       for (const role of result.rows) {
-        if (!role.apply_url || !role.title || !role.company_name) continue;
-        if (!isEnglishTitle(role.title)) continue;    // drop non-English (CJK etc.) listings
-        if (NON_ROLE_PATTERN.test(role.title)) continue; // drop events / webinars / info sessions
-        if (!isUSish(role.location)) continue;
-        if (seen.has(role.apply_url)) continue;       // intra-run dedupe
+        if (!keepRole(role) || seen.has(role.apply_url)) continue; // intra-run dedupe
         seen.add(role.apply_url);
-        summary.total++;
-        const r = await run(
-          `INSERT INTO scraped_roles
-             (role_type, title, company_name, location, apply_url, source, description, posted_at, scraped_at, last_seen_at, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), 1)
-           ON CONFLICT (apply_url) DO UPDATE
-             SET last_seen_at = NOW(),
-                 is_active    = 1,
-                 -- Refresh metadata in case the listing changed
-                 title        = EXCLUDED.title,
-                 company_name = EXCLUDED.company_name,
-                 location     = EXCLUDED.location,
-                 description  = COALESCE(EXCLUDED.description, scraped_roles.description),
-                 posted_at    = COALESCE(EXCLUDED.posted_at,    scraped_roles.posted_at)`,
-          [
-            role.role_type,
-            String(role.title).slice(0, 500),
-            String(role.company_name).slice(0, 200),
-            role.location ? String(role.location).slice(0, 200) : null,
-            String(role.apply_url).slice(0, 1000),
-            role.source,
-            role.description ? String(role.description).slice(0, 4000) : null,
-            role.posted_at,
-          ]
-        ).catch(err => {
-          console.warn(`[multi-scrape] upsert failed for ${role.source} ${role.apply_url}: ${err.message}`);
-          return null;
-        });
-        if (r) {
-          // pg `INSERT ... ON CONFLICT` returns affected rowCount but doesn't tell us
-          // insert vs update; we just count net row touches.
-          summary.inserted++;
-        }
+        keep.push(role);
       }
     }
   }
-
-  // Mark stale rows inactive (haven't been seen in 14 days)
-  await run(
-    `UPDATE scraped_roles
-        SET is_active = 0
-      WHERE is_active = 1
-        AND last_seen_at < NOW() - INTERVAL '14 days'`
-  ).catch(() => {});
-
+  summary.total = keep.length;
+  summary.inserted = await persistCatalogRows(keep);
+  await deactivateStaleRows();
   return summary;
+}
+
+/**
+ * SpeedyApply only — run right after their 12:00 UTC daily update so the
+ * catalog has the new list the same day (the full multi-source scrape runs
+ * at 06:15 UTC, before they publish).
+ */
+export async function syncSpeedyApply() {
+  const { rows, repos, files } = await fetchSpeedyApplyListings();
+  const seen = new Set();
+  const keep = rows.filter(r => keepRole(r) && !seen.has(r.apply_url) && seen.add(r.apply_url));
+  const written = await persistCatalogRows(keep);
+  return { repos, files, parsed: rows.length, kept: keep.length, written };
 }

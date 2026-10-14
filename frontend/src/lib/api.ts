@@ -125,15 +125,22 @@ export interface CompanySearchHit {
 export type ProviderUsage = Record<'hunter' | 'prospeo' | 'apollo' | 'serper', { used: number; limit: number }>
 
 export type RoleType = 'intern' | 'new_grad'
+export type Region = 'usa' | 'intl'
+export type Field = 'swe' | 'ai'
+export type Tier = 'faang' | 'quant'
 
 export interface CatalogListing {
   id: number
   role_type: RoleType
+  region: Region
+  tracks: Field[]
   title: string
   company_name: string
+  company_url: string | null
   location: string | null
   apply_url: string
   source: string
+  tier: 'faang' | 'quant' | 'other' | null
   salary_range: string | null
   posted_at: string | null
   scraped_at: string
@@ -149,9 +156,9 @@ export interface CatalogPage {
   rows: CatalogListing[]
 }
 
-export interface CatalogSourceCount { source: string; role_type: RoleType; n: number }
+export interface CatalogSourceCount { source: string; role_type: RoleType; region: Region; n: number; swe: number; ai: number }
 
-export interface CatalogQuery { roleType: RoleType; source?: string; search?: string; page?: number; pageSize?: number }
+export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; page?: number; pageSize?: number }
 
 export interface AlertSubscription {
   subscribed: boolean

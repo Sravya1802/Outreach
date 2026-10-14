@@ -161,6 +161,24 @@ export interface AiUsage {
   byTask: { task: string; calls: number; cost: number }[]
 }
 
+export interface OutreachContact {
+  id: number
+  name: string | null
+  title: string | null
+  email: string | null
+  /** verified | valid | catch_all | risky | invalid | … */
+  email_status: string | null
+  linkedin_url: string | null
+  /** pending | generated | sent | dm_sent | replied | closed */
+  status: string | null
+  job_id: number | null
+  company_name: string | null
+  category: string | null
+}
+
+export interface TemplateVariant { id: string; kind: 'email' | 'linkedin'; name: string; body: string }
+export interface OutreachTemplates { email: string; linkedin: string; variants: TemplateVariant[] }
+
 export interface NightlySettings {
   enabled: boolean
   roleType: string
@@ -324,6 +342,21 @@ export const api = {
   /** This user's monthly share of the shared provider keys. */
   providerUsage: async (): Promise<ProviderUsage> => (await legacy.credits.usage()).usage,
   aiUsage: (): Promise<AiUsage> => legacy.credits.aiUsage(),
+  contacts: async (email: 'all' | 'with' | 'without'): Promise<{ contacts: OutreachContact[]; total: number }> => {
+    const params = new URLSearchParams({ limit: '1000' })
+    if (email === 'with') params.set('hasEmail', 'true')
+    if (email === 'without') params.set('noEmail', 'true')
+    return legacy.unified.allContacts(params)
+  },
+  templates: async (): Promise<{ templates: OutreachTemplates; defaults: { email: string; linkedin: string } }> => {
+    const d = await legacy.generate.templates()
+    const t = d.templates ?? {}
+    return {
+      templates: { email: t.email ?? '', linkedin: t.linkedin ?? '', variants: Array.isArray(t.variants) ? t.variants : [] },
+      defaults: { email: d.defaults?.email ?? '', linkedin: d.defaults?.linkedin ?? '' },
+    }
+  },
+  saveTemplates: (t: OutreachTemplates): Promise<unknown> => legacy.generate.saveTemplates(t),
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),

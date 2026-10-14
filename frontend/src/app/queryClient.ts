@@ -26,6 +26,8 @@ export const qk = {
   credits: ['credits'] as const,
   providerUsage: ['provider-usage'] as const,
   aiUsage: ['ai-usage'] as const,
+  contacts: (email: string) => ['contacts', email] as const,
+  templates: ['outreach-templates'] as const,
   stats: ['stats'] as const,
   jobMetrics: ['job-metrics'] as const,
   dailyUpdates: ['daily-updates'] as const,

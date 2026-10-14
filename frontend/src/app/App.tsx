@@ -19,13 +19,13 @@ const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const PipelinePage = lazyWithRetry(() => import('@/features/applications/PipelinePage'), 'PipelinePage')
+const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
+const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
 const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
-const OutreachPage = lazyWithRetry(() => import('@/components/OutreachPage'), 'OutreachPage')
-const TemplatesPage = lazyWithRetry(() => import('@/components/TemplatesPage'), 'TemplatesPage')
 
 /** Redirect that keeps ?query and #hash (old deep links carry ids in them). */
 function Redirect({ to }: { to: string }) {
@@ -67,8 +67,8 @@ function SignedInRoutes() {
         <Route path="/applications/ranked" element={<Navigate to="/applications/pipeline?sort=score" replace />} />
 
         <Route path="/outreach" element={<Navigate to="/outreach/contacts" replace />} />
-        <Route path="/outreach/contacts" element={legacy(<OutreachPage />)} />
-        <Route path="/outreach/templates" element={legacy(<TemplatesPage />)} />
+        <Route path="/outreach/contacts" element={<ContactsPage />} />
+        <Route path="/outreach/templates" element={<TemplatesPage />} />
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />

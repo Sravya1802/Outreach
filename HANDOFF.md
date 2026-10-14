@@ -124,6 +124,17 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — Sign in with GitHub (rule 2)
+
+- Backend `20a5717` (VM same), migration 016 applied; frontend `01efaf5`, live at `/profile/github`.
+- OAuth app "OutreachOS" (client `Ov23liS2sRLAmBIUgQTz`). The secret is in the VM `.env` only, as GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET, plus a generated TOKEN_ENC_KEY. `.env.bak-*` was taken first.
+  - No scopes: public repos only.
+  - Callback `https://outreach-jt.duckdns.org/api/github/callback` is public; it trusts only an HMAC-signed 10-minute `state`.
+  - Tokens are AES-256-GCM sealed and refreshed when they expire, because "Expire user access tokens" is on.
+- Repos import into `github_repos` with README text (3k chars) and language bytes. Forks and archived repos start excluded; the user can untick any repo.
+- Verified: forged state → redirect with error; `/connect` builds the right URL; GitHub accepts the client id. **Not verified:** a real sign-in, which needs the user's GitHub login.
+- Noticed: the VM `.env` has **no ANTHROPIC_API_KEY**, so Claude calls fall through to the other providers.
+
 ### 2026-10-13 — New look live; Profile (details + answer bank); apply pipeline rules
 
 - **New look shipped** (`b735a81`): Fraunces display + IBM Plex, hairline rules, dark default (Paper Dark), cream light theme. The sidebar is now a top bar with section sub-tabs; the drawer remains for phones. Legacy pages still render old inside it.

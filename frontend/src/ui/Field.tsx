@@ -2,12 +2,12 @@ import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type Selec
 import { cn } from '@/lib/cn'
 
 const control =
-  'w-full rounded-md border border-line bg-canvas px-2.5 text-[13px] text-fg placeholder:text-subtle ' +
+  'w-full rounded-[4px] border border-line-strong bg-surface px-3 text-[14px] text-fg placeholder:text-subtle ' +
   'transition-colors hover:border-line-strong focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft ' +
   'disabled:cursor-not-allowed disabled:opacity-60 aria-[invalid=true]:border-danger'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
-  return <input ref={ref} className={cn(control, 'h-8', className)} {...rest} />
+  return <input ref={ref} className={cn(control, 'h-9', className)} {...rest} />
 })
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
@@ -15,7 +15,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 })
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select({ className, ...rest }, ref) {
-  return <select ref={ref} className={cn(control, 'h-8 cursor-pointer pr-7', className)} {...rest} />
+  return <select ref={ref} className={cn(control, 'h-9 cursor-pointer pr-7', className)} {...rest} />
 })
 
 /** Label + control + hint/error, wired up with ids for screen readers. */
@@ -29,7 +29,7 @@ export function Field({ label, hint, error, children }: {
   const descId = hint || error ? `${id}-desc` : undefined
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-medium text-muted">{label}</label>
+      <label htmlFor={id} className="block text-[13px] text-muted">{label}</label>
       {children({ id, 'aria-describedby': descId, 'aria-invalid': error ? true : undefined })}
       {(error || hint) && (
         <p id={descId} className={cn('text-xs', error ? 'text-danger' : 'text-subtle')}>{error || hint}</p>

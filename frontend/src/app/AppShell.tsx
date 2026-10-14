@@ -8,6 +8,7 @@ import { sectionFor } from './nav'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
+import { TopBar } from './TopBar'
 
 /** Horizontal tab bar for the current section (hidden when a section has one view). */
 function SectionTabs() {
@@ -19,18 +20,19 @@ function SectionTabs() {
     .sort((a, b) => b.to.length - a.to.length)
     .find(t => pathname === t.to || pathname.startsWith(`${t.to}/`))
   return (
-    <div className="flex h-11 shrink-0 items-end gap-1 overflow-x-auto border-b border-line px-4 sm:px-6">
-      {section.tabs.map(t => {
-        const isActive = current?.to === t.to
-        return (
-          <Link key={t.to} to={t.to} aria-current={isActive ? 'page' : undefined}
-            className={cn('relative flex h-11 items-center px-2.5 text-[13px] font-medium whitespace-nowrap transition-colors',
-              isActive ? 'text-fg' : 'text-subtle hover:text-muted')}>
-            {t.label}
-            {isActive && <span className="absolute inset-x-2.5 bottom-0 h-0.5 rounded-full bg-accent" />}
-          </Link>
-        )
-      })}
+    <div className="border-b border-line">
+      <div className="mx-auto flex w-full max-w-7xl gap-6 overflow-x-auto px-4 sm:px-8">
+        {section.tabs.map(t => {
+          const isActive = current?.to === t.to
+          return (
+            <Link key={t.to} to={t.to} aria-current={isActive ? 'page' : undefined}
+              className={cn('-mb-px border-b-2 py-2.5 text-[14px] whitespace-nowrap transition-colors',
+                isActive ? 'border-rule font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
+              {t.label}
+            </Link>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -56,10 +58,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <div className="flex h-full overflow-hidden bg-canvas text-fg">
-      <aside className="hidden w-60 shrink-0 border-r border-line bg-surface md:block">
-        <Sidebar onOpenPalette={openPalette} />
-      </aside>
+    <div className="flex h-full flex-col overflow-hidden bg-canvas text-fg">
+      <header className="shrink-0">
+        <div className="hidden border-b border-line md:block">
+          <TopBar onOpenPalette={openPalette} />
+        </div>
+        <div className="flex h-12 items-center gap-2 border-b border-line px-3 md:hidden">
+          <button type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"
+            className="rounded-[4px] p-1.5 text-muted hover:bg-hover hover:text-fg">
+            <Menu className="size-5" />
+          </button>
+          <span className="font-display text-[18px] font-semibold">OutreachOS</span>
+        </div>
+        <SectionTabs />
+      </header>
 
       {drawerOpen && (
         <div className="fixed inset-0 z-[80] md:hidden">
@@ -74,15 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 md:hidden">
-          <button type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"
-            className="rounded-md p-1.5 text-muted hover:bg-hover hover:text-fg">
-            <Menu className="size-5" />
-          </button>
-          <span className="text-[14px] font-semibold">OutreachOS</span>
-        </div>
-        <SectionTabs />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ErrorBoundary resetKey={pathname}>
           <Suspense fallback={<PageSpinner />}>{children}</Suspense>
         </ErrorBoundary>

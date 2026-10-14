@@ -8,58 +8,62 @@
 /* ── Design tokens ────────────────────────────────────────────────────────────
    Raw values live on --ui-*; Tailwind colours point at them so one
    data-theme switch re-themes every utility. Dark is the default. */
+/* "Paper" direction: editorial type (Fraunces display, IBM Plex text) and
+   hairline rules. Dark is the default; light is the cream original. */
 :root {
   color-scheme: dark;
-  --ui-canvas:        #09090b;
-  --ui-surface:       #111114;
-  --ui-raised:        #18181c;
-  --ui-hover:         #1f1f24;
-  --ui-border:        #26262c;
-  --ui-border-strong: #34343c;
-  --ui-fg:            #ededf0;
-  --ui-muted:         #a0a0ab;
-  --ui-subtle:        #6c6c78;
-  --ui-accent:        #7c7cf8;
-  --ui-accent-hover:  #9090fa;
-  --ui-accent-soft:   rgb(124 124 248 / 0.14);
-  --ui-on-accent:     #ffffff;
-  --ui-success:       #4ade80;
-  --ui-success-soft:  rgb(74 222 128 / 0.12);
-  --ui-warning:       #fbbf24;
-  --ui-warning-soft:  rgb(251 191 36 / 0.12);
-  --ui-danger:        #f87171;
-  --ui-danger-soft:   rgb(248 113 113 / 0.12);
-  --ui-info:          #60a5fa;
-  --ui-info-soft:     rgb(96 165 250 / 0.12);
-  --ui-shadow:        0 8px 30px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
-  --ui-ring:          rgb(124 124 248 / 0.45);
+  --ui-canvas:        #121315;
+  --ui-surface:       #1a1b1e;
+  --ui-raised:        #202125;
+  --ui-hover:         #26272c;
+  --ui-border:        #2c2d31;
+  --ui-border-strong: #3d3e44;
+  --ui-rule:          #ece9e2;
+  --ui-fg:            #ece9e2;
+  --ui-muted:         #b3afa7;
+  --ui-subtle:        #8a877f;
+  --ui-accent:        #8b9cff;
+  --ui-accent-hover:  #a3b1ff;
+  --ui-accent-soft:   rgb(139 156 255 / 0.14);
+  --ui-on-accent:     #0f1020;
+  --ui-success:       #7fd1ae;
+  --ui-success-soft:  rgb(127 209 174 / 0.12);
+  --ui-warning:       #e3b45c;
+  --ui-warning-soft:  rgb(227 180 92 / 0.12);
+  --ui-danger:        #e58c7a;
+  --ui-danger-soft:   rgb(229 140 122 / 0.12);
+  --ui-info:          #8bb8ff;
+  --ui-info-soft:     rgb(139 184 255 / 0.12);
+  --ui-shadow:        0 8px 30px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --ui-ring:          rgb(139 156 255 / 0.5);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --ui-canvas:        #f7f7f8;
-  --ui-surface:       #ffffff;
+  --ui-canvas:        #f5f3ee;
+  --ui-surface:       #fbfaf7;
   --ui-raised:        #ffffff;
-  --ui-hover:         #f1f1f3;
-  --ui-border:        #e6e6ea;
-  --ui-border-strong: #d4d4da;
-  --ui-fg:            #17171c;
-  --ui-muted:         #55555f;
-  --ui-subtle:        #8e8e99;
-  --ui-accent:        #5b5bd6;
-  --ui-accent-hover:  #4b4bc4;
-  --ui-accent-soft:   rgb(91 91 214 / 0.10);
+  --ui-hover:         #ece8df;
+  --ui-border:        #dcd7cb;
+  --ui-border-strong: #cfc9bb;
+  --ui-rule:          #17181a;
+  --ui-fg:            #17181a;
+  --ui-muted:         #4f525a;
+  --ui-subtle:        #6a6d75;
+  --ui-accent:        #1f3bc4;
+  --ui-accent-hover:  #152a8f;
+  --ui-accent-soft:   rgb(31 59 196 / 0.09);
   --ui-on-accent:     #ffffff;
-  --ui-success:       #15803d;
-  --ui-success-soft:  rgb(21 128 61 / 0.10);
-  --ui-warning:       #b45309;
-  --ui-warning-soft:  rgb(180 83 9 / 0.10);
-  --ui-danger:        #dc2626;
-  --ui-danger-soft:   rgb(220 38 38 / 0.08);
-  --ui-info:          #2563eb;
-  --ui-info-soft:     rgb(37 99 235 / 0.08);
-  --ui-shadow:        0 8px 30px rgb(15 15 20 / 0.10), 0 0 0 1px rgb(15 15 20 / 0.05);
-  --ui-ring:          rgb(91 91 214 / 0.35);
+  --ui-success:       #1e6b52;
+  --ui-success-soft:  rgb(30 107 82 / 0.10);
+  --ui-warning:       #8a5a00;
+  --ui-warning-soft:  rgb(138 90 0 / 0.10);
+  --ui-danger:        #b4441c;
+  --ui-danger-soft:   rgb(180 68 28 / 0.09);
+  --ui-info:          #1f3bc4;
+  --ui-info-soft:     rgb(31 59 196 / 0.08);
+  --ui-shadow:        0 8px 30px rgb(23 24 26 / 0.12), 0 0 0 1px rgb(23 24 26 / 0.06);
+  --ui-ring:          rgb(31 59 196 / 0.35);
 }
 
 @theme inline {
@@ -69,6 +73,7 @@
   --color-hover:         var(--ui-hover);
   --color-line:          var(--ui-border);
   --color-line-strong:   var(--ui-border-strong);
+  --color-rule:          var(--ui-rule);
   --color-fg:            var(--ui-fg);
   --color-muted:         var(--ui-muted);
   --color-subtle:        var(--ui-subtle);
@@ -85,8 +90,9 @@
   --color-info:          var(--ui-info);
   --color-info-soft:     var(--ui-info-soft);
   --shadow-pop:          var(--ui-shadow);
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
 }
 
 @layer base {
@@ -98,7 +104,6 @@
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
-    font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

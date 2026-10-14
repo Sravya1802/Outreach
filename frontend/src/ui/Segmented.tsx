@@ -12,11 +12,11 @@ export function Segmented<T extends string>({ value, onChange, options, label, c
   className?: string
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className={cn('inline-flex h-8 shrink-0 rounded-md border border-line bg-canvas p-0.5', className)}>
+    <div role="radiogroup" aria-label={label} className={cn('inline-flex h-9 shrink-0 rounded-full border border-line-strong p-0.5', className)}>
       {options.map(o => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
-          className={cn('flex items-center gap-1.5 rounded px-3 text-[13px] font-medium whitespace-nowrap transition-colors',
-            value === o.value ? 'bg-raised text-fg shadow-sm' : 'text-subtle hover:text-muted')}>
+          className={cn('flex items-center gap-1.5 rounded-full px-3.5 text-[13px] whitespace-nowrap transition-colors',
+            value === o.value ? 'bg-fg font-medium text-canvas' : 'text-muted hover:text-fg')}>
           {o.label}
         </button>
       ))}

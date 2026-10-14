@@ -39,7 +39,7 @@ export function serviceStatuses(health: Health | undefined, credits: Credits | u
 
   return [
     { id: 'ai', name: provider, purpose: 'Role evaluation & message writing', ...judge(aiConfigured, c.gemini) },
-    { id: 'apify', name: 'Apify', purpose: 'LinkedIn, Wellfound & Google Jobs scraping', ...judge(Boolean(h?.has_apify), c.apify, apifyNote) },
+    { id: 'apify', name: 'Apify', purpose: 'LinkedIn people search', ...judge(Boolean(h?.has_apify), c.apify, apifyNote) },
     { id: 'apollo', name: 'Apollo', purpose: 'Finding people at companies', ...judge(Boolean(h?.has_apollo), c.apollo) },
     { id: 'hunter', name: 'Hunter', purpose: 'Email lookup', ...judge(Boolean(h?.has_hunter), c.hunter, hunterNote) },
     { id: 'prospeo', name: 'Prospeo', purpose: 'Email lookup fallback', ...judge(Boolean(h?.has_prospeo), c.prospeo) },

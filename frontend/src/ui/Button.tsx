@@ -7,20 +7,20 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export type ButtonSize = 'sm' | 'md'
 
 const base =
-  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium select-none ' +
+  'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[4px] font-medium select-none ' +
   'transition-colors duration-100 disabled:pointer-events-none disabled:opacity-50 ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-on-accent hover:bg-accent-hover',
-  secondary: 'border border-line bg-raised text-fg hover:bg-hover hover:border-line-strong',
+  primary: 'bg-accent font-semibold text-on-accent hover:bg-accent-hover',
+  secondary: 'border border-line-strong bg-transparent text-fg hover:bg-hover',
   ghost: 'text-muted hover:bg-hover hover:text-fg',
-  danger: 'border border-line bg-raised text-danger hover:bg-danger-soft hover:border-danger/40',
+  danger: 'border border-line-strong bg-transparent text-danger hover:bg-danger-soft hover:border-danger/40',
 }
 
 const sizes: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2.5 text-[13px]',
-  md: 'h-8 px-3 text-[13px]',
+  sm: 'h-8 px-3 text-[13px]',
+  md: 'h-9 px-4 text-[14px]',
 }
 
 export function buttonClass(variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', extra?: string): string {

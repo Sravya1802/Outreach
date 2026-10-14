@@ -9,7 +9,10 @@ import logger from './logger.js';
 import { validateConfig } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-config({ path: path.join(__dirname, '..', '.env') });
+// The .env file is the source of truth. override: a process manager can hold a
+// stale copy of a variable from when it was first started (pm2 kept a revoked
+// OpenAI key this way), and dotenv would otherwise keep that old value.
+config({ path: path.join(__dirname, '..', '.env'), override: true });
 validateConfig();
 
 import companiesRouter  from './routes/companies.js';

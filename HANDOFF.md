@@ -124,6 +124,23 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Resumes live in cloud storage; every application records its file
+- **What:**
+  - Migration 022 adds `resume_files`: kind master/tailored/uploaded/library, bucket + path, size, sha256, the account's market at creation, and `is_current` (one current master per user). It also adds `evaluations.resume_file_id` (the file that will go) and `applied_resume_file_id` (the exact file sent).
+  - Master uploads go to `resumes/<user>/master/<stamp>-<name>.pdf`, and every version is kept. Tailored and per-role uploads go to `tailored-pdfs/<user>/<eval>/…`.
+  - The server no longer keeps resumes on disk: the global `data/resume/original.pdf` path is gone, and uploads use the OS temp dir until copied.
+  - Auto-apply prefers `resume_file_id`, indexes library picks, records `applied_resume_file_id` on submit, and deletes every temp copy on every exit. It used to leak the archetypes it didn't pick.
+  - Profile → Resume shows "Saved in the cloud", Download, Earlier versions, and **Which resume went where** (company/role, country + location, file, kind, Sent/Ready to send, download) with a country filter. Pipeline has a Resume column.
+  - Phone fix: the screen-reader-only table header cells were widening the page. Table wrappers are now `relative`.
+  - The list time is confirmed as **10 PM Central** (America/Chicago).
+- **Files:** [022_resume_files.sql](supabase/migrations/022_resume_files.sql), [resumeFiles.js](backend/services/resumeFiles.js), [resumeStorage.js](backend/services/resumeStorage.js) (env read lazily), [careerOps.js](backend/routes/careerOps.js) (`/resume`, `/resume/files`, `/resume/files/:id/download`, upload-resume, tailored-resume, download, pipeline), [autoApplier.js](backend/services/autoApplier.js), [ResumePage.tsx](frontend/src/features/profile/ResumePage.tsx), [resumeFiles.ts](frontend/src/features/profile/resumeFiles.ts), [PipelinePage.tsx](frontend/src/features/applications/PipelinePage.tsx).
+- **Status:**
+  - Commits bab3e40 and 1b2a552 are on main and live. The backend patch was applied on the VM (2c85eb9). Migration 022 has been applied.
+  - Tests: backend 108/108, frontend 49/49.
+  - Live checks passed: API upload, history and download are byte-identical; the per-role upload shows in the Pipeline; a second account gets 404 on the first account's files; browser checks pass on desktop and at phone width.
+  - The only file on the VM disk was the e2e account's test PDF. It is now in the cloud (resume_files #1), and the disk copy was moved to /tmp. The user's real account hasn't uploaded a resume yet.
+- **Follow-up:** next is step 2, the Opus resume engine (structured master, project pick, ATS ≥ 90, change report, LaTeX → PDF, cover letter). Account deletion doesn't remove storage objects yet.
+
 ### 2026-10-14 — Plan: referral first, then apply; outreach timing
 - **What:** Decisions only, no code yet.
 - **Referral first:**

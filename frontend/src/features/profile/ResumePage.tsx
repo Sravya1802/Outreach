@@ -65,7 +65,7 @@ export default function ResumePage() {
           {r?.hasResume && (
             <section className="flex flex-wrap items-center gap-4 rounded-[4px] border border-line bg-surface p-5">
               <span className="grid h-14 w-11 shrink-0 place-items-center rounded-[3px] border border-line-strong bg-raised font-mono text-[10px] text-subtle" aria-hidden="true">PDF</span>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-[220px]">
                 <p className="truncate font-medium text-fg">{r.file?.filename || r.name || 'resume.pdf'}</p>
                 <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
                   <span>Uploaded {timeAgo(r.file?.created_at || r.date)}</span>
@@ -75,7 +75,7 @@ export default function ResumePage() {
                     : <span className="text-warning">Not in the cloud yet. Upload it again to keep a copy.</span>}
                 </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 max-sm:w-full max-sm:justify-end">
                 {r.file && <Button variant="ghost" icon={<Download className="size-4" />} onClick={() => r.file && get(r.file)}>Download</Button>}
                 <Button onClick={() => input.current?.click()} loading={upload.isPending} icon={<Upload className="size-4" />}>Replace</Button>
               </div>
@@ -159,7 +159,7 @@ function UsedFor({ history, onDownload }: {
             description="When a resume is tailored for a role or sent with an application, it shows up here with the role and country." />
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse border-t border-rule text-[14px]">
             <thead>
               <tr className="text-left text-[13px] text-subtle">

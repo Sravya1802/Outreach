@@ -95,7 +95,7 @@ export default function PipelinePage() {
             action={!stage ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse border-t border-rule text-[14px]">
             <thead>
               <tr className="text-left text-[13px] text-subtle">

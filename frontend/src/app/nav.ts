@@ -27,11 +27,10 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: 'jobs', label: 'Jobs', icon: Briefcase, to: '/jobs',
-    owns: ['/company/', '/category/'],
+    owns: ['/company/'],
     tabs: [
       { label: 'Roles', to: '/jobs/roles', keywords: 'intern new grad catalog openings alerts email digest' },
-      { label: 'Companies', to: '/jobs/companies', keywords: 'industries categories yc' },
-      { label: 'Find companies', to: '/jobs/find', keywords: 'scrape scraper linkedin wellfound' },
+      { label: 'Companies', to: '/jobs/companies', keywords: 'industries categories yc find scrape scraper linkedin wellfound add' },
     ],
   },
   {

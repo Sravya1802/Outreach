@@ -31,7 +31,7 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
     {
       id: 'companies', title: 'Add companies to track',
       description: 'Pull companies from LinkedIn, Wellfound, YC and more.',
-      to: '/jobs/find', cta: 'Find companies', done: i.companies === undefined ? undefined : i.companies > 0,
+      to: '/jobs/companies?find=1', cta: 'Find companies', done: i.companies === undefined ? undefined : i.companies > 0,
     },
     {
       id: 'evaluate', title: 'Evaluate your first role',

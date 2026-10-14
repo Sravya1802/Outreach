@@ -1,31 +1,21 @@
-import type { ComponentType, ReactNode } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { PageSpinner } from '@/ui'
-import type { Stats } from '@/lib/api'
 import { AppShell } from './AppShell'
 import { useAuth } from './auth'
 import { lazyWithRetry } from './lazy'
 import { LegacyPage } from './LegacyPage'
 import { LEGACY_REDIRECTS } from './nav'
-import { useStats } from './queries'
-import { qk } from './queryClient'
 
 const HomePage = lazyWithRetry(() => import('@/features/home/HomePage'), 'HomePage')
 const SettingsPage = lazyWithRetry(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
 const RolesPage = lazyWithRetry(() => import('@/features/jobs/RolesPage'), 'RolesPage')
+const CompaniesPage = lazyWithRetry(() => import('@/features/jobs/CompaniesPage'), 'CompaniesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
 const JobDashboard = lazyWithRetry(() => import('@/components/JobDashboard'), 'JobDashboard')
-interface CompanyDashboardProps { onStatsChange: (s: Stats) => void; statsSnapshot: Stats | null; userId?: string }
-const CompanyDashboard = lazyWithRetry(
-  () => import('@/components/CompanyDashboard') as Promise<{ default: ComponentType<CompanyDashboardProps> }>,
-  'CompanyDashboard',
-)
-const ScraperPage = lazyWithRetry(() => import('@/components/ScraperPage'), 'ScraperPage')
-const CategoryView = lazyWithRetry(() => import('@/components/CategoryView'), 'CategoryView')
 const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
 const CareerOps = lazyWithRetry(() => import('@/components/CareerOps'), 'CareerOps')
 const AutoApplyPage = lazyWithRetry(() => import('@/components/AutoApplyPage'), 'AutoApplyPage')
@@ -40,19 +30,12 @@ function Redirect({ to }: { to: string }) {
   return <Navigate to={`${to}${search}${hash}`} replace />
 }
 
-function LegacyCompanies() {
-  const { session } = useAuth()
-  const stats = useStats()
-  const qc = useQueryClient()
-  const userId = session?.user?.id
-  return (
-    <CompanyDashboard
-      key={userId ?? 'companies'}
-      userId={userId}
-      statsSnapshot={stats.data ?? null}
-      onStatsChange={(s: Stats) => qc.setQueryData(qk.stats, s)}
-    />
-  )
+/** Old /category/:name links → the Companies list filtered to that industry. */
+function CategoryRedirect() {
+  const { name = '' } = useParams()
+  const category = decodeURIComponent(name)
+  if (category === 'yc-startups') return <Navigate to="/jobs/companies?find=1" replace />
+  return <Navigate to={`/jobs/companies?category=${encodeURIComponent(category)}`} replace />
 }
 
 const legacy = (node: ReactNode) => <LegacyPage>{node}</LegacyPage>
@@ -67,10 +50,10 @@ function SignedInRoutes() {
         <Route path="/jobs" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/jobs/roles" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/jobs/roles/:kind" element={<RolesPage />} />
-        <Route path="/jobs/companies" element={legacy(<LegacyCompanies />)} />
-        <Route path="/jobs/find" element={legacy(<ScraperPage />)} />
+        <Route path="/jobs/companies" element={<CompaniesPage />} />
+        <Route path="/jobs/find" element={<Navigate to="/jobs/companies?find=1" replace />} />
         <Route path="/jobs/alerts" element={<Navigate to="/jobs/roles/intern" replace />} />
-        <Route path="/category/:name" element={legacy(<CategoryView />)} />
+        <Route path="/category/:name" element={<CategoryRedirect />} />
         <Route path="/company/:id" element={legacy(<CompanyDetail />)} />
 
         <Route path="/applications" element={<Navigate to="/applications/evaluate" replace />} />

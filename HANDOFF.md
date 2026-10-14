@@ -124,6 +124,20 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — UI rebuild phase 2: Jobs (Roles + Companies)
+
+- **Jobs section:** now two tabs.
+  - **Roles** (`features/jobs/RolesPage.tsx`): catalog, intern/new-grad switch with counts, search and source in the URL, Track / Auto-apply with optimistic state, and an "Email alerts" dialog pre-filled from the current search. This replaces the Job Alerts page.
+  - **Companies** (`CompaniesPage.tsx`): industry rail with counts, search/status/sort, inline status, people/email counts, roles checked, Add by name. It also hosts the "Find companies" dialog, which replaces the Job Scraper page: YC directory (free) or job boards, with a warning when Apify is down.
+- **Redirects:** `/jobs/find`, `/discover/scraper` → `?find=1`; `/category/:name` → `?category=`; `/jobs/alerts` → Roles.
+- **Fixed:** the scrape query hardcoded "intern 2026"; it now uses the recruiting season (from August, next year).
+- **Backend:**
+  - Catalog refresh is lock + 6h cooldown + background (202), with new `GET /scraped-roles/refresh-status`.
+  - YC import uses chunked multi-row inserts.
+  - `unified/companies` email/people counts no longer only count Hunter rows.
+- **Still legacy:** company detail (`/company/:id`), Applications, Outreach, Analytics.
+- **E2E:** 40 passed / 4 skipped locally (new `roles.spec.js`, updated `scraper.spec.js`/`shell.spec.js`).
+
 ### 2026-10-13 — Shared provider cache + per-user budgets
 
 - **Shared cache:** `services/providerUsage.js` plus migration `013_provider_cache_and_budgets.sql`. Hunter/Prospeo domain searches are cached in `provider_domain_cache` for 14 days and reused by every account; only a cache miss spends a credit.

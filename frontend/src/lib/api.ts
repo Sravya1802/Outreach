@@ -161,6 +161,40 @@ export interface AlertSubscription {
   keywords: string
 }
 
+export type CompanyStatus = 'new' | 'researching' | 'contacted' | 'responded' | 'skip'
+
+export interface CompanyRow {
+  id: number
+  name: string
+  category: string | null
+  subcategory: string | null
+  status: CompanyStatus | null
+  location: string | null
+  careers_url: string | null
+  domain: string | null
+  is_hiring: number
+  intern_roles_count: number | null
+  intern_roles_checked_at: string | null
+  linkedin_count: number
+  email_count: number
+  total_contacts: number
+  source: string
+}
+
+export type CompanySort = 'recent' | 'contacts' | 'az' | 'za' | 'hiring'
+
+export interface CompanyQuery { category?: string; search?: string; status?: string; sort?: CompanySort; page?: number; pageSize?: number }
+
+export interface CompanyPage { companies: CompanyRow[]; total: number; page: number; pageSize: number; hasMore: boolean }
+
+export interface ScrapeResult {
+  added: number
+  found: number
+  alreadyInDb: number
+  errors?: Record<string, string> | string[]
+  newCompanies?: string[]
+}
+
 export interface SensitiveProfilePreview {
   profileFields?: string[]
   metaKeys?: string[]
@@ -193,6 +227,18 @@ export const api = {
   alertSubscription: (): Promise<{ subscription: AlertSubscription; emailConfigured: boolean }> => legacy.alerts.get(),
   saveAlertSubscription: async (sub: Partial<AlertSubscription>): Promise<AlertSubscription> => (await legacy.alerts.save(sub)).subscription,
   sendTestAlert: (): Promise<{ ok: boolean; to: string; total: number }> => legacy.alerts.test(),
+  companies: async (q: CompanyQuery): Promise<CompanyPage> => {
+    const page: CompanyPage = await legacy.unified.companies(q)
+    // Prospect-only rows have no company page; this list is companies only.
+    return { ...page, companies: page.companies.filter(c => c.source === 'job' && c.id != null) }
+  },
+  categoryCounts: async (): Promise<{ category: string; count: number }[]> => (await legacy.unified.categoryCounts()).counts ?? [],
+  setCompanyStatus: (id: number, status: CompanyStatus): Promise<unknown> => legacy.jobs.updateStatus(id, status),
+  scrapeCompanies: (body: { category: string; subcategory?: string; source?: string }): Promise<ScrapeResult> => legacy.jobs.scrape(body),
+  ycIndustries: async (): Promise<string[]> => (await legacy.yc.companies({ pageSize: 1 })).industries ?? [],
+  importYc: (filters: { location?: string; industry?: string; maxTeamSize?: number }): Promise<{ imported: number; skipped: number; total: number }> =>
+    legacy.yc.importAll(filters),
+  addCompanyByName: (name: string): Promise<{ already_existed?: boolean }> => legacy.companies.searchByName(name),
   exportData: (): Promise<unknown> => legacy.career.exportData(),
   eraseSensitiveProfile: (dryRun: boolean): Promise<SensitiveProfilePreview> =>
     legacy.career.eraseSensitiveProfile(dryRun),

@@ -24,3 +24,17 @@ describe('catalog helpers', () => {
     expect(countsByType([{ role_type: 'intern', n: 3 }, { role_type: 'new_grad', n: 2 }, { role_type: 'intern', n: 4 }])).toEqual({ intern: 7, new_grad: 2 })
   })
 })
+
+import { defaultScrapeQuery, recruitingSeasonYear } from './categories'
+
+describe('recruiting season', () => {
+  it('rolls to next year from August', () => {
+    expect(recruitingSeasonYear(new Date(2026, 9, 13))).toBe(2027)
+    expect(recruitingSeasonYear(new Date(2026, 6, 31))).toBe(2026)
+    expect(recruitingSeasonYear(new Date(2026, 7, 1))).toBe(2027)
+  })
+  it('builds the default scrape query', () => {
+    expect(defaultScrapeQuery('AI & Research', new Date(2026, 9, 13))).toBe('AI machine learning intern 2027')
+    expect(defaultScrapeQuery('Robotics', new Date(2026, 1, 1))).toBe('Robotics intern 2026')
+  })
+})

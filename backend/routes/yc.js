@@ -5,6 +5,36 @@ import { ApifyClient } from 'apify-client';
 
 const router = Router();
 
+/**
+ * Insert YC companies as jobs rows in chunks (one multi-row INSERT per 200)
+ * instead of one round-trip per company — the DB is in another region, so
+ * row-by-row imports of ~1,500 companies took minutes.
+ * @returns {Promise<{ imported: number, skipped: number }>}
+ */
+async function insertYcCompanies(client, companies, userId) {
+  let imported = 0;
+  const seen = new Set();
+  const unique = companies.filter(c => { const k = String(c.name || '').toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200);
+    const values = [];
+    const params = [];
+    chunk.forEach((c, j) => {
+      const r = ycToJobRow(c);
+      const b = j * 9;
+      values.push(`($${b + 1}, $${b + 2}, $${b + 3}, 'yc', $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9})`);
+      params.push(r.name, r.role, r.location, r.careersUrl, c.slug, r.category, r.subcategory, c.batch || null, userId);
+    });
+    const result = await client.query(`
+      INSERT INTO jobs (name, roles, location, source, url, tag, category, subcategory, yc_batch, user_id)
+      VALUES ${values.join(', ')}
+      ON CONFLICT (user_id, name) DO NOTHING
+    `, params);
+    imported += result.rowCount || 0;
+  }
+  return { imported, skipped: companies.length - imported };
+}
+
 function getApifyClient() {
   return new ApifyClient({ token: process.env.APIFY_API_TOKEN || '' });
 }
@@ -151,18 +181,7 @@ router.post('/import-all', async (req, res) => {
     const companies = await getYCHiringCompanies();
     const toImport  = filterYCCompanies(companies, filters);
 
-    let imported = 0, skipped = 0;
-    await tx(async (client) => {
-      for (const c of toImport) {
-        const r = ycToJobRow(c);
-        const result = await client.query(`
-          INSERT INTO jobs (name, roles, location, source, url, tag, category, subcategory, yc_batch, user_id)
-          VALUES ($1, $2, $3, 'yc', $4, $5, $6, $7, $8, $9)
-          ON CONFLICT (user_id, name) DO NOTHING
-        `, [r.name, r.role, r.location, r.careersUrl, c.slug, r.category, r.subcategory, c.batch || null, req.user.id]);
-        if (result.rowCount > 0) imported++; else skipped++;
-      }
-    });
+    const { imported, skipped } = await tx(client => insertYcCompanies(client, toImport, req.user.id));
 
     try {
       await run(
@@ -184,18 +203,7 @@ router.post('/scrape-waas', async (req, res) => {
     const companies = await getYCHiringCompanies();
     const usFilter  = filterYCCompanies(companies, { location: 'us' });
 
-    let imported = 0, skipped = 0;
-    await tx(async (client) => {
-      for (const c of usFilter.slice(0, 500)) {
-        const r = ycToJobRow(c);
-        const result = await client.query(`
-          INSERT INTO jobs (name, roles, location, source, url, tag, category, subcategory, yc_batch, user_id)
-          VALUES ($1, $2, $3, 'yc', $4, $5, $6, $7, $8, $9)
-          ON CONFLICT (user_id, name) DO NOTHING
-        `, [r.name, r.role, r.location, r.careersUrl, c.slug, r.category, r.subcategory, c.batch || null, req.user.id]);
-        if (result.rowCount > 0) imported++; else skipped++;
-      }
-    });
+    const { imported, skipped } = await tx(client => insertYcCompanies(client, usFilter.slice(0, 500), req.user.id));
 
     try {
       await run(

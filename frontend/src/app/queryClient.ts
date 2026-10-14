@@ -38,4 +38,8 @@ export const qk = {
   catalogSources: ['catalog-sources'] as const,
   catalogRefresh: ['catalog-refresh'] as const,
   alerts: ['alerts'] as const,
+  companies: (q: object) => ['companies', q] as const,
+  companiesAll: ['companies'] as const,
+  categoryCounts: ['category-counts'] as const,
+  ycIndustries: ['yc-industries'] as const,
 }

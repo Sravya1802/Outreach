@@ -23,8 +23,9 @@ test('section tabs switch views within a section', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Companies', level: 1 })).toBeVisible()
 })
 
-test('company detail pages keep the Jobs section highlighted', async ({ page }) => {
+test('old category links open Companies filtered to that industry', async ({ page }) => {
   await page.goto('/category/AI%20%26%20Research')
+  await expect(page).toHaveURL(/\/jobs\/companies\?category=AI/)
   await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page')
 })
 

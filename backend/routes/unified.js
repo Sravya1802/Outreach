@@ -117,8 +117,9 @@ router.get('/companies', async (req, res) => {
         j.country,
         j.intern_roles_count,
         j.intern_roles_checked_at,
-        (SELECT COUNT(*)::int FROM job_contacts WHERE job_id = j.id AND source = 'linkedin' AND user_id = $${userIdParamIdx}) AS linkedin_count,
-        (SELECT COUNT(*)::int FROM job_contacts WHERE job_id = j.id AND source = 'hunter' AND user_id = $${userIdParamIdx})   AS email_count,
+        -- People found for this company, and how many of them have an email (any source).
+        (SELECT COUNT(*)::int FROM job_contacts WHERE job_id = j.id AND user_id = $${userIdParamIdx} AND email IS NULL) AS linkedin_count,
+        (SELECT COUNT(*)::int FROM job_contacts WHERE job_id = j.id AND user_id = $${userIdParamIdx} AND email IS NOT NULL) AS email_count,
         (SELECT COUNT(*)::int FROM prospects WHERE company_name = j.name AND user_id = $${userIdParamIdx})                    AS prospects_count
       FROM jobs j
       WHERE ${whereJobAlias}

@@ -27,6 +27,7 @@ import ycRouter           from './routes/yc.js';
 import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
+import githubRouter, { githubCallback } from './routes/github.js';
 import { requireAuth }    from './middleware/requireAuth.js';
 import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
@@ -82,6 +83,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// GitHub's OAuth redirect lands with no app session; the signed `state`
+// parameter identifies the user instead.
+app.get('/api/github/callback', githubCallback);
+
 // ── Auth middleware for everything else under /api ──────────────────────────
 // Controlled by AUTH_MODE env var. See backend/middleware/requireAuth.js.
 app.use('/api', requireAuth);
@@ -100,6 +105,7 @@ app.use('/api/yc',         ycRouter);
 app.use('/api/scraped-roles', scrapedRolesRouter);
 app.use('/api/alerts',     alertsRouter);
 app.use('/api/profile',    profileRouter);
+app.use('/api/github',     githubRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

@@ -248,8 +248,9 @@ export const api = {
       ])
       return { email: emailRes.email, linkedin: linkedinRes.linkedin }
     },
-    coverLetter: (body) => apiCall('/generate/email', { method: 'POST', body: { ...body, format: 'cover_letter' } }),
-    waas:        (body) => apiCall('/generate/email', { method: 'POST', body: { ...body, format: 'waas_dm' } }),
+    // Dedicated routes: /generate/email ignores any `format` and always writes a cold email.
+    coverLetter: (body) => apiCall('/generate/cover-letter', { method: 'POST', body }),
+    waas:        (body) => apiCall('/generate/waas', { method: 'POST', body }),
   },
 
   unified: {

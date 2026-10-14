@@ -1,10 +1,8 @@
-import type { ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { PageSpinner } from '@/ui'
 import { AppShell } from './AppShell'
 import { useAuth } from './auth'
 import { lazyWithRetry } from './lazy'
-import { LegacyPage } from './LegacyPage'
 import { LEGACY_REDIRECTS } from './nav'
 import { MarketGate } from '@/features/auth/MarketGate'
 
@@ -25,7 +23,7 @@ const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'Logi
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
-const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
+const CompanyPage = lazyWithRetry(() => import('@/features/jobs/CompanyPage'), 'CompanyPage')
 
 /** Redirect that keeps ?query and #hash (old deep links carry ids in them). */
 function Redirect({ to }: { to: string }) {
@@ -41,7 +39,6 @@ function CategoryRedirect() {
   return <Navigate to={`/jobs/companies?category=${encodeURIComponent(category)}`} replace />
 }
 
-const legacy = (node: ReactNode) => <LegacyPage>{node}</LegacyPage>
 
 function SignedInRoutes() {
   return (
@@ -57,7 +54,7 @@ function SignedInRoutes() {
         <Route path="/jobs/find" element={<Navigate to="/jobs/companies?find=1" replace />} />
         <Route path="/jobs/alerts" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/category/:name" element={<CategoryRedirect />} />
-        <Route path="/company/:id" element={legacy(<CompanyDetail />)} />
+        <Route path="/company/:id" element={<CompanyPage />} />
 
         <Route path="/applications" element={<Navigate to="/applications/auto-apply" replace />} />
         <Route path="/applications/auto-apply" element={<AutoApplyPage />} />

@@ -7,6 +7,7 @@ const EMAIL: Record<string, { text: string; tone: string }> = {
   accept_all: { text: 'catch-all', tone: 'text-warning' },
   risky: { text: 'risky', tone: 'text-warning' },
   unknown: { text: 'unverified', tone: 'text-subtle' },
+  unverified: { text: 'unverified', tone: 'text-subtle' },
   invalid: { text: 'invalid', tone: 'text-danger' },
 }
 

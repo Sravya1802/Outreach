@@ -18,3 +18,26 @@ describe('contacts', () => {
     expect(contactMatches({ name: null, title: null, company_name: null, email: null }, '')).toBe(true)
   })
 })
+
+import { companyBlurb, gmailComposeUrl, websiteHost } from '@/features/jobs/company'
+
+describe('company page helpers', () => {
+  it('never shows a job board as the website', () => {
+    expect(websiteHost({ website: 'https://www.ramp.com/careers', domain: null })).toBe('ramp.com')
+    expect(websiteHost({ website: 'https://job-boards.greenhouse.io/ramp', domain: 'ramp.com' })).toBe('ramp.com')
+    expect(websiteHost({ website: 'https://jobs.lever.co/x', domain: null })).toBeNull()
+    expect(websiteHost({ website: null, domain: null })).toBeNull()
+  })
+  it('trims long or disambiguation descriptions', () => {
+    expect(companyBlurb({ description: 'Ramp may refer to several things', wikipedia_summary: 'Ramp is a fintech.' })).toBe('Ramp is a fintech.')
+    const long = 'Word '.repeat(80)
+    expect(companyBlurb({ description: long, wikipedia_summary: null }).length).toBeLessThanOrEqual(262)
+    expect(companyBlurb({ description: null, wikipedia_summary: null })).toBe('')
+  })
+  it('builds a Gmail compose link', () => {
+    const u = new URL(gmailComposeUrl('priya@ramp.com', 'Hi & hello', 'Line 1\nLine 2'))
+    expect(u.searchParams.get('to')).toBe('priya@ramp.com')
+    expect(u.searchParams.get('su')).toBe('Hi & hello')
+    expect(u.searchParams.get('body')).toBe('Line 1\nLine 2')
+  })
+})

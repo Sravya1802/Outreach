@@ -4,7 +4,7 @@
 // downloads) and is still imported by old pages and by tests/api-client.test.mjs,
 // so new code wraps it rather than duplicating it. Each wrapper pins the
 // response shape the backend actually returns (verified against the live API).
-import { api as legacy } from '../api.js'
+import { api as legacy, rawApiFetch } from '../api.js'
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
 
@@ -178,6 +178,46 @@ export interface OutreachContact {
 
 export interface TemplateVariant { id: string; kind: 'email' | 'linkedin'; name: string; body: string }
 export interface OutreachTemplates { email: string; linkedin: string; variants: TemplateVariant[] }
+
+export interface CompanyDetail {
+  id: number
+  name: string
+  status: CompanyStatus | null
+  description: string | null
+  wikipedia_summary: string | null
+  website: string | null
+  url: string | null
+  domain: string | null
+  category: string | null
+  subcategory: string | null
+  location: string | null
+  team_size: string | number | null
+  tags: string | null
+  yc_batch: string | null
+  slug: string | null
+}
+
+export interface CompanyContact extends OutreachContact {
+  generated_subject: string | null
+  generated_body: string | null
+  generated_dm: string | null
+}
+
+export interface CompanyRole {
+  id: number
+  title: string
+  location: string | null
+  source: string | null
+  apply_url: string
+  posted_at: string | null
+  role_type: 'intern' | 'fulltime' | string
+  created_at: string
+}
+
+export type PeopleEvent =
+  | { type: 'source'; source: string; status: 'running' | 'done' | 'skip' | 'error'; count?: number; message?: string }
+  | { type: 'complete'; added: number; updated: number; total: number; message?: string }
+  | { type: 'error'; message: string }
 
 export interface NightlySettings {
   enabled: boolean
@@ -357,6 +397,49 @@ export const api = {
     }
   },
   saveTemplates: (t: OutreachTemplates): Promise<unknown> => legacy.generate.saveTemplates(t),
+  company: (id: number): Promise<{ company: CompanyDetail; contacts: CompanyContact[]; roles: CompanyRole[] }> => legacy.jobs.detail(id),
+  companyContacts: (id: number): Promise<CompanyContact[]> => legacy.jobs.contacts(id),
+  companyRoles: (id: number): Promise<CompanyRole[]> => legacy.jobs.roles(id),
+  careersUrl: (id: number): Promise<{ url: string | null; source?: string }> => legacy.jobs.careersUrl(id),
+  setCareersUrl: (id: number, url: string): Promise<{ success: boolean; url: string }> => legacy.jobs.updateUrl(id, url),
+  scrapeCompanyRoles: (id: number, roleType: 'intern' | 'fulltime'): Promise<{ roles: CompanyRole[]; added: number; found: number; careersPageUrl?: string }> =>
+    legacy.jobs.scrapeRoles(id, roleType),
+  findEmails: (id: number): Promise<{ added?: number; updated?: number; message?: string; hintText?: string; domain?: string }> => legacy.jobs.findEmails(id),
+  findEmailFor: (contactId: number): Promise<{ email: string | null; email_status?: string | null; message?: string }> => legacy.jobs.findEmailForContact(contactId),
+  writeTo: (contactId: number, type: 'cold_email' | 'linkedin', extraContext: string): Promise<{ subject?: string; body?: string; message?: string; dm?: string }> =>
+    legacy.jobs.generate(contactId, type, extraContext),
+  writeWaas: (body: { companyName: string; companyDescription?: string; contactName?: string; extraContext?: string; ycBatch?: string }): Promise<{ message: string }> =>
+    legacy.generate.waas(body),
+  updateContact: (contactId: number, patch: Record<string, string>): Promise<CompanyContact> => legacy.jobs.updateContact(contactId, patch),
+  deleteContact: (contactId: number): Promise<unknown> => legacy.jobs.deleteContact(contactId),
+  /** Find people at a company, reporting progress as the server streams it. */
+  findPeople: async (id: number, onEvent: (e: PeopleEvent) => void): Promise<void> => {
+    const res: Response = await rawApiFetch(`/jobs/${id}/find-people-stream`, { headers: { Accept: 'text/event-stream' } })
+    if (!res.ok || !res.body) {
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      throw new Error(body.error || `Couldn’t start the search (HTTP ${res.status})`)
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let cut: number
+      while ((cut = buffer.indexOf('\n\n')) !== -1) {
+        const chunk = buffer.slice(0, cut)
+        buffer = buffer.slice(cut + 2)
+        const event = /^event: (.+)$/m.exec(chunk)?.[1]?.trim()
+        const data = /^data: (.+)$/m.exec(chunk)?.[1]
+        if (!event || !data) continue
+        try {
+          const d = JSON.parse(data) as Record<string, unknown>
+          if (event === 'source' || event === 'complete' || event === 'error') onEvent({ type: event, ...d } as PeopleEvent)
+        } catch { /* ignore a malformed line */ }
+      }
+    }
+  },
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),

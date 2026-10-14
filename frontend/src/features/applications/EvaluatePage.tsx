@@ -143,7 +143,7 @@ export default function EvaluatePage() {
   const qc = useQueryClient()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(() => params.get('url') ?? '')
   const id = Number(params.get('id')) || null
 
   const resume = useQuery({ queryKey: qk.resume, queryFn: api.resumeStatus })

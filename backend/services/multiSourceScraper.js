@@ -374,7 +374,15 @@ export function classifyTracks(role) {
  * made a ~3,000-row refresh take ~10 minutes.
  * @returns {Promise<number>} rows written
  */
-export async function persistCatalogRows(rows) {
+export async function persistCatalogRows(input) {
+  // One statement can't upsert the same apply_url twice ("cannot affect row a
+  // second time"), and one duplicate would fail its whole 200-row chunk.
+  const byUrl = new Map();
+  for (const role of input) {
+    const key = role?.apply_url ? String(role.apply_url).slice(0, 1000) : null;
+    if (key && !byUrl.has(key)) byUrl.set(key, role);
+  }
+  const rows = [...byUrl.values()];
   let written = 0;
   for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
     const chunk = rows.slice(i, i + UPSERT_CHUNK);

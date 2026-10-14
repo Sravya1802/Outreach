@@ -23,3 +23,9 @@ export function isMarket(v: unknown): v is Market {
 export function marketInfo(m: Market | null | undefined): MarketInfo {
   return MARKETS.find(x => x.value === m) ?? USA
 }
+
+/** The market as it reads mid-sentence: "in the United States", "in India", "in other countries". */
+export function marketPhrase(m: Market | null | undefined): string {
+  const info = marketInfo(m)
+  return info.value === 'usa' ? 'the United States' : info.value === 'other' ? 'other countries' : info.label
+}

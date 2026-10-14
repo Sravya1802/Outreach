@@ -23,7 +23,6 @@ const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'Logi
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
-const JobDashboard = lazyWithRetry(() => import('@/components/JobDashboard'), 'JobDashboard')
 const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
 const OutreachPage = lazyWithRetry(() => import('@/components/OutreachPage'), 'OutreachPage')
 const TemplatesPage = lazyWithRetry(() => import('@/components/TemplatesPage'), 'TemplatesPage')
@@ -49,7 +48,7 @@ function SignedInRoutes() {
     <AppShell>
       <Routes>
         <Route path="/home" element={<HomePage />} />
-        <Route path="/home/analytics" element={legacy(<JobDashboard />)} />
+        <Route path="/home/analytics" element={<Navigate to="/home" replace />} />
 
         <Route path="/jobs" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/jobs/roles" element={<Navigate to="/jobs/roles/intern" replace />} />

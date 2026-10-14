@@ -21,8 +21,7 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'home', label: 'Home', icon: Home, to: '/home',
     tabs: [
-      { label: 'Overview', to: '/home', keywords: 'dashboard today' },
-      { label: 'Analytics', to: '/home/analytics', keywords: 'funnel stats metrics' },
+      { label: 'Overview', to: '/home', keywords: 'dashboard today funnel stats analytics metrics' },
     ],
   },
   {
@@ -82,7 +81,7 @@ export function sectionFor(pathname: string): NavSection | undefined {
 export const LEGACY_REDIRECTS: Record<string, string> = {
   '/': '/home',
   '/dashboard': '/home',
-  '/job-dashboard': '/home/analytics',
+  '/job-dashboard': '/home',
   '/discover/companies': '/jobs/companies',
   '/discover/scraper': '/jobs/find',
   '/discover/alerts': '/jobs/alerts',

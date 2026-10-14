@@ -154,6 +154,13 @@ export interface GithubRepo {
   readme_preview: string | null
 }
 
+export interface AiUsage {
+  since: string
+  caps: { site: number; user: number }
+  spent: { site: number; mine: number }
+  byTask: { task: string; calls: number; cost: number }[]
+}
+
 export interface NightlySettings {
   enabled: boolean
   roleType: string
@@ -316,6 +323,7 @@ export const api = {
   credits: (refresh = false): Promise<Credits> => legacy.credits.status(refresh),
   /** This user's monthly share of the shared provider keys. */
   providerUsage: async (): Promise<ProviderUsage> => (await legacy.credits.usage()).usage,
+  aiUsage: (): Promise<AiUsage> => legacy.credits.aiUsage(),
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),

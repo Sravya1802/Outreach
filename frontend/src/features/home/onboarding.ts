@@ -1,13 +1,15 @@
+// The setup checklist on Home: what auto-apply needs before it can work for you.
+
 export interface SetupInputs {
   hasResume: boolean | undefined
   profileComplete: boolean | undefined
-  companies: number | undefined
-  evaluations: number | undefined
-  nightlyEnabled: boolean | undefined
+  answers: number | undefined
+  githubConnected: boolean | undefined
+  rulesSet: boolean | undefined
 }
 
 export interface SetupStep {
-  id: string
+  id: 'resume' | 'details' | 'answers' | 'github' | 'rules'
   title: string
   description: string
   to: string
@@ -16,37 +18,32 @@ export interface SetupStep {
   done: boolean | undefined
 }
 
+/** Saved answers that count as "started" on the common questions. */
+export const MIN_ANSWERS = 3
+
 export function setupSteps(i: SetupInputs): SetupStep[] {
   return [
-    {
-      id: 'resume', title: 'Upload your resume',
-      description: 'Every evaluation and tailored CV starts from it.',
-      to: '/profile/resume', cta: 'Upload', done: i.hasResume,
-    },
-    {
-      id: 'profile', title: 'Fill in your application profile',
-      description: 'Contact details, work authorization and education, used to fill applications for you.',
-      to: '/profile/details', cta: 'Open profile', done: i.profileComplete,
-    },
-    {
-      id: 'companies', title: 'Add companies to track',
-      description: 'Pull companies from the YC directory and job boards.',
-      to: '/jobs/companies?find=1', cta: 'Find companies', done: i.companies === undefined ? undefined : i.companies > 0,
-    },
-    {
-      id: 'evaluate', title: 'Evaluate your first role',
-      description: 'Paste a job link to get an A–F fit grade against your resume.',
-      to: '/applications/evaluate', cta: 'Evaluate', done: i.evaluations === undefined ? undefined : i.evaluations > 0,
-    },
-    {
-      id: 'nightly', title: 'Set your auto-apply rules',
-      description: 'Pick the score that puts a role on your daily plan, and how many a day.',
-      to: '/applications/auto-apply', cta: 'Set up', done: i.nightlyEnabled,
-    },
+    { id: 'resume', title: 'Upload your resume', description: 'Every evaluation and tailored resume starts from it.',
+      to: '/profile/resume', cta: 'Upload', done: i.hasResume },
+    { id: 'details', title: 'Fill in your details', description: 'Contact, work authorization and education, filled into every form.',
+      to: '/profile/details', cta: 'Open', done: i.profileComplete },
+    { id: 'answers', title: 'Answer the common questions', description: `“Why us?”, start date, salary and the like. At least ${MIN_ANSWERS}.`,
+      to: '/profile/answers', cta: 'Answer', done: i.answers === undefined ? undefined : i.answers >= MIN_ANSWERS },
+    { id: 'github', title: 'Connect GitHub', description: 'Your public repos become projects each resume can pick from.',
+      to: '/profile/github', cta: 'Connect', done: i.githubConnected },
+    { id: 'rules', title: 'Set your auto-apply rules', description: 'The score that puts a role on your daily plan, and how many a day.',
+      to: '/applications/auto-apply', cta: 'Set', done: i.rulesSet },
   ]
 }
 
-export function isProfileComplete(profile: { first_name?: unknown; email?: unknown } | undefined): boolean | undefined {
+/** Name, email and phone are what every application form requires. */
+export function isProfileComplete(profile: { first_name?: unknown; email?: unknown; phone?: unknown } | undefined): boolean | undefined {
   if (!profile) return undefined
-  return Boolean(String(profile.first_name ?? '').trim() && String(profile.email ?? '').trim())
+  return ['first_name', 'email', 'phone'].every(k => String((profile as Record<string, unknown>)[k] ?? '').trim())
+}
+
+/** First name from the profile, else a readable name from the email. */
+export function displayName(profile: { first_name?: unknown } | undefined, fallback: string): string {
+  const first = String(profile?.first_name ?? '').trim()
+  return first || fallback
 }

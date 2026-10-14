@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { activityDetail, activityTitle } from './activity'
-import { isProfileComplete, setupSteps } from './onboarding'
+import { displayName, isProfileComplete, setupSteps } from './onboarding'
 
 describe('activity formatting', () => {
   it('labels known and unknown actions', () => {
@@ -20,21 +20,27 @@ describe('activity formatting', () => {
 
 describe('setup checklist', () => {
   it('stays undefined while loading', () => {
-    const steps = setupSteps({ hasResume: undefined, profileComplete: undefined, companies: undefined, evaluations: undefined, nightlyEnabled: undefined })
+    const steps = setupSteps({ hasResume: undefined, profileComplete: undefined, answers: undefined, githubConnected: undefined, rulesSet: undefined })
     expect(steps.every(s => s.done === undefined)).toBe(true)
   })
 
   it('marks steps done from data', () => {
-    const steps = setupSteps({ hasResume: true, profileComplete: false, companies: 0, evaluations: 3, nightlyEnabled: false })
+    const steps = setupSteps({ hasResume: true, profileComplete: false, answers: 2, githubConnected: true, rulesSet: false })
     expect(Object.fromEntries(steps.map(s => [s.id, s.done]))).toEqual({
-      resume: true, profile: false, companies: false, evaluate: true, nightly: false,
+      resume: true, details: false, answers: false, github: true, rules: false,
     })
+    expect(setupSteps({ hasResume: true, profileComplete: true, answers: 3, githubConnected: true, rulesSet: true }).every(s => s.done)).toBe(true)
   })
 
-  it('requires name and email for a complete profile', () => {
+  it('requires name, email and phone for a complete profile', () => {
     expect(isProfileComplete(undefined)).toBeUndefined()
     expect(isProfileComplete({})).toBe(false)
-    expect(isProfileComplete({ first_name: 'A', email: ' ' })).toBe(false)
-    expect(isProfileComplete({ first_name: 'A', email: 'a@b.co' })).toBe(true)
+    expect(isProfileComplete({ first_name: 'A', email: 'a@b.co' })).toBe(false)
+    expect(isProfileComplete({ first_name: 'A', email: 'a@b.co', phone: '+1 555' })).toBe(true)
+  })
+
+  it('greets by first name when known', () => {
+    expect(displayName({ first_name: ' Sravya ' }, 'Lakshmisravyar')).toBe('Sravya')
+    expect(displayName({}, 'Lakshmisravyar')).toBe('Lakshmisravyar')
   })
 })

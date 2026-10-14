@@ -180,6 +180,7 @@ export const api = {
   },
 
   credits: {
+    aiUsage: () => apiCall('/credits/ai-usage'),
     status: (force = false) => apiCall('/credits/status' + (force ? '?refresh=true' : '')).catch(() => ({})),
     usage:  () => apiCall('/credits/usage'),
   },

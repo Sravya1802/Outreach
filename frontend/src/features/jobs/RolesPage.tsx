@@ -12,7 +12,7 @@ import {
 import { AlertsDialog } from './AlertsDialog'
 import { countsByList, listForKind, listsForMarket, postedLabel, sourceLabel, type CatalogList } from './catalog'
 import { useMarket } from '@/app/queries'
-import { marketInfo, type Market } from '@/lib/markets'
+import { marketPhrase, type Market } from '@/lib/markets'
 
 const PAGE_SIZE = 50
 
@@ -163,7 +163,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     <Page wide>
       <PageHeader
         title="Roles"
-        description={<>Internship and new-grad openings in <b className="font-medium text-fg">{marketInfo(market).label}</b>, from SpeedyApply's daily lists, job boards and company career pages. <Link to="/profile/details" className="text-accent hover:underline">Change country</Link></>}
+        description={<>Internship and new-grad openings in <b className="font-medium text-fg">{marketPhrase(market)}</b>, from SpeedyApply's daily lists, job boards and company career pages. <Link to="/profile/details" className="text-accent hover:underline">Change country</Link></>}
         actions={
           <>
             <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} loading={refresh.isPending} onClick={() => refresh.mutate()}>Refresh</Button>

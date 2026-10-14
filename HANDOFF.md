@@ -124,6 +124,16 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Pipeline tab removed; it's now the tracker on Auto-apply
+- **What:** the user saw no point in a separate Pipeline tab (it duplicated Auto-apply and sat empty), so it was folded in (`583e9bc`, `b22cc44`).
+  - Auto-apply now ends with an **"After you apply"** section ([Tracker.tsx](frontend/src/features/applications/Tracker.tsx), formerly PipelinePage). It has the funnel, follow-up nudges, notes, search, and List/Board.
+  - It shows **sent applications only**, plus roles Closed after applying. Scored-but-unsent roles stay on Evaluate, whose recent list gained "Show all N". Auto-apply's old "Sent" list was dropped as a duplicate.
+  - `/applications/pipeline`, `/board`, `/ranked` and the legacy `/pipeline` and `/apply/*` URLs redirect to `/applications/auto-apply#tracker`. `Redirect` in App.tsx now merges query strings into targets that already carry a `?`/`#`.
+  - Home's link now reads "Track them". `/career-ops` now goes to Evaluate.
+  - The e2e `dashboard.spec.js` was checking a stale "Pipeline" heading; it's fixed, and a redirect test was added.
+- **Status:** verified live as the e2e user with seeded rows (since deleted): the redirect and scroll, the never-sent role excluded, board, and phone width.
+- **Follow-up:** none. Applications only reach this tracker once auto-apply or "I applied" sends them. Stage changes are manual until Gmail reply detection exists.
+
 ### 2026-10-14 — Pipeline page: follow-up nudges, notes, funnel + search, board
 - **What:** `/applications/pipeline` gained four things, each shipped and checked live:
   - **Follow-up nudges:** applied roles quiet 7+ days get a banner, a "Follow up · N" filter, and a "Find someone at X" link (company page) or "Track X" (Companies search).

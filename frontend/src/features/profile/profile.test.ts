@@ -42,3 +42,14 @@ describe('GitHub repo languages', () => {
     expect(topLanguages({ Go: 1, Rust: 10000 }, 2)).toEqual(['Rust 100%', 'Go 1%'])
   })
 })
+
+import { readExperiences } from './experience'
+
+describe('experience entries', () => {
+  it('reads saved entries from an array or a JSON string', () => {
+    expect(readExperiences([{ company: 'Acme', title: 'Intern' }])[0]).toMatchObject({ company: 'Acme', title: 'Intern', current: false, summary: '' })
+    expect(readExperiences('[{"company":"Lab"}]')[0]?.company).toBe('Lab')
+    expect(readExperiences('not json')).toEqual([])
+    expect(readExperiences(undefined)).toEqual([])
+  })
+})

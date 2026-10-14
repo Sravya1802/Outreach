@@ -74,10 +74,8 @@ export const SECTIONS: SectionDef[] = [
     ],
   },
   {
-    id: 'experience', title: 'Experience', description: 'Used where a form asks for your current role. The resume itself comes from your uploaded file.',
+    id: 'experience', title: 'Experience', description: 'Every job, internship and research role, for forms that ask for your work history. Newest first; your resume still comes from your uploaded file.',
     fields: [
-      { key: 'current_company', label: 'Current or last company' },
-      { key: 'current_title', label: 'Title' },
       { key: 'years_experience', label: 'Years of experience', placeholder: '1' },
       { key: 'certifications', label: 'Certifications' },
       { key: 'skills', label: 'Skills', kind: 'textarea', wide: true, placeholder: 'Python, TypeScript, Kafka, Spark, React, PostgreSQL…' },

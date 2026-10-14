@@ -5,6 +5,8 @@ import { qk } from '@/app/queryClient'
 import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Button, ErrorState, Field, Input, Page, PageHeader, Select, Skeleton, Textarea, useToast } from '@/ui'
+import { ExperienceList } from './ExperienceList'
+import { readExperiences, type Experience } from './experience'
 import { IMPORTANT_KEYS, REQUIRED_KEYS, SECTIONS, labelFor, missing, toForm, toPatch, type FieldDef, type FormValues } from './fields'
 
 function Control({ def, value, disabled, onChange, field }: {
@@ -50,14 +52,17 @@ export default function DetailsPage() {
   const [edits, setEdits] = useState<FormValues>({})
   const saved = toForm(profile)
   const values: FormValues = { ...saved, ...edits }
-  const dirty = Object.keys(edits).some(k => edits[k] !== saved[k])
+  const [expEdits, setExpEdits] = useState<Experience[] | null>(null)
+  const experiences = expEdits ?? readExperiences(profile?.experiences)
+  const dirty = Object.keys(edits).some(k => edits[k] !== saved[k]) || expEdits != null
   const set = (key: string) => (v: string) => setEdits(prev => ({ ...prev, [key]: v }))
 
   const save = useMutation({
-    mutationFn: () => api.saveProfile(toPatch(values)),
+    mutationFn: () => api.saveProfile({ ...toPatch(values), ...(expEdits ? { experiences: expEdits } : {}) }),
     onSuccess: row => {
       qc.setQueryData(qk.profile, row)
       setEdits({})
+      setExpEdits(null)
       toast.success('Profile saved')
     },
     onError: (e: Error) => toast.error(e.message),
@@ -100,6 +105,9 @@ export default function DetailsPage() {
                     <Toggle checked={!gated} onChange={on => set(section.gatedBy as string)(on ? '1' : '0')}
                       label="Store my answers" description="Off: nothing below is saved, and forms get “decline to answer”." />
                   </div>
+                )}
+                {section.id === 'experience' && (
+                  <div className="mb-6"><ExperienceList value={experiences} onChange={setExpEdits} /></div>
                 )}
                 <div className={cn('grid gap-x-5 gap-y-4 sm:grid-cols-2', gated && 'opacity-50')}>
                   {section.fields.map(def => (

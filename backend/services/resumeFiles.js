@@ -81,6 +81,15 @@ export async function saveForEvaluation(userId, evalId, buffer, filename, kind) 
   });
 }
 
+/** Store a cover letter for one evaluation (doesn't change which resume goes). */
+export async function saveCoverLetter(userId, evalId, buffer, filename) {
+  const name = safeName(filename);
+  const objectPath = forEvalPath(userId, evalId, 'cover_letter', name);
+  await putObject(BUCKETS.tailored, objectPath, buffer);
+  const market = await marketFor(userId);
+  return insertRow({ query }, { userId, kind: 'cover_letter', bucket: BUCKETS.tailored, objectPath, filename: name, buffer, evaluationId: Number(evalId), market });
+}
+
 /** Index an archetype-library PDF the first time an application uses it. */
 export async function recordLibraryFile(userId, { objectPath, filename, sizeBytes }) {
   const market = await marketFor(userId);

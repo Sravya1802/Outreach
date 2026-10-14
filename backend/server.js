@@ -31,6 +31,7 @@ import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
+import resumeEngineRouter from './routes/resumeEngine.js';
 import { marketFor, regionForMarket } from './services/markets.js';
 import { requestContext } from './services/requestContext.js';
 import { requireAuth }    from './middleware/requireAuth.js';
@@ -117,6 +118,7 @@ app.use('/api/scraped-roles', scrapedRolesRouter);
 app.use('/api/alerts',     alertsRouter);
 app.use('/api/profile',    profileRouter);
 app.use('/api/github',     githubRouter);
+app.use('/api/resume-engine', resumeEngineRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

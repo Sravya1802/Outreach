@@ -50,6 +50,7 @@ function getClient(options) {
  * @param {number} [p.maxTokens]    Output ceiling incl. thinking (default 16000).
  * @param {boolean} [p.cacheSystem] Mark the system prompt for prompt caching
  *                                  (use when it's a long, stable rubric).
+ * @param {object} [p.schema]      JSON schema the reply must follow (structured outputs).
  * @param {object} [p.clientOptions] Test hook (e.g. a mock `fetch`).
  */
 export async function claudeText(params) {
@@ -57,14 +58,14 @@ export async function claudeText(params) {
 }
 
 /** Like claudeText, but also returns token usage (for cost metering) and the model that answered. */
-export async function claudeMessage({ system, user, effort, maxTokens = 16000, cacheSystem = false, timeoutMs, clientOptions }) {
+export async function claudeMessage({ system, user, effort, maxTokens = 16000, cacheSystem = false, schema, timeoutMs, clientOptions }) {
   if (!effort) throw new Error('claudeText: effort is required');
   const response = await getClient(clientOptions).beta.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: maxTokens,
     betas: [FALLBACK_BETA],
     fallbacks: 'default',
-    output_config: { effort },
+    output_config: { effort, ...(schema ? { format: { type: 'json_schema', schema } } : {}) },
     ...(system
       ? { system: cacheSystem ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system }
       : {}),

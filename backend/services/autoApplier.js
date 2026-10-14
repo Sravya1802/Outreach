@@ -27,6 +27,7 @@ import { scanResumesFromStorage, pickResumeForRole, detectPlatform } from './res
 import { validateProfileForApply } from './applyValidation.js';
 import { assertPublicUrl } from './safeFetch.js';
 import { fileForUser, fileToTemp, recordLibraryFile, markSubmittedWith } from './resumeFiles.js';
+import { resumeGate } from './resumeEngine.js';
 
 // Status values we write back to evaluations.apply_status during processing.
 const STATUS = {
@@ -313,6 +314,13 @@ export async function processOneEvaluation(userId, evalId, { headless = true, dr
   // Previously this was strict-library-only and paused submission on any
   // archetype miss — too aggressive, since a SWE resume can still apply to a
   // role that just doesn't trip the keyword list.
+  // A tailored resume under the ATS target waits for the user's call.
+  const gate = await resumeGate(userId, evalId);
+  if (!gate.ok) {
+    await setStatus(userId, evalId, STATUS.needs_review, { error: gate.reason, platform });
+    return { ok: false, error: gate.reason, needsReview: true };
+  }
+
   let resume = null;
   const chosenFile = row.resume_file_id ? await fileForUser(userId, row.resume_file_id) : null;
   if (chosenFile) {

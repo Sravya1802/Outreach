@@ -3,7 +3,8 @@
 // spent (a hard cap on top of the limits set in each provider's console).
 //
 //   score, evaluate, email, categorize → Groq gpt-oss (OpenAI as backup)
-//   resume, cover_letter               → Claude Opus 5.5 only. If it's down
+//   keywords (ATS terms from a JD)      → Groq, so the resume writer never grades itself
+//   resume, resume_parse, cover_letter → Claude Opus 5.5 only. If it's down
 //                                        the caller waits and retries; resume
 //                                        quality is never quietly downgraded.
 import OpenAI from 'openai';
@@ -26,7 +27,9 @@ export const ROUTES = {
   evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   email: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   categorize: [{ provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'high' }],
+  keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'high' }],
+  resume_parse: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],
   cover_letter: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium' }],
 };
 
@@ -108,9 +111,9 @@ function available(step) {
   return Boolean(openaiCompatible(step.provider));
 }
 
-async function callStep(step, { system, user, json, maxTokens, timeoutMs }) {
+async function callStep(step, { system, user, json, schema, maxTokens, timeoutMs }) {
   if (step.provider === 'anthropic') {
-    const r = await claudeMessage({ system, user, effort: step.effort, maxTokens, cacheSystem: Boolean(system && system.length > 4000), timeoutMs });
+    const r = await claudeMessage({ system, user, effort: step.effort, maxTokens, schema, cacheSystem: Boolean(system && system.length > 4000), timeoutMs });
     return { text: r.text, usage: r.usage };
   }
   const client = openaiCompatible(step.provider);
@@ -118,7 +121,7 @@ async function callStep(step, { system, user, json, maxTokens, timeoutMs }) {
     model: step.model,
     messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: user }],
     max_completion_tokens: maxTokens,
-    ...(json ? { response_format: { type: 'json_object' } } : {}),
+    ...(json || schema ? { response_format: { type: 'json_object' } } : {}),
     ...(step.reasoning && step.provider === 'groq' ? { reasoning_effort: step.reasoning } : {}),
   }, timeoutMs ? { timeout: timeoutMs } : undefined);
   const text = res.choices?.[0]?.message?.content?.trim() || '';
@@ -130,14 +133,16 @@ async function callStep(step, { system, user, json, maxTokens, timeoutMs }) {
 
 /**
  * Run one AI task. Returns { text, provider, model, costUsd }.
- * @param {{ task: keyof ROUTES, system?: string, user: string, json?: boolean, maxTokens?: number, timeoutMs?: number, userId?: string }} p
+ * `schema` (a JSON schema) makes Claude's reply follow it exactly; other
+ * providers get JSON mode and the caller validates.
+ * @param {{ task: keyof ROUTES, system?: string, user: string, json?: boolean, schema?: object, maxTokens?: number, timeoutMs?: number, userId?: string }} p
  */
-export async function complete({ task, system = '', user, json = false, maxTokens = 4000, timeoutMs, userId = currentUserId() }) {
+export async function complete({ task, system = '', user, json = false, schema, maxTokens = 4000, timeoutMs, userId = currentUserId() }) {
   const route = ROUTES[task];
   if (!route) throw new Error(`Unknown AI task: ${task}`);
   const steps = route.filter(available);
   if (!steps.length) {
-    throw Object.assign(new Error(task === 'resume' || task === 'cover_letter'
+    throw Object.assign(new Error(['resume', 'resume_parse', 'cover_letter'].includes(task)
       ? 'Resume writing needs the Claude API key, which isn’t set on the server.'
       : 'No AI provider key is set on the server.'), { status: 503 });
   }
@@ -146,7 +151,7 @@ export async function complete({ task, system = '', user, json = false, maxToken
     const key = `${step.provider}:${step.model}`;
     await assertBudget(userId, estimateCost(key, { system, user, maxTokens }));
     try {
-      const r = await callStep(step, { system, user, json, maxTokens, timeoutMs });
+      const r = await callStep(step, { system, user, json, schema, maxTokens, timeoutMs });
       const costUsd = await record({ userId, task, provider: step.provider, model: step.model, usage: r.usage, ok: true });
       return { text: r.text, provider: step.provider, model: step.model, costUsd };
     } catch (err) {

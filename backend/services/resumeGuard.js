@@ -1,0 +1,202 @@
+/**
+ * resumeGuard.js — the "never invent" rule, enforced in code after the AI
+ * writes. The tailored draft is rebuilt from the master resume and GitHub
+ * repos; the AI only gets to choose, order and reword:
+ *
+ *   • contact, education and extra sections are copied from the master
+ *   • every master job stays (by id), with its real company/title/dates
+ *   • a bullet whose numbers aren't in that job's original bullets is dropped
+ *   • projects must be a master project or an included GitHub repo, with
+ *     numbers and tech found in that project's own text
+ *   • a skill must appear somewhere in the master resume or the repos
+ *
+ * Everything removed is listed with the reason, for the change report.
+ */
+
+import { hasTerm } from './ats.js';
+
+const MAX_EXPERIENCE_BULLETS = 5;
+const MAX_PROJECTS = 3;
+const MAX_PROJECT_BULLETS = 3;
+const MAX_SKILL_GROUPS = 4;
+
+const str = (v) => String(v ?? '').trim();
+const list = (v) => (Array.isArray(v) ? v : []);
+
+/** "2M+", "40%", "$12K", "1,200", "3.5x" → normalized tokens. */
+export function numbersIn(s) {
+  return [...String(s ?? '').matchAll(/\d+(?:[.,]\d+)*\s?(?:%|x\b|k\b|m\b|b\b)?\+?/gi)]
+    .map(m => m[0].toLowerCase().replace(/[,\s]/g, ''))
+    .map(n => n.replace(/\.0+(?=\D|$)/, ''));
+}
+
+/** Numbers in `text` that `source` never mentions. Bare digits match their decorated forms ("40" ⊂ "40%"). */
+export function unsupportedNumbers(text, source) {
+  const have = numbersIn(source);
+  const bare = new Set(have.map(n => n.replace(/[^\d.]/g, '')));
+  return numbersIn(text).filter(n => !have.includes(n) && !bare.has(n.replace(/[^\d.]/g, '')));
+}
+
+export function repoText(r) {
+  return [r.name, r.full_name, r.description, list(r.topics).join(' '), Object.keys(r.languages || {}).join(' '), r.language, r.readme]
+    .filter(Boolean).join('\n');
+}
+
+export function masterText(m) {
+  const parts = [m.summary];
+  for (const e of list(m.education)) parts.push(e.school, e.degree, e.field, ...list(e.details));
+  for (const e of list(m.experience)) parts.push(e.company, e.title, ...list(e.bullets));
+  for (const p of list(m.projects)) parts.push(p.name, list(p.tech).join(', '), ...list(p.bullets));
+  for (const s of list(m.skills)) parts.push(s.category, list(s.items).join(', '));
+  for (const x of list(m.extras)) parts.push(x.heading, ...list(x.items));
+  return parts.filter(Boolean).join('\n');
+}
+
+const norm = (s) => str(s).toLowerCase().replace(/[^a-z0-9+#]/g, '');
+
+/**
+ * @param {object} draft   the AI's tailored output
+ * @param {object} master  parsed master resume
+ * @param {object[]} repos included GitHub repos
+ * @param {string} [rawMasterText] the PDF's raw text, as extra evidence for skills
+ * @returns {{ doc: object, removed: {where: string, what: string, why: string}[] }}
+ */
+export function guardDraft(draft, master, repos = [], rawMasterText = '') {
+  const removed = [];
+  const corpus = `${masterText(master)}\n${rawMasterText}\n${repos.map(repoText).join('\n')}`;
+
+  // Summary only if the master resume has one.
+  let summary = '';
+  if (str(master.summary)) {
+    summary = str(draft.summary) || str(master.summary);
+    const bad = unsupportedNumbers(summary, masterText(master));
+    if (bad.length) { removed.push({ where: 'Summary', what: summary, why: `used numbers not in your resume (${bad.join(', ')})` }); summary = str(master.summary); }
+  } else if (str(draft.summary)) {
+    removed.push({ where: 'Summary', what: str(draft.summary), why: 'your master resume has no summary, so none was added' });
+  }
+
+  // Experience: master order of ids as the AI ranked them; unknown ids ignored, missing ids kept.
+  const byId = new Map(list(master.experience).map(e => [str(e.id), e]));
+  const ranked = [];
+  for (const d of list(draft.experience)) {
+    const m = byId.get(str(d.id));
+    if (m && !ranked.some(r => r.m === m)) ranked.push({ m, d });
+  }
+  for (const m of list(master.experience)) if (!ranked.some(r => r.m === m)) ranked.push({ m, d: null });
+  // Keep jobs in date order as on the master; the AI chooses bullets, not job order.
+  ranked.sort((a, b) => list(master.experience).indexOf(a.m) - list(master.experience).indexOf(b.m));
+
+  const experience = ranked.map(({ m, d }) => {
+    const source = list(m.bullets).join('\n');
+    let kept = [];
+    for (const b of list(d?.bullets).map(str).filter(Boolean)) {
+      const bad = unsupportedNumbers(b, source);
+      if (bad.length) removed.push({ where: `${m.title} at ${m.company}`, what: b, why: `number${bad.length > 1 ? 's' : ''} ${bad.join(', ')} ${bad.length > 1 ? 'aren’t' : 'isn’t'} in your original bullets` });
+      else kept.push(b);
+    }
+    if (!kept.length) kept = list(m.bullets).slice(0, 3);
+    return { id: m.id, company: m.company, title: m.title, location: m.location, start: m.start, end: m.end, bullets: kept.slice(0, MAX_EXPERIENCE_BULLETS) };
+  });
+
+  // Projects: from the master or an included repo, checked against that project's own text.
+  const masterProjects = new Map(list(master.projects).map(p => [str(p.id), p]));
+  const repoByName = new Map(repos.map(r => [norm(r.full_name), r]));
+  for (const r of repos) if (!repoByName.has(norm(r.name))) repoByName.set(norm(r.name), r);
+  const projects = [];
+  for (const p of list(draft.projects)) {
+    if (projects.length >= MAX_PROJECTS) break;
+    let base = null;
+    let sourceText = '';
+    if (p.source === 'resume' && masterProjects.has(str(p.ref))) {
+      const m = masterProjects.get(str(p.ref));
+      base = { name: m.name, link: m.link, start: m.start, end: m.end };
+      sourceText = [m.name, list(m.tech).join(', '), ...list(m.bullets)].join('\n');
+    } else if (p.source === 'github' && repoByName.has(norm(p.ref))) {
+      const r = repoByName.get(norm(p.ref));
+      base = { name: str(p.name) && norm(p.name).includes(norm(r.name).slice(0, 6)) ? str(p.name) : r.name, link: r.homepage || r.html_url, start: '', end: '' };
+      sourceText = repoText(r);
+    } else {
+      removed.push({ where: 'Projects', what: str(p.name) || str(p.ref), why: 'not a project on your resume or an included GitHub repo' });
+      continue;
+    }
+    if (projects.some(x => norm(x.name) === norm(base.name))) continue;
+    const tech = [];
+    for (const t of list(p.tech).map(str).filter(Boolean)) {
+      if (hasTerm(sourceText, { term: t }) || hasTerm(corpus, { term: t })) tech.push(t);
+      else removed.push({ where: base.name, what: t, why: 'this tech isn’t mentioned for the project or anywhere in your background' });
+    }
+    const bullets = [];
+    for (const b of list(p.bullets).map(str).filter(Boolean)) {
+      const bad = unsupportedNumbers(b, sourceText);
+      if (bad.length) removed.push({ where: base.name, what: b, why: `number${bad.length > 1 ? 's' : ''} ${bad.join(', ')} ${bad.length > 1 ? 'aren’t' : 'isn’t'} in the project’s ${p.source === 'github' ? 'README' : 'original bullets'}` });
+      else bullets.push(b);
+    }
+    if (!bullets.length) {
+      removed.push({ where: 'Projects', what: base.name, why: 'no bullet survived the fact check' });
+      continue;
+    }
+    projects.push({ ...base, tech: tech.slice(0, 6), bullets: bullets.slice(0, MAX_PROJECT_BULLETS), source: p.source, ref: str(p.ref) });
+  }
+  if (!projects.length) {
+    for (const m of list(master.projects).slice(0, 2)) projects.push({ name: m.name, link: m.link, start: m.start, end: m.end, tech: list(m.tech), bullets: list(m.bullets).slice(0, MAX_PROJECT_BULLETS), source: 'resume', ref: m.id });
+  }
+
+  // Skills: only what the background shows.
+  const skills = [];
+  const seenSkill = new Set();
+  for (const g of list(draft.skills)) {
+    if (skills.length >= MAX_SKILL_GROUPS) break;
+    const items = [];
+    for (const it of list(g.items).map(str).filter(Boolean)) {
+      if (seenSkill.has(norm(it))) continue;
+      if (hasTerm(corpus, { term: it })) { items.push(it); seenSkill.add(norm(it)); }
+      else removed.push({ where: 'Skills', what: it, why: 'not in your resume or GitHub' });
+    }
+    if (items.length) skills.push({ category: str(g.category) || 'Skills', items });
+  }
+  if (!skills.length) skills.push(...list(master.skills));
+
+  return {
+    doc: {
+      name: master.name,
+      contact: master.contact,
+      summary,
+      education: list(master.education),
+      experience,
+      projects,
+      skills,
+      extras: list(master.extras),
+    },
+    removed,
+  };
+}
+
+/**
+ * Add the candidate's own skills that the job asks for but the draft left
+ * out. Only terms found in their background (inSource) ever get here.
+ */
+export function addMissingSkills(doc, keywords) {
+  const terms = keywords.filter(k => k.kind !== 'soft').map(k => k.term);
+  if (!terms.length) return { doc, added: [] };
+  const skills = doc.skills.map(g => ({ ...g, items: [...g.items] }));
+  const target = skills.find(g => /tool|technolog|framework|other/i.test(g.category)) || skills[skills.length - 1];
+  if (!target) return { doc: { ...doc, skills: [{ category: 'Skills', items: terms }] }, added: terms };
+  const added = [];
+  for (const t of terms) if (!skills.some(g => g.items.some(i => norm(i) === norm(t)))) { target.items.push(t); added.push(t); }
+  return { doc: { ...doc, skills }, added };
+}
+
+/**
+ * Ways to make the page shorter, least costly first. Each returns a new doc
+ * or null when it has nothing left to cut.
+ */
+export const SHRINK_STEPS = [
+  (d) => (d.extras.some(x => x.items.length > 3) ? { ...d, extras: d.extras.map(x => ({ ...x, items: x.items.slice(0, 3) })) } : null),
+  (d) => (d.projects.length > 2 ? { ...d, projects: d.projects.slice(0, 2) } : null),
+  (d) => (d.experience.some(e => e.bullets.length > 4) ? { ...d, experience: d.experience.map(e => ({ ...e, bullets: e.bullets.slice(0, 4) })) } : null),
+  (d) => (d.projects.some(p => p.bullets.length > 2) ? { ...d, projects: d.projects.map(p => ({ ...p, bullets: p.bullets.slice(0, 2) })) } : null),
+  (d) => (d.experience.some(e => e.bullets.length > 3) ? { ...d, experience: d.experience.map(e => ({ ...e, bullets: e.bullets.slice(0, 3) })) } : null),
+  (d) => (d.education.some(e => (e.details || []).length > 1) ? { ...d, education: d.education.map(e => ({ ...e, details: (e.details || []).slice(0, 1) })) } : null),
+  (d) => (d.extras.length > 1 ? { ...d, extras: d.extras.slice(0, 1) } : null),
+  (d) => (d.projects.length > 1 ? { ...d, projects: d.projects.slice(0, 1) } : null),
+];

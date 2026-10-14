@@ -27,6 +27,7 @@ import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
 import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, resumeHistory } from '../services/resumeFiles.js';
+import { parsedMaster } from '../services/resumeEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Uploads land here only until they're copied to Supabase Storage
@@ -105,6 +106,8 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
     await run(upsertSql, [req.user.id, 'user_resume_date', new Date().toISOString()]);
 
     console.log(`[careerOps] Resume uploaded: ${req.file.originalname}, ${text.length} chars`);
+    // Read it into sections now, so the first tailoring doesn't wait for it.
+    parsedMaster(req.user.id).catch(err => console.warn('[careerOps] master parse failed:', err.message));
     res.json({ ok: true, name: req.file.originalname, chars: text.length, preview: text.slice(0, 300), file });
   } catch (err) {
     console.error('[careerOps] resume upload error:', err.message);

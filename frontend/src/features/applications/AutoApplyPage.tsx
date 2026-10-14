@@ -110,12 +110,14 @@ export default function AutoApplyPage() {
   const items = queue.data?.items ?? []
   const of = (statuses: string[]) => items.filter(r => statuses.includes(r.apply_status ?? ''))
   const { hash } = useLocation()
+  // Same query the tracker runs (shared cache); used only to know when it has laid out.
+  const tracked = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
 
-  // Links to #tracker (Home, old Pipeline URLs) land on the tracker once the page has laid out.
+  // Links to #tracker (Home, old Pipeline URLs) land on the tracker once both lists have rendered.
   useEffect(() => {
-    if (hash !== '#tracker' || queue.isLoading) return
+    if (hash !== '#tracker' || queue.isLoading || tracked.isLoading) return
     document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
-  }, [hash, queue.isLoading])
+  }, [hash, queue.isLoading, tracked.isLoading])
 
   return (
     <Page wide>

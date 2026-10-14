@@ -124,6 +124,36 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Step 2: the resume engine (tailor, fact check, ATS, LaTeX PDF, cover letter)
+- **What:** One tailored resume per evaluation, run in the background, polled by the UI.
+  - The master resume is read into sections once per upload (Opus, low effort, structured outputs) and cached in `resume_files.parsed`. It starts on upload.
+  - ATS keywords come from the job description via Groq (`keywords` task). A different model from the writer, so the writer never grades itself.
+  - Opus (`resume`, effort from `RESUME_EFFORT`, default high) gets the rules, the master and up to 12 included repos (system prompt, cacheable) plus the job description and keywords. It returns chosen bullets and projects, skills, a change list and notes.
+  - **resumeGuard** rebuilds the draft from the real material:
+    - Contact, education and extras are copied from the master.
+    - Every job is kept, with its real title and dates.
+    - Bullets whose numbers aren't in that job's original are dropped.
+    - Projects must be a master project or an included repo, with tech and numbers found in that project's own text.
+    - Skills must appear in the background.
+    - Every removal is reported.
+  - Skills the candidate has but the draft left out are added (only those found in the background).
+  - **latex.js** uses no extra packages (geometry/hyperref/lmodern only), with `\pdfgentounicode`. Escaping blocks command injection, and pdflatex runs with `-no-shell-escape`. Content is shortened step by step until it fits one page.
+  - **ats.js** scores the text pulled back out of the PDF: 85% weighted keyword coverage (required 3, preferred 1.5, soft half) plus 15% for 7 format checks. 90 or above is `ready`; under 90 is `needs_review` ("Waiting on you"), with the missing keywords split into ones you have vs ones you don't.
+  - The PDF is saved via `saveForEvaluation` (becomes `resume_file_id`). Auto-apply calls `resumeGate` and holds under-90 resumes until "Send it anyway" (`approved_at`).
+  - Cover letter: Opus, 3 paragraphs. Sentences whose numbers aren't in the resume, job title or job description are dropped. LaTeX PDF saved as `resume_files.kind = 'cover_letter'`.
+  - The UI is a Tailored resume panel on Evaluate: score, badge, download, missing keywords, keywords on the page, failed checks, projects chosen, changes, removed by the fact check, and the cover letter. It replaced the "suggestions only" box.
+- **Files:** [023_resume_engine.sql](supabase/migrations/023_resume_engine.sql), [resumeEngine.js](backend/services/resumeEngine.js), [resumeGuard.js](backend/services/resumeGuard.js), [ats.js](backend/services/ats.js), [latex.js](backend/services/latex.js), [routes/resumeEngine.js](backend/routes/resumeEngine.js) (`/api/resume-engine/...`), [llm.js](backend/services/llm.js) (`schema` → Claude `output_config.format`; tasks `keywords`, `resume_parse`), [TailoredResume.tsx](frontend/src/features/applications/TailoredResume.tsx), [tailoring.ts](frontend/src/features/applications/tailoring.ts).
+- **VM:** installed texlive (latex-base/recommended/extra, fonts-recommended, lmodern) via apt. Migration 023 applied. Backend at 2606975 plus the cover-letter title fix.
+- **Status:** live and tested on the e2e account against Robinhood Backend Intern (eval 11).
+  - 49 s per run. ATS 41% → `needs_review`, which is correct for a thin test resume. 13 missing keywords were listed, none invented. Clean one-page PDF.
+  - Browser test passed (panel, download, cover letter, Send anyway, phone width).
+  - Tests: backend 121/121, frontend 57/57.
+  - Real costs: tailor $0.057, master parse $0.018 (once), keywords $0.0005, cover letter $0.038.
+- **Follow-up:**
+  - A real resume plus repos will cost more per run (~$0.10). 15 a day could exceed the $30/user monthly cap. Use the Batches API (50% off) for the nightly approved list in step 4.
+  - The master-parse → Profile "What we read" view isn't built yet.
+  - Step 3 is Gmail.
+
 ### 2026-10-14 — Pipeline tab removed; it's now the tracker on Auto-apply
 - **What:** the user saw no point in a separate Pipeline tab (it duplicated Auto-apply and sat empty), so it was folded in (`583e9bc`, `b22cc44`).
   - Auto-apply now ends with an **"After you apply"** section ([Tracker.tsx](frontend/src/features/applications/Tracker.tsx), formerly PipelinePage). It has the funnel, follow-up nudges, notes, search, and List/Board.

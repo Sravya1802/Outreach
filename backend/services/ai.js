@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { complete } from './llm.js';
 import { cleanOutreachTemplate } from './outreachTemplates.js';
 import { describeSender, MissingSenderProfileError } from './senderProfile.js';
 
@@ -109,48 +109,6 @@ function parseJSON(text) {
   const match = cleaned.match(/\{[\s\S]*\}/);
   if (match) return JSON.parse(match[0]);
   throw new SyntaxError(`No JSON object found in AI response: ${cleaned.slice(0, 120)}`);
-}
-
-// ─── Provider implementations ─────────────────────────────────────────────────
-
-let genAI = null;
-function getGemini() {
-  if (!genAI && process.env.GEMINI_API_KEY) {
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  }
-  return genAI;
-}
-
-let lastGeminiCall = 0;
-
-async function generateWithGemini(system, user) {
-  const ai = getGemini();
-  if (!ai) throw new Error('Gemini API key not configured');
-  const now = Date.now();
-  const elapsed = now - lastGeminiCall;
-  if (elapsed < 4000) await new Promise(r => setTimeout(r, 4000 - elapsed));
-  lastGeminiCall = Date.now();
-  const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: `${system}\n\n${user}` }] }],
-  });
-  return parseJSON(result.response.text());
-}
-
-async function generateWithAnthropic(system, user) {
-  const { claudeText } = await import('./claude.js');
-  // Short outreach copy — medium effort is plenty.
-  return parseJSON(await claudeText({ system, user, effort: 'medium' }));
-}
-
-async function generateWithOpenAI(system, user) {
-  const { default: OpenAI } = await import('openai');
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const res = await client.chat.completions.create({
-    model:    'gpt-4o-mini',
-    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-  });
-  return parseJSON(res.choices[0].message.content);
 }
 
 // ─── WaaS message prompt ──────────────────────────────────────────────────────
@@ -346,38 +304,26 @@ ${extraContext ? `Extra context: ${extraContext}` : ''}
 Address: "Dear Hiring Manager,"
 Make paragraph 1 specific to ${companyName}. Choose background based on company type.`;
 
-  const provider  = process.env.AI_PROVIDER || 'gemini';
-  const providers = [provider, 'gemini', 'anthropic', 'openai'].filter((v, i, a) => a.indexOf(v) === i);
-
-  for (const p of providers) {
-    try {
-      if (p === 'gemini')                                    return await generateWithGemini(system, user);
-      if (p === 'anthropic' && process.env.ANTHROPIC_API_KEY) return await generateWithAnthropic(system, user);
-      if (p === 'openai'    && process.env.OPENAI_API_KEY)    return await generateWithOpenAI(system, user);
-    } catch (err) {
-      console.error(`[ai/cover-letter] ${p} failed: ${err.message}`);
-    }
+  try {
+    return parseJSON((await complete({ task: 'cover_letter', system, user, json: true, maxTokens: 6000 })).text);
+  } catch (err) {
+    if (err.name === 'BudgetExceededError') throw err;
+    console.error(`[ai/cover-letter] ${err.message}`);
   }
 
-  throw new Error('Every AI provider failed to write the cover letter — try again in a minute.');
+  throw new Error('Couldn’t write the cover letter right now. Try again in a minute.');
 }
 
 export async function generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender }) {
   requireSender(sender);
   const { system, user } = buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender });
-  const provider  = process.env.AI_PROVIDER || 'gemini';
-  const providers = [provider, 'gemini', 'anthropic', 'openai'].filter((v, i, a) => a.indexOf(v) === i);
-
-  for (const p of providers) {
-    try {
-      if (p === 'gemini')                                    return await generateWithGemini(system, user);
-      if (p === 'anthropic' && process.env.ANTHROPIC_API_KEY) return await generateWithAnthropic(system, user);
-      if (p === 'openai'    && process.env.OPENAI_API_KEY)    return await generateWithOpenAI(system, user);
-    } catch (err) {
-      console.error(`[ai/waas] ${p} failed: ${err.message}`);
-    }
+  try {
+    return parseJSON((await complete({ task: 'email', system, user, json: true, maxTokens: 3000 })).text);
+  } catch (err) {
+    if (err.name === 'BudgetExceededError') throw err;
+    console.error(`[ai/waas] ${err.message}`);
   }
-  throw new Error('Every AI provider failed to write the message — try again in a minute.');
+  throw new Error('Couldn’t write the message right now. Try again in a minute.');
 }
 
 export async function generateOutreach({ type, recipientName, recipientTitle, companyName, companyCategory, companyStage, hasApplied, rolesAvailable, specificAchievement, position, isRecruiter, extraContext, customTemplates, sender }) {
@@ -399,17 +345,11 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
   const system = built.system + guidance;
   const user = built.user;
 
-  const provider  = process.env.AI_PROVIDER || 'gemini';
-  const providers = [provider, 'gemini', 'anthropic', 'openai'].filter((v, i, a) => a.indexOf(v) === i);
-
-  for (const p of providers) {
-    try {
-      if (p === 'gemini')                                    return await generateWithGemini(system, user);
-      if (p === 'anthropic' && process.env.ANTHROPIC_API_KEY) return await generateWithAnthropic(system, user);
-      if (p === 'openai'    && process.env.OPENAI_API_KEY)    return await generateWithOpenAI(system, user);
-    } catch (err) {
-      console.error(`[ai] ${p} failed: ${err.message}`);
-    }
+  try {
+    return parseJSON((await complete({ task: 'email', system, user, json: true, maxTokens: 3000 })).text);
+  } catch (err) {
+    if (err.name === 'BudgetExceededError') throw err;
+    console.error(`[ai] ${err.message}`);
   }
 
   // AI failed — fall back to high-response static template
@@ -423,5 +363,5 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
 
   // Every provider failed (LinkedIn has no static fallback): say so rather
   // than return a placeholder the user might send.
-  throw new Error('Every AI provider failed to write the message — try again in a minute.');
+  throw new Error('Couldn’t write the message right now. Try again in a minute.');
 }

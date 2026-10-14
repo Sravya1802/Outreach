@@ -9,9 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { CLAUDE_MODEL, claudeText, hasClaudeKey } from './claude.js';
-import OpenAI from 'openai';
+import { complete } from './llm.js';
 import { safeFetch, UnsafeUrlError } from './safeFetch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,80 +37,12 @@ const SHARED_MD = loadMode('_shared');
 // calibrated probability schema needs real reasoning depth — mini is too
 // shallow and produces hedged, generic output. Same reason 2.5 Pro over Flash.
 
+// Evaluations run on the "evaluate" route (services/llm.js): Groq gpt-oss,
+// OpenAI as backup, metered and capped there. JSON mode; the long rubric
+// system prompt is the stable prefix, so providers can cache it.
 async function callAI({ system, user }) {
-  const errors = [];
-
-  // OpenAI gpt-4o — primary when no Anthropic key
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'optional_fallback') {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    for (let i = 0; i < 2; i++) {
-      try {
-        const msg = await Promise.race([
-          client.chat.completions.create({
-            model: 'gpt-4o',
-            max_tokens: 8192,
-            temperature: 0.3,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: system },
-              { role: 'user', content: user },
-            ],
-          }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('OpenAI timeout')), 90000)),
-        ]);
-        return msg.choices[0].message.content;
-      } catch (err) {
-        errors.push(`OpenAI: ${err.message?.slice(0, 80)}`);
-        if (i === 0 && /timeout|ECONNRESET|ETIMEDOUT|fetch failed|429|529/i.test(err.message)) continue;
-        break;
-      }
-    }
-  }
-
-  // Gemini 2.5 Pro fallback — also strong reasoning
-  if (process.env.GEMINI_API_KEY) {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-pro',
-      systemInstruction: system,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
-      },
-    });
-    for (let i = 0; i < 2; i++) {
-      try {
-        const result = await Promise.race([
-          model.generateContent(user),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini timeout')), 60000)),
-        ]);
-        return result.response.text();
-      } catch (err) {
-        errors.push(`Gemini: ${err.message?.slice(0, 80)}`);
-        const wait = parseInt(err.message?.match(/retry.*?(\d+)s/)?.[1] || '99');
-        if (i === 0 && wait < 15) {
-          await new Promise(r => setTimeout(r, wait * 1000));
-        } else {
-          break;
-        }
-      }
-    }
-  }
-
-  // Anthropic — only if user opts in by setting ANTHROPIC_API_KEY.
-  // The A–G rubric needs real reasoning, so high effort; the rubric system
-  // prompt is long and static, so it's prompt-cached. The SDK retries
-  // transient failures itself.
-  if (hasClaudeKey()) {
-    try {
-      return await claudeText({ system, user, effort: 'high', cacheSystem: true });
-    } catch (err) {
-      errors.push(`Claude (${CLAUDE_MODEL}): ${err.message?.slice(0, 80)}`);
-    }
-  }
-
-  throw new Error(`All AI providers failed: ${errors.join(' | ')}`);
+  const r = await complete({ task: 'evaluate', system, user, json: true, maxTokens: 12000, timeoutMs: 120_000 });
+  return r.text;
 }
 
 // ── Fetch job page content from URL ──────────────────────────────────────────

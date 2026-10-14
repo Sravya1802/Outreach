@@ -1,9 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { complete } from './llm.js';
 
 // Lazy accessors — avoid dotenv timing issues
-function getGeminiKey()    { return process.env.GEMINI_API_KEY    || ''; }
-function getAnthropicKey() { return process.env.ANTHROPIC_API_KEY || ''; }
-function getOpenAIKey()    { return process.env.OPENAI_API_KEY    || ''; }
 
 // ─── Level 2: Known-companies map ────────────────────────────────────────────
 // Exact company name → category (lowercased keys). Covers ~300 well-known employers.
@@ -792,90 +789,25 @@ function buildInput(batch) {
   })));
 }
 
-// ─── Provider calls ───────────────────────────────────────────────────────────
-
-async function callGemini(batch) {
-  const key = getGeminiKey();
-  if (!key) throw new Error('GEMINI_API_KEY not set');
-  const ai    = new GoogleGenerativeAI(key);
-  const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\n${buildInput(batch)}` }] }],
-  });
-  return parseJSON(result.response.text());
-}
-
-async function callClaude(batch) {
-  if (!getAnthropicKey()) throw new Error('ANTHROPIC_API_KEY not set');
-  const { claudeText } = await import('./claude.js');
-  // Bulk label assignment — low effort keeps it fast and cheap.
-  return parseJSON(await claudeText({ system: SYSTEM_PROMPT, user: buildInput(batch), effort: 'low' }));
-}
-
-async function callOpenAI(batch) {
-  const key = getOpenAIKey();
-  if (!key) throw new Error('OPENAI_API_KEY not set');
-  const { default: OpenAI } = await import('openai');
-  const client = new OpenAI({ apiKey: key });
-  const res = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
-    temperature: 0,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: buildInput(batch) },
-    ],
-  });
-  return parseJSON(res.choices[0].message.content);
-}
-
-// Gemini → Claude → OpenAI fallback chain
+// ─── Provider call ────────────────────────────────────────────────────────────
+// Bulk label assignment: the cheapest model that returns clean JSON (see
+// services/llm.js ROUTES.categorize). One retry on malformed JSON.
 async function classifyBatch(batch, batchNum, totalBatches) {
   const label = `Batch ${batchNum}/${totalBatches}`;
-
+  let lastErr;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const results = await callGemini(batch);
-      console.log(`[Classifier/Gemini] ${label} — OK (attempt ${attempt})`);
-      return { results, provider: 'gemini' };
+      const r = await complete({ task: 'categorize', system: SYSTEM_PROMPT, user: buildInput(batch), json: true, maxTokens: 6000 });
+      console.log(`[Classifier/${r.provider}] ${label} — OK (attempt ${attempt})`);
+      return { results: parseJSON(r.text), provider: r.provider };
     } catch (err) {
-      const isRateLimit = /rate.?limit|quota|429|resource.?exhaust/i.test(err.message);
-      const isJSON      = /JSON|parse|syntax|unexpected/i.test(err.message);
-
-      if (attempt === 1) {
-        if (isRateLimit) {
-          console.warn(`[Classifier/Gemini] ${label} — rate limited, waiting 2s...`);
-          await new Promise(r => setTimeout(r, 2000));
-        } else if (isJSON) {
-          console.warn(`[Classifier/Gemini] ${label} — malformed JSON, retrying...`);
-        } else {
-          console.warn(`[Classifier/Gemini] ${label} — ${err.message}, falling back to Claude`);
-          break;
-        }
-      } else {
-        console.warn(`[Classifier/Gemini] ${label} — retry failed (${err.message}), falling back to Claude`);
-      }
+      lastErr = err;
+      if (err.name === 'BudgetExceededError' || !/JSON|parse|syntax|unexpected/i.test(err.message)) break;
+      console.warn(`[Classifier] ${label} — malformed JSON, retrying...`);
     }
   }
-
-  // Claude fallback
-  try {
-    const results = await callClaude(batch);
-    console.log(`[Classifier/Claude] ${label} — OK (fallback)`);
-    return { results, provider: 'claude' };
-  } catch (err) {
-    console.warn(`[Classifier/Claude] ${label} — ${err.message}, falling back to OpenAI`);
-  }
-
-  // OpenAI fallback (used when GEMINI + ANTHROPIC keys are missing but OPENAI is set)
-  try {
-    const results = await callOpenAI(batch);
-    console.log(`[Classifier/OpenAI] ${label} — OK (fallback)`);
-    return { results, provider: 'openai' };
-  } catch (err) {
-    console.error(`[Classifier/OpenAI] ${label} — ${err.message}`);
-    throw err;
-  }
+  console.error(`[Classifier] ${label} — ${lastErr.message}`);
+  throw lastErr;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -970,12 +902,12 @@ export async function classifyCompanies(companies, scrapeContext = null) {
         const { results, provider } = await classifyBatch(batch, batchNum, batches.length);
         const lookup = new Map(results.map(r => [(r.name || '').toLowerCase(), r]));
 
-        // Detect silently dropped items — retry with Claude
+        // Detect silently dropped items — retry just those once.
         const dropped = batch.filter(c => !lookup.has(c.name.toLowerCase()));
         if (dropped.length > 0) {
-          console.warn(`[Classifier/${provider}] Batch ${batchNum} — ${dropped.length} items dropped, retrying with Claude...`);
+          console.warn(`[Classifier/${provider}] Batch ${batchNum} — ${dropped.length} items dropped, retrying them...`);
           try {
-            const retry = await callClaude(dropped);
+            const { results: retry } = await classifyBatch(dropped, batchNum, batches.length);
             for (const r of retry) lookup.set((r.name || '').toLowerCase(), r);
           } catch {}
         }

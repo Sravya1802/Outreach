@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { one, run } from '../db.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { complete } from '../services/llm.js';
 import { scrapeAllSources } from '../services/scraper.js';
 
 const router = Router();
@@ -160,9 +160,6 @@ router.post('/ai-search', async (req, res) => {
     emit('log', { msg: 'Generating optimized search queries from your description…' });
     await logEntry(id, `AI search started: "${description}"`, req.user.id);
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     const queryPrompt = `Generate 4 optimized job search queries based on this description: "${description}"
     ${salaryMin ? `Salary range: $${salaryMin}k-$${salaryMax}k` : ''}
     ${remote ? 'Preference: Remote' : ''}
@@ -170,11 +167,12 @@ router.post('/ai-search', async (req, res) => {
     Return ONLY a JSON array of 4 search query strings, no explanation. Example:
     ["ML engineering intern NYC AI startup", "machine learning intern new york", "AI engineer intern fintech", "data science intern startup NYC"]`;
 
-    const result = await model.generateContent(queryPrompt);
     let queries = [];
     try {
-      const raw = result.response.text().replace(/```json?/g, '').replace(/```/g, '').trim();
-      queries = JSON.parse(raw);
+      const { text } = await complete({ task: 'score', user: queryPrompt, maxTokens: 800 });
+      const raw = text.replace(/```json?/g, '').replace(/```/g, '').trim();
+      queries = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
+      if (!Array.isArray(queries) || !queries.length) throw new Error('no queries');
     } catch (_) {
       queries = [description, `${description} intern`, `${description} entry level`];
     }

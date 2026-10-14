@@ -29,6 +29,7 @@ import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
 import { marketFor, regionForMarket } from './services/markets.js';
+import { requestContext } from './services/requestContext.js';
 import { requireAuth }    from './middleware/requireAuth.js';
 import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
@@ -74,6 +75,8 @@ app.get('/api/health', (req, res) => {
     ai_provider:  process.env.AI_PROVIDER || 'gemini',
     has_gemini:   !!process.env.GEMINI_API_KEY   && process.env.GEMINI_API_KEY   !== 'your_gemini_key_here',
     has_openai:   !!process.env.OPENAI_API_KEY,
+    has_groq:     !!process.env.GROQ_API_KEY,
+    has_anthropic: !!process.env.ANTHROPIC_API_KEY,
     has_apify:    !!process.env.APIFY_API_TOKEN  && process.env.APIFY_API_TOKEN  !== 'your_apify_token_here',
     has_apollo:   !!process.env.APOLLO_API_KEY   && process.env.APOLLO_API_KEY   !== 'your_apollo_key_here',
     has_serper:   !!process.env.SERPER_API_KEY,
@@ -92,6 +95,9 @@ app.get('/api/github/callback', githubCallback);
 // ── Auth middleware for everything else under /api ──────────────────────────
 // Controlled by AUTH_MODE env var. See backend/middleware/requireAuth.js.
 app.use('/api', requireAuth);
+// The signed-in user rides along with the request, so AI calls deep in any
+// service are metered against the right account (services/llm.js).
+app.use('/api', requestContext);
 
 app.use('/api/companies',  companiesRouter);
 app.use('/api/generate',   generateRouter);

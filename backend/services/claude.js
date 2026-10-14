@@ -52,7 +52,12 @@ function getClient(options) {
  *                                  (use when it's a long, stable rubric).
  * @param {object} [p.clientOptions] Test hook (e.g. a mock `fetch`).
  */
-export async function claudeText({ system, user, effort, maxTokens = 16000, cacheSystem = false, clientOptions }) {
+export async function claudeText(params) {
+  return (await claudeMessage(params)).text;
+}
+
+/** Like claudeText, but also returns token usage (for cost metering) and the model that answered. */
+export async function claudeMessage({ system, user, effort, maxTokens = 16000, cacheSystem = false, timeoutMs, clientOptions }) {
   if (!effort) throw new Error('claudeText: effort is required');
   const response = await getClient(clientOptions).beta.messages.create({
     model: CLAUDE_MODEL,
@@ -64,7 +69,7 @@ export async function claudeText({ system, user, effort, maxTokens = 16000, cach
       ? { system: cacheSystem ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system }
       : {}),
     messages: [{ role: 'user', content: user }],
-  });
+  }, timeoutMs ? { timeout: timeoutMs } : undefined);
 
   // Check why it stopped before trusting the content.
   if (response.stop_reason === 'refusal') throw new ClaudeRefusalError(response.stop_details?.category);
@@ -78,5 +83,14 @@ export async function claudeText({ system, user, effort, maxTokens = 16000, cach
     .join('')
     .trim();
   if (!text) throw new Error(`Claude returned no text (stop_reason: ${response.stop_reason})`);
-  return text;
+  const u = response.usage || {};
+  return {
+    text,
+    model: response.model || CLAUDE_MODEL,
+    usage: {
+      input: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0),
+      cachedInput: u.cache_read_input_tokens || 0,
+      output: u.output_tokens || 0,
+    },
+  };
 }

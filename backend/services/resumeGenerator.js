@@ -12,9 +12,7 @@ import puppeteer from 'puppeteer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { claudeText, hasClaudeKey } from './claude.js';
-import OpenAI from 'openai';
+import { complete } from './llm.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR  = path.join(__dirname, '..', 'output');
@@ -23,33 +21,12 @@ const FONTS_DIR   = path.join(__dirname, '..', 'career-ops-src', 'fonts');
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-// ── AI call (Gemini → Claude fallback) ───────────────────────────────────────
-
+// ── AI call ──────────────────────────────────────────────────────────────────
+// Resume drafting is Claude Opus 5.5 only (services/llm.js ROUTES.resume).
+// No silent fallback to a weaker model: if it fails, the caller retries.
 async function callAI(prompt) {
-  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'optional_fallback') {
-    try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await Promise.race([
-        model.generateContent(prompt),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('Gemini timeout')), 25000)),
-      ]);
-      return result.response.text();
-    } catch (_) {}
-  }
-  if (hasClaudeKey()) {
-    return claudeText({ user: prompt, effort: 'medium' });
-  }
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'optional_fallback') {
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const msg = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    return msg.choices[0].message.content;
-  }
-  throw new Error('No AI provider configured');
+  const r = await complete({ task: 'resume', user: prompt, maxTokens: 16000, timeoutMs: 300_000 });
+  return r.text;
 }
 
 // ── Tailor resume via AI → structured JSON for template ──────────────────────

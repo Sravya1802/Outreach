@@ -23,6 +23,7 @@ import { requireOwnedCompany } from '../middleware/ownedCompany.js';
 import { FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
+import { mostRecent, normalizeExperiences } from '../services/experiences.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESUME_DIR = path.join(__dirname, '..', 'data', 'resume');
@@ -247,9 +248,17 @@ router.put('/profile', async (req, res) => {
       'target_job_type','education_school','education_degree','education_major','graduation_date',
       'gpa','certifications','current_company','current_title','years_experience','skills','projects',
       'gender','race','veteran_status','disability_status','demographic_consent','auto_apply_consent',
-      'auto_apply_paused', 'job_market',
+      'auto_apply_paused', 'job_market', 'experiences',
     ];
     const data = { ...(req.body || {}) };
+    if ('experiences' in data) {
+      const list = normalizeExperiences(data.experiences);
+      data.experiences = JSON.stringify(list);
+      // Older callers and simple form fields read the newest entry from these.
+      const recent = mostRecent(list);
+      if (recent && !('current_company' in req.body)) data.current_company = recent.company || null;
+      if (recent && !('current_title' in req.body)) data.current_title = recent.title || null;
+    }
     if ('job_market' in data && !isMarket(data.job_market)) {
       return res.status(400).json({ error: 'job_market must be usa, india or other' });
     }
@@ -324,7 +333,7 @@ router.put('/profile', async (req, res) => {
     `;
     await run(sql, args);
     res.json(await one('SELECT * FROM user_profile WHERE user_id = $1', [req.user.id]));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // ── Resume registry — list available resumes in the configured folder ────────

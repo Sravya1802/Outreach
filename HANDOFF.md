@@ -129,6 +129,7 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 - **Referral first:**
   - Approved roles get a referral ask first (8–11 AM recipient tz, the morning after approval). Contacts: LinkedIn connections export, then alumni, then team engineers.
   - Wait **2 business days**. A referral link or code means apply through it. "I submitted you" marks the role Referred. No referral means **apply anyway** the next morning (6–10 AM company tz), notify the user, and send the contacts an "I've applied" note.
+- **LinkedIn referrals:** the user reports these on the site. Each role waiting on a referral gets "Got a link/code" (paste box), "They submitted me" and "They said no" buttons, and any of them stops the 2-day timer.
 - **Cold email timing:** weekdays 8–11 AM recipient tz, max 20 a day, follow-ups on day 4 and day 10 that stop on a reply.
 - **LinkedIn:** notes are drafted in-app, and the user sends them by hand with copy + open profile. Automating is against LinkedIn's terms.
 - **Replies:** Gmail via IMAP or OAuth. LinkedIn replies are detected via LinkedIn's notification emails in Gmail.

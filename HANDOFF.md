@@ -124,6 +124,17 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Plan: referral first, then apply; outreach timing
+- **What:** Decisions only, no code yet.
+- **Referral first:**
+  - Approved roles get a referral ask first (8–11 AM recipient tz, the morning after approval). Contacts: LinkedIn connections export, then alumni, then team engineers.
+  - Wait **2 business days**. A referral link or code means apply through it. "I submitted you" marks the role Referred. No referral means **apply anyway** the next morning (6–10 AM company tz), notify the user, and send the contacts an "I've applied" note.
+- **Cold email timing:** weekdays 8–11 AM recipient tz, max 20 a day, follow-ups on day 4 and day 10 that stop on a reply.
+- **LinkedIn:** notes are drafted in-app, and the user sends them by hand with copy + open profile. Automating is against LinkedIn's terms.
+- **Replies:** Gmail via IMAP or OAuth. LinkedIn replies are detected via LinkedIn's notification emails in Gmail.
+- **Status:** build order unchanged: storage → resume engine → Gmail → daily flow (now includes the referral stage) → WhatsApp.
+- **Follow-up:** the user still needs to add GMAIL_USER/GMAIL_APP_PASSWORD and confirm 8 PM Eastern.
+
 ### 2026-10-14 — Every page on the new UI; sponsorship per role; experiences
 
 - **UI:** Home rebuilt (Analytics folded in, AI-spend card), Outreach Contacts and Templates, and the company page (`4d89397`). The legacy wrapper is gone from routes; `components/*.jsx` are now unused files.

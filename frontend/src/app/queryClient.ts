@@ -34,4 +34,8 @@ export const qk = {
   profile: ['career-profile'] as const,
   nightlySettings: ['nightly-settings'] as const,
   companySearch: (q: string) => ['company-search', q] as const,
+  catalog: (q: object) => ['catalog', q] as const,
+  catalogSources: ['catalog-sources'] as const,
+  catalogRefresh: ['catalog-refresh'] as const,
+  alerts: ['alerts'] as const,
 }

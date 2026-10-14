@@ -29,10 +29,9 @@ export const SECTIONS: NavSection[] = [
     id: 'jobs', label: 'Jobs', icon: Briefcase, to: '/jobs',
     owns: ['/company/', '/category/'],
     tabs: [
-      { label: 'Roles', to: '/jobs/roles', keywords: 'intern new grad catalog openings' },
+      { label: 'Roles', to: '/jobs/roles', keywords: 'intern new grad catalog openings alerts email digest' },
       { label: 'Companies', to: '/jobs/companies', keywords: 'industries categories yc' },
       { label: 'Find companies', to: '/jobs/find', keywords: 'scrape scraper linkedin wellfound' },
-      { label: 'Alerts', to: '/jobs/alerts', keywords: 'email digest notifications' },
     ],
   },
   {

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { PageSpinner } from '@/ui'
 import type { Stats } from '@/lib/api'
@@ -13,19 +13,18 @@ import { qk } from './queryClient'
 
 const HomePage = lazyWithRetry(() => import('@/features/home/HomePage'), 'HomePage')
 const SettingsPage = lazyWithRetry(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
+const RolesPage = lazyWithRetry(() => import('@/features/jobs/RolesPage'), 'RolesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
 const JobDashboard = lazyWithRetry(() => import('@/components/JobDashboard'), 'JobDashboard')
-const RolesPage = lazyWithRetry(() => import('@/components/RolesPage'), 'RolesPage')
 interface CompanyDashboardProps { onStatsChange: (s: Stats) => void; statsSnapshot: Stats | null; userId?: string }
 const CompanyDashboard = lazyWithRetry(
   () => import('@/components/CompanyDashboard') as Promise<{ default: ComponentType<CompanyDashboardProps> }>,
   'CompanyDashboard',
 )
 const ScraperPage = lazyWithRetry(() => import('@/components/ScraperPage'), 'ScraperPage')
-const JobAlerts = lazyWithRetry(() => import('@/components/JobAlerts'), 'JobAlerts')
 const CategoryView = lazyWithRetry(() => import('@/components/CategoryView'), 'CategoryView')
 const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
 const CareerOps = lazyWithRetry(() => import('@/components/CareerOps'), 'CareerOps')
@@ -56,12 +55,6 @@ function LegacyCompanies() {
   )
 }
 
-function LegacyRoles() {
-  const { kind } = useParams()
-  if (kind !== 'intern' && kind !== 'new-grad') return <Navigate to="/jobs/roles/intern" replace />
-  return <RolesPage key={kind} defaultRoleType={kind === 'intern' ? 'intern' : 'new_grad'} />
-}
-
 const legacy = (node: ReactNode) => <LegacyPage>{node}</LegacyPage>
 
 function SignedInRoutes() {
@@ -73,10 +66,10 @@ function SignedInRoutes() {
 
         <Route path="/jobs" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/jobs/roles" element={<Navigate to="/jobs/roles/intern" replace />} />
-        <Route path="/jobs/roles/:kind" element={legacy(<LegacyRoles />)} />
+        <Route path="/jobs/roles/:kind" element={<RolesPage />} />
         <Route path="/jobs/companies" element={legacy(<LegacyCompanies />)} />
         <Route path="/jobs/find" element={legacy(<ScraperPage />)} />
-        <Route path="/jobs/alerts" element={legacy(<JobAlerts />)} />
+        <Route path="/jobs/alerts" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/category/:name" element={legacy(<CategoryView />)} />
         <Route path="/company/:id" element={legacy(<CompanyDetail />)} />
 

@@ -124,6 +124,43 @@ export interface CompanySearchHit {
 
 export type ProviderUsage = Record<'hunter' | 'prospeo' | 'apollo' | 'serper', { used: number; limit: number }>
 
+export type RoleType = 'intern' | 'new_grad'
+
+export interface CatalogListing {
+  id: number
+  role_type: RoleType
+  title: string
+  company_name: string
+  location: string | null
+  apply_url: string
+  source: string
+  salary_range: string | null
+  posted_at: string | null
+  scraped_at: string
+  tracked: boolean
+  autoQueued: boolean
+}
+
+export interface CatalogPage {
+  role_type: RoleType
+  page: number
+  pageSize: number
+  total: number
+  rows: CatalogListing[]
+}
+
+export interface CatalogSourceCount { source: string; role_type: RoleType; n: number }
+
+export interface CatalogQuery { roleType: RoleType; source?: string; search?: string; page?: number; pageSize?: number }
+
+export interface AlertSubscription {
+  subscribed: boolean
+  email: string
+  frequency: 'daily' | 'weekly'
+  roleType: 'all' | 'intern' | 'new_grad'
+  keywords: string
+}
+
 export interface SensitiveProfilePreview {
   profileFields?: string[]
   metaKeys?: string[]
@@ -147,6 +184,15 @@ export const api = {
   nightlySettings: async (): Promise<NightlySettings> => (await legacy.career.nightlySettings()).settings,
   /** Up to 8 of the user's companies whose name matches. */
   searchCompanies: (q: string): Promise<CompanySearchHit[]> => legacy.jobs.search(q),
+  catalog: (q: CatalogQuery): Promise<CatalogPage> => legacy.scrapedRoles.list(q),
+  catalogSources: async (): Promise<CatalogSourceCount[]> => (await legacy.scrapedRoles.sources()).sources ?? [],
+  trackListing: (id: number): Promise<{ ok: boolean; evaluation: { id: number; alreadySubmitted?: boolean } }> => legacy.scrapedRoles.track(id),
+  autoApplyListing: (id: number): Promise<{ ok: boolean; evaluation: { id: number; alreadySubmitted?: boolean } }> => legacy.scrapedRoles.autoApply(id),
+  refreshCatalog: (): Promise<{ ok: boolean; message: string }> => legacy.scrapedRoles.refresh(),
+  catalogRefreshStatus: (): Promise<{ running: boolean; lastScrapedAt: string | null; cooldownHours: number }> => legacy.scrapedRoles.refreshStatus(),
+  alertSubscription: (): Promise<{ subscription: AlertSubscription; emailConfigured: boolean }> => legacy.alerts.get(),
+  saveAlertSubscription: async (sub: Partial<AlertSubscription>): Promise<AlertSubscription> => (await legacy.alerts.save(sub)).subscription,
+  sendTestAlert: (): Promise<{ ok: boolean; to: string; total: number }> => legacy.alerts.test(),
   exportData: (): Promise<unknown> => legacy.career.exportData(),
   eraseSensitiveProfile: (dryRun: boolean): Promise<SensitiveProfilePreview> =>
     legacy.career.eraseSensitiveProfile(dryRun),

@@ -227,20 +227,38 @@ router.post('/:id/auto-apply', async (req, res) => {
 });
 
 // ── POST /api/scraped-roles/refresh ───────────────────────────────────────────
-//    Manual trigger of the cron pipeline. Useful while seeding for the first
-//    time. No-op if the multi-scrape kill switch is set.
+//    Manual trigger of the shared catalog scrape. The catalog is shared by
+//    every account and the scrape spends Apify credit and ~10 minutes, so:
+//    one run at a time, at most every REFRESH_COOLDOWN_H hours (any user),
+//    started in the background (202) instead of holding the request open.
+const REFRESH_COOLDOWN_H = Number(process.env.CATALOG_REFRESH_COOLDOWN_H || 6);
+let refreshRunning = false;
+let lastManualRefreshAt = 0;
+
+router.get('/refresh-status', async (req, res) => {
+  const last = await one('SELECT MAX(scraped_at) AS at FROM scraped_roles');
+  res.json({ running: refreshRunning, lastScrapedAt: last?.at || null, cooldownHours: REFRESH_COOLDOWN_H });
+});
+
 router.post('/refresh', async (req, res) => {
   if (process.env.MULTI_SCRAPE_DISABLED) {
-    return res.status(503).json({ error: 'Multi-source scrape is disabled (MULTI_SCRAPE_DISABLED is set).' });
+    return res.status(503).json({ error: 'Catalog refresh is disabled on this server.' });
   }
-  try {
-    console.log(`[scraped-roles refresh] manual trigger by user ${req.user?.id}`);
-    const summary = await scrapeAllSourcesAndPersist();
-    res.json({ ok: true, summary });
-  } catch (err) {
-    console.error('[scraped-roles refresh]', err);
-    res.status(500).json({ error: err.message });
+  if (refreshRunning) return res.status(409).json({ error: 'A catalog refresh is already running — new roles appear as it finishes.', running: true });
+  const last = await one('SELECT MAX(scraped_at) AS at FROM scraped_roles');
+  const lastAt = Math.max(lastManualRefreshAt, last?.at ? new Date(last.at).getTime() : 0);
+  const waitMs = lastAt + REFRESH_COOLDOWN_H * 3_600_000 - Date.now();
+  if (waitMs > 0) {
+    return res.status(429).json({ error: `The catalog was refreshed recently — next refresh available in ${Math.ceil(waitMs / 3_600_000)}h (it also refreshes every morning at 06:15 UTC).` });
   }
+  refreshRunning = true;
+  lastManualRefreshAt = Date.now();
+  console.log(`[scraped-roles refresh] manual trigger by user ${req.user?.id}`);
+  scrapeAllSourcesAndPersist()
+    .then(summary => console.log(`[scraped-roles refresh] done — total=${summary?.total}`))
+    .catch(err => console.error('[scraped-roles refresh]', err))
+    .finally(() => { refreshRunning = false; });
+  res.status(202).json({ ok: true, started: true, message: 'Refreshing the catalog — this takes about 10 minutes.' });
 });
 
 export default router;

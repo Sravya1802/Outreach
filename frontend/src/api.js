@@ -180,6 +180,7 @@ export const api = {
     track:     (id)  => apiCall(`/scraped-roles/${id}/track`,      { method: 'POST', body: {} }),
     autoApply: (id)  => apiCall(`/scraped-roles/${id}/auto-apply`, { method: 'POST', body: {} }),
     refresh:   ()    => apiCall('/scraped-roles/refresh',          { method: 'POST', body: {} }),
+    refreshStatus: () => apiCall('/scraped-roles/refresh-status'),
   },
 
   companies: {

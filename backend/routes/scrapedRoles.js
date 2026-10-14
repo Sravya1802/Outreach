@@ -40,6 +40,7 @@ router.get('/', async (req, res) => {
     const region    = ['intl', 'india'].includes(req.query.region) ? req.query.region : 'usa';
     const field     = ['swe', 'ai'].includes(req.query.field) ? req.query.field : '';
     const search    = typeof req.query.search === 'string' ? req.query.search.slice(0, 200).trim() : '';
+    const hasPay    = req.query.pay === '1';
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(100, Math.max(10, Number(req.query.pageSize) || 50));
 
@@ -49,6 +50,7 @@ router.get('/', async (req, res) => {
     if (source) { where.push(`source = $${p++}`); params.push(source); }
     if (tier)   { where.push(`tier = $${p++}`);   params.push(tier); }
     if (field)  { where.push(`$${p++} = ANY(tracks)`); params.push(field); }
+    if (hasPay) where.push('salary_range IS NOT NULL');
     if (search) {
       where.push(`(title ILIKE $${p} OR company_name ILIKE $${p})`);
       params.push(`%${search}%`);

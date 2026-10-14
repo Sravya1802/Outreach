@@ -124,6 +124,22 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — SpeedyApply daily lists + redesign kickoff
+
+- **SpeedyApply:** see commit `1f0b76a`.
+  - `services/speedyApply.js` mirrors their `get-jobs.ts` generator and auto-discovers the newest `<year>-SWE/AI-College-Jobs` repos.
+  - All four lists are kept, with region `usa`/`intl` and `tracks` {swe, ai}, plus salary, posted date from Age, `company_url` and tier (faang/quant/other).
+  - New 12:30 UTC cron, since they publish at 12:00. Digests moved to 13:00 UTC, USA only.
+  - Upserts are batched: 5,368 rows in 10s. Migration `014_scraped_roles_details.sql` applied.
+  - Roles page: four list tabs, an All/SWE/AI-ML switch, a FAANG+/Quant filter, salary and tier badges.
+  - Not done yet: **JobSpy** (speedyapply/JobSpy, a Python LinkedIn/Indeed/Glassdoor scraper) as a free Apify replacement.
+- **Redesign:** the user wants a **new look for the whole site** (rejected the current dark design as final). Three directions are mocked up at https://claude.ai/artifact/Ugn3nsAuXHtSpLYD1qEaHL (A Midnight, B Paper, C Soft Focus). Waiting for their pick, then rebuild every page in it.
+- **New features requested** (handwritten note):
+  1. **Gmail** sending: hybrid. New emails go through a review queue; per-campaign auto-send with a daily cap; follow-ups automatic.
+  2. **GitHub** resume: their main template resume in a repo is the master, and each picked job gets a tailored copy. Need the repo URL and format.
+  3. **Auto-apply while sleeping:** the nightly pipeline exists; it needs to be visible and trustworthy.
+  4. **WhatsApp:** updates plus approvals (reply SEND/SKIP).
+
 ### 2026-10-13 — UI rebuild phase 2: Jobs (Roles + Companies)
 
 - **Jobs section:** now two tabs.

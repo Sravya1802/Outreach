@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, Download, ExternalLink, Trash2 } from 'lucide-react'
+import { BellRing, CalendarClock, Download, ExternalLink, NotebookPen, Trash2 } from 'lucide-react'
 import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { STAGES, scoreOutOf10, scoreTone, stageFor } from './score'
-import { FOLLOW_UP_DAYS, followUpDays, updatedAt } from './pipeline'
+import { FOLLOW_UP_DAYS, followUpDays, nextStepDue, updatedAt, type DueState } from './pipeline'
+import { NotesDialog } from './NotesDialog'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
 
@@ -25,11 +26,14 @@ function peopleLink(r: EvaluationSummary): { to: string; text: string } {
 
 const FOLLOW_UP = 'followup'
 
+const DUE_TEXT: Record<DueState, string> = { overdue: 'text-danger', today: 'text-warning', soon: 'text-fg', later: 'text-muted' }
+
 export default function PipelinePage() {
   const qc = useQueryClient()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [confirm, setConfirm] = useState<EvaluationSummary | null>(null)
+  const [editing, setEditing] = useState<EvaluationSummary | null>(null)
   const pipeline = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
 
   const stageParam = params.get('stage')
@@ -149,6 +153,7 @@ export default function PipelinePage() {
                 const col = stageFor(r.apply_status)
                 const quiet = followUpDays(r, now)
                 const people = peopleLink(r)
+                const due = nextStepDue(r.next_step_at)
                 return (
                   <tr key={r.id} className="border-t border-line">
                     <td className={cn('py-3 pr-3 font-mono text-[15px]', TONE_TEXT[scoreTone(s)])}>{s ?? '—'}</td>
@@ -163,6 +168,13 @@ export default function PipelinePage() {
                           <Link to={people.to} className="text-accent hover:underline">{people.text}</Link>
                         </p>
                       )}
+                      {(r.next_step || due) && (
+                        <p className={cn('mt-1 flex items-center gap-1.5 text-[13px]', due ? DUE_TEXT[due.state] : 'text-muted')}>
+                          <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
+                          <span>{r.next_step || 'Next step'}{due && <> · {due.state === 'overdue' ? `was due ${due.label === 'Yesterday' ? 'yesterday' : due.label}` : due.label}</>}</span>
+                        </p>
+                      )}
+                      {r.notes && <p className="mt-0.5 max-w-[420px] truncate text-[13px] text-subtle" title={r.notes}>{r.notes}</p>}
                     </td>
                     <td className="max-w-[220px] px-3 py-3">
                       {r.resume_file_id ? (
@@ -183,6 +195,8 @@ export default function PipelinePage() {
                     <td className="px-3 py-3 text-[13px] text-subtle">{timeAgo(updatedAt(r))}</td>
                     <td className="py-3 pl-3">
                       <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" aria-label={`Notes and next step for ${r.company_name}`} title="Notes and next step" onClick={() => setEditing(r)}
+                          className={r.notes || r.next_step || r.next_step_at ? 'text-accent!' : undefined} icon={<NotebookPen className="size-3.5" />} />
                         {r.job_url && (
                           <a href={r.job_url} target="_blank" rel="noreferrer" aria-label={`Open the ${r.company_name} posting`}
                             className="grid size-8 place-items-center rounded-[4px] text-subtle hover:bg-hover hover:text-fg"><ExternalLink className="size-4" /></a>
@@ -197,6 +211,8 @@ export default function PipelinePage() {
           </table>
         </div>
       )}
+
+      {editing && <NotesDialog key={editing.id} row={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
 
       <ConfirmDialog
         open={confirm != null}

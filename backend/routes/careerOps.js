@@ -22,6 +22,7 @@ import { buildBulkQueueFilter } from '../services/bulkQueueFilter.js';
 import { requireOwnedCompany } from '../middleware/ownedCompany.js';
 import { FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
 import { isWithin } from '../services/safePaths.js';
+import { isMarket } from '../services/markets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RESUME_DIR = path.join(__dirname, '..', 'data', 'resume');
@@ -246,9 +247,12 @@ router.put('/profile', async (req, res) => {
       'target_job_type','education_school','education_degree','education_major','graduation_date',
       'gpa','certifications','current_company','current_title','years_experience','skills','projects',
       'gender','race','veteran_status','disability_status','demographic_consent','auto_apply_consent',
-      'auto_apply_paused',
+      'auto_apply_paused', 'job_market',
     ];
     const data = { ...(req.body || {}) };
+    if ('job_market' in data && !isMarket(data.job_market)) {
+      return res.status(400).json({ error: 'job_market must be usa, india or other' });
+    }
 
     // ── Demographic consent gate ────────────────────────────────────────────
     // 1. If the request *meaningfully writes* (non-empty, non-null value) any

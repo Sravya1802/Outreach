@@ -17,6 +17,17 @@ export const QUERIES = {
   new_grad: ['new grad software engineer', 'entry level software engineer', 'machine learning engineer new grad', 'software engineer I 2026 graduate'],
 };
 
+// India: freshers and graduate trainees are the new-grad titles there.
+export const INDIA_QUERIES = {
+  intern: ['software engineer intern', 'software developer intern', 'machine learning intern', 'data science intern'],
+  new_grad: ['software engineer fresher', 'graduate engineer trainee software', 'associate software engineer', 'machine learning engineer fresher'],
+};
+
+const MARKET_SEARCH = {
+  usa: { queries: QUERIES, location: 'United States', country: 'USA', region: 'usa' },
+  india: { queries: INDIA_QUERIES, location: 'India', country: 'India', region: 'india' },
+};
+
 /** Run the Python fetcher. Resolves { jobs, errors }; never rejects for per-site failures. */
 export function runJobSpy(request, { python = PYTHON, spawnImpl = spawn } = {}) {
   return new Promise((resolve, reject) => {
@@ -57,7 +68,7 @@ function salaryRange(j) {
 }
 
 /** JobSpy row → catalog row (scraped_roles shape). */
-export function toCatalogRow(j, roleType) {
+export function toCatalogRow(j, roleType, region = 'usa') {
   const apply = j.job_url_direct || j.job_url;
   if (!j.title || !j.company || !apply) return null;
   return {
@@ -70,16 +81,17 @@ export function toCatalogRow(j, roleType) {
     posted_at: j.date_posted ? new Date(`${String(j.date_posted).slice(0, 10)}T12:00:00Z`).toISOString() : null,
     tier: null,
     role_type: roleType,
-    region: 'usa',
+    region,
     source: j.site, // 'indeed' | 'linkedin'
     description: null,
   };
 }
 
 /** Fetch catalog rows for one role type from Indeed + LinkedIn. */
-export async function fetchJobSpyRoles(roleType, { sites = ['indeed', 'linkedin'], runner = runJobSpy } = {}) {
-  const { jobs, errors } = await runner({ sites, queries: QUERIES[roleType] || [], location: 'United States', results_wanted: 50, hours_old: 72 });
-  const rows = jobs.map(j => toCatalogRow(j, roleType)).filter(Boolean);
+export async function fetchJobSpyRoles(roleType, { sites = ['indeed', 'linkedin'], runner = runJobSpy, market = 'usa' } = {}) {
+  const m = MARKET_SEARCH[market] || MARKET_SEARCH.usa;
+  const { jobs, errors } = await runner({ sites, queries: m.queries[roleType] || [], location: m.location, country: m.country, results_wanted: 50, hours_old: 72 });
+  const rows = jobs.map(j => toCatalogRow(j, roleType, m.region)).filter(Boolean);
   if (!rows.length && errors.length) throw new Error(`JobSpy: ${errors[0].site} — ${errors[0].error}`);
   return { rows, errors };
 }

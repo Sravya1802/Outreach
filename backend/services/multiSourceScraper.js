@@ -23,6 +23,7 @@
 
 import { fetchSpeedyApplyListings } from './speedyApply.js';
 import { fetchJobSpyRoles } from './jobSpy.js';
+import { regionForRole } from './markets.js';
 import * as cheerio from 'cheerio';
 import { all, run } from '../db.js';
 import { scanGreenhouse, scanLever, scanAshby } from '../routes/careerOps.js';
@@ -330,6 +331,7 @@ const SOURCE_FNS = {
   // Indeed + LinkedIn job listings via JobSpy (free). Apify is no longer used
   // for job listings — it burned the monthly budget; it's kept for people search.
   jobspy:            (rt) => fetchJobSpyRoles(rt).then(r => r.rows),
+  jobspy_india:      (rt) => fetchJobSpyRoles(rt, { market: 'india' }).then(r => r.rows),
   remote_rocketship: (rt) => scrapeRemoteRocketship(rt),
   // Pruned: ai_jobs (persistent "fetch failed"), jobspresso + internshipdaily
   // (persistent timeouts). speedyapply now provides the clean primary feed.
@@ -353,8 +355,8 @@ function keepRole(role) {
   if (!role.apply_url || !role.title || !role.company_name) return false;
   if (!isEnglishTitle(role.title)) return false;    // drop non-English (CJK etc.) listings
   if (NON_ROLE_PATTERN.test(role.title)) return false; // drop events / webinars / info sessions
-  // Curated international lists are kept on purpose; everything else must look US.
-  return role.region === 'intl' || isUSish(role.location);
+  // International and India rows are kept on purpose; everything else must look US.
+  return role.region === 'intl' || role.region === 'india' || isUSish(role.location);
 }
 
 const UPSERT_CHUNK = 200;
@@ -391,7 +393,7 @@ export async function persistCatalogRows(rows) {
         role.salary_range ? String(role.salary_range).slice(0, 100) : null,
         role.company_url ? String(role.company_url).slice(0, 500) : null,
         role.tier || null,
-        role.region === 'intl' ? 'intl' : 'usa',
+        regionForRole(role),
         classifyTracks(role),
       );
       return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8}, $${b + 9}, $${b + 10}, $${b + 11}, $${b + 12}, $${b + 13}::text[], NOW(), NOW(), 1)`;

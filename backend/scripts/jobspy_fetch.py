@@ -3,7 +3,7 @@
 
 Reads one JSON object on stdin:
   {"sites": ["indeed", "linkedin"], "queries": ["software engineer intern", ...],
-   "location": "United States", "results_wanted": 50, "hours_old": 72}
+   "location": "United States", "country": "USA", "results_wanted": 50, "hours_old": 72}
 Writes one JSON object on stdout:
   {"jobs": [{site, query, title, company, location, job_url, job_url_direct,
              date_posted, min_amount, max_amount, interval, currency, is_remote}],
@@ -44,7 +44,7 @@ def main():
                     location=req.get("location", "United States"),
                     results_wanted=int(req.get("results_wanted", 50)),
                     hours_old=int(req.get("hours_old", 72)),
-                    country_indeed="USA",
+                    country_indeed=req.get("country", "USA"),
                     verbose=0,
                 )
                 for row in df.to_dict("records"):

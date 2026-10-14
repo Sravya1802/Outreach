@@ -28,6 +28,7 @@ import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
+import { marketFor, regionForMarket } from './services/markets.js';
 import { requireAuth }    from './middleware/requireAuth.js';
 import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
@@ -383,15 +384,17 @@ app.get('/api/dashboard/job-metrics', async (req, res) => {
 app.get('/api/dashboard/daily-updates', async (req, res) => {
   try {
     const uid = req.user.id;
-    // scraped_roles is a shared catalog (no user_id). "Today" = scraped in last 24h.
+    const region = regionForMarket(await marketFor(uid));
+    // scraped_roles is a shared catalog (no user_id). "Today" = scraped in last 24h,
+    // in the user's own market.
     let internToday = 0, newGradToday = 0, internRecent = [], newGradRecent = [];
     try {
       const counts = await all(`
         SELECT role_type, COUNT(*)::int AS n
         FROM scraped_roles
-        WHERE is_active = 1 AND scraped_at > NOW() - INTERVAL '1 day'
+        WHERE is_active = 1 AND region = $1 AND scraped_at > NOW() - INTERVAL '1 day'
         GROUP BY role_type
-      `);
+      `, [region]);
       for (const r of counts) {
         if (r.role_type === 'new_grad') newGradToday = r.n; else internToday = r.n;
       }
@@ -400,11 +403,11 @@ app.get('/api/dashboard/daily-updates', async (req, res) => {
       // non-zero count.
       [internRecent, newGradRecent] = await Promise.all([
         all(`SELECT title, company_name, apply_url FROM scraped_roles
-             WHERE is_active = 1 AND role_type = 'intern'   AND scraped_at > NOW() - INTERVAL '1 day'
-             ORDER BY scraped_at DESC LIMIT 5`),
+             WHERE is_active = 1 AND role_type = 'intern'   AND region = $1 AND scraped_at > NOW() - INTERVAL '1 day'
+             ORDER BY scraped_at DESC LIMIT 5`, [region]),
         all(`SELECT title, company_name, apply_url FROM scraped_roles
-             WHERE is_active = 1 AND role_type = 'new_grad' AND scraped_at > NOW() - INTERVAL '1 day'
-             ORDER BY scraped_at DESC LIMIT 5`),
+             WHERE is_active = 1 AND role_type = 'new_grad' AND region = $1 AND scraped_at > NOW() - INTERVAL '1 day'
+             ORDER BY scraped_at DESC LIMIT 5`, [region]),
       ]);
     } catch (_) {}
 

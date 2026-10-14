@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { one, run } from '../db.js';
 import { buildDigestData, sendDigestToEmail } from '../services/dailyDigest.js';
+import { marketFor, regionForMarket } from '../services/markets.js';
 import { mailerConfigured } from '../services/mailer.js';
 
 const router = Router();
@@ -82,7 +83,8 @@ router.post('/test', async (req, res) => {
     if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Your account has no email address to send to.' });
     lastTestAt.set(req.user.id, now);
     const windowDays = sub.frequency === 'weekly' ? 7 : 1;
-    const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays });
+    const region = regionForMarket(await marketFor(req.user.id));
+    const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays, region });
     const result = await sendDigestToEmail(email, data, { windowDays });
     res.json({ ok: !!result.ok, to: email, total: data.total, ...result });
   } catch (err) {

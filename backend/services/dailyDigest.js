@@ -3,13 +3,14 @@
 // Supports per-subscriber filters (role type + keywords + daily/weekly window)
 // so users can subscribe LinkedIn-style. Safe to call without email configured.
 import { all } from '../db.js';
+import { marketFor, regionForMarket } from './markets.js';
 import { sendMail, mailerConfigured, notifyRecipient } from './mailer.js';
 
 // Build the WHERE clause + params for a filtered, windowed roles query.
-function buildFilter({ windowDays = 1, roleType = 'all', keywords = '' } = {}) {
-  // Alerts cover the USA lists; international roles are browse-only for now.
-  const clauses = ['is_active = 1', "region = 'usa'", `scraped_at > NOW() - ($1::int * INTERVAL '1 day')`];
-  const params = [Math.max(1, Number(windowDays) || 1)];
+function buildFilter({ windowDays = 1, roleType = 'all', keywords = '', region = 'usa' } = {}) {
+  // Alerts cover the subscriber's own market (USA, India or other countries).
+  const params = [Math.max(1, Number(windowDays) || 1), ['usa', 'india', 'intl'].includes(region) ? region : 'usa'];
+  const clauses = ['is_active = 1', 'region = $2', `scraped_at > NOW() - ($1::int * INTERVAL '1 day')`];
   if (roleType === 'intern' || roleType === 'new_grad') {
     params.push(roleType);
     clauses.push(`role_type = $${params.length}`);
@@ -99,7 +100,8 @@ export async function runSubscriptionDigests({ weekly = false } = {}) {
     considered++;
     const windowDays = freq === 'weekly' ? 7 : 1;
     try {
-      const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays });
+      const region = regionForMarket(await marketFor(row.user_id));
+      const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays, region });
       if (data.total === 0) { empty++; continue; } // don't send an empty alert
       const r = await sendDigestToEmail(sub.email, data, { windowDays });
       if (r.ok) sent++; else empty++;

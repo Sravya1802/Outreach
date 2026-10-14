@@ -37,7 +37,7 @@ router.get('/', async (req, res) => {
     const role_type = req.query.role_type === 'new_grad' ? 'new_grad' : 'intern';
     const source    = typeof req.query.source === 'string' ? req.query.source.slice(0, 40) : '';
     const tier      = ['faang', 'quant', 'other'].includes(req.query.tier) ? req.query.tier : '';
-    const region    = req.query.region === 'intl' ? 'intl' : 'usa';
+    const region    = ['intl', 'india'].includes(req.query.region) ? req.query.region : 'usa';
     const field     = ['swe', 'ai'].includes(req.query.field) ? req.query.field : '';
     const search    = typeof req.query.search === 'string' ? req.query.search.slice(0, 200).trim() : '';
     const page      = Math.max(0, Number(req.query.page) || 0);

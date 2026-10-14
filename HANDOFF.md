@@ -124,6 +124,13 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — Shared provider cache + per-user budgets
+
+- **Shared cache:** `services/providerUsage.js` plus migration `013_provider_cache_and_budgets.sql`. Hunter/Prospeo domain searches are cached in `provider_domain_cache` for 14 days and reused by every account; only a cache miss spends a credit.
+- **Budgets:** each user has a monthly budget per shared key in `provider_usage` (defaults hunter 15, prospeo 25, apollo 40, serper 150; override with `<PROVIDER>_USER_MONTHLY_LIMIT`). The increment is atomic and refuses at the limit with `ProviderError('BUDGET')`, which shows up as a reason in the UI.
+- **Applied in:** bulk Find Emails, per-contact Find Email, and Find People (Apollo + each Google query).
+- **Other:** new `GET /api/credits/usage`, shown in Settings → Integrations as "Your lookups this month". `scraper.js` `runApifyActor` gained the 1h quota short-circuit. Backend tests: 67.
+
 ### 2026-10-12 — Backend hardening + email/people pipeline rebuild
 
 Two read-only audits (pipeline + rest of backend), verified against code, then fixed:

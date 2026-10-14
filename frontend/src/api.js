@@ -163,6 +163,7 @@ export const api = {
 
   credits: {
     status: (force = false) => apiCall('/credits/status' + (force ? '?refresh=true' : '')).catch(() => ({})),
+    usage:  () => apiCall('/credits/usage'),
   },
 
   // Global daily-scraped role catalog. Shared across users; cron repopulates

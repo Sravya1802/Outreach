@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { checkAllCredits } from '../services/creditChecker.js';
+import { usageThisMonth } from '../services/providerUsage.js';
 
 const router = Router();
 
@@ -11,6 +12,11 @@ router.get('/status', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// This user's share of the shared provider keys this month: { hunter: { used, limit }, … }
+router.get('/usage', async (req, res) => {
+  res.json({ usage: await usageThisMonth(req.user.id) });
 });
 
 export default router;

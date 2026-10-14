@@ -122,6 +122,8 @@ export interface CompanySearchHit {
   location?: string | null
 }
 
+export type ProviderUsage = Record<'hunter' | 'prospeo' | 'apollo' | 'serper', { used: number; limit: number }>
+
 export interface SensitiveProfilePreview {
   profileFields?: string[]
   metaKeys?: string[]
@@ -137,6 +139,8 @@ export const api = {
   dailyUpdates: (): Promise<DailyUpdates> => legacy.dailyUpdates(),
   activity: async (): Promise<ActivityItem[]> => (await legacy.activity()).activity ?? [],
   credits: (refresh = false): Promise<Credits> => legacy.credits.status(refresh),
+  /** This user's monthly share of the shared provider keys. */
+  providerUsage: async (): Promise<ProviderUsage> => (await legacy.credits.usage()).usage,
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   hasResume: async (): Promise<boolean> => Boolean((await legacy.career.resume())?.hasResume),
   profile: (): Promise<CareerProfile> => legacy.career.profile(),

@@ -1182,7 +1182,7 @@ router.get('/:id/find-people-stream', async (req, res) => {
         job.linkedin_company_url || null,
         await trustedDomain(job),
         (progress) => emit('source', progress),
-        { signal: abort.signal },
+        { signal: abort.signal, userId: req.user.id },
       );
       if (closed) return;
       const { added, updated } = await savePeople(job, people, req.user.id, 10);
@@ -1206,7 +1206,7 @@ router.post('/:id/find-linkedin', async (req, res) => {
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
   if (!job) return res.status(404).json({ error: 'Company not found' });
   await withLock(`people:${req.user.id}:${job.id}`, res, async () => {
-    const people = await apify.findPeopleAtLinkedInCompany(job.name, job.linkedin_company_url || null, await trustedDomain(job), null);
+    const people = await apify.findPeopleAtLinkedInCompany(job.name, job.linkedin_company_url || null, await trustedDomain(job), null, { userId: req.user.id });
     const { added, updated } = await savePeople(job, people, req.user.id, 8);
     const contacts = await all('SELECT * FROM job_contacts WHERE job_id = $1 AND user_id = $2 ORDER BY seniority_score DESC, created_at DESC', [job.id, req.user.id]);
     res.json({ added, updated, contacts });
@@ -1221,7 +1221,7 @@ router.post('/:id/find-emails', async (req, res) => {
   if (override && !normalizeHost(override)) return res.status(400).json({ error: `"${override}" isn't a valid domain — use something like acme.com` });
 
   await withLock(`emails:${req.user.id}:${job.id}`, res, async () => {
-    const result = await findCompanyEmails(job, { override });
+    const result = await findCompanyEmails(job, { override, userId: req.user.id });
     if (!result.domain) {
       return res.status(400).json({ error: describeReasons(result.reasons), hint: 'domain_needed', reasons: result.reasons });
     }
@@ -1248,6 +1248,7 @@ router.post('/:id/find-emails', async (req, res) => {
     else parts.push(`No relevant emails found at ${result.domain}`);
     if (result.filteredOut) parts.push(`${result.filteredOut} non-engineering/recruiting contact${result.filteredOut === 1 ? '' : 's'} skipped`);
     if (!result.domainVerified) parts.push(`domain ${result.domain} was inferred — set it on the company if it's wrong`);
+    if (result.cachedFrom?.length) parts.push(`reused a recent ${result.cachedFrom.join('/')} search — no credits spent`);
     if (result.reasons.length) parts.push(describeReasons(result.reasons));
 
     res.json({
@@ -1296,7 +1297,7 @@ router.post('/contacts/:contactId/find-email', async (req, res) => {
 
   await withLock(`email:${req.user.id}:${contact.id}`, res, async () => {
     const job = { name: contact.company_name, domain: contact.job_domain, url: contact.job_url, domain_source: contact.job_domain_source };
-    const r = await findPersonEmail(contact, job);
+    const r = await findPersonEmail(contact, job, { userId: req.user.id });
     const note = r.best ? null : [`No email found${r.tried.length ? ` (tried ${r.tried.join(', ')})` : ''}.`, describeReasons(r.reasons)].filter(Boolean).join(' ');
 
     if (r.best) {
@@ -1428,7 +1429,7 @@ router.post('/:id/scrape-linkedin-company', async (req, res) => {
 
     const urlToUse = linkedinUrl || job.linkedin_company_url || null;
 
-    const people = await apify.findPeopleAtLinkedInCompany(job.name, urlToUse, await trustedDomain(job), null);
+    const people = await apify.findPeopleAtLinkedInCompany(job.name, urlToUse, await trustedDomain(job), null, { userId: req.user.id });
     const { added } = await savePeople(job, people, req.user.id, 8);
 
     const contacts = await all(

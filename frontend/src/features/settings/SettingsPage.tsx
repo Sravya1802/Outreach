@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { Download, LogOut, Moon, RefreshCw, ShieldAlert, Sun } from 'lucide-react'
 import { useAuth } from '@/app/auth'
-import { useServiceHealth } from '@/app/queries'
+import { useProviderUsage, useServiceHealth } from '@/app/queries'
 import { useTheme, type Theme } from '@/app/theme'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
@@ -105,9 +105,41 @@ function AccountTab() {
 const stateTone: Record<string, Tone> = { ok: 'success', warn: 'warning', down: 'danger', off: 'neutral' }
 const stateLabel: Record<string, string> = { ok: 'Working', warn: 'Attention', down: 'Unavailable', off: 'Not set up' }
 
+const USAGE_LABELS = { hunter: 'Hunter', prospeo: 'Prospeo', apollo: 'Apollo', serper: 'Google search' } as const
+
+function UsageCard() {
+  const usage = useProviderUsage()
+  return (
+    <Card>
+      <CardHeader title="Your lookups this month" description="Contact and email lookups share the server's keys, so each account has a monthly allowance. Resets on the 1st." />
+      {usage.isError ? <ErrorState compact error={usage.error} onRetry={() => void usage.refetch()} /> : (
+        <ul className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2">
+          {(Object.keys(USAGE_LABELS) as (keyof typeof USAGE_LABELS)[]).map(k => {
+            const u = usage.data?.[k]
+            const pct = u && u.limit ? Math.min(100, Math.round((u.used / u.limit) * 100)) : 0
+            return (
+              <li key={k}>
+                <div className="mb-1.5 flex justify-between text-[13px]">
+                  <span className="text-fg">{USAGE_LABELS[k]}</span>
+                  {usage.isLoading ? <Skeleton className="h-4 w-12" /> : <span className="tabular-nums text-muted">{u?.used ?? 0} / {u?.limit ?? 0}</span>}
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-hover" aria-hidden="true">
+                  <div className={cn('h-full rounded-full', pct >= 100 ? 'bg-danger' : pct >= 80 ? 'bg-warning' : 'bg-accent')} style={{ width: `${pct}%` }} />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
 function IntegrationsTab() {
   const { services, isLoading, error, checkedAt, refetch } = useServiceHealth()
   return (
+    <div className="space-y-4">
+    <UsageCard />
     <Card>
       <CardHeader
         title="Integrations"
@@ -134,6 +166,7 @@ function IntegrationsTab() {
         </ul>
       )}
     </Card>
+    </div>
   )
 }
 

@@ -12,6 +12,7 @@ export const useAutoApplyQueue = () => useQuery({ queryKey: qk.autoApplyQueue, q
 export const useHasResume = () => useQuery({ queryKey: qk.hasResume, queryFn: api.hasResume })
 export const useProfile = () => useQuery({ queryKey: qk.profile, queryFn: api.profile })
 export const useNightlySettings = () => useQuery({ queryKey: qk.nightlySettings, queryFn: api.nightlySettings })
+export const useProviderUsage = () => useQuery({ queryKey: qk.providerUsage, queryFn: api.providerUsage })
 
 export function useServiceHealth() {
   const health = useQuery({ queryKey: qk.health, queryFn: api.health, staleTime: 5 * 60_000 })

@@ -1,5 +1,5 @@
 import { ApifyClient } from 'apify-client';
-import { noteApifyError } from './apify.js';
+import { noteApifyError, getApifyQuotaBurn } from './apify.js';
 
 // Lazy accessor — dotenv must load before first call
 function getApifyToken() { return process.env.APIFY_API_TOKEN || ''; }
@@ -249,6 +249,14 @@ async function findActorInStore(searchTerm) {
 }
 
 async function runApifyActor(actorId, input, storeSearchTerm, waitSecs = 90) {
+  // Same 1h short-circuit as apify.js runActor: once the monthly hard limit
+  // is hit, every further actor call fails identically — don't make them.
+  const burn = getApifyQuotaBurn();
+  if (burn && burn.ageMs < 60 * 60_000) {
+    const err = new Error(`Apify quota exhausted (${burn.lastError || 'monthly limit'}) — skipping ${actorId} for now.`);
+    err.code = 'APIFY_QUOTA_BURNED';
+    throw err;
+  }
   const client = getApifyClient();
 
   const tryRun = async (id) => {

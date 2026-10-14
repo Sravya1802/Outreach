@@ -16,6 +16,7 @@
 import { resolveCompanyDomain } from './companyDomain.js';
 import { betterCandidate, isGoodEnough, isRelevantContact, nameKey, splitName } from './contactRules.js';
 import * as realProviders from './emailProviders.js';
+import * as realUsage from './providerUsage.js';
 import { toReason } from './providerGuard.js';
 
 /** "jane.doe@acme.com" → "Jane Doe" (best effort) for emails that came without a name. */
@@ -41,8 +42,10 @@ function dedupeByEmail(list) {
  * @param {string} [opts.override]  domain typed by the user
  * @param {object} [opts.providers] injectable for tests
  * @param {Function} [opts.verify]  MX check for guessed domains
+ * @param {string} [opts.userId]    whose monthly provider budget to charge
+ * @param {object} [opts.usage]     budget + shared cache (injectable for tests)
  */
-export async function findCompanyEmails(job, { override = null, providers = realProviders, verify } = {}) {
+export async function findCompanyEmails(job, { override = null, providers = realProviders, verify, userId = null, usage = realUsage } = {}) {
   const resolved = await resolveCompanyDomain(job, { override, ...(verify ? { verify } : {}) });
   if (!resolved) {
     return {
@@ -55,12 +58,20 @@ export async function findCompanyEmails(job, { override = null, providers = real
   const reasons = [];
   let found = [];
   let pattern = null;
+  const cachedFrom = [];
+  // Domain searches are shared across users for CACHE_DAYS; only a cache
+  // miss spends a credit (and the caller's monthly budget).
+  const viaCache = async (provider, fetchFresh) => {
+    const { result, cached } = await usage.cachedDomainSearch(provider, domain, fetchFresh, { userId });
+    if (cached) cachedFrom.push(provider);
+    return result;
+  };
 
   const steps = [
-    ['hunter', async () => { const r = await providers.hunterDomainSearch(domain); pattern = r.pattern; return r.emails; }],
+    ['hunter', async () => { const r = await viaCache('hunter', () => providers.hunterDomainSearch(domain)); pattern = r.pattern; return r.emails; }],
     ['website', () => providers.websiteEmails(domain)],
-    ['prospeo', () => providers.prospeoDomainSearch(domain)],
-    ['serper', () => providers.serperEmails(domain)],
+    ['prospeo', () => viaCache('prospeo', () => providers.prospeoDomainSearch(domain))],
+    ['serper', async () => { await usage.spend(userId, 'serper'); await usage.spend(userId, 'serper'); return providers.serperEmails(domain); }],
   ];
   for (const [name, run] of steps) {
     if (found.some(c => c.title && isRelevantContact(c.title))) break;
@@ -81,6 +92,7 @@ export async function findCompanyEmails(job, { override = null, providers = real
     domainVerified: resolved.verified,
     pattern,
     tried,
+    cachedFrom,
     reasons,
     candidates: relevant.map(c => ({ ...c, name: c.name || nameFromEmailAddress(c.email) })),
     filteredOut: found.length - relevant.length,
@@ -91,7 +103,7 @@ export async function findCompanyEmails(job, { override = null, providers = real
  * @param {object} contact job_contacts row ({ name, linkedin_url })
  * @param {object} job     jobs row
  */
-export async function findPersonEmail(contact, job, { providers = realProviders, verify } = {}) {
+export async function findPersonEmail(contact, job, { providers = realProviders, verify, userId = null, usage = realUsage } = {}) {
   const tried = [];
   const reasons = [];
   const person = splitName(contact.name);
@@ -125,6 +137,7 @@ export async function findPersonEmail(contact, job, { providers = realProviders,
     if (name !== 'website' && !providers.isConfigured(name)) continue;
     tried.push(name);
     try {
+      if (name !== 'website') await usage.spend(userId, name);
       consider(await run());
     } catch (err) {
       reasons.push(toReason(err));

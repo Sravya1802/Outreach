@@ -2,6 +2,7 @@ import { ApifyClient } from 'apify-client';
 import { isDomainPlausibleForCompany } from './companyDomain.js';
 import { isRelevantContact, isUsableEmail, nameKey, seniorityScore } from './contactRules.js';
 import { apolloOrganization, isConfigured, serperSearch as providerSerperSearch } from './emailProviders.js';
+import { spend as spendProviderBudget } from './providerUsage.js';
 
 // Token is read lazily so dotenv has time to load before first use
 function getToken() { return process.env.APIFY_API_TOKEN || ''; }
@@ -653,7 +654,7 @@ export function parseLinkedInSerpResult(item, companyName) {
  * @param {Function} onProgress          ({ source, status, count, message })
  * @param {{signal?: AbortSignal}} [opts]
  */
-export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUrl = null, domain = null, onProgress = null, { signal } = {}) {
+export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUrl = null, domain = null, onProgress = null, { signal, userId = null } = {}) {
   const NON_US = /\b(germany|deutschland|united kingdom|france|india|canada|australia|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|spain|italy|portugal|brazil|singapore|japan|china|korea|israel|poland|czech|romania|ukraine|russia|mexico)\b/i;
   const people = [];
   const seenNames = new Set();
@@ -685,6 +686,7 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
   } else if (!aborted()) {
     notify('apollo', 'running');
     try {
+      await spendProviderBudget(userId, 'apollo');
       let org = await apolloOrganization(domain ? { domain } : { name: companyName });
       if (org && !domain && org.domain && !isDomainPlausibleForCompany(org.domain, companyName)) {
         notify('apollo', 'done', 0, `closest match was ${org.name} (${org.domain}) — not this company`);
@@ -770,6 +772,7 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
       for (const q of queries) {
         if (found.length >= 15 || aborted()) break;
         try {
+          await spendProviderBudget(userId, 'serper');
           const data = await providerSerperSearch(q, 10);
           for (const item of data.organic || []) {
             if (NON_US.test(item.snippet || '')) continue;
@@ -778,7 +781,7 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
           }
         } catch (err) {
           errors.push(err.message);
-          if (err.code === 'QUOTA' || err.code === 'AUTH' || err.code === 'SKIPPED') break;
+          if (['QUOTA', 'AUTH', 'SKIPPED', 'BUDGET'].includes(err.code)) break;
         }
       }
       const n = addPeople(found, 'google');

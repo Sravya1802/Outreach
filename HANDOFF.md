@@ -124,6 +124,26 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Pipeline page: follow-up nudges, notes, funnel + search, board
+- **What:** `/applications/pipeline` gained four things, each shipped and checked live:
+  - **Follow-up nudges:** applied roles quiet 7+ days get a banner, a "Follow up · N" filter, and a "Find someone at X" link (company page) or "Track X" (Companies search).
+  - **Notes + next step:** a dialog per row. An overdue step shows red, today's shows amber.
+  - **Funnel + search:** Applied, heard-back %, interview %, offers. Search covers company, role, notes and next step (`?q=`). Each row says auto-applied or applied by hand, or why auto-apply stopped.
+  - **Board view (`?view=board`):** drag cards between stage columns. A "Move to…" menu covers touch and keyboard, and moves are optimistic.
+  - **Also fixed:** the sort menu no longer stretches full width.
+- **Backend** (`49c0aed`, VM `7ff3a6a`):
+  - Migration **023_pipeline_notes** (applied) adds `notes`, `next_step`, `next_step_at`, `stage_changed_at`.
+  - `PATCH /api/career/evaluations/:id/notes` is validated by `services/pipelineNotes.js`.
+  - Moving to an applied stage stamps `applied_at` and `stage_changed_at`.
+  - `/pipeline` now also returns `company_id` (jobs matched by name), apply mode, and the error.
+- **Gotcha:** evaluation ids come back from pg as **strings**. Compare with `String(id)`. The first board drop silently did nothing because of this (`1821fa2`).
+- **Files:** [PipelinePage.tsx](frontend/src/features/applications/PipelinePage.tsx), [PipelineBoard.tsx](frontend/src/features/applications/PipelineBoard.tsx), [NotesDialog.tsx](frontend/src/features/applications/NotesDialog.tsx), [pipeline.ts](frontend/src/features/applications/pipeline.ts), [careerOps.js](backend/routes/careerOps.js).
+- **Status:** verified on prod as the e2e user, with 8 seeded rows (since deleted):
+  - Drag, Move to…, and notes all save to the DB.
+  - Checked in dark and light themes and at 390px. No console errors.
+  - `npm run check` passes (55 tests), and backend tests pass (110).
+- **Follow-up:** a parallel session has an uncommitted `supabase/migrations/023_resume_engine.sql`. **Renumber it to 024**, because 023 is taken.
+
 ### 2026-10-14 — Resumes live in cloud storage; every application records its file
 - **What:**
   - Migration 022 adds `resume_files`: kind master/tailored/uploaded/library, bucket + path, size, sha256, the account's market at creation, and `is_current` (one current master per user). It also adds `evaluations.resume_file_id` (the file that will go) and `applied_resume_file_id` (the exact file sent).

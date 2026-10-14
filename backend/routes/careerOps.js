@@ -21,7 +21,8 @@ import {
 } from '../services/resumeStorage.js';
 import { buildBulkQueueFilter } from '../services/bulkQueueFilter.js';
 import { requireOwnedCompany } from '../middleware/ownedCompany.js';
-import { FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
+import { APPLIED as APPLIED_STATUSES, FAILED as FAILED_STATUSES, sqlList } from '../services/applyStatus.js';
+import { parseNotesPatch } from '../services/pipelineNotes.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
@@ -820,10 +821,18 @@ router.get('/pipeline', async (req, res) => {
     const rows = await all(`
       SELECT e.id, e.job_title, e.company_name, e.job_url, e.grade, e.score,
              e.apply_mode, e.apply_status, e.applied_at, e.created_at,
+             e.apply_platform, e.apply_error, e.notes, e.next_step,
+             to_char(e.next_step_at, 'YYYY-MM-DD') AS next_step_at, e.stage_changed_at,
              f.id AS resume_file_id, f.filename AS resume_filename, f.kind AS resume_kind,
-             (e.applied_resume_file_id IS NOT NULL) AS resume_sent
+             (e.applied_resume_file_id IS NOT NULL) AS resume_sent,
+             c.id AS company_id
       FROM evaluations e
       LEFT JOIN resume_files f ON f.id = COALESCE(e.applied_resume_file_id, e.resume_file_id) AND f.user_id = e.user_id
+      LEFT JOIN LATERAL (
+        SELECT j.id FROM jobs j
+        WHERE j.user_id = e.user_id AND lower(j.name) = lower(e.company_name)
+        ORDER BY j.id LIMIT 1
+      ) c ON true
       WHERE e.user_id = $1
       ORDER BY COALESCE(e.applied_at, e.created_at::text) DESC
     `, [req.user.id]);
@@ -870,10 +879,36 @@ router.patch('/evaluations/:id/apply-status', async (req, res) => {
     const VALID = ['not_started', 'opened', 'queued', 'submitted', 'responded', 'interview', 'offer', 'rejected'];
     const { status } = req.body || {};
     if (!VALID.includes(status)) return res.status(400).json({ error: `status must be one of ${VALID.join(', ')}` });
-    const row = await one('SELECT id FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    const row = await one('SELECT id, apply_status FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (!row) return res.status(404).json({ error: 'Evaluation not found' });
-    await run('UPDATE evaluations SET apply_status = $1 WHERE id = $2 AND user_id = $3', [status, req.params.id, req.user.id]);
+    if (row.apply_status === status) return res.json({ ok: true, status });
+    // Marking a role applied by hand stamps applied_at, so follow-up nudges
+    // know how long it has been waiting.
+    const nowApplied = APPLIED_STATUSES.includes(status);
+    await run(`UPDATE evaluations
+               SET apply_status = $1, stage_changed_at = NOW(),
+                   applied_at = CASE WHEN $4 THEN COALESCE(applied_at, NOW()::text) ELSE applied_at END
+               WHERE id = $2 AND user_id = $3`, [status, req.params.id, req.user.id, nowApplied]);
     res.json({ ok: true, status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/career/evaluations/:id/notes — note + next step on a pipeline row
+router.patch('/evaluations/:id/notes', async (req, res) => {
+  let fields;
+  try { fields = parseNotesPatch(req.body); } catch (err) { return res.status(400).json({ error: err.message }); }
+  try {
+    const keys = Object.keys(fields);
+    const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(', ');
+    const row = await one(
+      `UPDATE evaluations SET ${sets} WHERE id = $1 AND user_id = $2
+       RETURNING id, notes, next_step, to_char(next_step_at, 'YYYY-MM-DD') AS next_step_at`,
+      [req.params.id, req.user.id, ...keys.map(k => fields[k])],
+    );
+    if (!row) return res.status(404).json({ error: 'Evaluation not found' });
+    res.json({ ok: true, ...row });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

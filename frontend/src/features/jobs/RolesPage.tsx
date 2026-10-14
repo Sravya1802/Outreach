@@ -33,7 +33,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   busy: 'track' | 'auto' | null
 }) {
   return (
-    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_170px_120px_auto] md:items-center md:gap-4">
+    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_120px_170px_110px_auto] md:items-center md:gap-4">
       <div className="min-w-0">
         <a href={role.apply_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-fg hover:text-accent">
           <span className="truncate">{role.title}</span>
@@ -42,12 +42,16 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
         <p className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted">
           {role.tier === 'faang' && <Badge tone="accent">FAANG+</Badge>}
           {role.tier === 'quant' && <Badge tone="info">Quant</Badge>}
-          {role.salary_range && <Badge tone="success">{role.salary_range}</Badge>}
+          {role.salary_range && <span className="font-mono text-success md:hidden">{role.salary_range}</span>}
           {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''} · {postedLabel(role.posted_at, role.scraped_at)}</span>
         </p>
       </div>
+      <p className={cn('hidden truncate font-mono text-[13px] md:block', role.salary_range ? 'text-fg' : 'text-subtle')}
+        title={role.salary_range ? 'Pay range from the job posting' : 'This posting doesn’t list pay'}>
+        {role.salary_range || 'Not posted'}
+      </p>
       <p className="hidden truncate text-xs text-subtle md:block" title={role.location || undefined}>{role.location || '—'}</p>
       <div className="hidden text-xs text-subtle md:block">
         <span>{sourceLabel(role.source)}</span>
@@ -83,6 +87,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const source = params.get('source') ?? ''
   const tierParam = params.get('tier')
   const tier: Tier | undefined = tierParam === 'faang' || tierParam === 'quant' ? tierParam : undefined
+  const hasPay = params.get('pay') === '1'
   const fieldParam = params.get('field')
   const field: Field | undefined = fieldParam === 'swe' || fieldParam === 'ai' ? fieldParam : undefined
   const page = Math.max(0, Number(params.get('page')) || 0)
@@ -98,7 +103,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, page, pageSize: PAGE_SIZE }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, page, pageSize: PAGE_SIZE }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
   const counts = countsByList(sources.data ?? [], market, field)
@@ -152,7 +157,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const rows = listing.data?.rows ?? []
   const total = listing.data?.total ?? 0
   const catalogEmpty = sources.isSuccess && Object.values(counts).every(n => n === 0)
-  const filtered = Boolean(search || source || tier || field)
+  const filtered = Boolean(search || source || tier || field || hasPay)
 
   return (
     <Page wide>
@@ -203,6 +208,10 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
           <option value="faang">FAANG+ only</option>
           <option value="quant">Quant / trading</option>
         </Select>
+        <label className="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[4px] border border-line-strong px-3 text-[14px] text-muted hover:bg-hover">
+          <input type="checkbox" checked={hasPay} onChange={e => setParam('pay', e.target.checked ? '1' : '')} className="size-4 accent-[var(--ui-accent)]" />
+          Pay posted
+        </label>
         <Select value={source} onChange={e => setParam('source', e.target.value)} aria-label="Source" className="sm:w-48">
           <option value="">All sources</option>
           {sourceOptions.map(s => <option key={s.source} value={s.source}>{sourceLabel(s.source)} ({formatNumber(s.n)})</option>)}
@@ -210,8 +219,8 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[minmax(0,1fr)_170px_120px_auto] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
-          <span>Role</span><span>Location</span><span>Source</span><span className="w-40 text-right">&nbsp;</span>
+        <div className="hidden grid-cols-[minmax(0,1fr)_120px_170px_110px_auto] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
+          <span>Role</span><span>Pay</span><span>Location</span><span>Source</span><span className="w-40 text-right">&nbsp;</span>
         </div>
         {listing.isLoading ? (
           <ul className="divide-y divide-line">{Array.from({ length: 8 }, (_, i) => (

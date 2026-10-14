@@ -205,7 +205,7 @@ export interface CatalogPage {
 
 export interface CatalogSourceCount { source: string; role_type: RoleType; region: Region; n: number; swe: number; ai: number }
 
-export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; page?: number; pageSize?: number }
+export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; page?: number; pageSize?: number }
 
 export interface AlertSubscription {
   subscribed: boolean

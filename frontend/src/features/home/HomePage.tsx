@@ -24,7 +24,8 @@ function SetupChecklist() {
     profileComplete: isProfileComplete(profile.data),
     companies: stats.data?.totalCompanies,
     evaluations: metrics.data?.summary.totalEvaluations,
-    nightlyEnabled: nightly.data?.enabled,
+    // Rules count as set once saved away from the old defaults (85 / 50).
+    nightlyEnabled: nightly.data ? nightly.data.enabled || nightly.data.minScore !== 85 || nightly.data.maxApps !== 50 : undefined,
   })
   const loading = steps.some(s => s.done === undefined) && ![resume, profile, stats, metrics, nightly].some(q => q.isError)
   const doneCount = steps.filter(s => s.done).length

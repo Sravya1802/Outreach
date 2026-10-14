@@ -36,10 +36,9 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'applications', label: 'Applications', icon: Inbox, to: '/applications',
     tabs: [
-      { label: 'Evaluate', to: '/applications/evaluate', keywords: 'career ops score fit resume portal scan' },
-      { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue run submit' },
-      { label: 'Board', to: '/applications/board', keywords: 'pipeline kanban status' },
-      { label: 'Ranked', to: '/applications/ranked', keywords: 'best match top picks' },
+      { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue daily plan rules submit' },
+      { label: 'Evaluate', to: '/applications/evaluate', keywords: 'score fit grade job link description' },
+      { label: 'Pipeline', to: '/applications/pipeline', keywords: 'board kanban status applied interview offer ranked' },
     ],
   },
   {
@@ -53,6 +52,7 @@ export const SECTIONS: NavSection[] = [
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',
     tabs: [
       { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
+      { label: 'Resume', to: '/profile/resume', keywords: 'cv upload pdf master' },
       { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
       { label: 'GitHub projects', to: '/profile/github', keywords: 'repos repositories projects connect sign in' },
     ],
@@ -88,8 +88,8 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/discover/alerts': '/jobs/alerts',
   '/discover/evaluate': '/applications/evaluate',
   '/apply/auto-apply': '/applications/auto-apply',
-  '/apply/pipeline': '/applications/board',
-  '/apply/ranked': '/applications/ranked',
+  '/apply/pipeline': '/applications/pipeline',
+  '/apply/ranked': '/applications/pipeline?sort=score',
   '/apply/intern-roles': '/jobs/roles/intern',
   '/apply/new-grad-roles': '/jobs/roles/new-grad',
   '/outreach/messages': '/outreach/contacts',
@@ -97,7 +97,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/companies': '/jobs/companies',
   '/scraper': '/jobs/find',
   '/career-ops-workflow': '/applications/evaluate',
-  '/pipeline': '/applications/board',
-  '/career-ops': '/applications/ranked',
+  '/pipeline': '/applications/pipeline',
+  '/career-ops': '/applications/pipeline?sort=score',
   '/career': '/applications/evaluate',
 }

@@ -255,6 +255,56 @@ export interface SensitiveProfilePreview {
   erased?: { profileFields?: string[]; metaKeys?: string[] }
 }
 
+
+// ── Applications (evaluations) ───────────────────────────────────────────────
+
+export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null }
+
+/** Raw apply_status values the backend writes. */
+export type ApplyStatus = 'not_started' | 'opened' | 'queued' | 'in_progress' | 'submitted' | 'responded' | 'interview' | 'offer' | 'rejected'
+  | 'needs_review' | 'captcha_needed' | 'login_needed' | 'submit_failed' | 'platform_unsupported'
+
+export interface EvaluationSummary {
+  id: number
+  job_title: string
+  company_name: string
+  job_url?: string | null
+  grade: string | null
+  /** 0–100 */
+  score: number | null
+  apply_mode: 'manual' | 'auto' | null
+  apply_status: ApplyStatus | null
+  applied_at?: string | null
+  created_at: string
+  apply_error?: string | null
+  apply_platform?: string | null
+}
+
+/** The parts of the evaluation report the new pages show (the JSON has more). */
+export interface EvaluationReport {
+  jobTitle?: string
+  companyName?: string
+  globalScore?: number
+  grade?: string
+  recommendation?: string
+  verdict?: { headline?: string; oneLineWhy?: string; buriedMatch?: string | null; interviewOdds?: { asIs?: string; properlyTailored?: string; reasoning?: string } }
+  topGaps?: { gap: string; fix?: string; severity?: string }[]
+  scoreBreakdown?: Partial<Record<'cvMatch' | 'northStar' | 'comp' | 'culture' | 'redFlags', number>>
+  blockA_roleSummary?: { tldr?: string; seniority?: string; remote?: string }
+  blockB_cvMatch?: { requirements?: { requirement: string; cvEvidence?: string; status?: 'match' | 'partial' | 'gap'; reasoning?: string }[] }
+  blockD_compAndDemand?: { salaryRange?: string }
+  blockE_personalization?: { cvChanges?: { section?: string; currentState?: string; proposedChange?: string; why?: string }[] }
+  blockG_legitimacy?: { assessment?: string; contextNotes?: string }
+  atsKeywords?: string[]
+}
+
+export interface EvaluationDetail extends EvaluationSummary { evaluation: EvaluationReport | null }
+
+export type PipelineColumn = 'evaluated' | 'applied' | 'responded' | 'interview' | 'offer' | 'rejected'
+export interface Pipeline { columns: Record<PipelineColumn, { label: string; hint: string; items: EvaluationSummary[] }>; totals: Record<PipelineColumn, number>; total: number }
+
+export interface AutoApplyItems { items: EvaluationSummary[]; counts: Record<QueueStatus, number> }
+
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -267,6 +317,23 @@ export const api = {
   /** This user's monthly share of the shared provider keys. */
   providerUsage: async (): Promise<ProviderUsage> => (await legacy.credits.usage()).usage,
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
+  autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
+  resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
+  uploadResume: async (file: File): Promise<ResumeStatus> => {
+    const r = await legacy.career.uploadResume(file)
+    if (!r.success) throw new Error(r.error || 'Upload failed')
+    return r
+  },
+  evaluate: (input: { jobUrl?: string; jobDescription?: string }): Promise<{ ok: boolean; evalId: number; evaluation: EvaluationReport; autoQueued: boolean }> =>
+    legacy.career.evaluate(input),
+  evaluations: (): Promise<EvaluationSummary[]> => legacy.career.evaluations(),
+  evaluation: (id: number): Promise<EvaluationDetail> => legacy.career.evaluation(id),
+  deleteEvaluation: (id: number): Promise<unknown> => legacy.career.deleteEvaluation(id),
+  setApplyStatus: (id: number, status: ApplyStatus): Promise<unknown> => legacy.career.setApplyStatus(id, status),
+  markApplied: (id: number): Promise<unknown> => legacy.career.markApplied(id),
+  pipeline: (): Promise<Pipeline> => legacy.career.pipeline(),
+  openReport: async (id: number): Promise<void> => { await legacy.career.openReportTab(id) },
+  saveNightlySettings: async (s: Partial<NightlySettings>): Promise<NightlySettings> => (await legacy.career.saveNightlySettings(s)).settings,
   hasResume: async (): Promise<boolean> => Boolean((await legacy.career.resume())?.hasResume),
   profile: (): Promise<CareerProfile> => legacy.career.profile(),
   saveProfile: (patch: Partial<CareerProfile>): Promise<CareerProfile> => legacy.career.updateProfile(patch),

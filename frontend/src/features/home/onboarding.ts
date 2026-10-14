@@ -21,7 +21,7 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
     {
       id: 'resume', title: 'Upload your resume',
       description: 'Every evaluation and tailored CV starts from it.',
-      to: '/applications/evaluate', cta: 'Upload', done: i.hasResume,
+      to: '/profile/resume', cta: 'Upload', done: i.hasResume,
     },
     {
       id: 'profile', title: 'Fill in your application profile',
@@ -39,8 +39,8 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
       to: '/applications/evaluate', cta: 'Evaluate', done: i.evaluations === undefined ? undefined : i.evaluations > 0,
     },
     {
-      id: 'nightly', title: 'Turn on nightly auto-apply',
-      description: 'Scores new roles every night and applies to the strongest matches.',
+      id: 'nightly', title: 'Set your auto-apply rules',
+      description: 'Pick the score that puts a role on your daily plan, and how many a day.',
       to: '/applications/auto-apply', cta: 'Set up', done: i.nightlyEnabled,
     },
   ]

@@ -15,16 +15,16 @@ const CompaniesPage = lazyWithRetry(() => import('@/features/jobs/CompaniesPage'
 const DetailsPage = lazyWithRetry(() => import('@/features/profile/DetailsPage'), 'DetailsPage')
 const AnswersPage = lazyWithRetry(() => import('@/features/profile/AnswersPage'), 'AnswersPage')
 const GithubPage = lazyWithRetry(() => import('@/features/profile/GithubPage'), 'GithubPage')
+const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 'ResumePage')
+const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
+const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
+const PipelinePage = lazyWithRetry(() => import('@/features/applications/PipelinePage'), 'PipelinePage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
 const JobDashboard = lazyWithRetry(() => import('@/components/JobDashboard'), 'JobDashboard')
 const CompanyDetail = lazyWithRetry(() => import('@/components/CompanyDetail'), 'CompanyDetail')
-const CareerOps = lazyWithRetry(() => import('@/components/CareerOps'), 'CareerOps')
-const AutoApplyPage = lazyWithRetry(() => import('@/components/AutoApplyPage'), 'AutoApplyPage')
-const ApplicationPipeline = lazyWithRetry(() => import('@/components/ApplicationPipeline'), 'ApplicationPipeline')
-const CareerOpsPage = lazyWithRetry(() => import('@/components/CareerOpsPage'), 'CareerOpsPage')
 const OutreachPage = lazyWithRetry(() => import('@/components/OutreachPage'), 'OutreachPage')
 const TemplatesPage = lazyWithRetry(() => import('@/components/TemplatesPage'), 'TemplatesPage')
 
@@ -60,11 +60,12 @@ function SignedInRoutes() {
         <Route path="/category/:name" element={<CategoryRedirect />} />
         <Route path="/company/:id" element={legacy(<CompanyDetail />)} />
 
-        <Route path="/applications" element={<Navigate to="/applications/evaluate" replace />} />
-        <Route path="/applications/evaluate" element={legacy(<CareerOps />)} />
-        <Route path="/applications/auto-apply" element={legacy(<AutoApplyPage />)} />
-        <Route path="/applications/board" element={legacy(<ApplicationPipeline />)} />
-        <Route path="/applications/ranked" element={legacy(<CareerOpsPage />)} />
+        <Route path="/applications" element={<Navigate to="/applications/auto-apply" replace />} />
+        <Route path="/applications/auto-apply" element={<AutoApplyPage />} />
+        <Route path="/applications/evaluate" element={<EvaluatePage />} />
+        <Route path="/applications/pipeline" element={<PipelinePage />} />
+        <Route path="/applications/board" element={<Navigate to="/applications/pipeline" replace />} />
+        <Route path="/applications/ranked" element={<Navigate to="/applications/pipeline?sort=score" replace />} />
 
         <Route path="/outreach" element={<Navigate to="/outreach/contacts" replace />} />
         <Route path="/outreach/contacts" element={legacy(<OutreachPage />)} />
@@ -72,6 +73,7 @@ function SignedInRoutes() {
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />
+        <Route path="/profile/resume" element={<ResumePage />} />
         <Route path="/profile/answers" element={<AnswersPage />} />
         <Route path="/profile/github" element={<GithubPage />} />
 

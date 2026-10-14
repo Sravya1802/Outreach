@@ -54,6 +54,7 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
       { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
+      { label: 'GitHub projects', to: '/profile/github', keywords: 'repos repositories projects connect sign in' },
     ],
   },
   {

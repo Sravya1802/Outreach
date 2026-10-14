@@ -162,6 +162,16 @@ export const api = {
     deleteAnswer: (id)               => apiCall(`/profile/answers/${id}`, { method: 'DELETE' }),
   },
 
+  // GitHub connection — public repos feed resume tailoring
+  github: {
+    status:     ()                => apiCall('/github/status'),
+    connect:    ()                => apiCall('/github/connect', { method: 'POST' }),
+    repos:      ()                => apiCall('/github/repos'),
+    sync:       ()                => apiCall('/github/sync', { method: 'POST' }),
+    setInclude: (repoId, include) => apiCall(`/github/repos/${repoId}`, { method: 'PATCH', body: { include } }),
+    disconnect: ()                => apiCall('/github/connection', { method: 'DELETE' }),
+  },
+
   // Job-alert subscription (LinkedIn-style email digests of new roles)
   alerts: {
     get:  ()      => apiCall('/alerts/subscription'),

@@ -13,6 +13,7 @@ const RolesPage = lazyWithRetry(() => import('@/features/jobs/RolesPage'), 'Role
 const CompaniesPage = lazyWithRetry(() => import('@/features/jobs/CompaniesPage'), 'CompaniesPage')
 const DetailsPage = lazyWithRetry(() => import('@/features/profile/DetailsPage'), 'DetailsPage')
 const AnswersPage = lazyWithRetry(() => import('@/features/profile/AnswersPage'), 'AnswersPage')
+const GithubPage = lazyWithRetry(() => import('@/features/profile/GithubPage'), 'GithubPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
@@ -71,6 +72,7 @@ function SignedInRoutes() {
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />
         <Route path="/profile/answers" element={<AnswersPage />} />
+        <Route path="/profile/github" element={<GithubPage />} />
 
         <Route path="/settings/*" element={<SettingsPage />} />
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { normalizeQuestion, similarity } from './match'
 import { unansweredCommon } from './commonQuestions'
 import { toForm, toPatch } from './fields'
+import { topLanguages } from './repoFormat'
 
 describe('question matching (mirrors the backend)', () => {
   it('normalizes length hints and punctuation away', () => {
@@ -31,5 +32,13 @@ describe('profile form', () => {
     expect(patch.demographic_consent).toBe(0)
     const withConsent = toPatch({ ...form, demographic_consent: '1', gender: 'female' })
     expect(withConsent.gender).toBe('female')
+  })
+})
+
+describe('GitHub repo languages', () => {
+  it('shows the top languages by share', () => {
+    expect(topLanguages({ TypeScript: 7000, Python: 2200, CSS: 700, Shell: 100 })).toEqual(['TypeScript 70%', 'Python 22%', 'CSS 7%'])
+    expect(topLanguages({})).toEqual([])
+    expect(topLanguages({ Go: 1, Rust: 10000 }, 2)).toEqual(['Rust 100%', 'Go 1%'])
   })
 })

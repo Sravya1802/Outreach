@@ -33,6 +33,8 @@ export const qk = {
   hasResume: ['has-resume'] as const,
   profile: ['career-profile'] as const,
   answers: ['profile-answers'] as const,
+  githubStatus: ['github-status'] as const,
+  githubRepos: ['github-repos'] as const,
   nightlySettings: ['nightly-settings'] as const,
   companySearch: (q: string) => ['company-search', q] as const,
   catalog: (q: object) => ['catalog', q] as const,

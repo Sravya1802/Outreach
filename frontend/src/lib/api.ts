@@ -121,6 +121,37 @@ export interface SavedAnswer {
   updated_at: string
 }
 
+export interface GithubStatus {
+  configured: boolean
+  connected: boolean
+  login?: string
+  avatar_url?: string | null
+  connected_at?: string
+  last_synced_at?: string | null
+  sync_status?: 'idle' | 'syncing' | 'error'
+  sync_error?: string | null
+}
+
+export interface GithubRepo {
+  repo_id: number
+  full_name: string
+  name: string
+  description: string | null
+  html_url: string
+  homepage: string | null
+  language: string | null
+  /** Bytes per language, as GitHub reports them. */
+  languages: Record<string, number>
+  topics: string[]
+  stars: number
+  fork: boolean
+  archived: boolean
+  pushed_at: string | null
+  include: boolean
+  has_readme: boolean
+  readme_preview: string | null
+}
+
 export interface NightlySettings {
   enabled: boolean
   roleType: string
@@ -241,6 +272,12 @@ export const api = {
   saveAnswer: (question: string, answer: string): Promise<SavedAnswer> => legacy.profile.saveAnswer(question, answer),
   updateAnswer: (id: number, patch: { question?: string; answer?: string }): Promise<SavedAnswer> => legacy.profile.updateAnswer(id, patch),
   deleteAnswer: (id: number): Promise<{ ok: boolean }> => legacy.profile.deleteAnswer(id),
+  githubStatus: (): Promise<GithubStatus> => legacy.github.status(),
+  githubConnectUrl: async (): Promise<string> => (await legacy.github.connect()).url,
+  githubRepos: async (): Promise<GithubRepo[]> => (await legacy.github.repos()).repos ?? [],
+  githubSync: (): Promise<{ repos: number }> => legacy.github.sync(),
+  githubSetInclude: (repoId: number, include: boolean): Promise<{ ok: boolean }> => legacy.github.setInclude(repoId, include),
+  githubDisconnect: (): Promise<{ ok: boolean }> => legacy.github.disconnect(),
   nightlySettings: async (): Promise<NightlySettings> => (await legacy.career.nightlySettings()).settings,
   /** Up to 8 of the user's companies whose name matches. */
   searchCompanies: (q: string): Promise<CompanySearchHit[]> => legacy.jobs.search(q),

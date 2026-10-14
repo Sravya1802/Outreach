@@ -34,6 +34,7 @@ import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
 import { scrapeAllSources } from './services/scraper.js';
 import { scrapeAllSourcesAndPersist, syncSpeedyApply } from './services/multiSourceScraper.js';
+import { enrichPostedPay } from './services/payEnricher.js';
 import { runSubscriptionDigests } from './services/dailyDigest.js';
 import { mailerConfigured } from './services/mailer.js';
 
@@ -513,7 +514,18 @@ cron.schedule('15 6 * * *', async () => {
   } catch (err) {
     console.error('[multi-scrape] dispatcher failed:', err.message);
   }
+  await logPayEnrichment();
 }, CRON_OPTS);
+
+// Posted pay for new roles on Greenhouse / Ashby / Lever (public board APIs).
+async function logPayEnrichment() {
+  try {
+    const r = await enrichPostedPay();
+    console.log(`[pay] ${r.boards} boards, checked ${r.checked}, filled ${r.filled}${r.failedBoards ? `, ${r.failedBoards} boards failed` : ''}`);
+  } catch (err) {
+    console.error('[pay] failed:', err.message);
+  }
+}
 
 // ── Cron: SpeedyApply lists at 12:30 UTC ─────────────────────────────────────
 // github.com/speedyapply regenerates its SWE + AI college-jobs lists daily at
@@ -526,6 +538,7 @@ cron.schedule('30 12 * * *', async () => {
   } catch (err) {
     console.error('[speedyapply-cron] failed:', err.message);
   }
+  await logPayEnrichment();
 }, CRON_OPTS);
 
 // ── Cron: nightly auto-apply pipeline at 07:00 UTC (≈2am Central) ────────────

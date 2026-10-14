@@ -4,6 +4,7 @@
 //   python3 -m venv ~/outreach/.venv-jobspy && ~/outreach/.venv-jobspy/bin/pip install python-jobspy==1.1.82
 // Indeed and LinkedIn work from the server; Glassdoor/Google are unreliable there.
 import { spawn } from 'node:child_process';
+import { formatPay } from './payParse.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,23 +52,11 @@ export function runJobSpy(request, { python = PYTHON, spawnImpl = spawn } = {}) 
   });
 }
 
-// null/''/NaN/0 all mean "not posted" (Number(null) is 0, which rendered as "$0").
-const amount = v => {
-  const n = v == null || v === '' ? NaN : Number(v);
-  return Number.isFinite(n) && n > 0 ? n : NaN;
-};
-
+// JobSpy amounts → the shared pay format; null/''/NaN/0 mean "not posted".
 function salaryRange(j) {
-  const lo = amount(j.min_amount);
-  const hi = amount(j.max_amount);
-  if (!Number.isFinite(lo) && !Number.isFinite(hi)) return null;
-  const unit = { hourly: 'hr', yearly: 'yr', monthly: 'mo', weekly: 'wk', daily: 'day' }[String(j.interval || '').toLowerCase()] || '';
-  const fmt = n => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n)));
-  const range = Number.isFinite(lo) && Number.isFinite(hi) && lo !== hi ? `${fmt(lo)}–${fmt(hi)}` : fmt(Number.isFinite(lo) ? lo : hi);
-  return `$${range}${unit ? `/${unit}` : ''}`;
+  return formatPay({ min: j.min_amount, max: j.max_amount, interval: j.interval, currency: j.currency || 'USD' });
 }
 
-/** JobSpy row → catalog row (scraped_roles shape). */
 // Search engines return near matches; keep only titles that are the role type.
 const INTERN_TITLE = /\b(intern|interns|internship|trainee|apprentice(ship)?|co-?op)\b/i;
 const SENIOR_TITLE = /\b(senior|sr\.?|lead|manager|principal|staff|director|head|architect|vp|chief)\b/i;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, BellRing, Check, RefreshCw, Search, Sparkles, Zap } from 'lucide-react'
 import { qk } from '@/app/queryClient'
@@ -10,7 +10,9 @@ import {
   Badge, Button, ButtonLink, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pager, Segmented, Select, Skeleton, useToast,
 } from '@/ui'
 import { AlertsDialog } from './AlertsDialog'
-import { countsByList, LISTS, listForKind, postedLabel, sourceLabel, type CatalogList } from './catalog'
+import { countsByList, listForKind, listsForMarket, postedLabel, sourceLabel, type CatalogList } from './catalog'
+import { useMarket } from '@/app/queries'
+import { marketInfo, type Market } from '@/lib/markets'
 
 const PAGE_SIZE = 50
 
@@ -70,7 +72,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   )
 }
 
-function RolesList({ list }: { list: CatalogList }) {
+function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const roleType = list.roleType
   const toast = useToast()
   const qc = useQueryClient()
@@ -99,7 +101,7 @@ function RolesList({ list }: { list: CatalogList }) {
   const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, page, pageSize: PAGE_SIZE }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
-  const counts = countsByList(sources.data ?? [], field)
+  const counts = countsByList(sources.data ?? [], market, field)
   const sourceOptions = (sources.data ?? []).filter(s => s.role_type === roleType && (s.region ?? 'usa') === list.region).sort((a, b) => b.n - a.n)
 
   function setParam(key: string, value: string) {
@@ -156,7 +158,7 @@ function RolesList({ list }: { list: CatalogList }) {
     <Page wide>
       <PageHeader
         title="Roles"
-        description="Internship and new-grad openings from SpeedyApply's daily lists, job boards and company career pages."
+        description={<>Internship and new-grad openings in <b className="font-medium text-fg">{marketInfo(market).label}</b>, from SpeedyApply's daily lists, job boards and company career pages. <Link to="/profile/details" className="text-accent hover:underline">Change country</Link></>}
         actions={
           <>
             <Button variant="ghost" icon={<RefreshCw className="size-3.5" />} loading={refresh.isPending} onClick={() => refresh.mutate()}>Refresh</Button>
@@ -173,13 +175,13 @@ function RolesList({ list }: { list: CatalogList }) {
           options={[{ value: 'all', label: 'All roles' }, { value: 'swe', label: 'Software engineering' }, { value: 'ai', label: 'AI / ML' }]}
         />
       </div>
-      <nav aria-label="Lists" className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {LISTS.map(l => {
+      <nav aria-label="Lists" className="mb-4 grid grid-cols-2 gap-2">
+        {listsForMarket(market).map(l => {
           const active = l.kind === list.kind
           return (
             <Link key={l.kind} to={{ pathname: `/jobs/roles/${l.kind}`, search: new URLSearchParams({ ...(search ? { q: search } : {}), ...(field ? { field } : {}) }).toString() }}
               aria-current={active ? 'page' : undefined}
-              className={cn('rounded-lg border px-3.5 py-2.5 transition-colors',
+              className={cn('rounded-[4px] border px-4 py-3 transition-colors',
                 active ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:border-line-strong hover:bg-raised')}>
               <span className={cn('block text-[13px] font-medium', active ? 'text-fg' : 'text-muted')}>{l.label}</span>
               <span className="flex items-baseline justify-between gap-2 text-xs text-subtle">
@@ -254,8 +256,12 @@ function RolesList({ list }: { list: CatalogList }) {
 
 export default function RolesPage() {
   const { kind } = useParams()
-  const list = listForKind(kind)
+  const { search } = useLocation()
+  const market = useMarket()
+  const list = listForKind(kind, market)
   if (!list) return <Navigate to="/jobs/roles/intern" replace />
-  // key: switching lists starts a fresh list state.
-  return <RolesList key={list.kind} list={list} />
+  // Old region-specific links ("intern-intl") → the same list in your market.
+  if (kind !== list.kind) return <Navigate to={`/jobs/roles/${list.kind}${search}`} replace />
+  // key: switching lists or markets starts a fresh list state.
+  return <RolesList key={`${market}:${list.kind}`} list={list} market={market} />
 }

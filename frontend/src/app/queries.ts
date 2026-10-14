@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { DEFAULT_MARKET, isMarket, type Market } from '@/lib/markets'
 import { qk } from './queryClient'
 import { overallHealth, serviceStatuses } from '@/features/settings/serviceHealth'
 
@@ -11,6 +12,11 @@ export const useActivity = () => useQuery({ queryKey: qk.activity, queryFn: api.
 export const useAutoApplyQueue = () => useQuery({ queryKey: qk.autoApplyQueue, queryFn: api.autoApplyQueue })
 export const useHasResume = () => useQuery({ queryKey: qk.hasResume, queryFn: api.hasResume })
 export const useProfile = () => useQuery({ queryKey: qk.profile, queryFn: api.profile })
+/** The account's job market; USA until they pick one. */
+export function useMarket(): Market {
+  const { data } = useProfile()
+  return isMarket(data?.job_market) ? data.job_market : DEFAULT_MARKET
+}
 export const useNightlySettings = () => useQuery({ queryKey: qk.nightlySettings, queryFn: api.nightlySettings })
 export const useProviderUsage = () => useQuery({ queryKey: qk.providerUsage, queryFn: api.providerUsage })
 

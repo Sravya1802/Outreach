@@ -2,6 +2,8 @@
 // Option values match what the backend and the auto-apply form filler
 // already store and read (user_profile columns).
 
+import { MARKETS } from '@/lib/markets'
+
 export interface Option { value: string; label: string }
 
 export interface FieldDef {
@@ -84,6 +86,7 @@ export const SECTIONS: SectionDef[] = [
   {
     id: 'preferences', title: 'What you’re looking for', description: 'Filters which roles get scored and planned.',
     fields: [
+      { key: 'job_market', label: 'Looking for jobs in', kind: 'select', options: MARKETS.map(m => ({ value: m.value, label: m.label })), hint: 'Every role list, alert and auto-apply plan follows this.' },
       { key: 'target_job_type', label: 'Role type', kind: 'select', options: [{ value: 'intern', label: 'Internship' }, { value: 'new_grad', label: 'New grad / entry level' }, { value: 'full_time', label: 'Full-time' }, { value: 'any', label: 'Any' }] },
       { key: 'work_location_preference', label: 'Work setting', kind: 'select', options: [{ value: 'any', label: 'Any' }, { value: 'remote', label: 'Remote' }, { value: 'hybrid', label: 'Hybrid' }, { value: 'onsite', label: 'On-site' }] },
       { key: 'willing_to_relocate', label: 'Willing to relocate?', kind: 'select', options: YES_NO, numeric: true },

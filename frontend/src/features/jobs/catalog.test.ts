@@ -7,10 +7,13 @@ describe('catalog helpers', () => {
     expect(sourceLabel('remote_rocketship')).toBe('Remote Rocketship')
     expect(sourceLabel('some_new-source')).toBe('Some New Source')
   })
-  it('maps URL kinds to the four lists', () => {
-    expect(listForKind('intern')).toMatchObject({ roleType: 'intern', region: 'usa' })
-    expect(listForKind('new-grad-intl')).toMatchObject({ roleType: 'new_grad', region: 'intl' })
-    expect(listForKind('other')).toBeNull()
+  it('maps URL kinds to the lists in the account’s market', () => {
+    expect(listForKind('intern', 'usa')).toMatchObject({ roleType: 'intern', region: 'usa', region_label: 'USA' })
+    expect(listForKind('new-grad', 'india')).toMatchObject({ roleType: 'new_grad', region: 'india' })
+    expect(listForKind('intern', 'other')).toMatchObject({ region: 'intl', region_label: 'International' })
+    // Old region-specific links still land on the right role type, in your market.
+    expect(listForKind('new-grad-intl', 'india')).toMatchObject({ roleType: 'new_grad', region: 'india' })
+    expect(listForKind('other', 'usa')).toBeNull()
   })
   it('formats posted dates', () => {
     const now = new Date('2026-10-13T12:00:00Z').getTime()
@@ -20,11 +23,14 @@ describe('catalog helpers', () => {
     expect(postedLabel('garbage', 'garbage', now)).toBe('')
   })
   it('sums counts per list', () => {
-    expect(countsByList([
+    const rows = [
       { role_type: 'intern', region: 'usa', n: 3 }, { role_type: 'new_grad', region: 'usa', n: 2 },
-      { role_type: 'intern', region: 'intl', n: 4 }, { role_type: 'intern', n: 1 },
-    ])).toEqual({ intern: 4, 'new-grad': 2, 'intern-intl': 4, 'new-grad-intl': 0 })
-    expect(countsByList([{ role_type: 'intern', region: 'usa', n: 5, swe: 4, ai: 2 }], 'ai').intern).toBe(2)
+      { role_type: 'intern', region: 'intl', n: 4 }, { role_type: 'intern', region: 'india', n: 7 }, { role_type: 'intern', n: 1 },
+    ] as const
+    expect(countsByList([...rows], 'usa')).toEqual({ intern: 4, 'new-grad': 2 })
+    expect(countsByList([...rows], 'india')).toEqual({ intern: 7, 'new-grad': 0 })
+    expect(countsByList([...rows], 'other')).toEqual({ intern: 4, 'new-grad': 0 })
+    expect(countsByList([{ role_type: 'intern', region: 'usa', n: 5, swe: 4, ai: 2 }], 'usa', 'ai').intern).toBe(2)
   })
 })
 

@@ -6,6 +6,7 @@ import { useAuth } from './auth'
 import { lazyWithRetry } from './lazy'
 import { LegacyPage } from './LegacyPage'
 import { LEGACY_REDIRECTS } from './nav'
+import { MarketGate } from '@/features/auth/MarketGate'
 
 const HomePage = lazyWithRetry(() => import('@/features/home/HomePage'), 'HomePage')
 const SettingsPage = lazyWithRetry(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
@@ -93,5 +94,5 @@ export default function App() {
   if (pathname === '/reset-password') return <ResetPasswordPage />
   if (session === undefined) return <div className="flex h-full bg-canvas"><PageSpinner /></div>
   if (!session) return <LoginPage />
-  return <SignedInRoutes />
+  return <MarketGate><SignedInRoutes /></MarketGate>
 }

@@ -1,4 +1,5 @@
 import type { Field, Region, RoleType } from '@/lib/api'
+import { marketInfo, type Market } from '@/lib/markets'
 
 const SOURCE_LABELS: Record<string, string> = {
   speedyapply: 'SpeedyApply', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby', linkedin: 'LinkedIn',
@@ -13,17 +14,27 @@ export function sourceLabel(source: string): string {
   return key.split(/[_-]+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || source
 }
 
-export interface CatalogList { kind: string; roleType: RoleType; region: Region; label: string; region_label: string }
+export type ListKind = 'intern' | 'new-grad'
 
-/** The four lists SpeedyApply publishes, each its own tab and URL. */
-export const LISTS: CatalogList[] = [
-  { kind: 'intern', roleType: 'intern', region: 'usa', label: 'Internships', region_label: 'USA' },
-  { kind: 'new-grad', roleType: 'new_grad', region: 'usa', label: 'New grad', region_label: 'USA' },
-  { kind: 'intern-intl', roleType: 'intern', region: 'intl', label: 'Internships', region_label: 'International' },
-  { kind: 'new-grad-intl', roleType: 'new_grad', region: 'intl', label: 'New grad', region_label: 'International' },
-]
+export interface CatalogList { kind: ListKind; roleType: RoleType; region: Region; label: string; region_label: string }
 
-export const listForKind = (kind: string | undefined): CatalogList | null => LISTS.find(l => l.kind === kind) ?? null
+/** The two lists (internships, new grad) in the account's market. */
+export function listsForMarket(market: Market): CatalogList[] {
+  const m = marketInfo(market)
+  return [
+    { kind: 'intern', roleType: 'intern', region: m.region, label: 'Internships', region_label: m.regionLabel },
+    { kind: 'new-grad', roleType: 'new_grad', region: m.region, label: 'New grad', region_label: m.regionLabel },
+  ]
+}
+
+/**
+ * URL kind → list in this market. Old links that named a region
+ * ("intern-intl", "new-grad-intl") resolve to the same role type.
+ */
+export function listForKind(kind: string | undefined, market: Market): CatalogList | null {
+  const base = String(kind ?? '').replace(/-(intl|india|usa)$/, '')
+  return listsForMarket(market).find(l => l.kind === base) ?? null
+}
 
 /** Short "posted" label: "today", "3d ago", "Sep 21". Falls back to scraped date. */
 export function postedLabel(postedAt: string | null, scrapedAt: string, now: number = Date.now()): string {
@@ -37,12 +48,13 @@ export function postedLabel(postedAt: string | null, scrapedAt: string, now: num
   return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-/** Listings per list (role type × region) from the per-source counts. */
-export function countsByList(rows: { role_type: RoleType; region?: Region; n: number; swe?: number; ai?: number }[], field?: Field): Record<string, number> {
-  const out: Record<string, number> = Object.fromEntries(LISTS.map(l => [l.kind, 0]))
+/** Listings per list in this market, from the per-source counts. */
+export function countsByList(rows: { role_type: RoleType; region?: Region; n: number; swe?: number; ai?: number }[], market: Market, field?: Field): Record<ListKind, number> {
+  const lists = listsForMarket(market)
+  const out = { intern: 0, 'new-grad': 0 } as Record<ListKind, number>
   for (const r of rows) {
-    const list = LISTS.find(l => l.roleType === r.role_type && l.region === (r.region ?? 'usa'))
-    if (list) out[list.kind] = (out[list.kind] ?? 0) + (field ? (r[field] ?? 0) : r.n)
+    const list = lists.find(l => l.roleType === r.role_type && l.region === (r.region ?? 'usa'))
+    if (list) out[list.kind] += field ? (r[field] ?? 0) : r.n
   }
   return out
 }

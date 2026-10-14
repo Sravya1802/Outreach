@@ -104,6 +104,8 @@ export interface CareerProfile {
   last_name?: string
   email?: string
   auto_apply_consent?: boolean
+  /** 'usa' | 'india' | 'other' — null until the user picks. */
+  job_market?: string | null
   [key: string]: unknown
 }
 
@@ -170,7 +172,7 @@ export interface CompanySearchHit {
 export type ProviderUsage = Record<'hunter' | 'prospeo' | 'apollo' | 'serper', { used: number; limit: number }>
 
 export type RoleType = 'intern' | 'new_grad'
-export type Region = 'usa' | 'intl'
+export type Region = 'usa' | 'india' | 'intl'
 export type Field = 'swe' | 'ai'
 export type Tier = 'faang' | 'quant'
 

@@ -3,13 +3,15 @@ import { MailCheck } from 'lucide-react'
 import { MIN_PASSWORD_LENGTH } from '@/lib/password'
 import { supabase } from '@/lib/supabase'
 import { Button, Field, Input } from '@/ui'
+import type { Market } from '@/lib/markets'
 import { AuthLayout, FormMessage } from './AuthLayout'
+import { MarketOptions } from './MarketOptions'
 
 type Mode = 'signin' | 'signup' | 'magic' | 'forgot'
 
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = {
   signin: { title: 'Sign in to OutreachOS', subtitle: 'Your internship and new-grad job search, automated.', submit: 'Sign in' },
-  signup: { title: 'Create your account', subtitle: 'Free while in beta. Currently US-only.', submit: 'Create account' },
+  signup: { title: 'Create your account', subtitle: 'Free while in beta. Roles, alerts and auto-apply follow the country you pick.', submit: 'Create account' },
   magic: { title: 'Sign in with a link', subtitle: 'We’ll email you a one-time sign-in link.', submit: 'Email me a link' },
   forgot: { title: 'Reset your password', subtitle: 'We’ll email you a link to choose a new one.', submit: 'Send reset link' },
 }
@@ -26,6 +28,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [market, setMarket] = useState<Market | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -44,6 +47,7 @@ export default function LoginPage() {
     if (!/^\S+@\S+\.\S+$/.test(addr)) { setError('Enter a valid email address.'); return }
     if (mode === 'signup' && password.length < MIN_PASSWORD_LENGTH) { setError(`Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`); return }
     if (mode === 'signin' && !password) { setError('Enter your password.'); return }
+    if (mode === 'signup' && !market) { setError('Pick where you’re looking for jobs.'); return }
 
     setBusy(true); setError(null); setInfo(null)
     try {
@@ -51,7 +55,11 @@ export default function LoginPage() {
         const { error: err } = await supabase.auth.signInWithPassword({ email: addr, password })
         if (err) throw err
       } else if (mode === 'signup') {
-        const { data, error: err } = await supabase.auth.signUp({ email: addr, password })
+        // Kept on the account until the profile exists; saved to it on first sign-in.
+        const { data, error: err } = await supabase.auth.signUp({
+          email: addr, password,
+          options: { data: { job_market: market }, emailRedirectTo: window.location.origin },
+        })
         if (err) throw err
         if (!data.session) setInfo('Check your inbox to confirm your email, then sign in.')
       } else if (mode === 'magic') {
@@ -99,6 +107,7 @@ export default function LoginPage() {
             {p => <Input {...p} type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={e => setPassword(e.target.value)} />}
           </Field>
         )}
+        {mode === 'signup' && <MarketOptions value={market} onChange={setMarket} />}
         {error && <FormMessage tone="error">{error}</FormMessage>}
         {info && <FormMessage tone="info">{info}</FormMessage>}
         <Button type="submit" variant="primary" className="h-9 w-full" loading={busy}>{copy.submit}</Button>

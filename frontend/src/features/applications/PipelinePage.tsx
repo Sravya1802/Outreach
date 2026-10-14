@@ -97,7 +97,7 @@ export default function PipelinePage() {
         qc.setQueryData<Pipeline>(qk.pipeline, {
           ...prev,
           columns: Object.fromEntries(Object.entries(prev.columns).map(([k, c]) =>
-            [k, { ...c, items: c.items.map(r => r.id === id ? { ...r, apply_status: status } : r) }])) as Pipeline['columns'],
+            [k, { ...c, items: c.items.map(r => String(r.id) === String(id) ? { ...r, apply_status: status } : r) }])) as Pipeline['columns'],
         })
       }
       return { prev }

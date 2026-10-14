@@ -73,11 +73,12 @@ export function PipelineBoard({ items, columns, now, onMove, onEdit, busy }: {
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null) }}
               onDrop={e => {
                 e.preventDefault(); setOver(null)
-                const id = Number(e.dataTransfer.getData(DRAG_TYPE))
-                const card = items.find(r => r.id === id)
-                if (card && stageFor(card.apply_status) !== st.id) onMove(id, st.id)
+                // Postgres bigint ids arrive as strings, so compare as text.
+                const id = e.dataTransfer.getData(DRAG_TYPE)
+                const card = items.find(r => String(r.id) === id)
+                if (card && stageFor(card.apply_status) !== st.id) onMove(card.id, st.id)
               }}
-              className={cn('flex w-64 shrink-0 flex-col rounded-[6px] border p-2 transition-colors',
+              className={cn('flex min-w-44 flex-1 basis-0 flex-col rounded-[6px] border p-2 transition-colors',
                 over === st.id ? 'border-accent bg-accent-soft' : 'border-line bg-hover/40')}>
               <h3 className="flex items-baseline justify-between px-1 pt-1 pb-2 text-[13px] font-medium text-fg">
                 {st.label}<span className="font-mono text-[12px] font-normal text-subtle">{cards.length}</span>

@@ -55,3 +55,9 @@ export function initials(name: string): string {
   const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : ''
   return (first + second).toUpperCase()
 }
+
+/** Avatar letters for an account: initials from the email's name, else its first letter. */
+export function avatarFor(email: string): string {
+  const name = nameFromEmail(email)
+  return name === 'there' ? (email.charAt(0) || '?').toUpperCase() : initials(name)
+}

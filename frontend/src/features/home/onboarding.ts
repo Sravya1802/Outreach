@@ -30,7 +30,7 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
     { id: 'answers', title: 'Answer the common questions', description: `“Why us?”, start date, salary and the like. At least ${MIN_ANSWERS}.`,
       to: '/profile/answers', cta: 'Answer', done: i.answers === undefined ? undefined : i.answers >= MIN_ANSWERS },
     { id: 'github', title: 'Connect GitHub', description: 'Your public repos become projects each resume can pick from.',
-      to: '/profile/github', cta: 'Connect', done: i.githubConnected },
+      to: '/integrations/github', cta: 'Connect', done: i.githubConnected },
     { id: 'rules', title: 'Set your auto-apply rules', description: 'The score that puts a role on your daily plan, and how many a day.',
       to: '/applications/auto-apply', cta: 'Set', done: i.rulesSet },
   ]

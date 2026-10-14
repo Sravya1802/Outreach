@@ -94,7 +94,7 @@ const transports = new Map();
 
 async function transportFor(userId) {
   const c = await connectionFor(userId);
-  if (!c) throw Object.assign(new Error('Connect your Gmail in Settings first.'), { status: 400 });
+  if (!c) throw Object.assign(new Error('Connect your Gmail under Integrations → Gmail first.'), { status: 400 });
   const cached = transports.get(userId);
   if (cached && cached.stamp === String(c.connected_at)) return { t: cached.t, c };
   const t = smtpTransport(c.email, c.pass);

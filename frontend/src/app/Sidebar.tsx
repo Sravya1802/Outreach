@@ -1,10 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Moon, Search, Sun } from 'lucide-react'
+import { LogOut, Moon, Search, Sun } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { initials, nameFromEmail } from '@/lib/format'
+import { avatarFor } from '@/lib/format'
 import { Kbd, StatusDot, type Tone } from '@/ui'
 import { useAuth } from './auth'
-import { PRIMARY_SECTIONS, SETTINGS_SECTION, sectionFor } from './nav'
+import { ACCOUNT_SECTIONS, PRIMARY_SECTIONS, sectionFor } from './nav'
 import { useServiceHealth } from './queries'
 import { useTheme } from './theme'
 
@@ -13,13 +13,10 @@ const healthTone: Record<string, Tone> = { ok: 'success', warn: 'warning', down:
 export function Sidebar({ onOpenPalette, onNavigate }: { onOpenPalette: () => void; onNavigate?: () => void }) {
   const { pathname } = useLocation()
   const active = sectionFor(pathname)
-  const { email } = useAuth()
+  const { email, signOut } = useAuth()
   const { theme, toggle } = useTheme()
   const { overall, isLoading } = useServiceHealth()
-  const settings = SETTINGS_SECTION
-  const name = nameFromEmail(email)
-  // nameFromEmail falls back to "there"; use the email's first letter then.
-  const avatar = name === 'there' ? (email.charAt(0) || '?').toUpperCase() : initials(name)
+  const avatar = avatarFor(email)
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
   const item = (isActive: boolean) => cn(
@@ -55,17 +52,23 @@ export function Sidebar({ onOpenPalette, onNavigate }: { onOpenPalette: () => vo
       </nav>
 
       <div className="space-y-0.5 border-t border-line px-3 py-2">
-        <Link to="/settings/integrations" onClick={onNavigate}
+        <Link to="/integrations/services" onClick={onNavigate}
           className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-xs text-subtle transition-colors hover:bg-hover/60 hover:text-muted"
           title="Service status">
           <StatusDot tone={isLoading ? 'neutral' : healthTone[overall.state] ?? 'neutral'} />
           <span className="truncate">{isLoading ? 'Checking services…' : overall.label}</span>
         </Link>
-        <Link to={settings.to} onClick={onNavigate} className={item(active?.id === 'settings')}
-          aria-current={active?.id === 'settings' ? 'page' : undefined}>
-          <settings.icon className="size-4 shrink-0" />
-          Settings
-        </Link>
+        {ACCOUNT_SECTIONS.map(s => (
+          <Link key={s.id} to={s.to} onClick={onNavigate} className={item(active?.id === s.id)}
+            aria-current={active?.id === s.id ? 'page' : undefined}>
+            <s.icon className="size-4 shrink-0" />
+            {s.label}
+          </Link>
+        ))}
+        <button type="button" onClick={() => { onNavigate?.(); void signOut() }} className={cn(item(false), 'w-full')}>
+          <LogOut className="size-4 shrink-0" />
+          Sign out
+        </button>
         <div className="flex items-center gap-2.5 px-2.5 pt-1.5 pb-1">
           <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent-soft text-[10px] font-semibold text-accent">{avatar}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted" title={email}>{email}</span>

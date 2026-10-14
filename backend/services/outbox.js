@@ -64,7 +64,7 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   if (contact.email_status === 'invalid') throw Object.assign(new Error('That email address bounced or is invalid.'), { status: 400 });
   if (contact.status === 'replied') throw Object.assign(new Error('They already replied. Answer them from Gmail.'), { status: 400 });
   if (!str(subject) || !str(body)) throw Object.assign(new Error('Write a subject and a message first.'), { status: 400 });
-  if (!(await connectionFor(userId))) throw Object.assign(new Error('Connect your Gmail in Settings to send from here.'), { status: 400 });
+  if (!(await connectionFor(userId))) throw Object.assign(new Error('Connect your Gmail under Integrations → Gmail to send from here.'), { status: 400 });
   const active = await one(
     "SELECT id FROM email_outbox WHERE user_id = $1 AND contact_id = $2 AND step = 0 AND status IN ('scheduled','sending','sent') LIMIT 1",
     [userId, contactId],
@@ -112,7 +112,7 @@ export async function sendOne(id) {
   if (conn.status === 'error') {
     // Hold until the user reconnects; don't keep logging in with a rejected password.
     const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000) });
-    await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, attempts = GREATEST(attempts - 1, 0), error = 'Waiting for you to reconnect Gmail in Settings' WHERE id = $1", [row.id, at]);
+    await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, attempts = GREATEST(attempts - 1, 0), error = 'Waiting for you to reconnect Gmail under Integrations → Gmail' WHERE id = $1", [row.id, at]);
     return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
   }
 

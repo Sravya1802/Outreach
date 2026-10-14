@@ -118,7 +118,7 @@ function WaitingOnYou() {
   if (c?.needs_review) items.push({ id: 'review', tone: 'warning', text: `${c.needs_review} ${c.needs_review === 1 ? 'application needs' : 'applications need'} an answer from you`, to: '/applications/auto-apply' })
   if (c?.failed) items.push({ id: 'failed', tone: 'danger', text: `${c.failed} ${c.failed === 1 ? 'application' : 'applications'} couldn’t be sent`, to: '/applications/auto-apply' })
   for (const s of services.filter(sv => sv.state === 'down')) {
-    items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/settings/integrations' })
+    items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/integrations/services' })
   }
   return (
     <section aria-labelledby="wait-h">

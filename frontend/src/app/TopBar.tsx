@@ -1,10 +1,9 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Moon, Search, Sun } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { initials, nameFromEmail } from '@/lib/format'
 import { Kbd, StatusDot, type Tone } from '@/ui'
-import { useAuth } from './auth'
-import { SECTIONS, sectionFor } from './nav'
+import { AccountMenu } from './AccountMenu'
+import { PRIMARY_SECTIONS, sectionFor } from './nav'
 import { useServiceHealth } from './queries'
 import { useTheme } from './theme'
 
@@ -14,11 +13,8 @@ const healthTone: Record<string, Tone> = { ok: 'success', warn: 'warning', down:
 export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { pathname } = useLocation()
   const active = sectionFor(pathname)
-  const { email } = useAuth()
   const { theme, toggle } = useTheme()
   const { overall, isLoading } = useServiceHealth()
-  const name = nameFromEmail(email)
-  const avatar = name === 'there' ? (email.charAt(0) || '?').toUpperCase() : initials(name)
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
   return (
@@ -26,7 +22,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       <Link to="/home" className="font-display text-[22px] font-semibold tracking-tight text-fg">OutreachOS</Link>
 
       <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-1">
-        {SECTIONS.map(s => {
+        {PRIMARY_SECTIONS.map(s => {
           const isActive = active?.id === s.id
           return (
             // Plain Link: the active section comes from sectionFor() (detail pages
@@ -47,7 +43,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           <span>Search</span>
           <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
         </button>
-        <Link to="/settings/integrations" title={isLoading ? 'Checking services…' : overall.label}
+        <Link to="/integrations/services" title={isLoading ? 'Checking services…' : overall.label}
           aria-label={`Service status: ${isLoading ? 'checking' : overall.label}`}
           className="grid size-8 place-items-center rounded-[4px] hover:bg-hover">
           <StatusDot tone={isLoading ? 'neutral' : healthTone[overall.state] ?? 'neutral'} />
@@ -56,7 +52,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
           {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>
-        <span className="grid size-8 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent" title={email}>{avatar}</span>
+        <AccountMenu />
       </div>
     </div>
   )

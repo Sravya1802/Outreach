@@ -1,4 +1,4 @@
-import { Briefcase, Home, Inbox, Send, Settings, UserRound, type LucideIcon } from 'lucide-react'
+import { Briefcase, Home, Inbox, Plug, Send, Settings, UserRound, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,13 +8,15 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'jobs' | 'applications' | 'outreach' | 'profile' | 'settings'
+  id: 'home' | 'jobs' | 'applications' | 'outreach' | 'integrations' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
   tabs: NavTab[]
   /** Path prefixes (besides `to`) that belong to this section, e.g. detail pages. */
   owns?: string[]
+  /** Reached from the account menu (avatar) instead of the main bar. */
+  inAccountMenu?: boolean
 }
 
 export const SECTIONS: NavSection[] = [
@@ -48,22 +50,32 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations',
+    tabs: [
+      { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies' },
+      { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in' },
+      { label: 'Services', to: '/integrations/services', keywords: 'status api keys health usage lookups hunter apollo' },
+    ],
+  },
+  {
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',
     tabs: [
       { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
       { label: 'Resume', to: '/profile/resume', keywords: 'cv upload pdf master' },
       { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
-      { label: 'GitHub projects', to: '/profile/github', keywords: 'repos repositories projects connect sign in' },
     ],
+    inAccountMenu: true,
   },
   {
     id: 'settings', label: 'Settings', icon: Settings, to: '/settings',
     tabs: [],
+    inAccountMenu: true,
   },
 ]
 
-export const PRIMARY_SECTIONS = SECTIONS.filter(s => s.id !== 'settings')
-export const SETTINGS_SECTION = { label: 'Settings', icon: Settings, to: '/settings' } as const
+/** The main bar; Profile and Settings live under the avatar. */
+export const PRIMARY_SECTIONS = SECTIONS.filter(s => !s.inAccountMenu)
+export const ACCOUNT_SECTIONS = SECTIONS.filter(s => s.inAccountMenu)
 
 /** Which section a pathname belongs to (drives sidebar highlight + tab bar). */
 export function sectionFor(pathname: string): NavSection | undefined {

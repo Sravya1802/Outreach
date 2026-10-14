@@ -122,7 +122,7 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
         {kind === 'email' && gmail.data && !gmail.data.connected && text.trim() && (
           <p className="flex flex-wrap items-center gap-2 text-[13px] text-subtle">
             Connect your Gmail to send from here, schedule follow-ups and track replies.
-            <ButtonLink to="/settings/gmail" size="sm" variant="ghost">Connect Gmail</ButtonLink>
+            <ButtonLink to="/integrations/gmail" size="sm" variant="ghost">Connect Gmail</ButtonLink>
           </p>
         )}
       </div>

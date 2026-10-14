@@ -40,7 +40,7 @@ export default function OutboxPage() {
         <PageHeader title="Outbox" description="Emails scheduled from your Gmail, their follow-ups, and the replies that came back." />
         <div className="border-t border-rule">
           <EmptyState title="Connect your Gmail first" description="Outreach sends from your own address, so replies come to you and can be tracked here."
-            action={<ButtonLink to="/settings/gmail" variant="primary" size="sm">Connect Gmail</ButtonLink>} />
+            action={<ButtonLink to="/integrations/gmail" variant="primary" size="sm">Connect Gmail</ButtonLink>} />
         </div>
       </Page>
     )

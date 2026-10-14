@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, CalendarClock, Download, ExternalLink, NotebookPen, Trash2 } from 'lucide-react'
+import { BellRing, CalendarClock, Download, ExternalLink, NotebookPen, Search, Trash2 } from 'lucide-react'
 import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from '@/lib/api'
 import { qk } from '@/app/queryClient'
-import { timeAgo } from '@/lib/format'
+import { percent, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
+import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { STAGES, scoreOutOf10, scoreTone, stageFor } from './score'
-import { FOLLOW_UP_DAYS, followUpDays, nextStepDue, updatedAt, type DueState } from './pipeline'
+import { FOLLOW_UP_DAYS, applyNote, followUpDays, funnel, matchesSearch, nextStepDue, updatedAt, type DueState, type Funnel } from './pipeline'
 import { NotesDialog } from './NotesDialog'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
@@ -26,6 +26,27 @@ function peopleLink(r: EvaluationSummary): { to: string; text: string } {
 
 const FOLLOW_UP = 'followup'
 
+function FunnelStrip({ f }: { f: Funnel }) {
+  const stats = [
+    { label: 'Applied', value: String(f.applied), sub: null },
+    { label: 'Heard back', value: `${percent(f.heardBack, f.applied)}%`, sub: `${f.heardBack} of ${f.applied}` },
+    { label: 'Interviews', value: `${percent(f.interviews, f.applied)}%`, sub: `${f.interviews} of ${f.applied}` },
+    { label: 'Offers', value: String(f.offers), sub: null },
+  ]
+  return (
+    <dl className="mb-6 grid grid-cols-2 border-y border-rule sm:grid-cols-4">
+      {stats.map((st, i) => (
+        <div key={st.label} className={cn('py-3', i % 2 === 1 && 'pl-4 sm:pl-0', i > 0 && 'sm:border-l sm:border-line sm:pl-5', i > 1 && 'border-t border-line sm:border-t-0')}>
+          <dt className="text-[13px] text-muted">{st.label}</dt>
+          <dd className="mt-0.5 font-mono text-[22px] text-fg">
+            {st.value}{st.sub && <span className="ml-2 text-[12px] text-subtle">{st.sub}</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 const DUE_TEXT: Record<DueState, string> = { overdue: 'text-danger', today: 'text-warning', soon: 'text-fg', later: 'text-muted' }
 
 export default function PipelinePage() {
@@ -40,6 +61,7 @@ export default function PipelinePage() {
   const followUpOnly = stageParam === FOLLOW_UP
   const stage = STAGES.some(s => s.id === stageParam) ? stageParam as PipelineColumn : null
   const sort = params.get('sort') === 'score' ? 'score' : 'recent'
+  const query = params.get('q') ?? ''
 
   // When the list was fetched; keeps render pure and the day counts stable.
   const now = pipeline.dataUpdatedAt
@@ -47,6 +69,7 @@ export default function PipelinePage() {
   const followUpCount = everything.filter(r => followUpDays(r, now) != null).length
   const items = everything
     .filter(r => followUpOnly ? followUpDays(r, now) != null : !stage || stageFor(r.apply_status) === stage)
+    .filter(r => matchesSearch(r, query))
     .sort((a, b) => sort === 'score'
       ? (b.score ?? 0) - (a.score ?? 0)
       : new Date(updatedAt(b)).getTime() - new Date(updatedAt(a)).getTime())
@@ -77,6 +100,7 @@ export default function PipelinePage() {
   })
 
   const totals = pipeline.data?.totals
+  const stats = funnel(everything)
 
   return (
     <Page wide>
@@ -85,6 +109,8 @@ export default function PipelinePage() {
         description="Every role you’ve evaluated or applied to, in one list. Change a stage when you hear back."
         actions={<ButtonLink to="/applications/evaluate" variant="primary">Evaluate a role</ButtonLink>}
       />
+
+      {stats.applied > 0 && <FunnelStrip f={stats} />}
 
       {followUpCount > 0 && !followUpOnly && (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-warning/40 bg-warning-soft px-4 py-3 text-[14px]">
@@ -118,11 +144,19 @@ export default function PipelinePage() {
             </button>
           )}
         </nav>
-        <div className="w-44">
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <label className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+            <span className="sr-only">Search applications</span>
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden="true" />
+            <Input type="search" value={query} placeholder="Search company, role, notes" className="pl-9"
+              onChange={e => set('q', e.target.value || null)} />
+          </label>
+          <div className="w-40">
           <Select value={sort} onChange={e => set('sort', e.target.value === 'score' ? 'score' : null)} aria-label="Sort">
             <option value="recent">Most recent</option>
             <option value="score">Highest score</option>
           </Select>
+          </div>
         </div>
       </div>
 
@@ -130,9 +164,13 @@ export default function PipelinePage() {
         <div className="space-y-2">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}</div>
       ) : items.length === 0 ? (
         <div className="border-t border-rule">
-          <EmptyState title={followUpOnly ? 'Nothing to follow up on' : stage ? 'Nothing at this stage' : 'No applications yet'}
-            description={followUpOnly ? `Applications show up here after ${FOLLOW_UP_DAYS} days with no reply.` : stage ? undefined : 'Evaluate a role, or track one from Jobs → Roles, and it shows up here.'}
-            action={!stage && !followUpOnly ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
+          {query && everything.length > 0 ? (
+            <EmptyState title={`Nothing matches “${query}”`} action={<Button size="sm" onClick={() => set('q', null)}>Clear search</Button>} />
+          ) : (
+            <EmptyState title={followUpOnly ? 'Nothing to follow up on' : stage ? 'Nothing at this stage' : 'No applications yet'}
+              description={followUpOnly ? `Applications show up here after ${FOLLOW_UP_DAYS} days with no reply.` : stage ? undefined : 'Evaluate a role, or track one from Jobs → Roles, and it shows up here.'}
+              action={!stage && !followUpOnly ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
+          )}
         </div>
       ) : (
         <div className="relative overflow-x-auto">
@@ -154,6 +192,7 @@ export default function PipelinePage() {
                 const quiet = followUpDays(r, now)
                 const people = peopleLink(r)
                 const due = nextStepDue(r.next_step_at)
+                const how = applyNote(r)
                 return (
                   <tr key={r.id} className="border-t border-line">
                     <td className={cn('py-3 pr-3 font-mono text-[15px]', TONE_TEXT[scoreTone(s)])}>{s ?? '—'}</td>
@@ -174,6 +213,7 @@ export default function PipelinePage() {
                           <span>{r.next_step || 'Next step'}{due && <> · {due.state === 'overdue' ? `was due ${due.label === 'Yesterday' ? 'yesterday' : due.label}` : due.label}</>}</span>
                         </p>
                       )}
+                      {how && <p className={cn('mt-0.5 text-[12px]', how.tone === 'danger' ? 'text-danger' : 'text-subtle')}>{how.text}</p>}
                       {r.notes && <p className="mt-0.5 max-w-[420px] truncate text-[13px] text-subtle" title={r.notes}>{r.notes}</p>}
                     </td>
                     <td className="max-w-[220px] px-3 py-3">

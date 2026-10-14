@@ -68,9 +68,20 @@ function salaryRange(j) {
 }
 
 /** JobSpy row → catalog row (scraped_roles shape). */
+// Search engines return near matches; keep only titles that are the role type.
+const INTERN_TITLE = /\b(intern|interns|internship|trainee|apprentice(ship)?|co-?op)\b/i;
+const SENIOR_TITLE = /\b(senior|sr\.?|lead|manager|principal|staff|director|head|architect|vp|chief)\b/i;
+
+export function titleFitsRoleType(title, roleType) {
+  const t = String(title || '');
+  if (roleType === 'intern') return INTERN_TITLE.test(t) && !/\b(manager|director|head)\b/i.test(t);
+  return !SENIOR_TITLE.test(t) && !INTERN_TITLE.test(t);
+}
+
 export function toCatalogRow(j, roleType, region = 'usa') {
   const apply = j.job_url_direct || j.job_url;
   if (!j.title || !j.company || !apply) return null;
+  if (!titleFitsRoleType(j.title, roleType)) return null;
   return {
     title: String(j.title).trim(),
     company_name: String(j.company).trim(),

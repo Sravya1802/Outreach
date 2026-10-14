@@ -124,6 +124,25 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Full account wipe; country per account (USA / India / other)
+
+- **Wipe** (user-requested, both choices confirmed): deleted all 5 accounts, emptied all 17 user tables, removed 9 stored files and the old disk files (reports, resumes, outreach.db).
+  - **Kept** the shared job catalog (scraped_roles) and provider_domain_cache.
+  - Backup: `~/outreach-backups/wipe-2026-10-13-2358.tgz` plus `…-applications.md`, on the Mac and on the VM.
+  - Test accounts recreated after: e2e@, e2e+india@, e2e+nochoice@ outreach-os.local.
+- **Markets**: backend `c561dd1`, `eb88170`, dedupe fix (VM). Frontend `5de342c`. Migration 017 applied.
+  - `user_profile.job_market` is usa | india | other. `scraped_roles.region` gains `india` (intl = other countries). Mapping lives in `services/markets.js`, mirrored in `frontend/src/lib/markets.ts`.
+  - India is matched on whole words (Indiana/Indianapolis stay US). Intl rows in India moved to india.
+  - Sign-up asks for a country, stored in auth user_metadata. `MarketGate` copies it to the profile on first sign-in, or asks once.
+  - Roles shows only the two lists for your market; `/jobs/roles/intern|new-grad` are market-relative, and old `-intl` links redirect.
+  - Home counts and alert digests are filtered by market too. Country is editable in Profile ("Looking for jobs in").
+  - JobSpy also searches Indeed + LinkedIn **India** (cron source `jobspy_india`). India: 204 intern / 415 new grad.
+- **Fixes found on the way:**
+  - `persistCatalogRows` lost whole 200-row chunks on duplicate apply_url. It now dedupes.
+  - JobSpy near-matches ("Director, AI…" under internships) are filtered by title (`titleFitsRoleType`); 159 hidden.
+  - Duplicate "Country" labels on Details renamed.
+- Verified in a browser before the Mac restart: all 8 market checks passed. The scratchpad helpers were lost in the restart and re-created (`mint-session.mjs` now creates test users).
+
 ### 2026-10-13 — Sign in with GitHub (rule 2)
 
 - Backend `20a5717` (VM same), migration 016 applied; frontend `01efaf5`, live at `/profile/github`.

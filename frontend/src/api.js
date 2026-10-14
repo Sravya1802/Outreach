@@ -329,6 +329,7 @@ export const api = {
 
     // ── Apply-state ──────────────────────────────────────────────────────────
     setApplyStatus: (id, status) => apiCall(`/career/evaluations/${id}/apply-status`, { method: 'PATCH', body: { status } }),
+    savePipelineNotes: (id, notes) => apiCall(`/career/evaluations/${id}/notes`, { method: 'PATCH', body: notes }),
     setApplyMode:   (id, mode)   => apiCall(`/career/evaluations/${id}/apply-mode`,   { method: 'PATCH', body: { mode } }),
     apply:          (id) => apiCall(`/career/evaluations/${id}/apply`,        { method: 'POST' }),
     markApplied:    (id) => apiCall(`/career/evaluations/${id}/mark-applied`, { method: 'POST' }),

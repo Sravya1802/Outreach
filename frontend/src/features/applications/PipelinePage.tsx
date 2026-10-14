@@ -1,19 +1,29 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, ExternalLink, Trash2 } from 'lucide-react'
+import { BellRing, Download, ExternalLink, Trash2 } from 'lucide-react'
 import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { STAGES, scoreOutOf10, scoreTone, stageFor } from './score'
+import { FOLLOW_UP_DAYS, followUpDays, updatedAt } from './pipeline'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
 
 function allItems(p: Pipeline | undefined): EvaluationSummary[] {
   return p ? STAGES.flatMap(s => p.columns[s.id]?.items ?? []) : []
 }
+
+/** Where to look for a referral: the tracked company's people, else track it first. */
+function peopleLink(r: EvaluationSummary): { to: string; text: string } {
+  return r.company_id
+    ? { to: `/company/${r.company_id}`, text: `Find someone at ${r.company_name}` }
+    : { to: `/jobs/companies?q=${encodeURIComponent(r.company_name)}`, text: `Track ${r.company_name} to find people` }
+}
+
+const FOLLOW_UP = 'followup'
 
 export default function PipelinePage() {
   const qc = useQueryClient()
@@ -22,15 +32,20 @@ export default function PipelinePage() {
   const [confirm, setConfirm] = useState<EvaluationSummary | null>(null)
   const pipeline = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
 
-  const stageParam = params.get('stage') as PipelineColumn | null
-  const stage = STAGES.some(s => s.id === stageParam) ? stageParam : null
+  const stageParam = params.get('stage')
+  const followUpOnly = stageParam === FOLLOW_UP
+  const stage = STAGES.some(s => s.id === stageParam) ? stageParam as PipelineColumn : null
   const sort = params.get('sort') === 'score' ? 'score' : 'recent'
 
-  const items = allItems(pipeline.data)
-    .filter(r => !stage || stageFor(r.apply_status) === stage)
+  // When the list was fetched; keeps render pure and the day counts stable.
+  const now = pipeline.dataUpdatedAt
+  const everything = allItems(pipeline.data)
+  const followUpCount = everything.filter(r => followUpDays(r, now) != null).length
+  const items = everything
+    .filter(r => followUpOnly ? followUpDays(r, now) != null : !stage || stageFor(r.apply_status) === stage)
     .sort((a, b) => sort === 'score'
       ? (b.score ?? 0) - (a.score ?? 0)
-      : new Date(b.applied_at || b.created_at).getTime() - new Date(a.applied_at || a.created_at).getTime())
+      : new Date(updatedAt(b)).getTime() - new Date(updatedAt(a)).getTime())
 
   function set(key: string, value: string | null) {
     const next = new URLSearchParams(params)
@@ -67,10 +82,23 @@ export default function PipelinePage() {
         actions={<ButtonLink to="/applications/evaluate" variant="primary">Evaluate a role</ButtonLink>}
       />
 
+      {followUpCount > 0 && !followUpOnly && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-warning/40 bg-warning-soft px-4 py-3 text-[14px]">
+          <p className="flex items-start gap-2.5 text-fg">
+            <BellRing className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+            <span>
+              <b className="font-medium">{followUpCount} {followUpCount === 1 ? 'application hasn’t' : 'applications haven’t'} heard back in over a week.</b>{' '}
+              <span className="text-muted">A referral or a short follow-up note often gets a reply.</span>
+            </span>
+          </p>
+          <Button size="sm" onClick={() => set('stage', FOLLOW_UP)}>Show {followUpCount === 1 ? 'it' : 'them'}</Button>
+        </div>
+      )}
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Stage" className="flex flex-wrap gap-2 text-[14px]">
-          <button type="button" onClick={() => set('stage', null)} aria-pressed={!stage}
-            className={cn('rounded-full px-3.5 py-1.5', !stage ? 'bg-fg text-canvas' : 'border border-line-strong text-muted hover:text-fg')}>
+          <button type="button" onClick={() => set('stage', null)} aria-pressed={!stage && !followUpOnly}
+            className={cn('rounded-full px-3.5 py-1.5', !stage && !followUpOnly ? 'bg-fg text-canvas' : 'border border-line-strong text-muted hover:text-fg')}>
             All · {pipeline.data?.total ?? 0}
           </button>
           {STAGES.map(s => (
@@ -79,20 +107,28 @@ export default function PipelinePage() {
               {s.label} · {totals?.[s.id] ?? 0}
             </button>
           ))}
+          {followUpCount > 0 && (
+            <button type="button" onClick={() => set('stage', FOLLOW_UP)} aria-pressed={followUpOnly}
+              className={cn('flex items-center gap-1.5 rounded-full px-3.5 py-1.5', followUpOnly ? 'bg-warning text-canvas' : 'border border-warning/50 text-warning hover:bg-warning-soft')}>
+              <BellRing className="size-3.5" aria-hidden="true" /> Follow up · {followUpCount}
+            </button>
+          )}
         </nav>
-        <Select value={sort} onChange={e => set('sort', e.target.value === 'score' ? 'score' : null)} aria-label="Sort" className="w-44">
-          <option value="recent">Most recent</option>
-          <option value="score">Highest score</option>
-        </Select>
+        <div className="w-44">
+          <Select value={sort} onChange={e => set('sort', e.target.value === 'score' ? 'score' : null)} aria-label="Sort">
+            <option value="recent">Most recent</option>
+            <option value="score">Highest score</option>
+          </Select>
+        </div>
       </div>
 
       {pipeline.error ? <ErrorState error={pipeline.error} onRetry={() => pipeline.refetch()} /> : pipeline.isLoading ? (
         <div className="space-y-2">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}</div>
       ) : items.length === 0 ? (
         <div className="border-t border-rule">
-          <EmptyState title={stage ? 'Nothing at this stage' : 'No applications yet'}
-            description={stage ? undefined : 'Evaluate a role, or track one from Jobs → Roles, and it shows up here.'}
-            action={!stage ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
+          <EmptyState title={followUpOnly ? 'Nothing to follow up on' : stage ? 'Nothing at this stage' : 'No applications yet'}
+            description={followUpOnly ? `Applications show up here after ${FOLLOW_UP_DAYS} days with no reply.` : stage ? undefined : 'Evaluate a role, or track one from Jobs → Roles, and it shows up here.'}
+            action={!stage && !followUpOnly ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
         </div>
       ) : (
         <div className="relative overflow-x-auto">
@@ -111,6 +147,8 @@ export default function PipelinePage() {
               {items.map(r => {
                 const s = scoreOutOf10(r.score)
                 const col = stageFor(r.apply_status)
+                const quiet = followUpDays(r, now)
+                const people = peopleLink(r)
                 return (
                   <tr key={r.id} className="border-t border-line">
                     <td className={cn('py-3 pr-3 font-mono text-[15px]', TONE_TEXT[scoreTone(s)])}>{s ?? '—'}</td>
@@ -118,6 +156,13 @@ export default function PipelinePage() {
                       <Link to={`/applications/evaluate?id=${r.id}`} className="hover:text-accent">
                         <b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span>
                       </Link>
+                      {quiet != null && (
+                        <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[13px]">
+                          <span className="text-warning">No reply in {quiet} days</span>
+                          <span className="text-subtle" aria-hidden="true">·</span>
+                          <Link to={people.to} className="text-accent hover:underline">{people.text}</Link>
+                        </p>
+                      )}
                     </td>
                     <td className="max-w-[220px] px-3 py-3">
                       {r.resume_file_id ? (
@@ -135,7 +180,7 @@ export default function PipelinePage() {
                         {STAGES.map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
                       </Select>
                     </td>
-                    <td className="px-3 py-3 text-[13px] text-subtle">{timeAgo(r.applied_at || r.created_at)}</td>
+                    <td className="px-3 py-3 text-[13px] text-subtle">{timeAgo(updatedAt(r))}</td>
                     <td className="py-3 pl-3">
                       <div className="flex justify-end gap-1">
                         {r.job_url && (

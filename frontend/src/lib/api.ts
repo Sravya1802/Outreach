@@ -384,7 +384,17 @@ export interface EvaluationSummary {
   resume_filename?: string | null
   resume_kind?: ResumeFile['kind'] | null
   resume_sent?: boolean
+  /** Pipeline only. */
+  notes?: string | null
+  next_step?: string | null
+  /** YYYY-MM-DD */
+  next_step_at?: string | null
+  stage_changed_at?: string | null
+  /** The tracked company with this name, for its people page. */
+  company_id?: number | string | null
 }
+
+export interface PipelineNotes { notes?: string | null; next_step?: string | null; next_step_at?: string | null }
 
 /** The parts of the evaluation report the new pages show (the JSON has more). */
 export interface EvaluationReport {
@@ -499,6 +509,7 @@ export const api = {
   setApplyStatus: (id: number, status: ApplyStatus): Promise<unknown> => legacy.career.setApplyStatus(id, status),
   markApplied: (id: number): Promise<unknown> => legacy.career.markApplied(id),
   pipeline: (): Promise<Pipeline> => legacy.career.pipeline(),
+  savePipelineNotes: (id: number, notes: PipelineNotes): Promise<PipelineNotes> => legacy.career.savePipelineNotes(id, notes),
   openReport: async (id: number): Promise<void> => { await legacy.career.openReportTab(id) },
   saveNightlySettings: async (s: Partial<NightlySettings>): Promise<NightlySettings> => (await legacy.career.saveNightlySettings(s)).settings,
   hasResume: async (): Promise<boolean> => Boolean((await legacy.career.resume())?.hasResume),

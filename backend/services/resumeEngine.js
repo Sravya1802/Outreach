@@ -309,7 +309,7 @@ export async function writeCoverLetter(userId, ev) {
   const source = `${masterText(parsed)}\n${await resumeText(userId)}`;
   const removed = [];
   const paragraphs = (letter.paragraphs || []).map(p => str(p).split(/(?<=[.!?])\s+/).filter(sentence => {
-    const bad = unsupportedNumbers(sentence, `${source}\n${ev.job_description}`);
+    const bad = unsupportedNumbers(sentence, `${source}\n${ev.job_title}\n${ev.company_name}\n${ev.job_description}`);
     if (bad.length) removed.push({ where: 'Cover letter', what: sentence, why: `numbers ${bad.join(', ')} aren’t in your resume` });
     return !bad.length;
   }).join(' ')).filter(Boolean);

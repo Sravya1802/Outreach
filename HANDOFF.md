@@ -124,6 +124,27 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — New look live; Profile (details + answer bank); apply pipeline rules
+
+- **New look shipped** (`b735a81`): Fraunces display + IBM Plex, hairline rules, dark default (Paper Dark), cream light theme. The sidebar is now a top bar with section sub-tabs; the drawer remains for phones. Legacy pages still render old inside it.
+- **$0 salary bug** (`a473e06`, VM `14c6260`): JobSpy rows without pay showed "$0" (Number(null) = 0). Fixed, and the 406 bad rows were cleared in prod.
+- **Profile section** (`8f22323` backend + migration 015 applied, `65ece0a` frontend):
+  - `/profile/details`: every user_profile field; work authorization now defaults to "Choose…", not US Citizen.
+  - `/profile/answers`: answer bank (`application_answers` table, `services/answerBank.js`, `/api/profile/answers`). Pending questions from forms come first.
+  - `answerFor(userId, question)` is the hook auto-apply will call: a miss records the question as pending.
+  - Browser-tested against prod with the e2e user (answer / edit / delete, details persist).
+- **The user's apply rules** (2026-10-13), in order:
+  1. Fill all details. Done.
+  2. GitHub = **project repos only**, via **Sign in with GitHub**. The user must register an OAuth app.
+  3. Tailor the resume per JD, with a per-role **change report**.
+  4. **Pick projects per JD** (from the resume plus GitHub repos).
+  5. **ATS ≥ 90%**. Never invent skills; under 90 goes to "Waiting on you".
+  6. Output **LaTeX → PDF**, attached to the application.
+  7. Cover letter when the form needs one.
+  - Master resume stays a **PDF uploaded on the site**, parsed into editable structure.
+  - **Daily plan list goes out before anything is applied.** Up to 30 a day; 9+ out of 10 is planned.
+- **Next:** master resume structure + GitHub OAuth → LaTeX tailoring engine (tectonic on VM, ATS scorer, change report, cover letter) → daily plan + auto-apply wiring → rebuild the remaining legacy pages.
+
 ### 2026-10-13 — JobSpy live + detailed per-tab designs (A vs B)
 
 - **JobSpy:** see commit `d8d5794` (VM `d39f7ec`).

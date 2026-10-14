@@ -124,6 +124,16 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Navigation: account menu + Integrations
+- **What:**
+  - Clicking the avatar opens a menu with the name and email, **Profile**, **Settings** and **Sign out** (there was no sign-out in the bar before). It closes on Escape or a click outside. The phone drawer has the same items plus Sign out.
+  - The main bar is now Home · Jobs · Applications · Outreach · **Integrations**.
+  - Integrations has Gmail (moved from Settings), GitHub (moved from Profile → GitHub projects) and Services (status + lookup allowance, moved from Settings → Integrations).
+  - Profile = Details, Resume, Application answers. Settings = Account, Privacy.
+  - Old URLs redirect: `/profile/github`, `/settings/gmail`, `/settings/integrations`. Server messages now say "Integrations → Gmail".
+- **Files:** [AccountMenu.tsx](frontend/src/app/AccountMenu.tsx), [nav.ts](frontend/src/app/nav.ts) (`inAccountMenu`, `ACCOUNT_SECTIONS`), [TopBar.tsx](frontend/src/app/TopBar.tsx), [Sidebar.tsx](frontend/src/app/Sidebar.tsx), [features/integrations/](frontend/src/features/integrations/).
+- **Status:** aaf2afa is live. The browser test passed: bar order, menu items, Escape, Profile tabs, Integrations tabs, all 3 redirects, phone drawer Sign out, and Sign out → sign-in screen that survives a reload.
+
 ### 2026-10-14 — Step 3: Gmail (each user's own account)
 - **Decision:** every user connects their OWN Gmail with an app password. "Sign in with Google" may come later; the restricted scopes need Google's CASA review. Each user's Gmail also emails them their own list, summary and reply alerts. There's no shared site sender; the old `GMAIL_USER` mailer stays only as a fallback.
 - **What:**

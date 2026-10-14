@@ -154,6 +154,14 @@ export const api = {
   jobMetrics: () => apiCall('/dashboard/job-metrics'),
   dailyUpdates: () => apiCall('/dashboard/daily-updates'),
 
+  // Answer bank auto-apply fills application forms from
+  profile: {
+    answers:      ()                 => apiCall('/profile/answers'),
+    saveAnswer:   (question, answer) => apiCall('/profile/answers', { method: 'POST', body: { question, answer } }),
+    updateAnswer: (id, patch)        => apiCall(`/profile/answers/${id}`, { method: 'PUT', body: patch }),
+    deleteAnswer: (id)               => apiCall(`/profile/answers/${id}`, { method: 'DELETE' }),
+  },
+
   // Job-alert subscription (LinkedIn-style email digests of new roles)
   alerts: {
     get:  ()      => apiCall('/alerts/subscription'),

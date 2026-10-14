@@ -26,7 +26,7 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
     {
       id: 'profile', title: 'Fill in your application profile',
       description: 'Contact details, work authorization and education, used to fill applications for you.',
-      to: '/applications/auto-apply', cta: 'Open profile', done: i.profileComplete,
+      to: '/profile/details', cta: 'Open profile', done: i.profileComplete,
     },
     {
       id: 'companies', title: 'Add companies to track',

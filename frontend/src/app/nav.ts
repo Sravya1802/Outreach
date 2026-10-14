@@ -1,4 +1,4 @@
-import { Briefcase, Home, Inbox, Send, Settings, type LucideIcon } from 'lucide-react'
+import { Briefcase, Home, Inbox, Send, Settings, UserRound, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,7 +8,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'jobs' | 'applications' | 'outreach' | 'settings'
+  id: 'home' | 'jobs' | 'applications' | 'outreach' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -47,6 +47,13 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Contacts', to: '/outreach/contacts', keywords: 'people emails messages crm' },
       { label: 'Templates', to: '/outreach/templates', keywords: 'email linkedin dm' },
+    ],
+  },
+  {
+    id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',
+    tabs: [
+      { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
+      { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
     ],
   },
   {

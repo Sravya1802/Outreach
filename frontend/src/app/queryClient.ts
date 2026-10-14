@@ -32,6 +32,7 @@ export const qk = {
   autoApplyQueue: ['auto-apply-queue'] as const,
   hasResume: ['has-resume'] as const,
   profile: ['career-profile'] as const,
+  answers: ['profile-answers'] as const,
   nightlySettings: ['nightly-settings'] as const,
   companySearch: (q: string) => ['company-search', q] as const,
   catalog: (q: object) => ['catalog', q] as const,

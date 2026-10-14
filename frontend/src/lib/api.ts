@@ -107,6 +107,20 @@ export interface CareerProfile {
   [key: string]: unknown
 }
 
+export interface SavedAnswer {
+  id: number
+  question: string
+  answer: string | null
+  status: 'answered' | 'pending'
+  /** "Figma · Software Engineer Intern" — the form that asked a pending question. */
+  asked_by: string | null
+  evaluation_id: number | null
+  use_count: number
+  last_used_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface NightlySettings {
   enabled: boolean
   roleType: string
@@ -222,6 +236,11 @@ export const api = {
   autoApplyQueue: (): Promise<AutoApplyQueue> => legacy.career.autoApplyQueue(),
   hasResume: async (): Promise<boolean> => Boolean((await legacy.career.resume())?.hasResume),
   profile: (): Promise<CareerProfile> => legacy.career.profile(),
+  saveProfile: (patch: Partial<CareerProfile>): Promise<CareerProfile> => legacy.career.updateProfile(patch),
+  answers: async (): Promise<SavedAnswer[]> => (await legacy.profile.answers()).answers ?? [],
+  saveAnswer: (question: string, answer: string): Promise<SavedAnswer> => legacy.profile.saveAnswer(question, answer),
+  updateAnswer: (id: number, patch: { question?: string; answer?: string }): Promise<SavedAnswer> => legacy.profile.updateAnswer(id, patch),
+  deleteAnswer: (id: number): Promise<{ ok: boolean }> => legacy.profile.deleteAnswer(id),
   nightlySettings: async (): Promise<NightlySettings> => (await legacy.career.nightlySettings()).settings,
   /** Up to 8 of the user's companies whose name matches. */
   searchCompanies: (q: string): Promise<CompanySearchHit[]> => legacy.jobs.search(q),

@@ -94,9 +94,9 @@ function AccountTab() {
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Application profile & resumes"
-          description="Contact details, work authorization, EEO answers and your resume library live with auto-apply for now." />
-        <CardBody><ButtonLink to="/applications/auto-apply" size="sm">Open profile</ButtonLink></CardBody>
+        <CardHeader title="Application profile"
+          description="Contact details, work authorization, education and your saved answers to form questions." />
+        <CardBody><ButtonLink to="/profile/details" size="sm">Open profile</ButtonLink></CardBody>
       </Card>
     </div>
   )

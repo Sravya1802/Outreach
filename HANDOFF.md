@@ -124,6 +124,23 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Pay on roles, Applications rebuilt, AI plan agreed
+
+- **Pay:** Greenhouse/Ashby/Lever public board APIs fill posted pay (`services/payEnricher.js`, `payParse.js`, migration 018 `pay_checked_at`). The lookup runs after both daily scrapes and filled 457 roles on its first run; US coverage is now 27–32%.
+  - JobSpy pay keeps its currency (INR in lakhs). Funding-round amounts aren't read as pay.
+  - Roles has a Pay column and a "Pay posted" filter (`pay=1`). levels.fyi was declined: its terms forbid scraping.
+- **Applications rebuilt** (`10e1513`): Auto-apply / Evaluate / Pipeline, and Profile → Resume.
+  - Removed: portal scanner, batch evaluate, history, ranked, resume folder.
+  - Scores are shown out of 10.
+  - Automatic applying stays locked in the UI until the daily plan exists. Rules default to 9.0+ and **15/day** (user changed this from 30).
+- **AI is down on prod:** the OpenAI key is rejected (401), Gemini has 0 quota, and there's no ANTHROPIC_API_KEY. Evaluate shows a plain "scoring is down" message.
+- **AI plan the user agreed to ("Smart, 15 a day", ~$45/mo):**
+  - OpenAI for everything except resumes: gpt-4o-mini quick score, then gpt-4o short evaluation, both batched overnight.
+  - **Claude Opus 5.5 for resume drafting, ATS check and cover letters.** If Opus is down, wait and retry; no silent fallback.
+  - Batch APIs (50% off) for the overnight plan, short eval output (full report only on open), prompt caching, no duplicate work, cover letters only when required. Also an in-app spend cap plus a usage display in Settings.
+  - Waiting on the user for **new OpenAI and Anthropic keys**.
+- **Still old design:** Home (needs improving), Analytics (fold into Home), Outreach contacts, Templates, company page.
+
 ### 2026-10-14 — Full account wipe; country per account (USA / India / other)
 
 - **Wipe** (user-requested, both choices confirmed): deleted all 5 accounts, emptied all 17 user tables, removed 9 stored files and the old disk files (reports, resumes, outreach.db).

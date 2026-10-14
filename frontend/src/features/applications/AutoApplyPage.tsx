@@ -61,9 +61,9 @@ function Rules() {
   const { data: settings, isLoading } = useNightlySettings()
   const [threshold, setThreshold] = useState<string | null>(null)
   const [perDay, setPerDay] = useState<string | null>(null)
-  // Defaults follow the agreed rules: 9.0 and up, at most 30 a day.
+  // Defaults follow the agreed rules: 9.0 and up, at most 15 a day.
   const t = threshold ?? (settings && settings.minScore !== 85 ? (settings.minScore / 10).toFixed(1) : '9.0')
-  const d = perDay ?? (settings && settings.maxApps !== 50 ? String(settings.maxApps) : '30')
+  const d = perDay ?? (settings && settings.maxApps !== 50 ? String(settings.maxApps) : '15')
   const tNum = Number(t)
   const dNum = Number(d)
   const valid = tNum >= 5 && tNum <= 10 && Number.isInteger(dNum) && dNum >= 1 && dNum <= 50

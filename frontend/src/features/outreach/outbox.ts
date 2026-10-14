@@ -35,7 +35,8 @@ export function itemStatus(it: OutboxItem, now = Date.now()): { text: string; to
   if (it.status === 'cancelled') return { text: it.cancel_reason ? `Not sent: ${it.cancel_reason.toLowerCase()}` : 'Cancelled', tone: 'neutral' }
   if (it.status === 'failed') return { text: `Failed: ${it.error || 'unknown error'}`, tone: 'danger' }
   if (it.status === 'sending') return { text: 'Sending…', tone: 'accent' }
-  return { text: `Goes ${inZone(it.send_after, it.recipient_tz)} (${cityOf(it.recipient_tz)} time)`, tone: 'warning' }
+  const when = `Goes ${inZone(it.send_after, it.recipient_tz)} (${cityOf(it.recipient_tz)} time)`
+  return { text: it.error ? `${when} · held: ${it.error}` : when, tone: it.error ? 'danger' : 'warning' }
 }
 
 export function replyText(r: ReplyItem): string {

@@ -124,6 +124,38 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Step 3: Gmail (each user's own account)
+- **Decision:** every user connects their OWN Gmail with an app password. "Sign in with Google" may come later; the restricted scopes need Google's CASA review. Each user's Gmail also emails them their own list, summary and reply alerts. There's no shared site sender; the old `GMAIL_USER` mailer stays only as a fallback.
+- **What:**
+  - **gmail_connections:** the sealed app password, verified against both SMTP and IMAP before it's saved.
+  - **Outbox** (`email_outbox`):
+    - The first email goes at the next 8–11 AM weekday slot in the recipient's time zone. The zone comes from the company's location (`sendWindow.timezoneFor`), else from the user's market. "Send now" is also available.
+    - Daily cap per user is 20 by default (settable 1–40), with a gap of at least 3 minutes between sends.
+    - Two follow-ups go in the same thread (In-Reply-To), 4 and 10 business days after the first send, with the original quoted.
+    - One first email per contact. Edit or cancel any scheduled email; cancelling the first email cancels its follow-ups.
+    - When Google rejects the password, the connection is flagged `error` and sends are held until reconnect, with no repeated logins.
+  - **replyWatcher** (IMAP, read-only, every 10 min, `status = 'ok'` users only):
+    - A reply is matched by thread headers or by an address we emailed. It marks the contact `replied`, cancels follow-ups, and emails the user about it.
+    - Out-of-office auto-replies are noted but don't stop follow-ups.
+    - A bounce marks the address invalid and cancels follow-ups.
+    - LinkedIn "X messaged you" / "X accepted your invitation" emails mark the contact `replied` / `connected`, matched by unique name.
+  - Alert digests are sent from the user's Gmail when it's connected.
+  - **UI:**
+    - Settings → Gmail: connect steps, status, test email, sender name, daily cap, disconnect.
+    - Company composer: "Send at the best time" / "Send now". Without Gmail, the old Open in Gmail button stays, plus a connect hint.
+    - New Outreach → Outbox page: replies feed, threads with each step's status and time in the recipient's zone, Edit/Cancel, and "Check for replies".
+- **Files:** [024_gmail.sql](supabase/migrations/024_gmail.sql), [gmail.js](backend/services/gmail.js), [outbox.js](backend/services/outbox.js), [replyWatcher.js](backend/services/replyWatcher.js), [sendWindow.js](backend/services/sendWindow.js), [routes/gmail.js](backend/routes/gmail.js), crons in [server.js](backend/server.js) (`*/2` outbox, `*/10` replies), [GmailTab.tsx](frontend/src/features/settings/GmailTab.tsx), [OutboxPage.tsx](frontend/src/features/outreach/OutboxPage.tsx), [outbox.ts](frontend/src/features/outreach/outbox.ts). New dependencies: imapflow, mailparser (also installed on the VM).
+- **Status:** live; migration 024 applied.
+  - Tests: backend 133/133, frontend 60/60.
+  - Live checks passed:
+    - Google really rejects a bad app password, and the user sees the plain-language message.
+    - A scheduled email landed Thu 8:42 AM Chicago for an Austin company.
+    - A second email to the same person is refused. Edit and cancel work.
+    - "Send now" with a rejected password is held, the connection is flagged, and the reply check returns a friendly 502.
+    - Browser checks pass for Settings → Gmail, Outbox and the company page, desktop and phone.
+  - The test data was removed.
+  - **Not yet verified:** a real send, a real reply and LinkedIn detection. That needs a real app password; the user connects theirs, then do a live send-to-self and reply test.
+
 ### 2026-10-14 — Step 2: the resume engine (tailor, fact check, ATS, LaTeX PDF, cover letter)
 - **What:** One tailored resume per evaluation, run in the background, polled by the UI.
   - The master resume is read into sections once per upload (Opus, low effort, structured outputs) and cached in `resume_files.parsed`. It starts on upload.

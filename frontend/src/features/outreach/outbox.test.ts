@@ -20,6 +20,7 @@ describe('outbox', () => {
     expect(itemStatus(item({})).text).toBe('Goes Thu, Oct 15, 9:30 AM (New York time)')
     expect(itemStatus(item({ status: 'cancelled', cancel_reason: 'They replied' })).text).toBe('Not sent: they replied')
     expect(itemStatus(item({ status: 'failed', error: 'boom' })).tone).toBe('danger')
+    expect(itemStatus(item({ error: 'Waiting for you to reconnect Gmail in Settings' })).text).toMatch(/· held: Waiting for you to reconnect/)
   })
   it('describes replies', () => {
     expect(replyText({ id: 1, contact_id: 1, channel: 'linkedin', kind: 'linkedin_accept', from_email: null, from_name: null, subject: null, snippet: null, received_at: '', contact_name: 'Ana Lee', company_name: null, company_id: null }))

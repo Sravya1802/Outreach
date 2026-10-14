@@ -22,10 +22,10 @@
  */
 
 import { fetchSpeedyApplyListings } from './speedyApply.js';
+import { fetchJobSpyRoles } from './jobSpy.js';
 import * as cheerio from 'cheerio';
 import { all, run } from '../db.js';
 import { scanGreenhouse, scanLever, scanAshby } from '../routes/careerOps.js';
-import { scrapeLinkedInJobs, scrapeWellfound, noteApifyError } from './apify.js';
 
 // ── Role-type classification (same heuristic as the rest of the app) ─────────
 const INTERN_PATTERN  = /\b(intern|internship|co-?op|co\s*op|summer\s*\d{4}|spring\s*\d{4}|fall\s*\d{4})\b/i;
@@ -118,53 +118,9 @@ async function scrapePortals(roleTypeQuery /* 'intern' | 'fulltime' */) {
 //    scrapeLinkedInJobs returns company-shaped rows but each carries a
 //    `careersUrl` which is actually the role URL. Re-shape.
 
-async function scrapeLinkedIn(roleQuery /* 'Intern 2026' | 'New Grad 2026' */) {
-  try {
-    const items = await scrapeLinkedInJobs(roleQuery);
-    return items
-      .filter(i => i?.careersUrl && i?.role)
-      .map(i => ({
-        title:        i.role,
-        company_name: i.name || prettyCompany(i.role.split(' at ')?.[1] || ''),
-        location:     i.location || '',
-        apply_url:    i.careersUrl,
-        source:       'linkedin',
-        role_type:    classifyRoleType(i.role),
-        posted_at:    null,
-        description:  null,
-      }))
-      .filter(r => r.role_type);
-  } catch (err) {
-    noteApifyError('linkedin', err);
-    console.warn(`[multi-scrape] linkedin failed: ${err.message}`);
-    return [];
-  }
-}
 
 // ── 3. Wellfound (via Apify) ──────────────────────────────────────────────────
 
-async function scrapeWellfoundRoles(roleQuery) {
-  try {
-    const items = await scrapeWellfound(roleQuery);
-    return items
-      .filter(i => i?.careersUrl)
-      .map(i => ({
-        title:        i.role || roleQuery,
-        company_name: i.name || '',
-        location:     i.location || '',
-        apply_url:    i.careersUrl,
-        source:       'wellfound',
-        role_type:    classifyRoleType(i.role || roleQuery),
-        posted_at:    null,
-        description:  null,
-      }))
-      .filter(r => r.role_type && r.company_name);
-  } catch (err) {
-    noteApifyError('wellfound', err);
-    console.warn(`[multi-scrape] wellfound failed: ${err.message}`);
-    return [];
-  }
-}
 
 // ── 4. ai-jobs.net  ──────────────────────────────────────────────────────────
 //    Public HTML listing. Each card has the company, role, location, and a
@@ -371,8 +327,9 @@ function speedyApplyRows(roleType) {
 const SOURCE_FNS = {
   speedyapply:       (rt) => speedyApplyRows(rt),
   portals:           (rt) => scrapePortals(rt === 'intern' ? 'intern' : 'fulltime'),
-  linkedin:          (rt) => scrapeLinkedIn(rt === 'intern' ? 'Intern 2026' : 'New Grad 2026'),
-  wellfound:         (rt) => scrapeWellfoundRoles(rt === 'intern' ? 'intern 2026' : 'new grad 2026'),
+  // Indeed + LinkedIn job listings via JobSpy (free). Apify is no longer used
+  // for job listings — it burned the monthly budget; it's kept for people search.
+  jobspy:            (rt) => fetchJobSpyRoles(rt).then(r => r.rows),
   remote_rocketship: (rt) => scrapeRemoteRocketship(rt),
   // Pruned: ai_jobs (persistent "fetch failed"), jobspresso + internshipdaily
   // (persistent timeouts). speedyapply now provides the clean primary feed.

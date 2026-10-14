@@ -6,10 +6,11 @@ import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from 
 import { qk } from '@/app/queryClient'
 import { percent, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
+import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Select, Skeleton, useToast } from '@/ui'
 import { STAGES, scoreOutOf10, scoreTone, stageFor } from './score'
 import { FOLLOW_UP_DAYS, applyNote, followUpDays, funnel, matchesSearch, nextStepDue, updatedAt, type DueState, type Funnel } from './pipeline'
 import { NotesDialog } from './NotesDialog'
+import { PipelineBoard } from './PipelineBoard'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
 
@@ -62,6 +63,7 @@ export default function PipelinePage() {
   const stage = STAGES.some(s => s.id === stageParam) ? stageParam as PipelineColumn : null
   const sort = params.get('sort') === 'score' ? 'score' : 'recent'
   const query = params.get('q') ?? ''
+  const view = params.get('view') === 'board' ? 'board' : 'list'
 
   // When the list was fetched; keeps render pure and the day counts stable.
   const now = pipeline.dataUpdatedAt
@@ -86,8 +88,22 @@ export default function PipelinePage() {
   }
   const move = useMutation({
     mutationFn: ({ id, column }: { id: number; column: PipelineColumn }) => api.setApplyStatus(id, STAGES.find(s => s.id === column)?.status ?? 'not_started'),
-    onSuccess: refresh,
-    onError: (e: Error) => toast.error(e.message),
+    // Move the card right away; the refetch settles counts and dates.
+    onMutate: async ({ id, column }) => {
+      await qc.cancelQueries({ queryKey: qk.pipeline })
+      const prev = qc.getQueryData<Pipeline>(qk.pipeline)
+      const status = STAGES.find(s => s.id === column)?.status ?? 'not_started'
+      if (prev) {
+        qc.setQueryData<Pipeline>(qk.pipeline, {
+          ...prev,
+          columns: Object.fromEntries(Object.entries(prev.columns).map(([k, c]) =>
+            [k, { ...c, items: c.items.map(r => r.id === id ? { ...r, apply_status: status } : r) }])) as Pipeline['columns'],
+        })
+      }
+      return { prev }
+    },
+    onError: (e: Error, _v, ctx) => { if (ctx?.prev) qc.setQueryData(qk.pipeline, ctx.prev); toast.error(e.message) },
+    onSettled: refresh,
   })
   const download = useMutation({
     mutationFn: (r: EvaluationSummary) => api.downloadResumeFile(r.resume_file_id ?? 0, r.resume_filename || 'resume.pdf'),
@@ -145,6 +161,8 @@ export default function PipelinePage() {
           )}
         </nav>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <Segmented label="View" value={view} onChange={v => set('view', v === 'board' ? 'board' : null)}
+            options={[{ value: 'list', label: 'List' }, { value: 'board', label: 'Board' }]} />
           <label className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
             <span className="sr-only">Search applications</span>
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden="true" />
@@ -172,6 +190,9 @@ export default function PipelinePage() {
               action={!stage && !followUpOnly ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
           )}
         </div>
+      ) : view === 'board' ? (
+        <PipelineBoard items={items} columns={stage ? [stage] : STAGES.map(s => s.id)} now={now} busy={false}
+          onMove={(id, column) => move.mutate({ id, column })} onEdit={setEditing} />
       ) : (
         <div className="relative overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse border-t border-rule text-[14px]">

@@ -124,6 +124,24 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — AI keys live; one capped door for every AI call
+
+- The user pasted new OpenAI, Groq and Anthropic keys into the local `.env`. They were validated (free model-list calls), then copied into the VM `.env` without being printed. Backup is `.env.bak-*`.
+- `services/llm.js` (`760e8f7`) is now the only AI client:
+  - **score / evaluate / email / categorize** → Groq `openai/gpt-oss-120b` (`gpt-oss-20b` for categorize), with OpenAI `gpt-4o-mini` as backup.
+  - **resume / cover_letter** → Claude Opus 5.5 only, no fallback.
+  - Every call is written to `ai_usage` (migration 019) with tokens and cost.
+  - **Hard caps:** `AI_MONTHLY_CAP_USD` (default $40 site-wide) and `AI_USER_MONTHLY_CAP_USD` (default $30/user). Calls are refused with a 402 once a cap would be exceeded.
+  - The signed-in user reaches deep services via AsyncLocalStorage (`services/requestContext.js`).
+  - Gemini removed. Categorization no longer falls through to Opus.
+  - `GET /api/credits/ai-usage` reports spend against the caps.
+- **pm2 bug** (`2c9fd42`): pm2 had saved the revoked OPENAI key, and dotenv doesn't override, so `server.js` now loads `.env` with `override: true`.
+- Verified live:
+  - Groq score: $0.00006.
+  - Opus rewrite: $0.003.
+  - Full evaluate via the API: Groq **413 "Request too large"** (free tier ~8K TPM), then the OpenAI backup succeeded for $0.002.
+  - **The user must upgrade Groq to the Developer (paid) tier** for evaluations to run on Groq. Until then OpenAI mini is used.
+
 ### 2026-10-14 — Pay on roles, Applications rebuilt, AI plan agreed
 
 - **Pay:** Greenhouse/Ashby/Lever public board APIs fill posted pay (`services/payEnricher.js`, `payParse.js`, migration 018 `pay_checked_at`). The lookup runs after both daily scrapes and filled 457 roles on its first run; US coverage is now 27–32%.

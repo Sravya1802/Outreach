@@ -3,15 +3,15 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, BellRing, Check, RefreshCw, Search, Sparkles, Zap } from 'lucide-react'
 import { qk } from '@/app/queryClient'
-import { api, type CatalogListing, type CatalogPage, type Field, type Tier } from '@/lib/api'
+import { api, type VisaFilter, type CatalogListing, type CatalogPage, type Field, type Tier } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatNumber } from '@/lib/format'
 import {
   Badge, Button, ButtonLink, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pager, Segmented, Select, Skeleton, useToast,
 } from '@/ui'
 import { AlertsDialog } from './AlertsDialog'
-import { countsByList, listForKind, listsForMarket, postedLabel, sourceLabel, type CatalogList } from './catalog'
-import { useMarket } from '@/app/queries'
+import { countsByList, listForKind, listsForMarket, postedLabel, sourceLabel, visaLabel, type CatalogList } from './catalog'
+import { useMarket, useProfile } from '@/app/queries'
 import { marketPhrase, type Market } from '@/lib/markets'
 
 const PAGE_SIZE = 50
@@ -32,6 +32,8 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   onAutoApply: () => void
   busy: 'track' | 'auto' | null
 }) {
+  const visa = visaLabel(role.sponsorship, role.jd_read)
+  const others = (role.also_on ?? []).filter(s => s !== role.source)
   return (
     <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_120px_170px_110px_auto] md:items-center md:gap-4">
       <div className="min-w-0">
@@ -44,6 +46,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
           {role.tier === 'quant' && <Badge tone="info">Quant</Badge>}
           {role.salary_range && <span className="font-mono text-success md:hidden">{role.salary_range}</span>}
           {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
+          {visa && <span title={role.sponsorship_quote ? `“${role.sponsorship_quote}”` : 'The job description doesn’t mention visas.'}><Badge tone={visa.tone}>{visa.text}</Badge></span>}
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''} · {postedLabel(role.posted_at, role.scraped_at)}</span>
         </p>
@@ -54,7 +57,8 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
       </p>
       <p className="hidden truncate text-xs text-subtle md:block" title={role.location || undefined}>{role.location || '—'}</p>
       <div className="hidden text-xs text-subtle md:block">
-        <span>{sourceLabel(role.source)}</span>
+        <span className={role.source === 'speedyapply' ? 'font-medium text-accent' : undefined}>{sourceLabel(role.source)}</span>
+        {others.length > 0 && <span className="block" title="The same job is listed there too">also on {others.map(sourceLabel).join(', ')}</span>}
         <span className="block">{postedLabel(role.posted_at, role.scraped_at)}</span>
       </div>
       <div className="flex items-center gap-1.5 md:justify-end">
@@ -88,6 +92,12 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const tierParam = params.get('tier')
   const tier: Tier | undefined = tierParam === 'faang' || tierParam === 'quant' ? tierParam : undefined
   const hasPay = params.get('pay') === '1'
+  const profile = useProfile()
+  const needsSponsorship = Number(profile.data?.needs_sponsorship) === 1
+  // Students who need sponsorship default to hiding roles that won't sponsor.
+  const visaParam = params.get('visa')
+  const visa: VisaFilter | undefined = visaParam === 'sponsors' || visaParam === 'open' || visaParam === 'citizens' ? visaParam
+    : visaParam === 'any' ? undefined : needsSponsorship ? 'open' : undefined
   const fieldParam = params.get('field')
   const field: Field | undefined = fieldParam === 'swe' || fieldParam === 'ai' ? fieldParam : undefined
   const page = Math.max(0, Number(params.get('page')) || 0)
@@ -103,7 +113,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, page, pageSize: PAGE_SIZE }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, page, pageSize: PAGE_SIZE }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
   const counts = countsByList(sources.data ?? [], market, field)
@@ -157,7 +167,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const rows = listing.data?.rows ?? []
   const total = listing.data?.total ?? 0
   const catalogEmpty = sources.isSuccess && Object.values(counts).every(n => n === 0)
-  const filtered = Boolean(search || source || tier || field || hasPay)
+  const filtered = Boolean(search || source || tier || field || hasPay || (visaParam && visaParam !== 'any'))
 
   return (
     <Page wide>
@@ -207,6 +217,12 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
           <option value="">All companies</option>
           <option value="faang">FAANG+ only</option>
           <option value="quant">Quant / trading</option>
+        </Select>
+        <Select value={visa ?? 'any'} onChange={e => setParam('visa', e.target.value)} aria-label="Visa sponsorship" className="sm:w-52">
+          <option value="any">Any visa status</option>
+          <option value="open">Hide “won’t sponsor”</option>
+          <option value="sponsors">Says it sponsors</option>
+          <option value="citizens">US citizens only</option>
         </Select>
         <label className="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-[4px] border border-line-strong px-3 text-[14px] text-muted hover:bg-hover">
           <input type="checkbox" checked={hasPay} onChange={e => setParam('pay', e.target.checked ? '1' : '')} className="size-4 accent-[var(--ui-accent)]" />

@@ -189,7 +189,7 @@ export const api = {
   // at 06:15 UTC. The `track` and `autoApply` actions create per-user
   // evaluations rows the Auto Apply queue picks up.
   scrapedRoles: {
-    list: ({ roleType = 'intern', region = 'usa', field = '', source = '', search = '', tier = '', hasPay = false, page = 0, pageSize = 50 } = {}) => {
+    list: ({ roleType = 'intern', region = 'usa', field = '', source = '', search = '', tier = '', hasPay = false, visa = '', page = 0, pageSize = 50 } = {}) => {
       const qs = new URLSearchParams({ role_type: roleType, page: String(page), pageSize: String(pageSize) });
       if (source) qs.set('source', source);
       if (search) qs.set('search', search);
@@ -197,6 +197,7 @@ export const api = {
       if (region && region !== 'usa') qs.set('region', region);
       if (field) qs.set('field', field);
       if (hasPay) qs.set('pay', '1');
+      if (visa) qs.set('visa', visa);
       return apiCall(`/scraped-roles?${qs.toString()}`);
     },
     sources:   ()    => apiCall('/scraped-roles/sources'),

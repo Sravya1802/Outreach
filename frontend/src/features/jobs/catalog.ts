@@ -58,3 +58,11 @@ export function countsByList(rows: { role_type: RoleType; region?: Region; n: nu
   }
   return out
 }
+
+/** Visa label for a role, or null when the description hasn't been read. */
+export function visaLabel(sponsorship: string | null | undefined, jdRead: boolean): { text: string; tone: 'success' | 'warning' | 'danger' | 'neutral' } | null {
+  if (sponsorship === 'sponsors') return { text: 'Sponsors visas', tone: 'success' }
+  if (sponsorship === 'no_sponsorship') return { text: 'No sponsorship', tone: 'warning' }
+  if (sponsorship === 'citizens_only') return { text: 'US citizens only', tone: 'danger' }
+  return jdRead ? { text: 'Visa not stated', tone: 'neutral' } : null
+}

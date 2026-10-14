@@ -47,3 +47,15 @@ describe('recruiting season', () => {
     expect(defaultScrapeQuery('Robotics', new Date(2026, 1, 1))).toBe('Robotics intern 2026')
   })
 })
+
+import { visaLabel } from './catalog'
+
+describe('visa labels', () => {
+  it('labels what the description says', () => {
+    expect(visaLabel('sponsors', true)?.text).toBe('Sponsors visas')
+    expect(visaLabel('no_sponsorship', true)?.tone).toBe('warning')
+    expect(visaLabel('citizens_only', false)?.text).toBe('US citizens only')
+    expect(visaLabel(null, true)?.text).toBe('Visa not stated')
+    expect(visaLabel(null, false)).toBeNull()
+  })
+})

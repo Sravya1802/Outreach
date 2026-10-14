@@ -258,7 +258,17 @@ export interface CatalogListing {
   scraped_at: string
   tracked: boolean
   autoQueued: boolean
+  /** What the job description says about visa sponsorship; null = doesn't say or not read yet. */
+  sponsorship: Sponsorship | null
+  sponsorship_quote: string | null
+  /** The description has been read (so a null sponsorship means "doesn't say"). */
+  jd_read: boolean
+  /** Other sources listing the same job (same company + title). */
+  also_on: string[]
 }
+
+export type Sponsorship = 'sponsors' | 'no_sponsorship' | 'citizens_only'
+export type VisaFilter = 'sponsors' | 'open' | 'citizens'
 
 export interface CatalogPage {
   role_type: RoleType
@@ -270,7 +280,7 @@ export interface CatalogPage {
 
 export interface CatalogSourceCount { source: string; role_type: RoleType; region: Region; n: number; swe: number; ai: number }
 
-export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; page?: number; pageSize?: number }
+export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; visa?: VisaFilter; page?: number; pageSize?: number }
 
 export interface AlertSubscription {
   subscribed: boolean

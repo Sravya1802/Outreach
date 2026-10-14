@@ -117,3 +117,10 @@ test('LaTeX escaping cannot inject commands', () => {
   const tex = resumeTex(MASTER);
   assert.ok(tex.includes('\\rsection{Experience}') && tex.includes('SWE Intern'));
 });
+
+test('master text includes dates and GPA, so they count as real', async () => {
+  const { masterText } = await import('../services/resumeGuard.js');
+  const t = masterText(MASTER);
+  for (const x of ['Jun 2025', '2027', '3.8', 'Acme', 'Graded labs for 120 students']) assert.ok(t.includes(x), x);
+  assert.deepEqual(unsupportedNumbers('Interned in Jun 2025; GPA 3.8; class of 2027', t), []);
+});

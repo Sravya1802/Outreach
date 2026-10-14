@@ -42,14 +42,16 @@ export function repoText(r) {
     .filter(Boolean).join('\n');
 }
 
+/** Every string in the parsed master resume (names, dates, GPA, bullets…), one per line. */
 export function masterText(m) {
-  const parts = [m.summary];
-  for (const e of list(m.education)) parts.push(e.school, e.degree, e.field, ...list(e.details));
-  for (const e of list(m.experience)) parts.push(e.company, e.title, ...list(e.bullets));
-  for (const p of list(m.projects)) parts.push(p.name, list(p.tech).join(', '), ...list(p.bullets));
-  for (const s of list(m.skills)) parts.push(s.category, list(s.items).join(', '));
-  for (const x of list(m.extras)) parts.push(x.heading, ...list(x.items));
-  return parts.filter(Boolean).join('\n');
+  const out = [];
+  const walk = (v) => {
+    if (typeof v === 'string') { if (v.trim()) out.push(v.trim()); }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+  };
+  walk(m);
+  return out.join('\n');
 }
 
 const norm = (s) => str(s).toLowerCase().replace(/[^a-z0-9+#]/g, '');

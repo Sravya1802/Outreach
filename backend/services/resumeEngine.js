@@ -306,7 +306,7 @@ export async function writeCoverLetter(userId, ev) {
     userId,
   });
   const letter = parseJson(r.text);
-  const source = masterText(parsed);
+  const source = `${masterText(parsed)}\n${await resumeText(userId)}`;
   const removed = [];
   const paragraphs = (letter.paragraphs || []).map(p => str(p).split(/(?<=[.!?])\s+/).filter(sentence => {
     const bad = unsupportedNumbers(sentence, `${source}\n${ev.job_description}`);

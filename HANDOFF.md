@@ -124,6 +124,22 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Every page on the new UI; sponsorship per role; experiences
+
+- **UI:** Home rebuilt (Analytics folded in, AI-spend card), Outreach Contacts and Templates, and the company page (`4d89397`). The legacy wrapper is gone from routes; `components/*.jsx` are now unused files.
+  - Company page dropped: the Career Ops tab, Job Automation (one-click apply bypassed the daily plan), the resume picker, and auto-queue on scrape.
+  - Cover letter and WaaS now call `/generate/cover-letter` and `/generate/waas`; before, they hit `/generate/email`.
+- **Sponsorship** (`09af8b7`, `f520997`, `034df90`, migration 020):
+  - `services/sponsorship.js` classifies sponsors / no_sponsorship / citizens_only (clearance / US persons) and keeps the deciding sentence.
+  - `enrichPostingDetails` (in `payEnricher.js`) reads descriptions from Greenhouse/Ashby/Lever (one request per board) plus Workday/SmartRecruiters (per posting) plus stored descriptions (Indeed via JobSpy now keeps `description`).
+  - First run: 1,562 read, 549 pay, sponsors 8 / no 101 / citizens 83 / not stated 1,370, 39 failed. **Workday CXS returns 403.**
+  - Roles shows a visa badge (the quote on hover) and a visa filter, defaulting to "hide won't sponsor" when needs_sponsorship=1.
+  - Roles also shows source prominence and `also_on`, and SpeedyApply leads each day.
+- **SpeedyApply pay:** only their FAANG+/Quant tables have a Salary column (NEW_GRAD_USA: 124/881 rows); we capture all of it. levels.fyi was declined again (ToS).
+- **Experiences** (`990f73c`, `99d169c`, migration 021): `user_profile.experiences` JSONB list editor on Details. current_company/title follow the newest entry.
+- **Known bug:** add-company-by-name "Ramp" matched YC "WorkRamp" and copied its location.
+- **Next:** resumes in cloud storage (master in Supabase Storage per user; every tailored PDF/LaTeX/report stored and linked to the application, visible in Pipeline and Profile), then the Opus tailoring engine, then the daily plan.
+
 ### 2026-10-14 — AI keys live; one capped door for every AI call
 
 - The user pasted new OpenAI, Groq and Anthropic keys into the local `.env`. They were validated (free model-list calls), then copied into the VM `.env` without being printed. Backup is `.env.bak-*`.

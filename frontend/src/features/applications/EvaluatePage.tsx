@@ -8,6 +8,7 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { Button, ErrorState, Page, PageHeader, Skeleton, Spinner, Textarea, useToast } from '@/ui'
 import { globalOutOf10, looksLikeUrl, scoreOutOf10, scoreTone, stageFor } from './score'
+import { TailoredResume } from './TailoredResume'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
 const BREAKDOWN: { key: keyof NonNullable<EvaluationReport['scoreBreakdown']>; label: string }[] = [
@@ -18,7 +19,7 @@ const BREAKDOWN: { key: keyof NonNullable<EvaluationReport['scoreBreakdown']>; l
   { key: 'redFlags', label: 'Few red flags' },
 ]
 
-function Report({ detail }: { detail: EvaluationDetail }) {
+function Report({ detail, hasResume }: { detail: EvaluationDetail; hasResume: boolean }) {
   const qc = useQueryClient()
   const toast = useToast()
   const e = detail.evaluation ?? {}
@@ -110,31 +111,7 @@ function Report({ detail }: { detail: EvaluationDetail }) {
         </section>
       </div>
 
-      {(e.blockE_personalization?.cvChanges?.length ?? 0) > 0 && (
-        <section aria-labelledby="cv-h" className="rounded-[4px] border border-line bg-surface p-6">
-          <h3 id="cv-h" className="font-display text-[22px] font-semibold text-fg">Resume changes for this role</h3>
-          <p className="mt-1 mb-4 text-[14px] text-muted">Suggestions only for now. Tailored resumes, rewritten and compiled to PDF automatically, come with the next build.</p>
-          <ol className="space-y-4">
-            {e.blockE_personalization?.cvChanges?.map((c, i) => (
-              <li key={i} className="grid gap-1 text-[14px] leading-relaxed">
-                <span className="text-[12px] tracking-wide text-subtle uppercase">{c.section}</span>
-                {c.currentState && <span className="text-muted line-through decoration-danger/60">{c.currentState}</span>}
-                {c.proposedChange && <span className="text-fg">{c.proposedChange}</span>}
-                {c.why && <span className="text-[13px] text-subtle">{c.why}</span>}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {(e.atsKeywords?.length ?? 0) > 0 && (
-        <section aria-labelledby="kw-h">
-          <h3 id="kw-h" className="mb-3 font-display text-[20px] font-semibold text-fg">Keywords the resume should mirror</h3>
-          <ul className="flex flex-wrap gap-2">
-            {e.atsKeywords?.map(k => <li key={k} className="rounded-full border border-line-strong px-3 py-1 text-[13px] text-muted">{k}</li>)}
-          </ul>
-        </section>
-      )}
+      <TailoredResume evalId={detail.id} company={detail.company_name} hasResume={hasResume} />
     </article>
   )
 }
@@ -194,7 +171,7 @@ export default function EvaluatePage() {
       )}
 
       <div className="mt-10">
-        {id != null && (detail.error ? <ErrorState error={detail.error} onRetry={() => detail.refetch()} /> : detail.isLoading ? <Skeleton className="h-72" /> : detail.data ? <Report detail={detail.data} /> : null)}
+        {id != null && (detail.error ? <ErrorState error={detail.error} onRetry={() => detail.refetch()} /> : detail.isLoading ? <Skeleton className="h-72" /> : detail.data ? <Report detail={detail.data} hasResume={Boolean(resume.data?.hasResume)} /> : null)}
       </div>
 
       <section aria-labelledby="recent-h" className="mt-12">

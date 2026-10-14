@@ -39,6 +39,7 @@ export const qk = {
   githubStatus: ['github-status'] as const,
   resume: ['resume-status'] as const,
   resumeHistory: ['resume-history'] as const,
+  tailoring: (evalId: number) => ['tailoring', evalId] as const,
   evaluations: ['evaluations'] as const,
   evaluation: (id: number) => ['evaluation', id] as const,
   pipeline: ['pipeline'] as const,

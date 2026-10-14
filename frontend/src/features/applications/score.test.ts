@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { globalOutOf10, looksLikeUrl, scoreOutOf10, scoreTone, stageFor } from './score'
+import { atsTone, tailoringHeadline } from './tailoring'
 
 describe('scores out of 10', () => {
   it('converts both scales', () => {
@@ -29,5 +30,21 @@ describe('pipeline', () => {
   it('tells a link from a pasted description', () => {
     expect(looksLikeUrl(' https://job-boards.greenhouse.io/ramp/jobs/1 ')).toBe(true)
     expect(looksLikeUrl('Software Engineer Intern\nWe are looking for…')).toBe(false)
+  })
+})
+
+describe('tailored resume', () => {
+  const ats = (missing: { term: string; importance: 'required' | 'preferred' }[]) => ({ score: 70, target: 90, coverage: 70, keywords: [], matched: [], missingYouHave: [], missingYouDont: missing, checks: [], pages: 1 })
+  it('tones the ATS score against the target', () => {
+    expect(atsTone(92)).toBe('strong')
+    expect(atsTone(80)).toBe('ok')
+    expect(atsTone(41)).toBe('weak')
+    expect(atsTone(null)).toBe('none')
+  })
+  it('explains where the resume stands', () => {
+    expect(tailoringHeadline({ status: 'ready', approved_at: null, ats_score: 93, ats: ats([]) })).toMatch(/^Scores 93%.*goes out/)
+    expect(tailoringHeadline({ status: 'needs_review', approved_at: '2026-10-14', ats_score: 80, ats: ats([]) })).toMatch(/chose to send it anyway/)
+    expect(tailoringHeadline({ status: 'needs_review', approved_at: null, ats_score: 70, ats: ats([{ term: 'Go', importance: 'required' }, { term: 'Git', importance: 'required' }, { term: 'GraphQL', importance: 'preferred' }]) }))
+      .toBe('Below the 90% target, so it won’t be sent without you. The posting requires Go and Git, which your resume doesn’t show.')
   })
 })

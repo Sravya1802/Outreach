@@ -359,6 +359,51 @@ export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluati
 }
 export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
 
+// ── Resume engine (tailored resume + cover letter per role) ─────────────────
+
+export interface AtsKeyword { term: string; aliases: string[]; importance: 'required' | 'preferred'; kind: 'hard' | 'soft' }
+export interface TailoringAts {
+  score: number
+  target: number
+  /** Weighted keyword coverage, 0–100. */
+  coverage: number
+  keywords: AtsKeyword[]
+  matched: string[]
+  /** In the candidate's background but not on the page (normally empty). */
+  missingYouHave: string[]
+  /** Not anywhere in the candidate's resume or GitHub; never added. */
+  missingYouDont: { term: string; importance: 'required' | 'preferred' }[]
+  checks: { id: string; label: string; ok: boolean }[]
+  pages: number | null
+}
+export interface TailoringReport {
+  notes?: string
+  changes?: { section: string; before: string; after: string; why: string }[]
+  projects?: { name: string; source: 'resume' | 'github'; why: string }[]
+  removed?: { where: string; what: string; why: string }[]
+  addedSkills?: string[]
+  shortenedSteps?: number
+  /** Cover letters */
+  paragraphs?: string[]
+  greeting?: string
+}
+export interface Tailoring {
+  id: number
+  kind: 'resume' | 'cover_letter'
+  status: 'running' | 'ready' | 'needs_review' | 'failed'
+  ats_score: number | null
+  ats: TailoringAts | null
+  report: TailoringReport | null
+  error: string | null
+  cost_usd: string | number
+  approved_at: string | null
+  created_at: string
+  finished_at: string | null
+  file_id: number | null
+  filename: string | null
+}
+export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
+
 export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null; file?: ResumeFile | null; inCloud?: boolean }
 
 /** Raw apply_status values the backend writes. */
@@ -495,6 +540,10 @@ export const api = {
   autoApplyItems: (): Promise<AutoApplyItems> => legacy.career.autoApplyQueue(),
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
   resumeHistory: (): Promise<ResumeHistory> => legacy.career.resumeFiles(),
+  tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
+  startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
+  startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
+  approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   uploadResume: async (file: File): Promise<ResumeStatus> => {
     const r = await legacy.career.uploadResume(file)

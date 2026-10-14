@@ -408,6 +408,10 @@ export const api = {
     openReportTab:        (id) => openAuthenticatedTab(`/career/evaluations/${id}/report.html`),
     downloadEvaluationPdf: (id, filename) => downloadAuthenticatedFile(`/career/download/${id}`, filename),
     resumeFiles: () => apiCall('/career/resume/files'),
+    tailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}`),
+    startTailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/tailor`, { method: 'POST' }),
+    startCoverLetter: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/cover-letter`, { method: 'POST' }),
+    approveTailoring: (id) => apiCall(`/resume-engine/tailorings/${id}/approve`, { method: 'POST' }),
     downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
     // Upload a custom resume PDF for a specific evaluation. Backend writes

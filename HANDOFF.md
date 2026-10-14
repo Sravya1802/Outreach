@@ -124,6 +124,19 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-13 — JobSpy live + detailed per-tab designs (A vs B)
+
+- **JobSpy:** see commit `d8d5794` (VM `d39f7ec`).
+  - python-jobspy 1.1.82 runs from `~/outreach/.venv-jobspy` on the VM. Indeed and LinkedIn work; Glassdoor and Google fail.
+  - It feeds the 06:15 UTC multi-source scrape and gave 558 roles on the first run.
+  - Apify is now used only for LinkedIn people search, not for job listings.
+- **Resume decision:** no GitHub repo. The user uploads a master resume in the app, and each job gets a tailored copy. There is also an "application answers" profile: standard fields, custom Q&A, and new questions that pause auto-apply until answered.
+- **Designs:** the user liked A (Midnight) and B (Paper) and asked to see every tab. All 19 boards are on the canvas at https://claude.ai/artifact/Ugn3nsAuXHtSpLYD1qEaHL, one row per page with A and B side by side.
+  - Pages: Home, Roles, Companies, Company, Evaluate, Applications (pipeline, while-you-slept log, needs-you, nightly settings), Outreach (Gmail review queue, campaigns with auto-send and caps, follow-ups), Profile (master resume, tailored versions, application answers), Settings (Gmail, WhatsApp, lookup budgets, job sources).
+  - **Picked:** B layout and fonts on a dark palette (boards Mix-Evaluate, Mix-Applications). Scores move to /10. Auto-apply: 9+ sends on its own right away; 7–8.9 waits for one tap; below 7 left alone; **30/day cap** (user-set), one role per company per 30 days. A **daily plan list** of what will auto-apply goes out at 7 AM (WhatsApp + email) and is shown on the Auto-apply page with Hold/Remove per role. The chosen look has its own canvas: https://claude.ai/artifact/NpYRtVUKeXLNanm2YykTpH
+  - Next: confirm the remaining pages in this look, then rebuild the live pages and build the integrations.
+- **Still open:** Gmail OAuth needs a Google Cloud OAuth app from the user. WhatsApp provider (Meta Cloud API or Twilio) not chosen yet.
+
 ### 2026-10-13 — SpeedyApply daily lists + redesign kickoff
 
 - **SpeedyApply:** see commit `1f0b76a`.

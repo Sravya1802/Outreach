@@ -1,14 +1,13 @@
-import { useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, Lock } from 'lucide-react'
 import { api, type EvaluationSummary } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { useNightlySettings } from '@/app/queries'
-import { timeAgo } from '@/lib/format'
-import { cn } from '@/lib/cn'
 import { Button, ErrorState, Field, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
 import { scoreOutOf10 } from './score'
+import { Tracker } from './Tracker'
 
 const WAITING = ['needs_review', 'captcha_needed', 'login_needed']
 const QUEUED = ['queued', 'in_progress']
@@ -110,10 +109,17 @@ export default function AutoApplyPage() {
   const queue = useQuery({ queryKey: qk.autoApplyQueue, queryFn: api.autoApplyItems })
   const items = queue.data?.items ?? []
   const of = (statuses: string[]) => items.filter(r => statuses.includes(r.apply_status ?? ''))
+  const { hash } = useLocation()
+
+  // Links to #tracker (Home, old Pipeline URLs) land on the tracker once the page has laid out.
+  useEffect(() => {
+    if (hash !== '#tracker' || queue.isLoading) return
+    document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
+  }, [hash, queue.isLoading])
 
   return (
-    <Page>
-      <PageHeader title="Auto-apply" description="Roles that fit you get applied to with a resume tailored to each one, but only after you’ve seen the day’s list." />
+    <Page wide>
+      <PageHeader title="Auto-apply" description="Roles that fit you get applied to with a resume tailored to each one, but only after you’ve seen the day’s list. Everything sent is tracked at the bottom until you hear back." />
 
       <div className="mb-8 flex items-start gap-3 rounded-[4px] border border-line bg-surface px-5 py-4 text-[14px]">
         <Lock className="mt-0.5 size-4 shrink-0 text-subtle" aria-hidden="true" />
@@ -131,11 +137,10 @@ export default function AutoApplyPage() {
           <>
             <Section title="Waiting on you" empty="Nothing needs you." items={of(WAITING)} />
             <Section title="In the queue" empty="Nothing queued." items={of(QUEUED)} />
-            <Section title="Sent" empty="Nothing sent yet." items={of(['submitted'])}
-              right={r => <span className={cn(r.applied_at ? '' : 'hidden')}>{timeAgo(r.applied_at)}</span>} />
             {of(FAILED).length > 0 && <Section title="Couldn’t apply" empty="" items={of(FAILED)} />}
           </>
         )}
+        <Tracker />
       </div>
     </Page>
   )

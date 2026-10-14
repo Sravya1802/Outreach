@@ -6,7 +6,7 @@ import { api, type EvaluationDetail, type EvaluationReport } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ButtonLink, ErrorState, Page, PageHeader, Skeleton, Spinner, Textarea, useToast } from '@/ui'
+import { Button, ErrorState, Page, PageHeader, Skeleton, Spinner, Textarea, useToast } from '@/ui'
 import { globalOutOf10, looksLikeUrl, scoreOutOf10, scoreTone, stageFor } from './score'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
@@ -144,6 +144,7 @@ export default function EvaluatePage() {
   const toast = useToast()
   const [params, setParams] = useSearchParams()
   const [input, setInput] = useState(() => params.get('url') ?? '')
+  const [showAll, setShowAll] = useState(false)
   const id = Number(params.get('id')) || null
 
   const resume = useQuery({ queryKey: qk.resume, queryFn: api.resumeStatus })
@@ -202,7 +203,7 @@ export default function EvaluatePage() {
           <p className="border-t border-rule pt-4 text-[14px] text-subtle">Nothing evaluated yet.</p>
         ) : (
           <ul className="border-t border-rule">
-            {recent.data.slice(0, 12).map(r => {
+            {(showAll ? recent.data : recent.data.slice(0, 12)).map(r => {
               const s = scoreOutOf10(r.score)
               return (
                 <li key={r.id}>
@@ -217,7 +218,11 @@ export default function EvaluatePage() {
             })}
           </ul>
         )}
-        {(recent.data?.length ?? 0) > 12 && <ButtonLink to="/applications/pipeline" variant="ghost" size="sm" className="mt-2">See all in Pipeline</ButtonLink>}
+        {(recent.data?.length ?? 0) > 12 && (
+          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setShowAll(v => !v)}>
+            {showAll ? 'Show fewer' : `Show all ${recent.data?.length}`}
+          </Button>
+        )}
       </section>
     </Page>
   )

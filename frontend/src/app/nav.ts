@@ -35,9 +35,8 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'applications', label: 'Applications', icon: Inbox, to: '/applications',
     tabs: [
-      { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue daily plan rules submit' },
+      { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue daily plan rules submit tracker pipeline board kanban sent applied interview offer follow up' },
       { label: 'Evaluate', to: '/applications/evaluate', keywords: 'score fit grade job link description' },
-      { label: 'Pipeline', to: '/applications/pipeline', keywords: 'board kanban status applied interview offer ranked' },
     ],
   },
   {
@@ -87,8 +86,8 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/discover/alerts': '/jobs/alerts',
   '/discover/evaluate': '/applications/evaluate',
   '/apply/auto-apply': '/applications/auto-apply',
-  '/apply/pipeline': '/applications/pipeline',
-  '/apply/ranked': '/applications/pipeline?sort=score',
+  '/apply/pipeline': '/applications/auto-apply#tracker',
+  '/apply/ranked': '/applications/auto-apply?sort=score#tracker',
   '/apply/intern-roles': '/jobs/roles/intern',
   '/apply/new-grad-roles': '/jobs/roles/new-grad',
   '/outreach/messages': '/outreach/contacts',
@@ -96,7 +95,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/companies': '/jobs/companies',
   '/scraper': '/jobs/find',
   '/career-ops-workflow': '/applications/evaluate',
-  '/pipeline': '/applications/pipeline',
-  '/career-ops': '/applications/pipeline?sort=score',
+  '/pipeline': '/applications/auto-apply#tracker',
+  '/career-ops': '/applications/evaluate',
   '/career': '/applications/evaluate',
 }

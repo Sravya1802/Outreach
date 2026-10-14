@@ -11,12 +11,12 @@ const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-dang
 const DUE_TEXT: Record<DueState, string> = { overdue: 'text-danger', today: 'text-warning', soon: 'text-fg', later: 'text-muted' }
 const DRAG_TYPE = 'application/x-outreach-eval'
 
-function Card({ r, now, onMove, onEdit, busy }: {
+function Card({ r, now, choices, onMove, onEdit }: {
   r: EvaluationSummary
   now: number
+  choices: PipelineColumn[]
   onMove: (id: number, column: PipelineColumn) => void
   onEdit: (r: EvaluationSummary) => void
-  busy: boolean
 }) {
   const s = scoreOutOf10(r.score)
   const quiet = followUpDays(r, now)
@@ -39,10 +39,10 @@ function Card({ r, now, onMove, onEdit, busy }: {
         </p>
       )}
       <div className="mt-3 flex items-center gap-1.5">
-        <Select value="" aria-label={`Move ${r.company_name} to another stage`} className="h-7 flex-1 text-[12px]" disabled={busy}
+        <Select value="" aria-label={`Move ${r.company_name} to another stage`} className="h-7 flex-1 text-[12px]"
           onChange={e => { if (e.target.value) onMove(r.id, e.target.value as PipelineColumn) }}>
           <option value="" disabled>Move to…</option>
-          {STAGES.filter(st => st.id !== stageFor(r.apply_status)).map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
+          {STAGES.filter(st => choices.includes(st.id) && st.id !== stageFor(r.apply_status)).map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
         </Select>
         <button type="button" onClick={() => onEdit(r)} aria-label={`Notes and next step for ${r.company_name}`} title="Notes and next step"
           className={cn('grid size-7 shrink-0 place-items-center rounded-[4px] hover:bg-hover', r.notes || r.next_step || r.next_step_at ? 'text-accent' : 'text-subtle hover:text-fg')}>
@@ -54,13 +54,14 @@ function Card({ r, now, onMove, onEdit, busy }: {
 }
 
 /** Stages as columns; drag a card (or use its menu) to change stage. */
-export function PipelineBoard({ items, columns, now, onMove, onEdit, busy }: {
+export function PipelineBoard({ items, columns, choices, now, onMove, onEdit }: {
   items: EvaluationSummary[]
   columns: PipelineColumn[]
+  /** Stages a card can be moved to. */
+  choices: PipelineColumn[]
   now: number
   onMove: (id: number, column: PipelineColumn) => void
   onEdit: (r: EvaluationSummary) => void
-  busy: boolean
 }) {
   const [over, setOver] = useState<PipelineColumn | null>(null)
   return (
@@ -85,7 +86,7 @@ export function PipelineBoard({ items, columns, now, onMove, onEdit, busy }: {
                 {st.label}<span className="font-mono text-[12px] font-normal text-subtle">{cards.length}</span>
               </h3>
               <ul className="flex min-h-24 flex-col gap-2">
-                {cards.map(r => <Card key={r.id} r={r} now={now} onMove={onMove} onEdit={onEdit} busy={busy} />)}
+                {cards.map(r => <Card key={r.id} r={r} now={now} choices={choices} onMove={onMove} onEdit={onEdit} />)}
                 {cards.length === 0 && <li className="px-1 py-6 text-center text-[12px] text-subtle">Drop a role here</li>}
               </ul>
             </section>

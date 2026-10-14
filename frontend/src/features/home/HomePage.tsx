@@ -155,7 +155,7 @@ function Pipeline() {
   ]
   return (
     <section aria-labelledby="pipe-h">
-      <SectionTitle action={<Link to="/applications/pipeline" className="text-[14px] text-accent hover:underline">Pipeline</Link>}>
+      <SectionTitle action={<Link to="/applications/auto-apply#tracker" className="text-[14px] text-accent hover:underline">Track them</Link>}>
         <span id="pipe-h">Your applications</span>
       </SectionTitle>
       {metrics.isError ? <ErrorState compact error={metrics.error} onRetry={() => void metrics.refetch()} /> : metrics.isLoading ? <Skeleton className="mt-2 h-32" /> : (

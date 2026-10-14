@@ -6,7 +6,7 @@ import { api, type EvaluationSummary, type Pipeline, type PipelineColumn } from 
 import { qk } from '@/app/queryClient'
 import { percent, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Select, Skeleton, useToast } from '@/ui'
+import { Button, ConfirmDialog, EmptyState, ErrorState, Input, Segmented, Select, Skeleton, useToast } from '@/ui'
 import { STAGES, scoreOutOf10, scoreTone, stageFor } from './score'
 import { FOLLOW_UP_DAYS, applyNote, followUpDays, funnel, matchesSearch, nextStepDue, updatedAt, type DueState, type Funnel } from './pipeline'
 import { NotesDialog } from './NotesDialog'
@@ -14,8 +14,16 @@ import { PipelineBoard } from './PipelineBoard'
 
 const TONE_TEXT = { strong: 'text-success', ok: 'text-warning', weak: 'text-danger', none: 'text-subtle' } as const
 
-function allItems(p: Pipeline | undefined): EvaluationSummary[] {
-  return p ? STAGES.flatMap(s => p.columns[s.id]?.items ?? []) : []
+/** Stages once an application is out; scored-but-unsent roles live on Evaluate. */
+const TRACKED = STAGES.filter(s => s.id !== 'evaluated')
+const TRACKED_IDS = TRACKED.map(s => s.id)
+
+/** Sent applications, including ones closed after applying. */
+function sentItems(p: Pipeline | undefined): EvaluationSummary[] {
+  return p ? STAGES.flatMap(s => p.columns[s.id]?.items ?? []).filter(r => {
+    const s = stageFor(r.apply_status)
+    return s !== 'evaluated' && !(s === 'rejected' && !r.applied_at)
+  }) : []
 }
 
 /** Where to look for a referral: the tracked company's people, else track it first. */
@@ -50,7 +58,8 @@ function FunnelStrip({ f }: { f: Funnel }) {
 
 const DUE_TEXT: Record<DueState, string> = { overdue: 'text-danger', today: 'text-warning', soon: 'text-fg', later: 'text-muted' }
 
-export default function PipelinePage() {
+/** The tracker on the Auto-apply page: every sent application, until you hear back. */
+export function Tracker() {
   const qc = useQueryClient()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
@@ -60,14 +69,14 @@ export default function PipelinePage() {
 
   const stageParam = params.get('stage')
   const followUpOnly = stageParam === FOLLOW_UP
-  const stage = STAGES.some(s => s.id === stageParam) ? stageParam as PipelineColumn : null
+  const stage = TRACKED.some(s => s.id === stageParam) ? stageParam as PipelineColumn : null
   const sort = params.get('sort') === 'score' ? 'score' : 'recent'
   const query = params.get('q') ?? ''
   const view = params.get('view') === 'board' ? 'board' : 'list'
 
   // When the list was fetched; keeps render pure and the day counts stable.
   const now = pipeline.dataUpdatedAt
-  const everything = allItems(pipeline.data)
+  const everything = sentItems(pipeline.data)
   const followUpCount = everything.filter(r => followUpDays(r, now) != null).length
   const items = everything
     .filter(r => followUpOnly ? followUpDays(r, now) != null : !stage || stageFor(r.apply_status) === stage)
@@ -115,16 +124,13 @@ export default function PipelinePage() {
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const totals = pipeline.data?.totals
+  const countAt = (id: PipelineColumn) => everything.filter(r => stageFor(r.apply_status) === id).length
   const stats = funnel(everything)
 
   return (
-    <Page wide>
-      <PageHeader
-        title="Pipeline"
-        description="Every role you’ve evaluated or applied to, in one list. Change a stage when you hear back."
-        actions={<ButtonLink to="/applications/evaluate" variant="primary">Evaluate a role</ButtonLink>}
-      />
+    <section id="tracker" aria-labelledby="tracker-h" className="scroll-mt-6">
+      <h2 id="tracker-h" className="font-display text-[22px] font-semibold text-fg">After you apply</h2>
+      <p className="mb-4 text-[14px] text-muted">Everything you’ve sent, by hand or automatically. Change the stage when a company gets back to you.</p>
 
       {stats.applied > 0 && <FunnelStrip f={stats} />}
 
@@ -145,12 +151,12 @@ export default function PipelinePage() {
         <nav aria-label="Stage" className="flex flex-wrap gap-2 text-[14px]">
           <button type="button" onClick={() => set('stage', null)} aria-pressed={!stage && !followUpOnly}
             className={cn('rounded-full px-3.5 py-1.5', !stage && !followUpOnly ? 'bg-fg text-canvas' : 'border border-line-strong text-muted hover:text-fg')}>
-            All · {pipeline.data?.total ?? 0}
+            All · {everything.length}
           </button>
-          {STAGES.map(s => (
+          {TRACKED.map(s => (
             <button key={s.id} type="button" onClick={() => set('stage', s.id)} aria-pressed={stage === s.id}
               className={cn('rounded-full px-3.5 py-1.5', stage === s.id ? 'bg-fg text-canvas' : 'border border-line-strong text-muted hover:text-fg')}>
-              {s.label} · {totals?.[s.id] ?? 0}
+              {s.label} · {countAt(s.id)}
             </button>
           ))}
           {followUpCount > 0 && (
@@ -185,13 +191,13 @@ export default function PipelinePage() {
           {query && everything.length > 0 ? (
             <EmptyState title={`Nothing matches “${query}”`} action={<Button size="sm" onClick={() => set('q', null)}>Clear search</Button>} />
           ) : (
-            <EmptyState title={followUpOnly ? 'Nothing to follow up on' : stage ? 'Nothing at this stage' : 'No applications yet'}
-              description={followUpOnly ? `Applications show up here after ${FOLLOW_UP_DAYS} days with no reply.` : stage ? undefined : 'Evaluate a role, or track one from Jobs → Roles, and it shows up here.'}
-              action={!stage && !followUpOnly ? <ButtonLink to="/jobs/roles/intern" size="sm">Browse roles</ButtonLink> : undefined} />
+            <EmptyState title={followUpOnly ? 'Nothing to follow up on' : stage ? 'Nothing at this stage' : 'Nothing sent yet'}
+              description={followUpOnly ? `Applications show up here after ${FOLLOW_UP_DAYS} days with no reply.` : stage ? undefined
+                : 'Once an application goes out, it shows up here so you can track replies, interviews and offers. Applied to one yourself? Open it on Evaluate and press “I applied”.'} />
           )}
         </div>
       ) : view === 'board' ? (
-        <PipelineBoard items={items} columns={stage ? [stage] : STAGES.map(s => s.id)} now={now} busy={false}
+        <PipelineBoard items={items} columns={stage ? [stage] : TRACKED_IDS} choices={TRACKED_IDS} now={now}
           onMove={(id, column) => move.mutate({ id, column })} onEdit={setEditing} />
       ) : (
         <div className="relative overflow-x-auto">
@@ -250,7 +256,7 @@ export default function PipelinePage() {
                     <td className="px-3 py-3">
                       <Select value={col} aria-label={`Stage for ${r.company_name}`} className="h-8 w-40 text-[13px]"
                         disabled={move.isPending} onChange={e => move.mutate({ id: r.id, column: e.target.value as PipelineColumn })}>
-                        {STAGES.map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
+                        {TRACKED.map(st => <option key={st.id} value={st.id}>{st.label}</option>)}
                       </Select>
                     </td>
                     <td className="px-3 py-3 text-[13px] text-subtle">{timeAgo(updatedAt(r))}</td>
@@ -277,7 +283,7 @@ export default function PipelinePage() {
 
       <ConfirmDialog
         open={confirm != null}
-        title="Remove from your pipeline?"
+        title="Remove this application?"
         description={confirm ? `${confirm.company_name} · ${confirm.job_title} and its evaluation are deleted.` : ''}
         confirmLabel="Remove"
         danger
@@ -285,6 +291,6 @@ export default function PipelinePage() {
         onConfirm={() => confirm && remove.mutate(confirm.id)}
         onCancel={() => setConfirm(null)}
       />
-    </Page>
+    </section>
   )
 }

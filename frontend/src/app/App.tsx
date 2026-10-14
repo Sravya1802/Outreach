@@ -16,7 +16,6 @@ const GithubPage = lazyWithRetry(() => import('@/features/profile/GithubPage'), 
 const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 'ResumePage')
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
-const PipelinePage = lazyWithRetry(() => import('@/features/applications/PipelinePage'), 'PipelinePage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
@@ -28,7 +27,9 @@ const CompanyPage = lazyWithRetry(() => import('@/features/jobs/CompanyPage'), '
 /** Redirect that keeps ?query and #hash (old deep links carry ids in them). */
 function Redirect({ to }: { to: string }) {
   const { search, hash } = useLocation()
-  return <Navigate to={`${to}${search}${hash}`} replace />
+  const target = new URL(to, window.location.origin)
+  new URLSearchParams(search).forEach((v, k) => target.searchParams.set(k, v))
+  return <Navigate to={`${target.pathname}${target.search}${hash || target.hash}`} replace />
 }
 
 /** Old /category/:name links → the Companies list filtered to that industry. */
@@ -59,9 +60,10 @@ function SignedInRoutes() {
         <Route path="/applications" element={<Navigate to="/applications/auto-apply" replace />} />
         <Route path="/applications/auto-apply" element={<AutoApplyPage />} />
         <Route path="/applications/evaluate" element={<EvaluatePage />} />
-        <Route path="/applications/pipeline" element={<PipelinePage />} />
-        <Route path="/applications/board" element={<Navigate to="/applications/pipeline" replace />} />
-        <Route path="/applications/ranked" element={<Navigate to="/applications/pipeline?sort=score" replace />} />
+        {/* The Pipeline tab became the tracker at the bottom of Auto-apply. */}
+        <Route path="/applications/pipeline" element={<Navigate to="/applications/auto-apply#tracker" replace />} />
+        <Route path="/applications/board" element={<Navigate to="/applications/auto-apply?view=board#tracker" replace />} />
+        <Route path="/applications/ranked" element={<Navigate to="/applications/auto-apply?sort=score#tracker" replace />} />
 
         <Route path="/outreach" element={<Navigate to="/outreach/contacts" replace />} />
         <Route path="/outreach/contacts" element={<ContactsPage />} />

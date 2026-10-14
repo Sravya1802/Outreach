@@ -26,6 +26,7 @@ import automationsRouter  from './routes/automations.js';
 import ycRouter           from './routes/yc.js';
 import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
+import profileRouter from './routes/profile.js';
 import { requireAuth }    from './middleware/requireAuth.js';
 import { installAsyncSafety } from './middleware/asyncSafe.js';
 import { APPLIED, RESPONDED, INTERVIEW, IN_FLIGHT, FAILED, OUTREACH_SENT, OUTREACH_REPLIED, sqlList } from './services/applyStatus.js';
@@ -98,6 +99,7 @@ app.use('/api/automations', automationsRouter);
 app.use('/api/yc',         ycRouter);
 app.use('/api/scraped-roles', scrapedRolesRouter);
 app.use('/api/alerts',     alertsRouter);
+app.use('/api/profile',    profileRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

@@ -21,6 +21,7 @@ const STATUS: Record<string, { text: string; tone: string }> = {
   sent: { text: 'Emailed', tone: 'text-warning' },
   dm_sent: { text: 'Messaged', tone: 'text-warning' },
   replied: { text: 'Replied', tone: 'text-success' },
+  connected: { text: 'Connected on LinkedIn', tone: 'text-info' },
   closed: { text: 'Closed', tone: 'text-subtle' },
 }
 

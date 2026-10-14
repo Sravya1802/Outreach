@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, ExternalLink, Mail, Trash2, UserSearch } from 'lucide-react'
+import { Clock, Copy, ExternalLink, Mail, Send, Trash2, UserSearch } from 'lucide-react'
 import { api, type CompanyContact, type CompanyDetail, type CompanyRole, type CompanyStatus, type PeopleEvent } from '@/lib/api'
+import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
-import { Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Spinner, Textarea, useToast } from '@/ui'
+import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Spinner, Textarea, useToast } from '@/ui'
 import { emailLabel } from '@/features/outreach/contacts'
 import { companyBlurb, gmailComposeUrl, websiteHost } from './company'
 
@@ -15,7 +16,7 @@ const STATUSES: { value: CompanyStatus; label: string }[] = [
 ]
 const CONTACT_STATUSES = [
   { value: 'pending', label: 'Not contacted' }, { value: 'sent', label: 'Emailed' }, { value: 'dm_sent', label: 'Messaged' },
-  { value: 'replied', label: 'Replied' }, { value: 'closed', label: 'Closed' },
+  { value: 'connected', label: 'Connected on LinkedIn' }, { value: 'replied', label: 'Replied' }, { value: 'closed', label: 'Closed' },
 ]
 const key = (id: number) => ['company', id] as const
 
@@ -43,6 +44,20 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
     },
     onError: (e: Error) => toast.error(e.message),
   })
+  const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
+  const send = useMutation({
+    mutationFn: (when: 'best' | 'now') => api.scheduleEmail({ contactId: contact.id, subject, body, when }),
+    onSuccess: (r) => {
+      toast.success(r.status === 'sent' ? `Sent to ${contact.name || contact.email}. Follow-ups are scheduled.`
+        : r.status === 'failed' ? `Couldn’t send: ${r.error || 'unknown error'}`
+        : `Scheduled for ${r.when} their time. Follow-ups go out on their own unless they reply.`)
+      void qc.invalidateQueries({ queryKey: key(company.id) })
+      void qc.invalidateQueries({ queryKey: qk.outbox })
+      onClose()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const canSend = kind === 'email' && Boolean(contact.email) && Boolean(subject.trim()) && Boolean(body.trim())
   const mark = useMutation({
     mutationFn: (status: string) => api.updateContact(contact.id, { status }),
     onSuccess: () => { toast.success('Marked as sent'); void qc.invalidateQueries({ queryKey: key(company.id) }); onClose() },
@@ -81,15 +96,34 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
         {kind === 'waas' && <Field label="Message">{f => <Textarea {...f} rows={6} value={waas} onChange={e => setWaas(e.target.value)} />}</Field>}
         {text.trim() && (
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-            {kind === 'email' && contact.email && (
+            {kind === 'email' && contact.email && gmail.data?.connected && (
+              <>
+                <Button variant="primary" icon={<Clock className="size-4" />} disabled={!canSend} loading={send.isPending && send.variables === 'best'} onClick={() => send.mutate('best')}>
+                  Send at the best time
+                </Button>
+                <Button icon={<Send className="size-4" />} disabled={!canSend} loading={send.isPending && send.variables === 'now'} onClick={() => send.mutate('now')}>Send now</Button>
+              </>
+            )}
+            {kind === 'email' && contact.email && !gmail.data?.connected && (
               <a href={gmailComposeUrl(contact.email, subject, body)} target="_blank" rel="noreferrer"
                 className="inline-flex h-9 items-center gap-1.5 rounded-[4px] bg-accent px-4 text-[14px] font-semibold text-on-accent hover:bg-accent-hover">
                 <Mail className="size-4" /> Open in Gmail
               </a>
             )}
             <Button icon={<Copy className="size-4" />} onClick={() => void copy()}>Copy</Button>
-            <Button variant="ghost" loading={mark.isPending} onClick={() => mark.mutate(kind === 'email' ? 'sent' : 'dm_sent')}>Mark as sent</Button>
+            {!(kind === 'email' && gmail.data?.connected) && (
+              <Button variant="ghost" loading={mark.isPending} onClick={() => mark.mutate(kind === 'email' ? 'sent' : 'dm_sent')}>Mark as sent</Button>
+            )}
           </div>
+        )}
+        {kind === 'email' && contact.email && gmail.data?.connected && text.trim() && (
+          <p className="text-[13px] text-subtle">“Best time” is 8–11 AM on a weekday in their time zone. Two short follow-ups go out in the same thread 4 and 10 business days later, unless they reply.</p>
+        )}
+        {kind === 'email' && gmail.data && !gmail.data.connected && text.trim() && (
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-subtle">
+            Connect your Gmail to send from here, schedule follow-ups and track replies.
+            <ButtonLink to="/settings/gmail" size="sm" variant="ghost">Connect Gmail</ButtonLink>
+          </p>
         )}
       </div>
     </section>

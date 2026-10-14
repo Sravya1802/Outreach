@@ -5,9 +5,8 @@
 // out to every subscriber via runSubscriptionDigests().
 import { Router } from 'express';
 import { one, run } from '../db.js';
-import { buildDigestData, sendDigestToEmail } from '../services/dailyDigest.js';
+import { buildDigestData, canEmailUser, sendDigestToEmail } from '../services/dailyDigest.js';
 import { marketFor, regionForMarket } from '../services/markets.js';
-import { mailerConfigured } from '../services/mailer.js';
 
 const router = Router();
 const KEY = 'job_alert_subscription';
@@ -41,7 +40,7 @@ router.get('/subscription', async (req, res) => {
     const row = await one(`SELECT value FROM meta WHERE user_id = $1 AND key = $2`, [req.user.id, KEY]);
     const cur = row?.value ? JSON.parse(row.value) : {};
     const sub = { ...DEFAULTS, ...cur, email: req.user.email || '' };
-    res.json({ subscription: sub, emailConfigured: mailerConfigured() });
+    res.json({ subscription: sub, emailConfigured: await canEmailUser(req.user.id) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -73,8 +72,8 @@ router.post('/test', async (req, res) => {
     if (now - (lastTestAt.get(req.user.id) || 0) < 60_000) {
       return res.status(429).json({ error: 'You can send one test alert per minute.' });
     }
-    if (!mailerConfigured()) {
-      return res.status(400).json({ error: 'Email sending is not configured on the server (GMAIL_USER / GMAIL_APP_PASSWORD).' });
+    if (!(await canEmailUser(req.user.id))) {
+      return res.status(400).json({ error: 'Connect your Gmail in Settings so alerts can be sent from it.' });
     }
     const row = await one(`SELECT value FROM meta WHERE user_id = $1 AND key = $2`, [req.user.id, KEY]);
     const cur = row?.value ? JSON.parse(row.value) : {};
@@ -85,7 +84,7 @@ router.post('/test', async (req, res) => {
     const windowDays = sub.frequency === 'weekly' ? 7 : 1;
     const region = regionForMarket(await marketFor(req.user.id));
     const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays, region });
-    const result = await sendDigestToEmail(email, data, { windowDays });
+    const result = await sendDigestToEmail(email, data, { windowDays, userId: req.user.id });
     res.json({ ok: !!result.ok, to: email, total: data.total, ...result });
   } catch (err) {
     console.error('[alerts/test]', err);

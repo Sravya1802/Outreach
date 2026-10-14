@@ -18,6 +18,7 @@ const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoAp
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
+const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
@@ -68,6 +69,7 @@ function SignedInRoutes() {
         <Route path="/outreach" element={<Navigate to="/outreach/contacts" replace />} />
         <Route path="/outreach/contacts" element={<ContactsPage />} />
         <Route path="/outreach/templates" element={<TemplatesPage />} />
+        <Route path="/outreach/outbox" element={<OutboxPage />} />
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />

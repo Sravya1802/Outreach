@@ -32,6 +32,9 @@ import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
 import resumeEngineRouter from './routes/resumeEngine.js';
+import gmailRouter from './routes/gmail.js';
+import { runOutbox } from './services/outbox.js';
+import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
 import { requestContext } from './services/requestContext.js';
 import { requireAuth }    from './middleware/requireAuth.js';
@@ -119,6 +122,7 @@ app.use('/api/alerts',     alertsRouter);
 app.use('/api/profile',    profileRouter);
 app.use('/api/github',     githubRouter);
 app.use('/api/resume-engine', resumeEngineRouter);
+app.use('/api/gmail', gmailRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────
@@ -496,6 +500,20 @@ process.on('uncaughtException', (err) => {
 // Crons run in UTC regardless of the VM's timezone, and a run that's still
 // going when the next one fires is skipped rather than doubled.
 const CRON_OPTS = { timezone: 'Etc/UTC', noOverlap: true };
+
+// Outreach email: send what's due every 2 minutes; read replies every 10.
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const r = await runOutbox();
+    if (r.sent) console.log(`[outbox] sent ${r.sent} of ${r.due} due`);
+  } catch (err) { console.error('[outbox] pass failed:', err.message); }
+}, CRON_OPTS);
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    const r = await checkAllInboxes();
+    if (r.events) console.log(`[replies] ${r.events} new across ${r.checked} inboxes`);
+  } catch (err) { console.error('[replies] pass failed:', err.message); }
+}, CRON_OPTS);
 
 // ── Cron: daily multi-source scraped-roles refresh (06:15 UTC) ───────────────
 // Hits every supported source (Greenhouse / Lever / Ashby / LinkedIn /

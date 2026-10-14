@@ -11,6 +11,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { validatePassword } from '@/lib/password'
 import { supabase } from '@/lib/supabase'
+import { GmailTab } from './GmailTab'
 import {
   Badge, Button, ButtonLink, Card, CardBody, CardHeader, ConfirmDialog, ErrorState, Field, Input, Page, PageHeader,
   Skeleton, StatusDot, useToast, type Tone,
@@ -20,6 +21,7 @@ import {
 // against the full URL in React Router v7 and would never match.
 const TABS = [
   { to: '/settings/account', label: 'Account' },
+  { to: '/settings/gmail', label: 'Gmail' },
   { to: '/settings/integrations', label: 'Integrations' },
   { to: '/settings/privacy', label: 'Privacy' },
 ]
@@ -312,6 +314,7 @@ export default function SettingsPage() {
           <Routes>
             <Route index element={<Navigate to="account" replace />} />
             <Route path="account" element={<AccountTab />} />
+            <Route path="gmail" element={<GmailTab />} />
             <Route path="integrations" element={<IntegrationsTab />} />
             <Route path="privacy" element={<PrivacyTab />} />
             <Route path="*" element={<Navigate to="account" replace />} />

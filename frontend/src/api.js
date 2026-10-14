@@ -172,6 +172,21 @@ export const api = {
     disconnect: ()                => apiCall('/github/connection', { method: 'DELETE' }),
   },
 
+  // Each user's own Gmail (app password): outreach outbox + replies
+  gmail: {
+    status:     ()            => apiCall('/gmail/status'),
+    connect:    (body)        => apiCall('/gmail/connect', { method: 'POST', body }),
+    settings:   (body)        => apiCall('/gmail/settings', { method: 'PATCH', body }),
+    disconnect: ()            => apiCall('/gmail/connection', { method: 'DELETE' }),
+    test:       ()            => apiCall('/gmail/test', { method: 'POST' }),
+    outbox:     ()            => apiCall('/gmail/outbox'),
+    schedule:   (body)        => apiCall('/gmail/outbox', { method: 'POST', body }),
+    edit:       (id, body)    => apiCall(`/gmail/outbox/${id}`, { method: 'PATCH', body }),
+    cancel:     (id)          => apiCall(`/gmail/outbox/${id}`, { method: 'DELETE' }),
+    replies:    ()            => apiCall('/gmail/replies'),
+    check:      ()            => apiCall('/gmail/check', { method: 'POST' }),
+  },
+
   // Job-alert subscription (LinkedIn-style email digests of new roles)
   alerts: {
     get:  ()      => apiCall('/alerts/subscription'),

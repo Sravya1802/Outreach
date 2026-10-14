@@ -359,6 +359,54 @@ export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluati
 }
 export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
 
+// ── Gmail (each user's own account) ──────────────────────────────────────────
+
+export interface GmailStatus {
+  connected: boolean
+  email?: string
+  display_name?: string | null
+  status?: 'ok' | 'error'
+  last_error?: string | null
+  connected_at?: string
+  last_checked_at?: string | null
+  daily_cap?: number
+}
+export interface OutboxItem {
+  id: number
+  contact_id: number | null
+  /** 0 = first email, 1–2 = follow-ups */
+  step: 0 | 1 | 2
+  thread_root_id: number | null
+  to_email: string
+  to_name: string | null
+  subject: string
+  body: string
+  recipient_tz: string
+  send_after: string
+  status: 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled'
+  cancel_reason: string | null
+  error: string | null
+  sent_at: string | null
+  created_at: string
+  company_name: string | null
+  company_id: number | null
+  contact_status: string | null
+}
+export interface ReplyItem {
+  id: number
+  contact_id: number | null
+  channel: 'email' | 'linkedin'
+  kind: 'reply' | 'auto_reply' | 'bounce' | 'linkedin_message' | 'linkedin_accept'
+  from_email: string | null
+  from_name: string | null
+  subject: string | null
+  snippet: string | null
+  received_at: string
+  contact_name: string | null
+  company_name: string | null
+  company_id: number | null
+}
+
 // ── Resume engine (tailored resume + cover letter per role) ─────────────────
 
 export interface AtsKeyword { term: string; aliases: string[]; importance: 'required' | 'preferred'; kind: 'hard' | 'soft' }
@@ -541,6 +589,17 @@ export const api = {
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
   resumeHistory: (): Promise<ResumeHistory> => legacy.career.resumeFiles(),
   tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
+  gmailStatus: (): Promise<GmailStatus> => legacy.gmail.status(),
+  connectGmail: (body: { email: string; appPassword: string; displayName?: string }): Promise<GmailStatus> => legacy.gmail.connect(body),
+  gmailSettings: (body: { displayName?: string; dailyCap?: number }): Promise<GmailStatus> => legacy.gmail.settings(body),
+  disconnectGmail: (): Promise<{ ok: boolean }> => legacy.gmail.disconnect(),
+  testGmail: (): Promise<{ ok: boolean; to: string }> => legacy.gmail.test(),
+  outbox: async (): Promise<OutboxItem[]> => (await legacy.gmail.outbox()).items ?? [],
+  scheduleEmail: (body: { contactId: number; subject: string; body: string; when: 'best' | 'now' }): Promise<OutboxItem & { when: string }> => legacy.gmail.schedule(body),
+  editOutbox: (id: number, body: { subject?: string; body?: string }): Promise<OutboxItem> => legacy.gmail.edit(id, body),
+  cancelOutbox: (id: number): Promise<OutboxItem> => legacy.gmail.cancel(id),
+  replies: async (): Promise<ReplyItem[]> => (await legacy.gmail.replies()).replies ?? [],
+  checkReplies: (): Promise<{ events?: number }> => legacy.gmail.check(),
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
   startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),

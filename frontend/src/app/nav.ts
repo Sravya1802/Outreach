@@ -44,6 +44,7 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Contacts', to: '/outreach/contacts', keywords: 'people emails messages crm' },
       { label: 'Templates', to: '/outreach/templates', keywords: 'email linkedin dm' },
+      { label: 'Outbox', to: '/outreach/outbox', keywords: 'gmail scheduled sent follow-ups replies' },
     ],
   },
   {

@@ -5,6 +5,7 @@
 import { all } from '../db.js';
 import { marketFor, regionForMarket } from './markets.js';
 import { sendMail, mailerConfigured, notifyRecipient } from './mailer.js';
+import { connectionFor, sendAs } from './gmail.js';
 
 // Build the WHERE clause + params for a filtered, windowed roles query.
 function buildFilter({ windowDays = 1, roleType = 'all', keywords = '', region = 'usa' } = {}) {
@@ -67,12 +68,24 @@ function digestHtml(d, { windowDays = 1, unsubscribeNote = true } = {}) {
   </div>`;
 }
 
-// Send a built digest to a specific recipient (per-subscriber).
-export async function sendDigestToEmail(email, data, { windowDays = 1 } = {}) {
+// Send a built digest to a specific recipient (per-subscriber). With a user
+// whose Gmail is connected, it comes from their own Gmail; otherwise from the
+// site mailer, if one is configured.
+export async function sendDigestToEmail(email, data, { windowDays = 1, userId = null } = {}) {
   const span = windowDays >= 7 ? 'this week' : 'today';
   const subject = `🎯 ${data.total} new roles ${span} — ${data.intern} intern · ${data.newGrad} new grad`;
   const text = `${data.total} new roles ${span} across ${data.companies} companies: ${data.intern} intern, ${data.newGrad} new grad.`;
-  return sendMail({ to: email, subject, html: digestHtml(data, { windowDays }), text });
+  const html = digestHtml(data, { windowDays });
+  if (userId && await connectionFor(userId)) {
+    const messageId = await sendAs(userId, { to: email, subject, html, text });
+    return { ok: true, messageId, to: email, via: 'gmail' };
+  }
+  return sendMail({ to: email, subject, html, text });
+}
+
+/** Can this user get alert emails at all? */
+export async function canEmailUser(userId) {
+  return mailerConfigured() || Boolean(await connectionFor(userId));
 }
 
 // Legacy/global path: send to the env NOTIFY_EMAIL (used by the admin "send now").
@@ -89,7 +102,6 @@ export async function sendDailyRolesDigest({ force = false } = {}) {
  *   weekly=true  → weekly subscribers (7d window), run only on the chosen day
  */
 export async function runSubscriptionDigests({ weekly = false } = {}) {
-  if (!mailerConfigured()) return { skipped: true, reason: 'mailer_not_configured' };
   const rows = await all(`SELECT user_id, value FROM meta WHERE key = 'job_alert_subscription'`);
   let sent = 0, empty = 0, failed = 0, considered = 0;
   for (const row of rows) {
@@ -100,10 +112,11 @@ export async function runSubscriptionDigests({ weekly = false } = {}) {
     considered++;
     const windowDays = freq === 'weekly' ? 7 : 1;
     try {
+      if (!(await canEmailUser(row.user_id))) { empty++; continue; }
       const region = regionForMarket(await marketFor(row.user_id));
       const data = await buildDigestData({ roleType: sub.roleType, keywords: sub.keywords, windowDays, region });
       if (data.total === 0) { empty++; continue; } // don't send an empty alert
-      const r = await sendDigestToEmail(sub.email, data, { windowDays });
+      const r = await sendDigestToEmail(sub.email, data, { windowDays, userId: row.user_id });
       if (r.ok) sent++; else empty++;
     } catch (e) {
       failed++;

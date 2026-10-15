@@ -27,10 +27,11 @@ router.post('/build', async (req, res) => {
   const now = Date.now();
   if (now - (lastBuild.get(req.user.id) || 0) < 10 * 60_000) return res.status(429).json({ error: 'You can rebuild the list once every 10 minutes.' });
   lastBuild.set(req.user.id, now);
-  try {
-    const plan = await buildPlan(req.user.id, { force: Boolean(req.body?.rebuild) });
-    res.json({ plan });
-  } catch (err) { fail(res, err); }
+  // Scoring takes minutes: start it and return; the page polls the overview.
+  const userId = req.user.id;
+  buildPlan(userId, { force: Boolean(req.body?.rebuild) }).catch(err => console.error('[daily-plan] build failed:', err.message));
+  await new Promise(r => setTimeout(r, 400));
+  try { res.status(202).json({ plan: (await overview(userId)).plan }); } catch (err) { fail(res, err); }
 });
 
 router.post('/email', async (req, res) => {

@@ -35,7 +35,7 @@ import resumeEngineRouter from './routes/resumeEngine.js';
 import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
-import { tick as dailyPlanTick } from './services/dailyPlan.js';
+import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
@@ -637,8 +637,26 @@ cron.schedule('0 13 * * *', async () => {
 
 const PORT = process.env.PORT || 3001;
 
+// A list build runs in this process, so a restart (every deploy) kills it and
+// leaves the plan on 'building' with nothing left to finish it. Mark those failed
+// (the page then offers Rebuild) and start today's over.
+async function resumeInterruptedPlans() {
+  const { rows } = await run(
+    "UPDATE daily_plans SET status = 'failed', error = 'Interrupted by a server restart' WHERE status = 'building' RETURNING user_id, plan_date",
+  );
+  for (const p of rows) {
+    try {
+      const today = localDate((await getPlanSettings(p.user_id)).timezone);
+      if (String(p.plan_date).slice(0, 10) !== today) continue;
+      console.log(`[daily-plan] resuming interrupted build ${String(p.user_id).slice(0, 8)} ${today}`);
+      await buildPlan(p.user_id);
+    } catch (err) { console.error('[daily-plan] resume failed:', err.message); }
+  }
+}
+
 async function startup() {
   await pingDb();
+  resumeInterruptedPlans().catch(err => console.error('[daily-plan] resume pass failed:', err.message));
 
   app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);

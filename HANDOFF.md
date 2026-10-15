@@ -124,6 +124,27 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Step 4a: the evening list (daily plan)
+- **What:** opt-in per user (meta `daily_plan_settings`). Defaults: 10 PM America/Chicago, score ≥ 9.0, max 15 a day, referral first, 2-day wait.
+  - **Build:** the cron runs every 5 min and starts building an hour before list time; "Build now" runs in the background.
+    - Picks fresh roles (≤ 4 days old) in the user's region and role types that aren't already evaluated or considered.
+    - Hard filters: one company per 30 days, and sponsorship (catalog label, plus a deterministic classifier on the posting).
+    - Reads up to 40 postings a night and scores each with Groq (`score` task, 0–10 with a one-line reason) from the parsed master.
+    - Tiers: top (≥ bar, one per company, capped), worth (7 to the bar), low, excluded.
+  - **Email:** at list time, from the user's own Gmail (sendToSelf), as text plus HTML. It's skipped when the list has nothing to show.
+  - **Approve:** creates an evaluation row (source `daily_plan`), and resumeEngine starts right away (at most 2 at once per user).
+    - ATS 90+, or "Send anyway" → stage `asking_referral` (or `ready_to_apply` at a 6–10 AM company-time slot when referral first is off).
+    - Under 90 → `needs_you`. Unapproved roles expire when the next list is built.
+  - **UI (Auto-apply):** evening-list settings with Turn on/off, tonight's list (Approve / Skip / Undo / Approve all, with worth-a-look collapsed), and approved roles with their stage and an ATS link. The old lock banner and nightly Rules were removed.
+- **Files:** [025_daily_plan.sql](supabase/migrations/025_daily_plan.sql), [dailyPlan.js](backend/services/dailyPlan.js), [routes/dailyPlan.js](backend/routes/dailyPlan.js), [DailyPlan.tsx](frontend/src/features/applications/DailyPlan.tsx), [plan.ts](frontend/src/features/applications/plan.ts).
+- **Status:** live and tested on the e2e account.
+  - Built a real list: 300 considered, 40 scored for $0.009; 0 top (thin test resume), 25 worth, 21 low.
+  - Approve → tailoring started → needs_you (ATS 39% / 23%, $0.054 each). "Send anyway" → `asking_referral`.
+  - Browser test passed (settings save, turn on/off, approve from the page, Gmail hint, phone width).
+  - Bugs fixed: the synchronous build timed out, and the cron skipped users who had never saved settings.
+- **Next (4b):** referral ask (existing contacts with email go through the outbox; otherwise a LinkedIn search link plus a drafted note), referral buttons, the wait, apply at a 6–10 AM company-time slot via autoApplier, the "I've applied" note, the morning summary, and LinkedIn connections upload.
+- **Watch:** the quick fit score (8.5) and ATS keyword coverage (23–39%) can disagree a lot on thin resumes, so many approvals may land in needs_you. Revisit once the user's real resume is in.
+
 ### 2026-10-15 — Home rebuilt "Today first"; AI card removed
 - **What:** the user asked to remove "AI this month" from Home (`60763cf`, it's on Usage) and then to rework Home. They picked the "Today first" layout (`64aef0f`):
   - **Header:** "N things need you" counts the Today items that aren't informational, and links to #today-h.

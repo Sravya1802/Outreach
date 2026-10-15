@@ -27,7 +27,7 @@ function SectionTabs() {
           return (
             <Link key={t.to} to={t.to} aria-current={isActive ? 'page' : undefined}
               className={cn('-mb-px border-b-2 py-2.5 text-[14px] whitespace-nowrap transition-colors',
-                isActive ? 'border-rule font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
+                isActive ? 'border-accent font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
               {t.label}
             </Link>
           )
@@ -60,10 +60,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-canvas text-fg">
       <header className="shrink-0">
-        <div className="hidden border-b border-line md:block">
+        <div className="hidden border-b border-line lg:block">
           <TopBar onOpenPalette={openPalette} />
         </div>
-        <div className="flex h-12 items-center gap-2 border-b border-line px-3 md:hidden">
+        <div className="flex h-12 items-center gap-2 border-b border-line px-3 lg:hidden">
           <button type="button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"
             className="rounded-[4px] p-1.5 text-muted hover:bg-hover hover:text-fg">
             <Menu className="size-5" />
@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-[80] md:hidden">
+        <div className="fixed inset-0 z-[80] lg:hidden">
           <div className="absolute inset-0 bg-black/55" onClick={closeDrawer} aria-hidden="true" style={{ animation: 'ui-fade-in 120ms ease-out' }} />
           <aside className="relative h-full w-72 max-w-[85vw] border-r border-line bg-surface shadow-pop" aria-label="Navigation">
             <button type="button" onClick={closeDrawer} aria-label="Close navigation"

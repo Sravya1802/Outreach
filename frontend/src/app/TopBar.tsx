@@ -18,17 +18,17 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
   return (
-    <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center gap-x-8 gap-y-2 px-4 sm:px-8">
+    <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-8 xl:gap-x-8">
       <Link to="/home" className="font-display text-[22px] font-semibold tracking-tight text-fg">OutreachOS</Link>
 
-      <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-1">
+      <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-0.5 xl:gap-1">
         {PRIMARY_SECTIONS.map(s => {
           const isActive = active?.id === s.id
           return (
             // Plain Link: the active section comes from sectionFor() (detail pages
             // belong to Jobs), and NavLink would override aria-current.
             <Link key={s.id} to={s.to} aria-current={isActive ? 'page' : undefined}
-              className={cn('border-b-2 px-3 py-2 text-[14px] transition-colors',
+              className={cn('border-b-2 px-2 py-2 text-[14px] whitespace-nowrap transition-colors xl:px-3',
                 isActive ? 'border-accent font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
               {s.label}
             </Link>
@@ -37,11 +37,14 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       </nav>
 
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onOpenPalette}
+        <button type="button" onClick={onOpenPalette} aria-label="Search"
           className="flex h-8 items-center gap-2 rounded-[4px] border border-line px-2.5 text-[13px] text-subtle transition-colors hover:border-line-strong hover:text-muted">
           <Search className="size-3.5" />
-          <span>Search</span>
-          <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
+          {/* Icon only until there's room for the label and shortcut. */}
+          <span className="hidden items-center gap-2 xl:flex">
+            <span>Search</span>
+            <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
+          </span>
         </button>
         <Link to="/usage" title={isLoading ? 'Checking services…' : overall.label}
           aria-label={`Service status: ${isLoading ? 'checking' : overall.label}`}

@@ -1,4 +1,4 @@
-import { Briefcase, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,7 +8,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -23,8 +23,12 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'home', label: 'Home', icon: Home, to: '/home',
     tabs: [
-      { label: 'Overview', to: '/home', keywords: 'dashboard today funnel stats analytics metrics' },
+      { label: 'Overview', to: '/home', keywords: 'today queue picks setup' },
     ],
+  },
+  {
+    id: 'dashboard', label: 'Dashboard', icon: ChartColumnBig, to: '/dashboard',
+    tabs: [{ label: 'Dashboard', to: '/dashboard', keywords: 'analytics stats numbers charts metrics response rate interviews funnel' }],
   },
   {
     id: 'jobs', label: 'Jobs', icon: Briefcase, to: '/jobs',
@@ -96,7 +100,6 @@ export function sectionFor(pathname: string): NavSection | undefined {
  */
 export const LEGACY_REDIRECTS: Record<string, string> = {
   '/': '/home',
-  '/dashboard': '/home',
   '/job-dashboard': '/home',
   '/discover/companies': '/jobs/companies',
   '/discover/scraper': '/jobs/find',

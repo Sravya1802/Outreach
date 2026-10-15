@@ -17,6 +17,7 @@ const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 
 const GmailPage = lazyWithRetry(() => import('@/features/integrations/GmailPage'), 'GmailPage')
 const LinkedInPage = lazyWithRetry(() => import('@/features/integrations/LinkedInPage'), 'LinkedInPage')
 const UsagePage = lazyWithRetry(() => import('@/features/usage/UsagePage'), 'UsagePage')
+const DashboardPage = lazyWithRetry(() => import('@/features/dashboard/DashboardPage'), 'DashboardPage')
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
@@ -52,7 +53,8 @@ function SignedInRoutes() {
     <AppShell>
       <Routes>
         <Route path="/home" element={<HomePage />} />
-        <Route path="/home/analytics" element={<Navigate to="/home" replace />} />
+        <Route path="/home/analytics" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
 
         <Route path="/jobs" element={<Navigate to="/jobs/roles/intern" replace />} />
         <Route path="/jobs/roles" element={<Navigate to="/jobs/roles/intern" replace />} />

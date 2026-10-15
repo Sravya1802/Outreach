@@ -11,9 +11,10 @@ test('home renders for authed user', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'So far' })).toBeVisible()
 })
 
-test('old /dashboard bookmark lands on home', async ({ page }) => {
+test('dashboard shows the analytics', async ({ page }) => {
   await page.goto('/dashboard')
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Applications per week' })).toBeVisible()
 })
 
 test('old Pipeline links land on the Auto-apply tracker', async ({ page }) => {

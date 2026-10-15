@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
-import { PageSpinner } from '@/ui'
 import { AppShell } from './AppShell'
+import { AuthWait } from './AuthWait'
 import { useAuth } from './auth'
 import { lazyWithRetry } from './lazy'
 import { LEGACY_REDIRECTS } from './nav'
@@ -116,7 +116,7 @@ export default function App() {
   // Public: Google's consent screen links to these.
   if (pathname === '/privacy') return <PrivacyPage />
   if (pathname === '/terms') return <TermsPage />
-  if (session === undefined) return <div className="flex h-full bg-canvas"><PageSpinner /></div>
+  if (session === undefined) return <AuthWait />
   if (!session) return <LoginPage />
   return <MarketGate><SignedInRoutes /></MarketGate>
 }

@@ -124,6 +124,10 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Decision: keep the Gmail app-password page
+- The user asked to remove Integrations → Gmail, thinking "Continue with Google" already covered it. It doesn't: the sign-in requests no Gmail scopes (`LoginPage.tsx` signInWithOAuth has no `scopes`), and sending, follow-ups, reply tracking and daily emails all use the app password.
+- Explained, and the user chose to **keep the app-password page as is**. Moving Gmail onto Google sign-in (gmail.send/readonly scopes, unverified-app warning, 100-user cap until review) was offered and declined for now.
+
 ### 2026-10-15 — Usage: its own top-bar item next to Integrations
 - **What:** the user asked for Services to sit next to Integrations under a better name, with the AI spend added. The page is now **Usage** at `/usage` (`3047d44`), at [features/usage/UsagePage.tsx](frontend/src/features/usage/UsagePage.tsx).
   - It shows **AI spending this month** (you vs site, per-task breakdown). The card moved from Settings → Account into [AiSpendCard.tsx](frontend/src/features/usage/AiSpendCard.tsx).

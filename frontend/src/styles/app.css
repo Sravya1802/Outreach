@@ -9,7 +9,7 @@
    Raw values live on --ui-*; Tailwind colours point at them so one
    data-theme switch re-themes every utility. Dark is the default. */
 /* Editorial type (Fraunces display, IBM Plex text) with soft hairline rules.
-   Dark is the default; light is "Clean white". */
+   Dark is the default; light is "Ocean". */
 :root {
   color-scheme: dark;
   --ui-canvas:        #121315;
@@ -39,32 +39,32 @@
 }
 
 :root[data-theme="light"] {
-  /* "Clean white": white cards on a cool light-grey page, soft grey lines, indigo accent. */
+  /* "Ocean": white cards on a pale blue page, soft blue-grey lines, deep blue accent. */
   color-scheme: light;
-  --ui-canvas:        #f7f8fa;
+  --ui-canvas:        #eef4fa;
   --ui-surface:       #ffffff;
   --ui-raised:        #ffffff;
-  --ui-hover:         #f0f2f5;
-  --ui-border:        #e4e7ec;
-  --ui-border-strong: #d0d5dd;
-  --ui-rule:          #d0d5dd;
-  --ui-fg:            #101828;
-  --ui-muted:         #475467;
-  --ui-subtle:        #667085;
-  --ui-accent:        #4f46e5;
-  --ui-accent-hover:  #4338ca;
-  --ui-accent-soft:   rgb(79 70 229 / 0.08);
+  --ui-hover:         #e4edf6;
+  --ui-border:        #d9e4ef;
+  --ui-border-strong: #c3d3e3;
+  --ui-rule:          #c3d3e3;
+  --ui-fg:            #0f2236;
+  --ui-muted:         #3d5469;
+  --ui-subtle:        #587089;
+  --ui-accent:        #0b6bcb;
+  --ui-accent-hover:  #0956a5;
+  --ui-accent-soft:   rgb(11 107 203 / 0.09);
   --ui-on-accent:     #ffffff;
-  --ui-success:       #067647;
-  --ui-success-soft:  rgb(6 118 71 / 0.08);
-  --ui-warning:       #b54708;
-  --ui-warning-soft:  rgb(181 71 8 / 0.08);
-  --ui-danger:        #d92d20;
-  --ui-danger-soft:   rgb(217 45 32 / 0.08);
-  --ui-info:          #4f46e5;
-  --ui-info-soft:     rgb(79 70 229 / 0.08);
-  --ui-shadow:        0 8px 30px rgb(16 24 40 / 0.08), 0 0 0 1px rgb(16 24 40 / 0.05);
-  --ui-ring:          rgb(79 70 229 / 0.35);
+  --ui-success:       #0f7a55;
+  --ui-success-soft:  rgb(15 122 85 / 0.09);
+  --ui-warning:       #a15c07;
+  --ui-warning-soft:  rgb(161 92 7 / 0.09);
+  --ui-danger:        #c8321f;
+  --ui-danger-soft:   rgb(200 50 31 / 0.08);
+  --ui-info:          #0b6bcb;
+  --ui-info-soft:     rgb(11 107 203 / 0.08);
+  --ui-shadow:        0 8px 30px rgb(15 34 54 / 0.08), 0 0 0 1px rgb(15 34 54 / 0.05);
+  --ui-ring:          rgb(11 107 203 / 0.35);
 }
 
 @theme inline {

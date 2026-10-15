@@ -5,13 +5,12 @@ import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
 import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useNightlySettings, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
-import { api, type CatalogListing, type RoleType } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
-import { marketInfo, marketPhrase } from '@/lib/markets'
+import { marketPhrase } from '@/lib/markets'
 import { cn } from '@/lib/cn'
 import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
 import { Button, ButtonLink, ErrorState, Page, Skeleton } from '@/ui'
-import { postedLabel } from '@/features/jobs/catalog'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
 import { needsYouCount, todayItems, type TodayTone } from './today'
 
@@ -87,45 +86,6 @@ function SetupChecklist() {
           </li>
         ))}
       </ol>}
-    </section>
-  )
-}
-
-function RoleRow({ r, kind }: { r: CatalogListing; kind: string }) {
-  return (
-    <li>
-      <a href={r.apply_url} target="_blank" rel="noreferrer"
-        className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 border-b border-line py-3 hover:bg-hover/40">
-        <span className="truncate text-[14px] text-fg group-hover:text-accent">{r.title}</span>
-        <span className={cn('font-mono text-[13px]', r.salary_range ? 'text-fg' : 'text-subtle')}>{r.salary_range || '—'}</span>
-        <span className="truncate text-[13px] text-muted">{r.company_name}{r.location ? ` · ${r.location}` : ''}</span>
-        <span className="text-[12px] text-subtle">{kind} · {postedLabel(r.posted_at, r.scraped_at)}</span>
-      </a>
-    </li>
-  )
-}
-
-function NewRoles() {
-  const market = useMarket()
-  const region = marketInfo(market).region
-  const fetchType = (roleType: RoleType) => api.catalog({ roleType, region, page: 0, pageSize: 3 })
-  const intern = useQuery({ queryKey: qk.catalog({ home: 'intern', region }), queryFn: () => fetchType('intern') })
-  const grad = useQuery({ queryKey: qk.catalog({ home: 'new_grad', region }), queryFn: () => fetchType('new_grad') })
-  const loading = intern.isLoading || grad.isLoading
-  const error = intern.error ?? grad.error
-  return (
-    <section aria-labelledby="new-h">
-      <SectionTitle action={<Link to="/jobs/roles/intern" className="text-[14px] text-accent hover:underline">All roles</Link>}>
-        <span id="new-h">Newest roles in {marketPhrase(market)}</span>
-      </SectionTitle>
-      {error ? <ErrorState compact error={error} onRetry={() => { void intern.refetch(); void grad.refetch() }} /> : loading ? (
-        <div className="space-y-3 pt-2">{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="h-10" />)}</div>
-      ) : (
-        <ul>
-          {(intern.data?.rows ?? []).slice(0, 3).map(r => <RoleRow key={r.id} r={r} kind="Internship" />)}
-          {(grad.data?.rows ?? []).slice(0, 3).map(r => <RoleRow key={r.id} r={r} kind="New grad" />)}
-        </ul>
-      )}
     </section>
   )
 }
@@ -265,10 +225,7 @@ export default function HomePage() {
         <SetupChecklist />
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <Today />
-          <div className="space-y-10">
-            <Pipeline />
-            <NewRoles />
-          </div>
+          <Pipeline />
         </div>
       </div>
     </Page>

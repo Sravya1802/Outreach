@@ -94,7 +94,8 @@ test('old URLs redirect and keep their query string', async ({ page }) => {
     ['/discover/companies', /\/jobs\/companies$/],
     ['/apply/auto-apply', /\/applications\/auto-apply$/],
     ['/apply/new-grad-roles', /\/jobs\/roles\/new-grad$/],
-    ['/outreach/messages', /\/outreach\/contacts$/],
+    ['/outreach/messages', /\/people\/contacts$/],
+    ['/outreach/templates', /\/people\/templates$/],
     ['/career?evalId=42', /\/applications\/evaluate\?evalId=42$/],
   ]) {
     await page.goto(from)

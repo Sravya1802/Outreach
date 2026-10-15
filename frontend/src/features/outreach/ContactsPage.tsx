@@ -58,7 +58,7 @@ export default function ContactsPage() {
       <PageHeader
         title="Contacts"
         description="Everyone you’ve found at the companies you track. Open a company to find more people or write to them."
-        actions={<ButtonLink to="/outreach/templates">Email templates</ButtonLink>}
+        actions={<ButtonLink to="/people/templates">Email templates</ButtonLink>}
       />
 
       <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center">

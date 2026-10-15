@@ -68,10 +68,10 @@ function SignedInRoutes() {
         <Route path="/applications/board" element={<Navigate to="/applications/auto-apply?view=board#tracker" replace />} />
         <Route path="/applications/ranked" element={<Navigate to="/applications/auto-apply?sort=score#tracker" replace />} />
 
-        <Route path="/outreach" element={<Navigate to="/outreach/contacts" replace />} />
-        <Route path="/outreach/contacts" element={<ContactsPage />} />
-        <Route path="/outreach/templates" element={<TemplatesPage />} />
-        <Route path="/outreach/outbox" element={<OutboxPage />} />
+        <Route path="/people" element={<Navigate to="/people/contacts" replace />} />
+        <Route path="/people/contacts" element={<ContactsPage />} />
+        <Route path="/people/templates" element={<TemplatesPage />} />
+        <Route path="/people/outbox" element={<OutboxPage />} />
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />

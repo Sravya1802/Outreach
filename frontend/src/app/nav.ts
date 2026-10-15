@@ -1,4 +1,4 @@
-import { Briefcase, Home, Inbox, Plug, Send, Settings, UserRound, type LucideIcon } from 'lucide-react'
+import { Briefcase, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,7 +8,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'jobs' | 'applications' | 'outreach' | 'integrations' | 'profile' | 'settings'
+  id: 'home' | 'jobs' | 'applications' | 'people' | 'integrations' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -42,11 +42,11 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'outreach', label: 'Outreach', icon: Send, to: '/outreach',
+    id: 'people', label: 'People', icon: Users, to: '/people',
     tabs: [
-      { label: 'Contacts', to: '/outreach/contacts', keywords: 'people emails messages crm' },
-      { label: 'Templates', to: '/outreach/templates', keywords: 'email linkedin dm' },
-      { label: 'Outbox', to: '/outreach/outbox', keywords: 'gmail scheduled sent follow-ups replies' },
+      { label: 'Contacts', to: '/people/contacts', keywords: 'outreach referrals emails messages crm' },
+      { label: 'Templates', to: '/people/templates', keywords: 'outreach email linkedin dm referral ask' },
+      { label: 'Outbox', to: '/people/outbox', keywords: 'outreach gmail scheduled sent follow-ups replies' },
     ],
   },
   {
@@ -103,7 +103,12 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   '/apply/ranked': '/applications/auto-apply?sort=score#tracker',
   '/apply/intern-roles': '/jobs/roles/intern',
   '/apply/new-grad-roles': '/jobs/roles/new-grad',
-  '/outreach/messages': '/outreach/contacts',
+  // The Outreach section was renamed People.
+  '/outreach': '/people/contacts',
+  '/outreach/contacts': '/people/contacts',
+  '/outreach/templates': '/people/templates',
+  '/outreach/outbox': '/people/outbox',
+  '/outreach/messages': '/people/contacts',
   // Pre-IA-refactor paths
   '/companies': '/jobs/companies',
   '/scraper': '/jobs/find',

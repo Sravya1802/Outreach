@@ -188,26 +188,6 @@ function Pipeline() {
   )
 }
 
-function AiSpend() {
-  const usage = useQuery({ queryKey: qk.aiUsage, queryFn: api.aiUsage, staleTime: 60_000 })
-  if (usage.isError || usage.isLoading || !usage.data) return null
-  const { spent, caps } = usage.data
-  const pct = Math.min(100, percent(Math.round(spent.mine * 100), Math.round(caps.user * 100)))
-  return (
-    <section aria-labelledby="ai-h">
-      <SectionTitle action={<Link to="/usage" className="text-[14px] text-accent hover:underline">Details</Link>}>
-        <span id="ai-h">AI this month</span>
-      </SectionTitle>
-      <p className="pt-2 text-[14px] text-muted">
-        <span className="font-mono text-fg">${spent.mine.toFixed(2)}</span> of your <span className="font-mono">${caps.user.toFixed(0)}</span> limit
-      </p>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-hover" aria-hidden="true">
-        <div className={cn('h-full rounded-full', pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-accent')} style={{ width: `${pct}%` }} />
-      </div>
-    </section>
-  )
-}
-
 export default function HomePage() {
   const { email } = useAuth()
   const profile = useProfile()
@@ -249,7 +229,6 @@ export default function HomePage() {
           <div className="space-y-10">
             <WaitingOnYou />
             <Pipeline />
-            <AiSpend />
           </div>
         </div>
       </div>

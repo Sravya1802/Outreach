@@ -124,6 +124,12 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-14 — Outreach section renamed People
+- **What:** the top-bar "Outreach" is now **People** (`bb49694`). Contacts, Templates and Outbox moved to `/people/*`, and every `/outreach*` URL redirects (LEGACY_REDIRECTS). Section id is `people`. The `features/outreach/` folder name is unchanged.
+- **Also fixed:** two stale e2e specs (outreach.spec expected "Outreach CRM"; shell.spec expected `/outreach/contacts`).
+- **Status:** verified live. `/outreach/templates` lands on `/people/templates`, the top bar shows People, and the phone layout is fine.
+- **Pending:** the user also wants to **rename the app (OutreachOS)**. The name is not chosen yet. When it is, update: TopBar, Sidebar, AppShell, AuthLayout, LoginPage, index.html title, and the Gmail/GitHub/Details/Services copy. Also `backend/services/replyWatcher.js` (its email footer says "OutreachOS sent this" and links `${SITE}/outreach/outbox`, which redirects but should become `/people/outbox`).
+
 ### 2026-10-14 — Navigation: account menu + Integrations
 - **What:**
   - Clicking the avatar opens a menu with the name and email, **Profile**, **Settings** and **Sign out** (there was no sign-out in the bar before). It closes on Escape or a click outside. The phone drawer has the same items plus Sign out.

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, Mail } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useAuth } from '@/app/auth'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, Card, CardBody, CardHeader, ConfirmDialog, ErrorState, Field, Input, Skeleton, useToast } from '@/ui'
@@ -13,7 +14,9 @@ export function GmailTab() {
   const qc = useQueryClient()
   const toast = useToast()
   const status = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
-  const [email, setEmail] = useState('')
+  const { email: signInEmail } = useAuth()
+  // Most people connect the Gmail they signed up with.
+  const [email, setEmail] = useState(/@(gmail|googlemail)\.com$/i.test(signInEmail) ? signInEmail : '')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [cap, setCap] = useState('')
@@ -108,7 +111,7 @@ function ConnectForm({ email, setEmail, password, setPassword, name, setName, su
 }) {
   return (
     <Card>
-      <CardHeader title="Connect your Gmail" description="Emails go out from your own address, so replies land in your inbox. OutreachOS reads only replies to what it sent, plus LinkedIn’s notification emails." />
+      <CardHeader title="Your Gmail isn’t connected yet" description="Emails go out from your own address, so replies land in your inbox. OutreachOS reads only replies to what it sent, plus LinkedIn’s notification emails." />
       <CardBody>
         <ol className="mb-6 space-y-2 text-[14px] leading-relaxed text-muted">
           <li><b className="font-medium text-fg">1.</b> Turn on 2-Step Verification for your Google account, if it isn’t on.</li>

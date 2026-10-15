@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Roles: Visa column
+- **What:** Jobs → Roles now has its own **Visa** column between Pay and Location (`429fc3e`, `93a972e`). It shows Sponsors visas / No sponsorship / US citizens only / Visa not stated, or "Not checked" when the description was never read. Hovering shows the quoted sentence. Phones keep the badge under the title. The actions column now has a fixed 176px width, so rows with "Tracking" line up.
+- **Status:** verified live (light theme, 1400px and 390px, no horizontal scroll).
+- **Follow-up:** many big-company rows (NVIDIA, Meta…) show "Not checked" because their descriptions sit on Workday, which returns 403 (see the sponsorship entry).
+
 ### 2026-10-14 — Outreach section renamed People
 - **What:** the top-bar "Outreach" is now **People** (`bb49694`). Contacts, Templates and Outbox moved to `/people/*`, and every `/outreach*` URL redirects (LEGACY_REDIRECTS). Section id is `people`. The `features/outreach/` folder name is unchanged.
 - **Also fixed:** two stale e2e specs (outreach.spec expected "Outreach CRM"; shell.spec expected `/outreach/contacts`).

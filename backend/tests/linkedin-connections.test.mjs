@@ -41,3 +41,15 @@ test('referral status line', async () => {
   assert.match(t.body, /The posting: https:\/\/x/);
   assert.match(linkedinSearchUrl('Ramp', 'UIC'), /keywords=Ramp%20UIC/);
 });
+
+test('message template: referral when there is a role, a short chat otherwise', async () => {
+  const { templateMessages } = await import('../services/messages.js');
+  const withRole = templateMessages({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', company: 'Ramp', role: { title: 'SWE Intern', url: 'https://jobs.ashbyhq.com/ramp/1' }, isConnection: true });
+  assert.ok(withRole.note.startsWith('Hi Ana,') && withRole.note.length <= 300);
+  assert.match(withRole.note, /SWE Intern role/);
+  assert.match(withRole.body, /we’re connected on LinkedIn/);
+  assert.match(withRole.body, /The posting: https:\/\/jobs\.ashbyhq\.com\/ramp\/1/);
+  const noRole = templateMessages({ personName: 'Bo', me: '', school: '', company: 'Stripe', role: null, isConnection: false });
+  assert.match(noRole.note, /how you got into Stripe/);
+  assert.equal(noRole.subject, 'Quick question about Stripe');
+});

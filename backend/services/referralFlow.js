@@ -69,7 +69,7 @@ Return JSON: {"subject": "...", "body": "...", "note": "..."}
   }
 }
 
-async function me(userId) {
+export async function me(userId) {
   const p = await one('SELECT first_name, last_name, education_school FROM user_profile WHERE user_id = $1', [userId]);
   const m = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
   return {
@@ -79,14 +79,14 @@ async function me(userId) {
 }
 
 /** The user's company row (jobs), created if needed, so contacts and outreach have a home. */
-async function companyRow(userId, name, location) {
+export async function companyRow(userId, name, location) {
   const found = await one('SELECT id FROM jobs WHERE user_id = $1 AND lower(name) = lower($2) LIMIT 1', [userId, name]);
   if (found) return found.id;
   return (await run('INSERT INTO jobs (user_id, name, location, category) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id', [userId, name, location, 'daily_plan'])).rows[0]?.id
     || (await one('SELECT id FROM jobs WHERE user_id = $1 AND lower(name) = lower($2) LIMIT 1', [userId, name]))?.id;
 }
 
-async function contactFor(userId, jobId, person) {
+export async function contactFor(userId, jobId, person) {
   const byUrl = person.profile_url && await one('SELECT * FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND lower(linkedin_url) = lower($3)', [userId, jobId, person.profile_url]);
   if (byUrl) return byUrl;
   const byName = await one('SELECT * FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND lower(name) = lower($3)', [userId, jobId, person.full_name]);

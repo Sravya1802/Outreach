@@ -172,6 +172,13 @@ export const api = {
     disconnect: ()                => apiCall('/github/connection', { method: 'DELETE' }),
   },
 
+  // People → Messages
+  messages: {
+    companies: (params)       => apiCall(`/messages/companies${qs(params)}`),
+    company:   (key)          => apiCall(`/messages/companies/${encodeURIComponent(key)}`),
+    write:     (key, ref)     => apiCall(`/messages/companies/${encodeURIComponent(key)}/write`, { method: 'POST', body: { ref } }),
+  },
+
   // The evening list (daily plan)
   dailyPlan: {
     overview:   ()            => apiCall('/daily-plan'),

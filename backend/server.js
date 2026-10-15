@@ -34,6 +34,7 @@ import githubRouter, { githubCallback } from './routes/github.js';
 import resumeEngineRouter from './routes/resumeEngine.js';
 import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
+import messagesRouter from './routes/messages.js';
 import { tick as dailyPlanTick } from './services/dailyPlan.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
@@ -126,6 +127,7 @@ app.use('/api/github',     githubRouter);
 app.use('/api/resume-engine', resumeEngineRouter);
 app.use('/api/gmail', gmailRouter);
 app.use('/api/daily-plan', dailyPlanRouter);
+app.use('/api/messages', messagesRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

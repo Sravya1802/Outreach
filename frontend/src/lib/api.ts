@@ -359,6 +359,29 @@ export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluati
 }
 export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
 
+// ── People → Messages ───────────────────────────────────────────────────────
+
+export interface MessageCompany { key: string; name: string; connections: number; contacts: number; emails: number; contacted: number; drafted: number; openRoles: number }
+export interface MessageCompanyPage { total: number; page: number; pageSize: number; companies: MessageCompany[] }
+export interface MessagePerson {
+  /** "c:<contact id>" or "l:<connection id>" */
+  ref: string
+  contactId: number | null
+  connectionId: number | null
+  isConnection: boolean
+  name: string
+  title: string | null
+  linkedinUrl: string | null
+  email: string | null
+  emailStatus: string | null
+  status: string
+  note: string | null
+  subject: string | null
+  body: string | null
+}
+export interface MessageCompanyDetail { key: string; name: string; role: { title: string; url: string } | null; people: MessagePerson[] }
+export type MessageFilter = 'all' | 'roles' | 'connections' | 'emails'
+
 // ── Daily plan (the evening list) ────────────────────────────────────────────
 
 export interface DailyPlanSettings {
@@ -683,6 +706,9 @@ export const api = {
   tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
   /** The master resume read into sections (reads it once if it never was). */
   parsedResume: async (): Promise<ParsedResume> => (await legacy.career.readMasterResume()).parsed ?? {},
+  messageCompanies: (q: { q?: string; filter?: MessageFilter; page?: number }): Promise<MessageCompanyPage> => legacy.messages.companies(q),
+  messageCompany: (key: string): Promise<MessageCompanyDetail> => legacy.messages.company(key),
+  writeMessage: (key: string, ref: string): Promise<MessagePerson> => legacy.messages.write(key, ref),
   dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
   saveDailyPlanSettings: (body: Partial<DailyPlanSettings>): Promise<DailyPlanSettings> => legacy.dailyPlan.save(body),
   buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),

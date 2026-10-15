@@ -124,6 +124,13 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — "Clean white" light theme; Newest roles off Home
+- **What:** the user disliked the cream background and the Home roles list.
+  - Home no longer shows Newest roles (`6367535`): Today on the left, So far on the right.
+  - The light theme is now **Clean white** (`8f6f8c8`, [app.css](frontend/src/styles/app.css)). The page is #f7f8fa with white cards, soft grey lines #e4e7ec / #d0d5dd, text #101828 and indigo accent #4f46e5. The heavy black section rules (`--ui-rule`) are now soft grey.
+  - Dark keeps its palette, but its rule moved from bright #ece9e2 to #3d3e44.
+- **Status:** verified live on Home, Roles, Auto-apply and Usage in light and dark. No console errors.
+
 ### 2026-10-15 — Step 4a: the evening list (daily plan)
 - **What:** opt-in per user (meta `daily_plan_settings`). Defaults: 10 PM America/Chicago, score ≥ 9.0, max 15 a day, referral first, 2-day wait.
   - **Build:** the cron runs every 5 min and starts building an hour before list time; "Build now" runs in the background.

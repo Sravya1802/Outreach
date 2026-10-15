@@ -433,6 +433,7 @@ export const api = {
     openReportTab:        (id) => openAuthenticatedTab(`/career/evaluations/${id}/report.html`),
     downloadEvaluationPdf: (id, filename) => downloadAuthenticatedFile(`/career/download/${id}`, filename),
     resumeFiles: () => apiCall('/career/resume/files'),
+    readMasterResume: () => apiCall('/resume-engine/master/read', { method: 'POST' }),
     tailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}`),
     startTailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/tailor`, { method: 'POST' }),
     startCoverLetter: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/cover-letter`, { method: 'POST' }),

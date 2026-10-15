@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { one } from '../db.js';
 import { parseId } from '../services/safePaths.js';
-import { approve, coverLetterRequested, latest, start } from '../services/resumeEngine.js';
+import { approve, coverLetterRequested, latest, parsedMaster, start } from '../services/resumeEngine.js';
 
 const router = Router();
 
@@ -20,6 +20,15 @@ router.get('/master', async (req, res) => {
       [req.user.id],
     );
     res.json({ file: m ? { id: m.id, filename: m.filename, created_at: m.created_at } : null, parsed: m?.parsed || null, parsedAt: m?.parsed_at || null });
+  } catch (err) { fail(res, err); }
+});
+
+// The master resume read into sections, reading it now if it never was
+// (one AI call, cached on the file row). Profile → Details fills from this.
+router.post('/master/read', async (req, res) => {
+  try {
+    const { parsed } = await parsedMaster(req.user.id);
+    res.json({ parsed });
   } catch (err) { fail(res, err); }
 });
 

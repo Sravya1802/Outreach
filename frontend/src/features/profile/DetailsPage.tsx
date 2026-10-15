@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FileText } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { qk } from '@/app/queryClient'
@@ -7,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { Button, ErrorState, Field, Input, Page, PageHeader, Select, Skeleton, Textarea, useToast } from '@/ui'
 import { ExperienceList } from './ExperienceList'
 import { readExperiences, type Experience } from './experience'
+import { resumeFill } from './resumeFill'
 import { IMPORTANT_KEYS, REQUIRED_KEYS, SECTIONS, labelFor, missing, toForm, toPatch, type FieldDef, type FormValues } from './fields'
 
 function Control({ def, value, disabled, onChange, field }: {
@@ -68,6 +70,19 @@ export default function DetailsPage() {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  // Fills empty fields only; the user reviews and saves.
+  const fill = useMutation({
+    mutationFn: api.parsedResume,
+    onSuccess: parsed => {
+      const r = resumeFill(parsed, values, experiences)
+      if (!r.filled) { toast.success('Nothing to add: everything on your resume is already here.'); return }
+      setEdits(prev => ({ ...prev, ...r.edits }))
+      if (r.experiences) setExpEdits(r.experiences)
+      toast.success(`Filled ${r.filled} ${r.filled === 1 ? 'field' : 'fields'} from your resume. Check them, then Save.`)
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const requiredMissing = missing(values, REQUIRED_KEYS)
   const importantDone = IMPORTANT_KEYS.length - missing(values, IMPORTANT_KEYS).length
 
@@ -78,7 +93,10 @@ export default function DetailsPage() {
       <PageHeader
         title="Your details"
         description="Filled into every application. Fill it once; auto-apply never guesses these."
-        actions={<Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || isLoading}>Save</Button>}
+        actions={<>
+          <Button icon={<FileText className="size-4" />} onClick={() => fill.mutate()} loading={fill.isPending} disabled={isLoading}>Fill from resume</Button>
+          <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || isLoading}>Save</Button>
+        </>}
       />
 
       {isLoading ? (

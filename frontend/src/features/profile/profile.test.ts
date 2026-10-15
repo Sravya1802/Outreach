@@ -4,6 +4,8 @@ import { unansweredCommon } from './commonQuestions'
 import { toForm, toPatch } from './fields'
 import { topLanguages } from './repoFormat'
 import { countryLabel, countryOf, formatBytes } from './resumeFiles'
+import { resumeFill, toMonth } from './resumeFill'
+import { emptyExperience } from './experience'
 
 describe('question matching (mirrors the backend)', () => {
   it('normalizes length hints and punctuation away', () => {
@@ -68,5 +70,47 @@ describe('resume files', () => {
     expect(countryOf({ region: null, market: 'india' })).toBe('india')
     expect(countryOf({ region: null, market: null })).toBe('usa')
     expect(countryLabel('other')).toBe('International')
+  })
+})
+
+describe('fill from resume', () => {
+  const parsed = {
+    name: 'Ada Lovelace',
+    contact: { email: 'ada@example.com', phone: '', location: 'Boston, MA', links: [{ label: 'LinkedIn', url: 'linkedin.com/in/ada' }, { label: 'GitHub', url: 'https://github.com/ada' }] },
+    education: [{ school: 'MIT', degree: 'M.S.', field: 'Computer Science', location: '', start: 'Aug 2025', end: 'May 2027', gpa: '3.9' }],
+    experience: [
+      { company: 'Acme', title: 'Software Engineer', location: 'NYC', start: 'Jan 2024', end: 'Present', bullets: ['Built X'] },
+      { company: 'Mercedes-Benz R&D', title: 'Data Engineering Intern', location: 'Bengaluru, India', start: 'June 2023', end: '08/2023', bullets: ['Moved Y', 'Cut Z'] },
+    ],
+    skills: [{ category: 'Languages', items: ['Python', 'SQL'] }],
+    extras: [{ heading: 'Certifications', items: ['AWS SAA'] }],
+  }
+
+  it('reads resume dates as months and never invents a month', () => {
+    expect(toMonth('Jun 2025')).toBe('2025-06')
+    expect(toMonth('Sept. 2024')).toBe('2024-09')
+    expect(toMonth('06/2023')).toBe('2023-06')
+    expect(toMonth('2023')).toBe('')
+    expect(toMonth('Present')).toBe('')
+  })
+
+  it('fills only empty fields and replaces a blank experience entry', () => {
+    const r = resumeFill(parsed, { first_name: 'Ada', education_degree: 'Masters', email: '' }, [emptyExperience()])
+    expect(r.edits.first_name).toBeUndefined()
+    expect(r.edits.education_degree).toBeUndefined()
+    expect(r.edits).toMatchObject({ last_name: 'Lovelace', email: 'ada@example.com', linkedin_url: 'https://linkedin.com/in/ada', github_url: 'https://github.com/ada', education_major: 'Computer Science', graduation_date: 'May 2027', skills: 'Python, SQL', certifications: 'AWS SAA' })
+    expect(r.edits.phone).toBeUndefined()
+    expect(r.experiences).toHaveLength(2)
+    expect(r.experiences?.[0]).toMatchObject({ company: 'Acme', type: 'job', start: '2024-01', end: '', current: true })
+    expect(r.experiences?.[1]).toMatchObject({ type: 'internship', start: '2023-06', end: '2023-08', summary: '• Moved Y\n• Cut Z' })
+  })
+
+  it('leaves a listed role alone except its empty fields', () => {
+    const mine = { ...emptyExperience(), company: 'Acme', title: 'Software Engineer', summary: 'My words', type: 'job' as const }
+    const acme = { experience: parsed.experience.slice(0, 1) }
+    const r = resumeFill(acme, {}, [mine])
+    expect(r.experiences).toHaveLength(1)
+    expect(r.experiences?.[0]).toMatchObject({ summary: 'My words', location: 'NYC', start: '2024-01' })
+    expect(resumeFill(acme, {}, r.experiences ?? []).filled).toBe(0)
   })
 })

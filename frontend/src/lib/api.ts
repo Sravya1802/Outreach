@@ -571,6 +571,16 @@ export interface Pipeline { columns: Record<PipelineColumn, { label: string; hin
 
 export interface AutoApplyItems { items: EvaluationSummary[]; counts: Record<QueueStatus, number> }
 
+/** The master resume as the resume engine read it (backend MASTER_SCHEMA); dates as written on the resume. */
+export interface ParsedResume {
+  name?: string
+  contact?: { email?: string; phone?: string; location?: string; links?: { label: string; url: string }[] }
+  education?: { school: string; degree: string; field: string; location: string; start: string; end: string; gpa: string }[]
+  experience?: { company: string; title: string; location: string; start: string; end: string; bullets: string[] }[]
+  skills?: { category: string; items: string[] }[]
+  extras?: { heading: string; items: string[] }[]
+}
+
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -646,6 +656,8 @@ export const api = {
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
   resumeHistory: (): Promise<ResumeHistory> => legacy.career.resumeFiles(),
   tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
+  /** The master resume read into sections (reads it once if it never was). */
+  parsedResume: async (): Promise<ParsedResume> => (await legacy.career.readMasterResume()).parsed ?? {},
   dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
   saveDailyPlanSettings: (body: Partial<DailyPlanSettings>): Promise<DailyPlanSettings> => legacy.dailyPlan.save(body),
   buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),

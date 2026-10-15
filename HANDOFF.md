@@ -124,6 +124,15 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — How it works: WhatsApp, LinkedIn, accurate apply step
+- **What** (`d7972dd`):
+  - **On your phone with WhatsApp** is a new section with 6 cards. The link card shows linked / not linked / not available (from `configured`). There's one card each for list approve-by-reply, reply alerts, needs-you and morning summary, showing on/off from prefs. The last card covers STOP/START/HELP.
+  - **Outreach** is now 8 steps and includes LinkedIn connections (`api.connections`), People → Messages, and notes sent by hand.
+  - **Referral step:** connections first, email or a LinkedIn note, and the user reports link / submitted / no.
+  - **Apply step:** only Greenhouse/Lever/Ashby are auto-submitted; others become "apply yourself".
+  - The logic is in `whatsappSteps` / `emailSteps` in queueFlow.ts, with tests.
+- **Status:** verified live. **WhatsApp shows "not available yet" because none of WHATSAPP_TOKEN / PHONE_NUMBER_ID / BUSINESS_NUMBER / VERIFY_TOKEN / APP_SECRET are in the VM .env.** The owner's Meta setup is still pending.
+
 ### 2026-10-15 — WhatsApp (Meta Cloud API)
 - **What:** one OutreachOS business number, [whatsapp.js](backend/services/whatsapp.js).
   - **Linking:** Integrations → WhatsApp gives a 6-digit code (30 minutes). The user sends `JOIN <code>` to the number, which proves it's theirs and opts them in.

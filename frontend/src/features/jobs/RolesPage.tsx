@@ -36,7 +36,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   const visaTitle = role.sponsorship_quote ? `“${role.sponsorship_quote}”` : visa ? 'The job description doesn’t mention visas.' : 'The job description hasn’t been read yet.'
   const others = (role.also_on ?? []).filter(s => s !== role.source)
   return (
-    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_auto] md:items-center md:gap-4">
+    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_176px] md:items-center md:gap-4">
       <div className="min-w-0">
         <a href={role.apply_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-fg hover:text-accent">
           <span className="truncate">{role.title}</span>
@@ -239,8 +239,8 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_auto] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
-          <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span>Source</span><span className="w-40 text-right">&nbsp;</span>
+        <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_176px] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
+          <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span>Source</span><span>&nbsp;</span>
         </div>
         {listing.isLoading ? (
           <ul className="divide-y divide-line">{Array.from({ length: 8 }, (_, i) => (

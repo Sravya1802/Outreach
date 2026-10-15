@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z';
-const { normalizePhone, cleanParam, parseCommand, listMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES } = await import('../services/whatsapp.js');
+const { normalizePhone, cleanParam, parseCommand, listMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES, welcomeMessage, chatReply } = await import('../services/whatsapp.js');
 
 test('phone numbers', () => {
   assert.equal(normalizePhone('+1 (555) 010-2000'), '15550102000');
@@ -63,4 +63,15 @@ test('every template has as many example values as placeholders', () => {
     const n = (t.text.match(/\{\{\d+\}\}/g) || []).length;
     assert.equal(t.example.length, n, t.name);
   }
+});
+
+test('welcome and small talk', () => {
+  const w = welcomeMessage(21);
+  assert.match(w, /^✅ \*You’re connected to OutreachOS\*/);
+  assert.match(w, /evening list is ready \(9 PM\)/);
+  assert.match(w, /\*YES 1 3\*  approve only those numbers/);
+  assert.match(chatReply('thank you'), /^You’re welcome!/);
+  assert.match(chatReply('Thanks!'), /^You’re welcome!/);
+  assert.match(chatReply('hi'), /^Hi! 👋/);
+  assert.match(chatReply('what is this'), /Reply \*HELP\*/);
 });

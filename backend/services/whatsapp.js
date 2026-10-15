@@ -266,7 +266,40 @@ export async function sendPlanList(userId) {
 
 // ── Inbound ─────────────────────────────────────────────────────────────────
 
-const HELP = 'OutreachOS commands:\nYES — approve all of tonight’s list\nYES 1 3 — approve some by number\nSKIP 2 — skip one\nLIST — send tonight’s list again\nSTOP — pause WhatsApp messages\nSTART — turn them back on';
+// WhatsApp formatting: *bold*, _italic_.
+export const HELP = [
+  '*Reply with*',
+  '*YES*  approve tonight’s whole list',
+  '*YES 1 3*  approve only those numbers',
+  '*SKIP 2*  skip one',
+  '*LIST*  see tonight’s list again',
+  '*STOP* / *START*  pause or resume these messages',
+  '*HELP*  show this again',
+].join('\n');
+
+const hourText = (h) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
+
+export function welcomeMessage(listHour = 22) {
+  return [
+    '✅ *You’re connected to OutreachOS*',
+    '',
+    'I’ll message you here when:',
+    `• your evening list is ready (${hourText(listHour)})`,
+    '• someone replies to your outreach',
+    '• one of your roles needs you',
+    '• your morning summary is in',
+    '',
+    HELP,
+  ].join('\n');
+}
+
+/** Small talk gets a short, friendly answer instead of the whole command list. */
+export function chatReply(text) {
+  const t = String(text ?? '').trim().toLowerCase();
+  if (/^(thanks|thank you|thx|ty|thank u|tysm|great|cool|nice|awesome|perfect|👍|🙏|❤️|ok|okay|k|got it|sounds good)[!. ]*$/u.test(t)) return 'You’re welcome! Reply *HELP* any time to see what I can do.';
+  if (/^(hi|hello|hey|hii+|yo|good (morning|afternoon|evening))[!. ]*$/.test(t)) return 'Hi! 👋 Reply *LIST* to see tonight’s roles, or *HELP* for everything I understand.';
+  return 'Sorry, I only understand a few words. Reply *HELP* to see them.';
+}
 
 async function reply(userId, phone, text) {
   if (!whatsappConfigured()) return null;
@@ -283,13 +316,15 @@ export async function handleInbound(from, text) {
     if (!pending) return reply(null, phone, 'That code has expired or isn’t right. Get a new one in OutreachOS → Integrations → WhatsApp.');
     await run('UPDATE whatsapp_links SET phone = NULL, verified_at = NULL WHERE phone = $1 AND user_id <> $2', [phone, pending.user_id]);
     await run('UPDATE whatsapp_links SET phone = $2, verified_at = NOW(), enabled = true, join_code = NULL, join_code_expires = NULL, last_inbound_at = NOW() WHERE user_id = $1', [pending.user_id, phone]);
-    return reply(pending.user_id, phone, `Linked. You’ll get your 10 PM list, reply alerts, roles that need you and the morning summary here.\n\n${HELP}`);
+    const { getSettings } = await import('./dailyPlan.js');
+    const listHour = (await getSettings(pending.user_id).catch(() => null))?.listHour ?? 22;
+    return reply(pending.user_id, phone, welcomeMessage(listHour));
   }
   const link = await one('SELECT * FROM whatsapp_links WHERE phone = $1 AND verified_at IS NOT NULL', [phone]);
   if (!link) return reply(null, phone, `This number isn’t linked to OutreachOS. Get a code in ${SITE}/integrations/whatsapp and send JOIN <code>.`);
   await run('UPDATE whatsapp_links SET last_inbound_at = NOW() WHERE user_id = $1', [link.user_id]);
   const userId = link.user_id;
-  if (!c) return reply(userId, phone, `I didn’t catch that.\n\n${HELP}`);
+  if (!c) return reply(userId, phone, chatReply(text));
   if (c.cmd === 'help') return reply(userId, phone, HELP);
   if (c.cmd === 'stop') { await run('UPDATE whatsapp_links SET enabled = false WHERE user_id = $1', [userId]); return reply(userId, phone, 'Paused. Send START to turn WhatsApp messages back on.'); }
   if (c.cmd === 'start') { await run('UPDATE whatsapp_links SET enabled = true WHERE user_id = $1', [userId]); return reply(userId, phone, 'WhatsApp messages are on again.'); }

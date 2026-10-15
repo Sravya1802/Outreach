@@ -341,7 +341,7 @@ export async function decide(userId, itemId, decision) {
     // Start the resume now rather than at the next cron pass.
     advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
   } else if (decision !== 'approved') {
-    await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL WHERE id = $1", [item.id, decision]);
+    await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL, needs_reason = NULL WHERE id = $1", [item.id, decision]);
   }
   return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
 }
@@ -362,7 +362,8 @@ export async function advanceUser(userId) {
   const items = await all(
     `SELECT pi.*, t.status AS t_status, t.ats_score AS t_score, t.approved_at AS t_approved, t.error AS t_error
        FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
-      WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.stage IN ('tailoring', 'needs_you')
+      WHERE pi.user_id = $1 AND pi.decision = 'approved'
+        AND (pi.stage = 'tailoring' OR (pi.stage = 'needs_you' AND pi.needs_reason = 'resume'))
       ORDER BY pi.decided_at`,
     [userId],
   );
@@ -375,7 +376,7 @@ export async function advanceUser(userId) {
         await run('UPDATE plan_items SET tailoring_id = $2 WHERE id = $1', [i.id, t.id]);
         runningNow += 1;
       } catch (err) {
-        await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1", [i.id, String(err.message).slice(0, 300)]);
+        await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1", [i.id, String(err.message).slice(0, 300)]);
       }
       continue;
     }
@@ -383,17 +384,17 @@ export async function advanceUser(userId) {
     const passed = i.t_status === 'ready' || (i.t_status === 'needs_review' && i.t_approved);
     if (passed) {
       if (settings.referralFirst) {
-        await run("UPDATE plan_items SET stage = 'asking_referral', stage_note = 'Resume ready. Next: asking for a referral' WHERE id = $1", [i.id]);
+        await run("UPDATE plan_items SET stage = 'asking_referral', needs_reason = NULL, stage_note = 'Resume ready. Next: asking for a referral' WHERE id = $1", [i.id]);
       } else {
         const tz = i.company_tz || settings.timezone;
-        await run("UPDATE plan_items SET stage = 'ready_to_apply', apply_after = $2, stage_note = 'Resume ready. Applying in the company’s morning' WHERE id = $1",
+        await run("UPDATE plan_items SET stage = 'ready_to_apply', needs_reason = NULL, apply_after = $2, stage_note = 'Resume ready. Applying in the company’s morning' WHERE id = $1",
           [i.id, nextSendSlot(tz, { startHour: 6, endHour: 10 })]);
       }
     } else if (i.t_status === 'needs_review' && i.stage !== 'needs_you') {
-      await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1",
+      await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1",
         [i.id, `Tailored resume scored ${i.t_score}% on the ATS check (target 90%). Open it to send anyway or skip the role.`]);
     } else if (i.t_status === 'failed' && i.stage !== 'needs_you') {
-      await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1", [i.id, `Resume writing failed: ${i.t_error || 'unknown error'}. Open the role to try again.`]);
+      await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1", [i.id, `Resume writing failed: ${i.t_error || 'unknown error'}. Open the role to try again.`]);
     }
   }
 }

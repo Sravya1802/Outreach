@@ -100,6 +100,15 @@ export async function contactFor(userId, jobId, person) {
 
 /** Step 1: ask. Moves the role to waiting_referral with its apply time set. */
 export async function askForReferral(userId, item, settings) {
+  // Never ask twice for one role: if asks exist, only (re)set the wait.
+  const existing = await all('SELECT channel, person_name FROM referral_asks WHERE plan_item_id = $1', [item.id]);
+  if (existing.length) {
+    const tz0 = item.company_tz || settings.timezone;
+    const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), settings.referralWaitDays, tz0, { startHour: 6, endHour: 10 });
+    await run("UPDATE plan_items SET stage = 'waiting_referral', referral_status = CASE WHEN referral_status = 'none' THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
+      [item.id, at, referralNote(existing, describeDay(at, tz0))]);
+    return;
+  }
   const who = await me(userId);
   const jobId = await companyRow(userId, item.company_name, item.location);
   const latest = await one("SELECT report FROM resume_tailorings WHERE id = $1", [item.tailoring_id]);
@@ -202,16 +211,16 @@ export async function referralAction(userId, itemId, { action, link }) {
       await run("UPDATE plan_items SET referral_status = 'link', referral_link = $2, stage = 'ready_to_apply', apply_after = $3, stage_note = $4 WHERE id = $1",
         [item.id, v, nextMorning, `Applying through your referral link ${describeDay(nextMorning, tz)}.`]);
     } else {
-      await run("UPDATE plan_items SET referral_status = 'link', referral_link = $2, stage = 'needs_you', stage_note = $3 WHERE id = $1",
+      await run("UPDATE plan_items SET referral_status = 'link', referral_link = $2, stage = 'needs_you', needs_reason = 'referral', stage_note = $3 WHERE id = $1",
         [item.id, v, isUrl ? 'Apply through your referral link yourself (that site can’t be filled in automatically). Your tailored resume is ready to download.' : `Apply yourself and enter your referral code: ${v}. Your tailored resume is ready to download.`]);
     }
   } else if (action === 'declined') {
-    await run("UPDATE plan_items SET referral_status = 'declined', stage = 'ready_to_apply', apply_after = $2, stage_note = $3 WHERE id = $1",
+    await run("UPDATE plan_items SET referral_status = 'declined', stage = 'ready_to_apply', needs_reason = NULL, apply_after = $2, stage_note = $3 WHERE id = $1",
       [item.id, nextMorning, `No referral. Applying ${describeDay(nextMorning, tz)}.`]);
   } else if (action === 'apply_now') {
-    await run("UPDATE plan_items SET stage = 'ready_to_apply', apply_after = NOW(), stage_note = 'Applying now.' WHERE id = $1", [item.id]);
+    await run("UPDATE plan_items SET stage = 'ready_to_apply', needs_reason = NULL, apply_after = NOW(), stage_note = 'Applying now.' WHERE id = $1", [item.id]);
   } else if (action === 'applied_myself') {
-    await run("UPDATE plan_items SET stage = 'applied', applied_at = NOW(), stage_note = 'You applied yourself.' WHERE id = $1", [item.id]);
+    await run("UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = NOW(), stage_note = 'You applied yourself.' WHERE id = $1", [item.id]);
     if (item.evaluation_id) await run("UPDATE evaluations SET apply_status = 'submitted', applied_at = NOW()::text WHERE id = $1 AND user_id = $2", [item.evaluation_id, userId]);
   } else {
     throw Object.assign(new Error('Unknown action'), { status: 400 });
@@ -241,7 +250,7 @@ export async function asksFor(userId, itemIds) {
 async function applyItem(userId, item) {
   const url = item.referral_link && /^https?:\/\//i.test(item.referral_link) ? item.referral_link : item.apply_url;
   if (!AUTO_PLATFORMS.includes(detectPlatform(url))) {
-    await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1",
+    await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'apply', stage_note = $2 WHERE id = $1",
       [item.id, 'This job site can’t be filled in automatically. Apply yourself with the tailored resume (download it from the role), then press “I applied”.']);
     return;
   }
@@ -261,7 +270,7 @@ async function applyItem(userId, item) {
     await run("UPDATE plan_items SET stage = 'ready_to_apply', apply_after = $2, stage_note = $3 WHERE id = $1",
       [item.id, nextSendSlot(tz, { now: new Date(Date.now() + 12 * 3600_000), startHour: 6, endHour: 10 }), r.paused ? 'Auto-apply is paused in your profile. It will try again tomorrow morning.' : `${r.error}. Trying again tomorrow morning.`]);
   } else {
-    await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1",
+    await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'apply', stage_note = $2 WHERE id = $1",
       [item.id, `Couldn’t finish the application: ${r.error || 'unknown problem'}. Apply yourself with the tailored resume, then press “I applied”.`]);
   }
 }
@@ -281,7 +290,7 @@ async function sendAppliedNotes(userId, item) {
 export async function advanceReferrals(userId, settings) {
   for (const item of await all("SELECT * FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'asking_referral' ORDER BY decided_at LIMIT 5", [userId])) {
     try { await askForReferral(userId, item, settings); } catch (err) {
-      await run("UPDATE plan_items SET stage = 'needs_you', stage_note = $2 WHERE id = $1", [item.id, `Couldn’t prepare the referral ask: ${String(err.message).slice(0, 200)}`]);
+      await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'referral', stage_note = $2 WHERE id = $1", [item.id, `Couldn’t prepare the referral ask: ${String(err.message).slice(0, 200)}`]);
     }
   }
   // Someone answered: say so (the user decides what it means).

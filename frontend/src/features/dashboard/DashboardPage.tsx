@@ -140,7 +140,11 @@ export default function DashboardPage() {
   // Links to /dashboard#tracker (Home, old Pipeline URLs) land on the tracker once it has laid out.
   useEffect(() => {
     if (hash !== '#tracker' || pipeline.isLoading) return
-    document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
+    // Charts above it finish loading after this; scroll again once they've settled.
+    const go = () => document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
+    go()
+    const timers = [400, 1200].map(ms => setTimeout(go, ms))
+    return () => timers.forEach(clearTimeout)
   }, [hash, pipeline.isLoading])
   const metrics = useJobMetrics()
   const daily = useDailyUpdates()

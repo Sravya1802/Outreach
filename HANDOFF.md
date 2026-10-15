@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Site moved to scoutnjobs.vercel.app
+- **What:** the Vercel project was renamed `scoutnjobs`; `outreach-jt.vercel.app` 307-redirects to `scoutnjobs.vercel.app` (path kept). The backend reads one `FRONTEND_URL` for every link it writes (emails, WhatsApp, GitHub OAuth return), falling back to `FRONTEND_ORIGIN`. VM .env: `FRONTEND_URL=https://scoutnjobs.vercel.app`, `CORS_ORIGINS` allows both addresses. Supabase Site URL/redirects and the Google OAuth client origins + consent-screen links were updated by the user.
+- **Unchanged:** the backend URL (outreach-jt.duckdns.org), so Meta's WhatsApp webhook and the GitHub OAuth callback still work. Repo and env names unchanged.
+- **Verified live:** new address sign-in page, Google sign-in starts without a redirect_uri error, signed-in pages load (CORS), old links redirect. Tests: backend 150/150.
+
 ### 2026-10-15 — App renamed: Scout’n’Jobs
 - **What:** every user-facing "OutreachOS" is now **Scout’n’Jobs** (curly apostrophes, so it's safe inside quoted strings): top bar, sidebar, sign-in, tab title, legal pages, Gmail/GitHub/WhatsApp/Details copy, email subjects and footers, WhatsApp texts and template wording, README, e2e specs. The replyWatcher footer link now points to /people/outbox.
 - **Unchanged:** the URL (outreach-jt.vercel.app), the repo, code identifiers, env names, WhatsApp template names (`oos_*`), and old setup scripts under deploy/.

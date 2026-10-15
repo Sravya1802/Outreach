@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Home: Top picks for you; palette picker sent
+- **What:** the user asked where the top role recommendations are. Home now has **Top picks for you** under Today (`c05faf2`). It shows the best 5 items from today's daily plan (top tier, then worth a look; skipped and expired are hidden), using the shared `ItemRow` (now exported from DailyPlan.tsx) with Approve / Skip. With no plan it offers "Build today's list". Today dropped its "worth a look" line.
+- **Colours:** the user still dislikes the colours after Clean white. A palette picker artifact was sent (https://claude.ai/artifact/8rJgWbtMwUt3hKGQgZVwxK): A Clean white (current), B Ocean, C Sage, D Lavender, E Slate & coral, F Graphite (current dark), G Midnight, H Forest night. **Waiting for the user's letter**; then update the `--ui-*` tokens in app.css.
+- **Status:** Top picks verified live with the e2e user's real plan (25 picks, Approve/Skip shown).
+
 ### 2026-10-15 — "Clean white" light theme; Newest roles off Home
 - **What:** the user disliked the cream background and the Home roles list.
   - Home no longer shows Newest roles (`6367535`): Today on the left, So far on the right.
@@ -1012,3 +1017,8 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **What:** User saved a new `APIFY_API_TOKEN` (ends `…8Gsy`, Apify account `charitable_raisin`) in local `.env`; copied it to the VM's `~/outreach/.env` and ran `pm2 restart outreach-backend --update-env`.
 - **Status:** Live. Apify `/v2/users/me` accepts the token; `/api/health` → `ok`, `has_apify: true`. Old token backed up on the VM at `~/outreach/.env.bak-apify` (delete once confirmed unneeded).
 - **Follow-up:** If Vercel env vars also hold an Apify token, update it in the Vercel dashboard (frontend doesn't normally need it).
+
+### 2026-10-15 — Profile → Details: "Fill from resume"
+- **What:** New button next to Save. Calls new `POST /api/resume-engine/master/read` (returns `parsedMaster()`: cached parse, or one Opus call if the master was never read) and fills **only empty** fields: name, email, phone, location, LinkedIn/GitHub/portfolio, first education entry (school/degree/major/graduation/GPA), skills, certifications; merges resume roles into Experience (drops blank entries; a role already listed by company+title only gets its empty fields). Dates "Jun 2025" → `2025-06`; "Present" → I work here now; bare years left empty. Nothing saved until the user clicks Save.
+- **Files:** [resumeFill.ts](frontend/src/features/profile/resumeFill.ts), [DetailsPage.tsx](frontend/src/features/profile/DetailsPage.tsx), `api.js`/`lib/api.ts`, [backend/routes/resumeEngine.js](backend/routes/resumeEngine.js). Tests in `profile.test.ts`.
+- **Status:** `33cac42` on main (Vercel live). Backend route applied on the VM as `fd0c4fb` (only the backend file, `git show … | git apply`). Verified live as the e2e user: toast "Filled 11 fields…", experience entry added, no console errors, no horizontal scroll at 390px. Not saved.

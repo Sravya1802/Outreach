@@ -387,7 +387,28 @@ export interface PlanItem {
   decision: 'pending' | 'approved' | 'skipped' | 'expired'
   stage: PlanStage
   stage_note: string | null
+  /** LinkedIn connections the user has at this company */
+  connections: number
 }
+export interface ReferralAsk {
+  id: number
+  plan_item_id: number
+  channel: 'email' | 'linkedin' | 'search'
+  person_name: string | null
+  person_title: string | null
+  linkedin_url: string | null
+  email: string | null
+  subject: string | null
+  message: string
+  status: 'scheduled' | 'sent' | 'to_send' | 'marked_sent' | 'replied'
+  email_status: 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | null
+  send_after: string | null
+  sent_at: string | null
+  recipient_tz: string | null
+  contact_status: string | null
+}
+export type ReferralAction = 'link' | 'submitted' | 'declined' | 'apply_now' | 'applied_myself'
+export interface ConnectionsSummary { total: number; imported: string | null; topCompanies: { company: string; n: number }[] }
 export interface ActivePlanItem {
   id: number
   evaluation_id: number | null
@@ -404,6 +425,10 @@ export interface ActivePlanItem {
   applied_at: string | null
   decided_at: string | null
   ats_score: number | null
+  referral_link: string | null
+  company_tz: string | null
+  connections: number
+  asks: ReferralAsk[]
 }
 export interface DailyPlan {
   id: number
@@ -664,6 +689,11 @@ export const api = {
   emailDailyPlan: (): Promise<{ ok?: boolean; skipped?: string }> => legacy.dailyPlan.email(),
   decidePlanItem: (id: number, decision: 'approved' | 'skipped' | 'pending'): Promise<PlanItem> => legacy.dailyPlan.decide(id, decision),
   approveAllPlan: (planId: number): Promise<{ approved: number }> => legacy.dailyPlan.approveAll(planId),
+  referralAction: (id: number, action: ReferralAction, link?: string): Promise<unknown> => legacy.dailyPlan.referral(id, { action, link }),
+  markAskSent: (id: number): Promise<unknown> => legacy.dailyPlan.askSent(id),
+  connections: (): Promise<ConnectionsSummary> => legacy.dailyPlan.connections(),
+  importConnections: (csv: string): Promise<ConnectionsSummary> => legacy.dailyPlan.importConnections(csv),
+  clearConnections: (): Promise<{ ok: boolean }> => legacy.dailyPlan.clearConnections(),
   gmailStatus: (): Promise<GmailStatus> => legacy.gmail.status(),
   connectGmail: (body: { email: string; appPassword: string; displayName?: string }): Promise<GmailStatus> => legacy.gmail.connect(body),
   gmailSettings: (body: { displayName?: string; dailyCap?: number }): Promise<GmailStatus> => legacy.gmail.settings(body),

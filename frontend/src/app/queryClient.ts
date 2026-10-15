@@ -42,6 +42,7 @@ export const qk = {
   tailoring: (evalId: number) => ['tailoring', evalId] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
+  connections: ['linkedin-connections'] as const,
   outbox: ['gmail-outbox'] as const,
   replies: ['gmail-replies'] as const,
   evaluations: ['evaluations'] as const,

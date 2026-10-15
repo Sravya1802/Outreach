@@ -54,6 +54,7 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies' },
       { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in' },
+      { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv' },
     ],
   },
   {

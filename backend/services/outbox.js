@@ -54,7 +54,7 @@ export function followupBody(step, { toName, company, sender, original, sentAt, 
  * Schedule (or send now) the first email to a contact. Returns the outbox row
  * with a human description of when it goes.
  */
-export async function scheduleEmail(userId, { contactId, subject, body, when = 'best' }) {
+export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach' }) {
   const contact = await one(
     `SELECT c.*, j.name AS company_name FROM job_contacts c LEFT JOIN jobs j ON j.id = c.job_id WHERE c.id = $1 AND c.user_id = $2`,
     [contactId, userId],
@@ -74,9 +74,9 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   const tz = await recipientTimezone(userId, contactId);
   const sendAfter = when === 'now' ? new Date() : nextSendSlot(tz);
   const row = (await run(
-    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after)
-     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [userId, contactId, str(contact.email).toLowerCase(), contact.name, str(subject).slice(0, 300), str(body).slice(0, 20000), tz, sendAfter],
+    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after, purpose)
+     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [userId, contactId, str(contact.email).toLowerCase(), contact.name, str(subject).slice(0, 300), str(body).slice(0, 20000), tz, sendAfter, purpose === 'referral' ? 'referral' : 'outreach'],
   )).rows[0];
   await run('UPDATE job_contacts SET generated_subject = $1, generated_body = $2 WHERE id = $3 AND user_id = $4', [str(subject), str(body), contactId, userId]);
   if (when === 'now') return { ...(await sendOne(row.id)), when: 'now' };
@@ -139,7 +139,8 @@ export async function sendOne(id) {
     if (row.contact_id) {
       await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [row.contact_id]);
     }
-    if (row.step === 0) await queueFollowups({ ...row, sent_at: new Date(), message_id: messageId });
+    // Referral asks get no generic nudges; the referral flow adds an "I've applied" note in the thread.
+    if (row.step === 0 && row.purpose !== 'referral') await queueFollowups({ ...row, sent_at: new Date(), message_id: messageId });
   } catch (err) {
     // A rejected password isn't the email's fault: it waits for a reconnect instead of counting toward failure.
     const authFailed = /app password/.test(String(err.message));
@@ -171,6 +172,24 @@ async function queueFollowups(root) {
         root.recipient_tz, businessDaysLater(root.sent_at, days, root.recipient_tz)],
     );
   }
+}
+
+/**
+ * Add one short note in the same thread as a sent (or scheduled) email, at the
+ * recipient's next morning slot. Returns the new row, or null if the thread is gone.
+ */
+export async function scheduleThreadNote(userId, rootId, { body, when = 'best' }) {
+  const root = await one("SELECT * FROM email_outbox WHERE id = $1 AND user_id = $2 AND step = 0 AND status IN ('scheduled','sending','sent')", [rootId, userId]);
+  if (!root) return null;
+  const contact = root.contact_id ? await one('SELECT status FROM job_contacts WHERE id = $1', [root.contact_id]) : null;
+  if (contact?.status === 'replied') return null;
+  const subject = /^re:/i.test(root.subject) ? root.subject : `Re: ${root.subject}`;
+  const at = when === 'now' ? new Date() : nextSendSlot(root.recipient_tz, { now: new Date(Math.max(Date.now(), new Date(root.send_after).getTime() + 3600_000)) });
+  return (await run(
+    `INSERT INTO email_outbox (user_id, contact_id, step, thread_root_id, to_email, to_name, subject, body, recipient_tz, send_after, purpose)
+     VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [userId, root.contact_id, root.id, root.to_email, root.to_name, subject, str(body).slice(0, 20000), root.recipient_tz, at, root.purpose],
+  )).rows[0];
 }
 
 /** Cancel everything still scheduled for a contact (reply, bounce, user's call). */

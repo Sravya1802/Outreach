@@ -180,6 +180,11 @@ export const api = {
     email:      ()            => apiCall('/daily-plan/email', { method: 'POST' }),
     decide:     (id, decision) => apiCall(`/daily-plan/items/${id}/decision`, { method: 'POST', body: { decision } }),
     approveAll: (planId)      => apiCall(`/daily-plan/plans/${planId}/approve-all`, { method: 'POST' }),
+    referral:   (id, body)    => apiCall(`/daily-plan/items/${id}/referral`, { method: 'POST', body }),
+    askSent:    (id)          => apiCall(`/daily-plan/asks/${id}/sent`, { method: 'POST' }),
+    connections: ()           => apiCall('/daily-plan/connections'),
+    importConnections: (csv)  => apiCall('/daily-plan/connections', { method: 'POST', body: { csv } }),
+    clearConnections: ()      => apiCall('/daily-plan/connections', { method: 'DELETE' }),
   },
 
   // Each user's own Gmail (app password): outreach outbox + replies

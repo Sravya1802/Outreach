@@ -9,6 +9,7 @@ import { cn } from '@/lib/cn'
 import { Badge, Button, ButtonLink, ErrorState, Field, Input, Select, Skeleton, Spinner, useToast } from '@/ui'
 import { SPONSOR_TEXT, STAGE_LABEL, TIMEZONES, hourLabel, num, tzLabel } from './plan'
 import { useDailyPlan } from './useDailyPlan'
+import { ReferralPanel } from './Referrals'
 
 const HOURS = [17, 18, 19, 20, 21, 22, 23]
 
@@ -38,6 +39,7 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
           <p className="mt-1 max-w-2xl text-[14px] text-muted">
             Each evening the day’s new roles are scored against your resume. The best ones are emailed to you at {hourLabel(s.listHour)} {tzLabel(s.timezone)} time.
             Only the roles you approve go on. {s.referralFirst ? `For each one, we ask for a referral first and apply ${s.referralWaitDays} business days later if none comes.` : 'Each one is applied to the next morning.'}
+            {!data.settings.enabled && ' Turning this on lets OutreachOS submit applications, with your tailored resume, for the roles you approve, and only those.'}
           </p>
         </div>
         <Button variant={s.enabled ? 'secondary' : 'primary'} loading={save.isPending && 'enabled' in (save.variables ?? {})}
@@ -92,6 +94,7 @@ export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolea
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-subtle">
           {[item.location, item.pay].filter(Boolean).join(' · ')}
           {sponsor && <span className={sponsor.tone === 'success' ? 'text-success' : 'text-danger'}>{sponsor.text}</span>}
+          {item.connections > 0 && <span className="text-accent">You know {item.connections} {item.connections === 1 ? 'person' : 'people'} here</span>}
         </p>
         {item.reason && <p className="mt-1 text-[14px] text-muted">{item.reason}</p>}
       </div>
@@ -196,15 +199,21 @@ export function InProgress({ data }: { data: DailyPlanOverview }) {
       <h2 id="progress-h" className="mb-1 font-display text-[22px] font-semibold text-fg">Approved roles <span className="font-sans text-[15px] font-normal text-subtle">· {data.active.length}</span></h2>
       <ul className="border-t border-rule">
         {data.active.map(a => (
-          <li key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3">
-            <div className="min-w-0 flex-1 basis-[260px]">
-              <p className="text-[15px]"><b className="font-medium text-fg">{a.company_name}</b> <span className="text-muted">· {a.title}</span></p>
-              <p className={cn('text-[13px]', a.stage === 'needs_you' ? 'text-danger' : 'text-subtle')}>
-                {a.stage === 'tailoring' && <Spinner size={12} className="mr-1.5 align-[-1px]" />}{a.stage_note || STAGE_LABEL[a.stage]}
-              </p>
+          <li key={a.id} className="border-b border-line py-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <div className="min-w-0 flex-1 basis-[260px]">
+                <p className="text-[15px]">
+                  <b className="font-medium text-fg">{a.company_name}</b> <span className="text-muted">· {a.title}</span>
+                  {a.connections > 0 && <span className="ml-2 text-[13px] text-accent">You know {a.connections} here</span>}
+                </p>
+                <p className={cn('text-[13px]', a.stage === 'needs_you' ? 'text-danger' : 'text-subtle')}>
+                  {(a.stage === 'tailoring' || a.stage === 'applying') && <Spinner size={12} className="mr-1.5 align-[-1px]" />}{a.stage_note || STAGE_LABEL[a.stage]}
+                </p>
+              </div>
+              <Badge tone={a.stage === 'needs_you' ? 'danger' : a.stage === 'applied' || a.stage === 'referred' ? 'success' : 'accent'}>{STAGE_LABEL[a.stage]}</Badge>
+              {a.evaluation_id && <ButtonLink to={`/applications/evaluate?id=${a.evaluation_id}`} size="sm" variant="ghost">{a.ats_score != null ? `Resume · ATS ${a.ats_score}%` : 'Open'}</ButtonLink>}
             </div>
-            <Badge tone={a.stage === 'needs_you' ? 'danger' : a.stage === 'applied' || a.stage === 'referred' ? 'success' : 'accent'}>{STAGE_LABEL[a.stage]}</Badge>
-            {a.evaluation_id && <ButtonLink to={`/applications/evaluate?id=${a.evaluation_id}`} size="sm" variant="ghost">{a.ats_score != null ? `Resume · ATS ${a.ats_score}%` : 'Open'}</ButtonLink>}
+            {['waiting_referral', 'needs_you', 'ready_to_apply'].includes(a.stage) && <ReferralPanel item={a} />}
           </li>
         ))}
       </ul>

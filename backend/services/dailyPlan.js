@@ -19,6 +19,8 @@ import { classifySponsorship } from './sponsorship.js';
 import { partsIn, timezoneFor, isValidTz, nextSendSlot } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring } from './resumeEngine.js';
+import { advanceReferrals, asksFor, maybeSendSummary } from './referralFlow.js';
+import { companyKey } from './linkedinConnections.js';
 
 const KEY = 'daily_plan_settings';
 const SITE = process.env.FRONTEND_URL || 'https://outreach-jt.vercel.app';
@@ -60,6 +62,14 @@ export async function getSettings(userId) {
 
 export async function saveSettings(userId, patch) {
   const next = normalizeSettings({ ...(await getSettings(userId)), ...patch });
+  // Turning the list on is the user's consent to apply to the roles they approve.
+  if (next.enabled) {
+    await run(
+      `INSERT INTO user_profile (user_id, auto_apply_consent) VALUES ($1, true)
+       ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE SET auto_apply_consent = true`,
+      [userId],
+    );
+  }
   await run(
     `INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3)
      ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
@@ -401,7 +411,7 @@ export async function tick(now = new Date()) {
     const users = await all(
       `SELECT u.user_id, m.value FROM (
          SELECT user_id FROM meta WHERE key = $1
-         UNION SELECT DISTINCT user_id FROM plan_items WHERE decision = 'approved' AND stage IN ('tailoring','needs_you')
+         UNION SELECT DISTINCT user_id FROM plan_items WHERE decision = 'approved' AND stage IN ('tailoring','needs_you','asking_referral','waiting_referral','ready_to_apply')
        ) u LEFT JOIN meta m ON m.user_id = u.user_id AND m.key = $1`,
       [KEY],
     );
@@ -420,6 +430,8 @@ export async function tick(now = new Date()) {
           }
         }
         await advanceUser(u.user_id);
+        await advanceReferrals(u.user_id, s);
+        if (s.enabled) await maybeSendSummary(u.user_id, s, now);
         done.advanced += 1;
       } catch (err) {
         console.warn(`[daily-plan] ${String(u.user_id).slice(0, 8)}: ${err.message}`);
@@ -442,11 +454,25 @@ export async function overview(userId) {
   ) : [];
   const active = await all(
     `SELECT pi.id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.score, pi.stage, pi.stage_note, pi.referral_status,
-            pi.wait_until, pi.apply_after, pi.applied_at, pi.decided_at, t.ats_score
+            pi.referral_link, pi.company_tz, pi.wait_until, pi.apply_after, pi.applied_at, pi.decided_at, t.ats_score
        FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
       WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.stage NOT IN ('done')
       ORDER BY pi.decided_at DESC LIMIT 100`,
     [userId],
   );
-  return { settings, plan, items, active, gmailConnected: Boolean(await connectionFor(userId)) };
+  // People the user knows at each company (LinkedIn connections export).
+  const keys = [...new Set([...items, ...active].map(i => companyKey(i.company_name)).filter(Boolean))];
+  const known = keys.length ? await all(
+    'SELECT company_key, COUNT(*)::int AS n FROM linkedin_connections WHERE user_id = $1 AND company_key = ANY($2) GROUP BY company_key', [userId, keys],
+  ) : [];
+  const knownBy = Object.fromEntries(known.map(k => [k.company_key, k.n]));
+  const withKnown = (i) => ({ ...i, connections: knownBy[companyKey(i.company_name)] || 0 });
+  const asks = await asksFor(userId, active.map(a => a.id));
+  return {
+    settings,
+    plan,
+    items: items.map(withKnown),
+    active: active.map(a => ({ ...withKnown(a), asks: asks.filter(x => String(x.plan_item_id) === String(a.id)) })),
+    gmailConnected: Boolean(await connectionFor(userId)),
+  };
 }

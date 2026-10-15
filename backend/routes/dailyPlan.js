@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings } from '../services/dailyPlan.js';
+import { markAskSent, referralAction } from '../services/referralFlow.js';
+import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
 const router = Router();
 const fail = (res, err) => {
@@ -52,6 +54,39 @@ router.post('/plans/:id/approve-all', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad id' });
   try { res.json({ approved: await approveAllTop(req.user.id, id) }); } catch (err) { fail(res, err); }
+});
+
+// Referral outcome for a waiting role: link | submitted | declined | apply_now | applied_myself
+router.post('/items/:id/referral', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json(await referralAction(req.user.id, id, req.body || {})); } catch (err) { fail(res, err); }
+});
+
+// "I sent the LinkedIn note"
+router.post('/asks/:id/sent', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try {
+    const row = await markAskSent(req.user.id, id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
+  } catch (err) { fail(res, err); }
+});
+
+// LinkedIn connections export (Connections.csv as text)
+router.get('/connections', async (req, res) => {
+  try { res.json(await connectionsSummary(req.user.id)); } catch (err) { fail(res, err); }
+});
+router.post('/connections', async (req, res) => {
+  try {
+    const csv = String(req.body?.csv || '');
+    if (csv.length > 8_000_000) return res.status(413).json({ error: 'That file is too big.' });
+    res.json(await importConnections(req.user.id, csv));
+  } catch (err) { fail(res, err); }
+});
+router.delete('/connections', async (req, res) => {
+  try { await clearConnections(req.user.id); res.json({ ok: true }); } catch (err) { fail(res, err); }
 });
 
 export default router;

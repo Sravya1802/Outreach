@@ -71,9 +71,9 @@ function SignedInRoutes() {
         <Route path="/applications/auto-apply" element={<AutoApplyPage />} />
         <Route path="/applications/evaluate" element={<EvaluatePage />} />
         {/* The Pipeline tab became the tracker at the bottom of Auto-apply. */}
-        <Route path="/applications/pipeline" element={<Navigate to="/applications/auto-apply#tracker" replace />} />
-        <Route path="/applications/board" element={<Navigate to="/applications/auto-apply?view=board#tracker" replace />} />
-        <Route path="/applications/ranked" element={<Navigate to="/applications/auto-apply?sort=score#tracker" replace />} />
+        <Route path="/applications/pipeline" element={<Navigate to="/dashboard#tracker" replace />} />
+        <Route path="/applications/board" element={<Navigate to="/dashboard?view=board#tracker" replace />} />
+        <Route path="/applications/ranked" element={<Navigate to="/dashboard?sort=score#tracker" replace />} />
 
         <Route path="/people" element={<Navigate to="/people/contacts" replace />} />
         <Route path="/people/contacts" element={<ContactsPage />} />

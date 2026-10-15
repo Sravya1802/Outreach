@@ -431,6 +431,11 @@ export interface ReferralAsk {
   contact_status: string | null
 }
 export type ReferralAction = 'link' | 'submitted' | 'declined' | 'apply_now' | 'applied_myself'
+export interface ReferralStats {
+  roles: { asked: number; got: number; submitted: number; link: number; declined: number; waiting: number; without: number }
+  asks: { total: number; emails_sent: number; emails_scheduled: number; notes_sent: number; to_send: number; replied: number }
+  connections: { total: number; companies: number }
+}
 export interface ConnectionsSummary { total: number; imported: string | null; topCompanies: { company: string; n: number }[] }
 export interface ActivePlanItem {
   id: number
@@ -718,6 +723,7 @@ export const api = {
   referralAction: (id: number, action: ReferralAction, link?: string): Promise<unknown> => legacy.dailyPlan.referral(id, { action, link }),
   markAskSent: (id: number): Promise<unknown> => legacy.dailyPlan.askSent(id),
   connections: (): Promise<ConnectionsSummary> => legacy.dailyPlan.connections(),
+  referralStats: (): Promise<ReferralStats> => legacy.dailyPlan.referralStats(),
   importConnections: (csv: string): Promise<ConnectionsSummary> => legacy.dailyPlan.importConnections(csv),
   clearConnections: (): Promise<{ ok: boolean }> => legacy.dailyPlan.clearConnections(),
   gmailStatus: (): Promise<GmailStatus> => legacy.gmail.status(),

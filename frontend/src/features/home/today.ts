@@ -76,11 +76,11 @@ export function todayItems(i: TodayInput): TodayItem[] {
   })
   if (quiet.length) {
     out.push({ id: 'follow-up', tone: 'action', title: `Follow up on ${plural(quiet.length, 'application', 'applications')}`,
-      detail: `No reply in a week: ${nameList(quiet.map(r => r.company_name))}`, to: '/applications/auto-apply?stage=followup#tracker' })
+      detail: `No reply in a week: ${nameList(quiet.map(r => r.company_name))}`, to: '/dashboard?stage=followup#tracker' })
   }
   if (due.length) {
     out.push({ id: 'next-steps', tone: 'action', title: `${plural(due.length, 'next step is', 'next steps are')} due`,
-      detail: nameList(due.map(r => r.next_step ? `${r.next_step} (${r.company_name})` : r.company_name), 2), to: '/applications/auto-apply#tracker' })
+      detail: nameList(due.map(r => r.next_step ? `${r.next_step} (${r.company_name})` : r.company_name), 2), to: '/dashboard#tracker' })
   }
   const replies = (i.replies ?? []).filter(r => REAL_REPLY.includes(r.kind) && i.now - new Date(r.received_at).getTime() <= REPLY_WINDOW)
   if (replies.length) {

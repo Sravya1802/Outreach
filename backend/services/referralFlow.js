@@ -335,3 +335,31 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
 }
 
 export { companyKey };
+
+/** Numbers for the Dashboard's Referrals panel. */
+export async function referralStats(userId) {
+  const roles = await one(
+    `SELECT COUNT(*) FILTER (WHERE referral_status <> 'none')::int AS asked,
+            COUNT(*) FILTER (WHERE referral_status IN ('link','submitted'))::int AS got,
+            COUNT(*) FILTER (WHERE referral_status = 'submitted')::int AS submitted,
+            COUNT(*) FILTER (WHERE referral_status = 'link')::int AS link,
+            COUNT(*) FILTER (WHERE referral_status = 'declined')::int AS declined,
+            COUNT(*) FILTER (WHERE stage = 'waiting_referral')::int AS waiting,
+            COUNT(*) FILTER (WHERE referral_status = 'asked' AND stage IN ('applied','ready_to_apply','applying'))::int AS without
+       FROM plan_items WHERE user_id = $1 AND decision = 'approved'`,
+    [userId],
+  );
+  const asks = await one(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE a.channel = 'email' AND o.status = 'sent')::int AS emails_sent,
+            COUNT(*) FILTER (WHERE a.channel = 'email' AND o.status IN ('scheduled','sending'))::int AS emails_scheduled,
+            COUNT(*) FILTER (WHERE a.channel <> 'email' AND a.status = 'marked_sent')::int AS notes_sent,
+            COUNT(*) FILTER (WHERE a.status = 'to_send')::int AS to_send,
+            COUNT(*) FILTER (WHERE a.status = 'replied' OR c.status = 'replied')::int AS replied
+       FROM referral_asks a LEFT JOIN email_outbox o ON o.id = a.outbox_id LEFT JOIN job_contacts c ON c.id = a.contact_id
+      WHERE a.user_id = $1`,
+    [userId],
+  );
+  const known = await one('SELECT COUNT(*)::int AS n, COUNT(DISTINCT company_key)::int AS companies FROM linkedin_connections WHERE user_id = $1', [userId]);
+  return { roles, asks, connections: { total: known?.n || 0, companies: known?.companies || 0 } };
+}

@@ -190,6 +190,7 @@ export const api = {
     referral:   (id, body)    => apiCall(`/daily-plan/items/${id}/referral`, { method: 'POST', body }),
     askSent:    (id)          => apiCall(`/daily-plan/asks/${id}/sent`, { method: 'POST' }),
     connections: ()           => apiCall('/daily-plan/connections'),
+    referralStats: ()         => apiCall('/daily-plan/referral-stats'),
     importConnections: (csv)  => apiCall('/daily-plan/connections', { method: 'POST', body: { csv } }),
     clearConnections: ()      => apiCall('/daily-plan/connections', { method: 'DELETE' }),
   },

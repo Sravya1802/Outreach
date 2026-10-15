@@ -56,7 +56,7 @@ describe('todayItems', () => {
     expect(items.find(t => t.id === 'approve')?.title).toBe('1 role is waiting for your OK')
     expect(items.find(t => t.id === 'replies')?.detail).toBe('Ramp')
     expect(items.find(t => t.id === 'going-out')?.detail).toBe('1 waiting on a referral first')
-    expect(items.find(t => t.id === 'follow-up')?.to).toBe('/applications/auto-apply?stage=followup#tracker')
+    expect(items.find(t => t.id === 'follow-up')?.to).toBe('/dashboard?stage=followup#tracker')
     expect(needsYouCount(items)).toBe(6)
   })
 })

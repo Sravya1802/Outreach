@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings } from '../services/dailyPlan.js';
-import { markAskSent, referralAction } from '../services/referralFlow.js';
+import { markAskSent, referralAction, referralStats } from '../services/referralFlow.js';
 import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
 const router = Router();
@@ -61,6 +61,10 @@ router.post('/items/:id/referral', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad id' });
   try { res.json(await referralAction(req.user.id, id, req.body || {})); } catch (err) { fail(res, err); }
+});
+
+router.get('/referral-stats', async (req, res) => {
+  try { res.json(await referralStats(req.user.id)); } catch (err) { fail(res, err); }
 });
 
 // "I sent the LinkedIn note"

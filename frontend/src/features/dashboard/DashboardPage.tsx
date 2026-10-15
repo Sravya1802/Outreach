@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useDailyUpdates, useJobMetrics, useProviderUsage } from '@/app/queries'
 import { qk } from '@/app/queryClient'
@@ -9,6 +9,7 @@ import { formatNumber, percent } from '@/lib/format'
 import { ErrorState, Page, PageHeader, Skeleton } from '@/ui'
 import { funnel } from '@/features/applications/pipeline'
 import { stageFor } from '@/features/applications/score'
+import { Tracker } from '@/features/applications/Tracker'
 import { perWeek, scoreBands, sentTimes, type Bucket } from './metrics'
 
 function Panel({ title, action, children, className }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
@@ -99,9 +100,48 @@ function BarList({ rows }: { rows: { label: string; value: number; note?: string
   )
 }
 
+/** Referral asks and how they turned out (daily plan → referral first). */
+function ReferralsPanel() {
+  const q = useQuery({ queryKey: qk.referralStats, queryFn: api.referralStats })
+  const r = q.data
+  return (
+    <Panel title="Referrals" action={<Link to="/people/messages" className="text-[13px] text-accent hover:underline">Messages</Link>}>
+      {q.error ? <ErrorState compact error={q.error} onRetry={() => q.refetch()} /> : !r ? <Skeleton className="h-40" /> : (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <dl className="divide-y divide-line text-[14px]">
+            <div className="flex justify-between py-2.5"><dt className="text-muted">Roles you asked about</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.roles.asked)}</dd></div>
+            <div className="flex justify-between py-2.5"><dt className="text-muted">Referrals you got</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.roles.got)}{r.roles.asked ? ` · ${percent(r.roles.got, r.roles.asked)}%` : ''}</dd></div>
+            <div className="flex justify-between py-2.5"><dt className="text-muted">Emails sent</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.asks.emails_sent)}{r.asks.emails_scheduled ? ` + ${r.asks.emails_scheduled} scheduled` : ''}</dd></div>
+            <div className="flex justify-between py-2.5"><dt className="text-muted">LinkedIn notes sent</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.asks.notes_sent)}{r.asks.to_send ? ` · ${r.asks.to_send} to send` : ''}</dd></div>
+            <div className="flex justify-between py-2.5"><dt className="text-muted">Replies</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.asks.replied)}{r.asks.total ? ` of ${r.asks.total}` : ''}</dd></div>
+            <div className="flex justify-between py-2.5"><dt className="text-muted">Connections imported</dt><dd className="font-mono text-fg tabular-nums">{formatNumber(r.connections.total)}{r.connections.companies ? ` · ${r.connections.companies} companies` : ''}</dd></div>
+          </dl>
+          <div>
+            <p className="mb-3 text-[13px] text-muted">How the asks turned out</p>
+            <BarList rows={[
+              { label: 'They submitted you', value: r.roles.submitted },
+              { label: 'Got a link or code', value: r.roles.link },
+              { label: 'Said no', value: r.roles.declined },
+              { label: 'Applied without one', value: r.roles.without },
+              { label: 'Still waiting', value: r.roles.waiting },
+            ]} />
+            {!r.roles.asked && <p className="mt-4 text-[13px] text-subtle">Approve roles on your evening list and each one gets a referral ask first. Results show up here.</p>}
+          </div>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
 export default function DashboardPage() {
   const [now] = useState(() => Date.now())
   const pipeline = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
+  const { hash } = useLocation()
+  // Links to /dashboard#tracker (Home, old Pipeline URLs) land on the tracker once it has laid out.
+  useEffect(() => {
+    if (hash !== '#tracker' || pipeline.isLoading) return
+    document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
+  }, [hash, pipeline.isLoading])
   const metrics = useJobMetrics()
   const daily = useDailyUpdates()
   const ai = useQuery({ queryKey: qk.aiUsage, queryFn: api.aiUsage, staleTime: 60_000 })
@@ -138,7 +178,7 @@ export default function DashboardPage() {
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Panel title="Applications per week" className="lg:col-span-2"
-              action={<Link to="/applications/auto-apply#tracker" className="text-[13px] text-accent hover:underline">Tracker</Link>}>
+              action={<a href="#tracker" className="text-[13px] text-accent hover:underline">Tracker</a>}>
               {loading ? <Skeleton className="h-48" /> : (
                 <ColumnChart label="Applications per week, last 8 weeks" empty="No applications sent yet"
                   data={perWeek(sent.map(r => r.applied_at), now, 8, 'applications')} />
@@ -179,8 +219,10 @@ export default function DashboardPage() {
               </dl>
             </Panel>
           </div>
+          <ReferralsPanel />
         </div>
       )}
+      <div className="mt-12"><Tracker /></div>
     </Page>
   )
 }

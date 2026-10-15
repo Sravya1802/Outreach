@@ -72,10 +72,10 @@ export function flowSteps(i: FlowInput): FlowStep[] {
       explain: 'Applications go out between 6 and 10 AM in the company’s time zone, spread out. A form that asks something new stops and waits for your answer.',
       count: going, countLabel: `${going} scheduled`, state: stuck ? 'stuck' : going ? 'busy' : 'idle',
       alert: stuck ? `${stuck} ${stuck === 1 ? 'needs' : 'need'} you` : undefined },
-    { id: 'track', title: 'Track replies', to: '/applications/auto-apply#tracker',
+    { id: 'track', title: 'Track replies', to: '/dashboard#tracker',
       explain: 'Replies to your application emails, plus LinkedIn notifications in your Gmail, move each role to Heard back or Interviewing.',
       count: sent.length, countLabel: `${heard} of ${sent.length} heard back`, state: sent.length ? 'busy' : 'idle' },
-    { id: 'follow', title: 'Follow up', to: '/applications/auto-apply?stage=followup#tracker',
+    { id: 'follow', title: 'Follow up', to: '/dashboard?stage=followup#tracker',
       explain: 'After a week with no reply, the app reminds you to follow up or ask someone there for a referral.',
       count: quiet, countLabel: quiet ? `${quiet} to follow up` : 'none due', state: quiet ? 'you' : 'idle' },
   ]

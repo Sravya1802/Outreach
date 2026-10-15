@@ -1,12 +1,11 @@
-import { useEffect, type ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { api, type EvaluationSummary } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { ErrorState, Page, PageHeader, Skeleton } from '@/ui'
 import { scoreOutOf10 } from './score'
-import { Tracker } from './Tracker'
 import { DailyPlanSections } from './DailyPlan'
 
 const WAITING = ['needs_review', 'captcha_needed', 'login_needed']
@@ -58,19 +57,10 @@ export default function AutoApplyPage() {
   const queue = useQuery({ queryKey: qk.autoApplyQueue, queryFn: api.autoApplyItems })
   const items = queue.data?.items ?? []
   const of = (statuses: string[]) => items.filter(r => statuses.includes(r.apply_status ?? ''))
-  const { hash } = useLocation()
-  // Same query the tracker runs (shared cache); used only to know when it has laid out.
-  const tracked = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
-
-  // Links to #tracker (Home, old Pipeline URLs) land on the tracker once both lists have rendered.
-  useEffect(() => {
-    if (hash !== '#tracker' || queue.isLoading || tracked.isLoading) return
-    document.getElementById('tracker')?.scrollIntoView({ block: 'start' })
-  }, [hash, queue.isLoading, tracked.isLoading])
 
   return (
     <Page wide>
-      <PageHeader title="Auto-apply" description="Every evening you get a list of the day’s best-fitting roles. Approve the ones you want: each gets its own tailored resume, a referral ask, and an application in the company’s morning. Everything sent is tracked at the bottom." />
+      <PageHeader title="Auto-apply" description="Every evening you get a list of the day’s best-fitting roles. Approve the ones you want: each gets its own tailored resume, a referral ask, and an application in the company’s morning. What happens after you apply is tracked on the Dashboard." />
 
       <div className="space-y-10">
         <DailyPlanSections />
@@ -81,7 +71,6 @@ export default function AutoApplyPage() {
             {of(FAILED).length > 0 && <Section title="Couldn’t apply" empty="" items={of(FAILED)} />}
           </>
         )}
-        <Tracker />
       </div>
     </Page>
   )

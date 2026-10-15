@@ -16,8 +16,10 @@ export function PageHeader({ title, description, actions }: { title: ReactNode; 
 export function Page({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   // The outer box matches the top bar's width so page content lines up with the
   // wordmark; narrow pages cap their own width but stay left-aligned.
+  // `relative` keeps absolutely positioned children (sr-only labels) inside the
+  // scroller instead of stretching the document and scrolling the whole shell.
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="relative flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-9">
         <div className={wide ? '' : 'max-w-5xl'}>{children}</div>
       </div>

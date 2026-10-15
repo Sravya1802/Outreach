@@ -8,7 +8,7 @@ export function ExperienceList({ value, onChange }: { value: Experience[]; onCha
   return (
     <div className="space-y-4">
       {value.map((e, i) => (
-        <fieldset key={i} className="rounded-[4px] border border-line bg-surface p-4">
+        <fieldset key={i} className="relative rounded-[4px] border border-line bg-surface p-4">
           <legend className="sr-only">{e.title || e.company || `Experience ${i + 1}`}</legend>
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <p className="text-[14px] font-medium text-fg">{[e.title, e.company].filter(Boolean).join(' at ') || `Experience ${i + 1}`}</p>

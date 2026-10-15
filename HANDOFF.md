@@ -124,6 +124,12 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Home explains both queues; new Dashboard tab
+- **Home → "How your job queue works"** (`129df34`, [queueFlow.ts](frontend/src/features/home/queueFlow.ts) with tests). It shows 8 stages (find, score, evening list, tailor, referral, apply, track, follow up). Each stage is explained with the user's own daily-plan settings (list hour/tz, min score, per-day cap, referral wait) and a live count. States are idle, busy, you (accent) and stuck (danger). A settings line says whether the evening list is on.
+- **Home → "How your outreach emails go out"** (`7ecfe83`). It shows 6 stages (connect Gmail, find people, write & schedule, send 8–11 AM recipient tz at the daily cap, follow-ups at days 4/10, replies), counted from the outbox and replies. This answers the user's "where is the Gmail automatic sending".
+- **Dashboard** (`4dd69c1`, `cea7fd2`, [DashboardPage.tsx](frontend/src/features/dashboard/DashboardPage.tsx)). It's a new top-bar tab after Home, at `/dashboard`; the old /dashboard→/home redirect is gone and `/home/analytics` points here. It shows 6 stat tiles (applied, heard back %, interviews, offers, emails sent, email reply %), applications per week (8 weeks, from tracker `applied_at`), where applications are (funnel bars), fit-score bands, outreach emails per week (outbox `sent_at`; asks to connect Gmail otherwise), and This month (new roles, auto vs by hand, AI spend, lookups). The charts are in-house HTML: one accent hue, hover/focus tooltip, and an sr-only table. Bucketing is in [metrics.ts](frontend/src/features/dashboard/metrics.ts) with tests. dashboard.spec was updated.
+- **Status:** all verified live with seeded rows (since deleted), in light, dark and 390px.
+
 ### 2026-10-15 — Step 4b: referral first, then apply
 - **What:** [referralFlow.js](backend/services/referralFlow.js), driven by the daily-plan tick.
   - **`asking_referral` → ask.** Who: LinkedIn connections at the company first (recruiters, then engineers, then managers), then saved contacts; at most 2.

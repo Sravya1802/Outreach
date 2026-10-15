@@ -124,6 +124,13 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — App renamed: Scout’n’Jobs
+- **What:** every user-facing "OutreachOS" is now **Scout’n’Jobs** (curly apostrophes, so it's safe inside quoted strings): top bar, sidebar, sign-in, tab title, legal pages, Gmail/GitHub/WhatsApp/Details copy, email subjects and footers, WhatsApp texts and template wording, README, e2e specs. The replyWatcher footer link now points to /people/outbox.
+- **Unchanged:** the URL (outreach-jt.vercel.app), the repo, code identifiers, env names, WhatsApp template names (`oos_*`), and old setup scripts under deploy/.
+- **Naming research:** JobScout, JobQuest, Jobleap, HireQuest and JobLoop are all existing products or trademarks; most short two-word .coms are taken. Free domains for the new name: scoutnjobs.com, scoutajob.com, jobscoutnhire.com.
+- **Status:** 2b1ce2b live on Vercel and the VM. Verified: tab title, sign-in heading, top bar. WhatsApp test sent with the new name.
+- **Still to do for the name:** rename in Meta (app name, business portfolio "Outreachos", WhatsApp display name when an own number is added), Google OAuth consent screen app name, and the WhatsApp template bodies if Meta has already approved the old wording.
+
 ### 2026-10-15 — How it works: WhatsApp, LinkedIn, accurate apply step
 - **What** (`d7972dd`):
   - **On your phone with WhatsApp** is a new section with 6 cards. The link card shows linked / not linked / not available (from `configured`). There's one card each for list approve-by-reply, reply alerts, needs-you and morning summary, showing on/off from prefs. The last card covers STOP/START/HELP.
@@ -1115,3 +1122,11 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 ### 2026-10-15 — Delete earlier master resume versions
 - **What:** Trash button + ConfirmDialog on Profile → Resume → Earlier versions. New `DELETE /api/career/resume/files/:id` → `deleteMasterVersion()` in [resumeFiles.js](backend/services/resumeFiles.js): master kind only; refuses the current version (400) and any version an evaluation points at via `resume_file_id`/`applied_resume_file_id` (409); removes the Supabase Storage object (tolerates already-gone) then the row. `resumeHistory()` masters now carry `in_use`; in-use rows show no trash button.
 - **Status:** `f5ac292` on main (Vercel live); backend applied on VM as `94abed4`. Verified live as e2e user: current-version delete → 400 with message; deleted the e2e user's old unused `test-resume.pdf` version via the UI (toast, row gone, API list confirms). The 409 in-use path wasn't exercised live (no in-use earlier version exists).
+
+### 2026-10-15 — Fix: Home "Set your auto-apply rules" step never completed
+- **What:** The setup checklist still read the old nightly settings (done only when moved off 85 / 50). The auto-apply page now saves the daily list (`meta.daily_plan_settings`), so the step stayed open for the user even with the list on (theirs: enabled, 9+, 20/day, 9 PM). `rulesSet` now = `useDailyPlan().data.settings.enabled` ([HomePage.tsx](frontend/src/features/home/HomePage.tsx)). `useNightlySettings` is now unused outside `app/queries.ts`.
+- **Status:** `7315977` live. Verified on prod as e2e user with the overview response's `enabled` forced off/on: checklist 1 → 2 of 6.
+
+### 2026-10-15 — Fix: app stuck on a bare spinner when the session refresh hangs
+- **What:** User saw an endless spinner on another machine (work laptop). `AuthProvider` waits on `supabase.auth.getSession()`, which refreshes an expired stored token over the network; if `*.supabase.co/auth/v1/token` never answers (VPN/firewall) the app never leaves the spinner. New [AuthWait.tsx](frontend/src/app/AuthWait.tsx): after 8s shows "Still checking your sign-in" with **Try again** (reload) and **Sign in again** (removes `sb-*` localStorage keys, reloads → login page).
+- **Status:** `7beb414` live. Reproduced on prod with an expired stored session + held refresh request (blank spinner before; stall screen after), and "Sign in again" lands on the login page. Root cause on the user's machine not confirmed. If it was a hard block on supabase.co, sign-in there will still fail until the network allows it.

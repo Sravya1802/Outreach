@@ -37,7 +37,8 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 function ColumnChart({ data, label, empty }: { data: Bucket[]; label: string; empty: string }) {
   const [active, setActive] = useState<number | null>(null)
   const max = Math.max(...data.map(d => d.value), 0)
-  const top = Math.max(1, max <= 4 ? max : Math.ceil(max / 4) * 4)
+  // A tight, even top so the middle gridline lands on a whole number.
+  const top = Math.max(1, max <= 4 ? max : max <= 10 ? max + (max % 2) : Math.ceil(max / 10) * 10)
   const ticks = [top, top / 2, 0]
   return (
     <figure className="m-0">

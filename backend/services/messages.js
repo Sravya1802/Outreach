@@ -163,7 +163,8 @@ export async function writeFor(userId, key, ref) {
       system: `You write personalized outreach from a student or new grad to one person at a company.
 Return JSON: {"note": "...", "subject": "...", "body": "..."}
 - note: a LinkedIn message under 280 characters. body: an email under 120 words. subject: under 60 characters.
-- Open with their first name. Mention one real, specific thing that links the student to them or their team (from STUDENT and THEIR TITLE). Never invent facts about either person.
+- Open with their first name. Mention one specific thing from STUDENT.background that fits their team or the role.
+- Use only facts given. Describe the student only with STUDENT (don't guess their year or level). Describe the other person only by THEIR TITLE; don't claim what they work on.
 - If ROLE is given: ask for a referral for it, or a pointer to the right person, and include the link in the email. If not: ask for 15 minutes about their team and how they hire interns/new grads.
 - ${p.isConnection ? 'They are already a LinkedIn connection: warm, direct.' : 'They don’t know the student: brief and respectful.'} No flattery, no "I hope this finds you well".`,
       user: JSON.stringify({ to: p.name, theirTitle: p.title, company: data.name, ROLE: data.role, STUDENT: { name: who.name, school: who.school, background: await candidateHighlights(userId) } }),

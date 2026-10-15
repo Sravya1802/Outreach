@@ -180,7 +180,7 @@ function PersonCard({ p, company }: { p: MessagePerson; company: MessageCompanyD
             <p className="rounded-[4px] border border-line bg-raised p-3 text-[13px] leading-relaxed whitespace-pre-line text-fg">{p.note}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="primary" icon={<Copy className="size-3.5" />}
-                onClick={() => { void copy(p.note ?? '', 'Note'); if (p.linkedinUrl) window.open(p.linkedinUrl, '_blank', 'noopener') }}>
+                onClick={async () => { await copy(p.note ?? '', 'Note'); if (p.linkedinUrl) window.open(p.linkedinUrl, '_blank', 'noopener') }}>
                 {p.linkedinUrl ? 'Copy & open LinkedIn' : 'Copy note'}
               </Button>
               {p.status !== 'dm_sent' && p.status !== 'replied' && <Button size="sm" variant="ghost" loading={mark.isPending && mark.variables === 'dm_sent'} onClick={() => mark.mutate('dm_sent')}>Mark sent</Button>}

@@ -11,6 +11,9 @@ test('company names match across spellings', () => {
   assert.equal(companyKey('Johnson & Johnson'), 'johnson and johnson');
   assert.equal(companyKey('Nestlé S.A.'), companyKey('Nestle'));
   assert.notEqual(companyKey('Ramp'), companyKey('WorkRamp'));
+  assert.equal(companyKey('Garmin International'), 'garmin');
+  assert.equal(companyKey('Siemens USA'), 'siemens');
+  assert.notEqual(companyKey('Ramp Network'), companyKey('Ramp'));
 });
 
 test('CSV with quotes, commas and newlines', () => {

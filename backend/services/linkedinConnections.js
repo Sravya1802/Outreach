@@ -8,6 +8,8 @@
 import { all, one, run, tx } from '../db.js';
 
 const SUFFIXES = /\b(inc|incorporated|llc|l\.l\.c|ltd|limited|corp|corporation|co|company|plc|gmbh|ag|sa|pvt|private|technologies|technology|labs|group|holdings|the)\b/g;
+// Region words LinkedIn often adds ("Garmin International", "Siemens USA").
+const REGION = /\b(international|intl|global|worldwide|usa|us|america|americas|north america|india|uk|europe|emea|apac)\b/g;
 
 /** "Ramp Business Corporation, Inc." and "Ramp" → "ramp business" / "ramp". Used on both sides. */
 export function companyKey(name) {
@@ -18,6 +20,7 @@ export function companyKey(name) {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(SUFFIXES, ' ')
+    .replace(REGION, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

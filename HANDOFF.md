@@ -124,6 +124,16 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Usage: its own top-bar item next to Integrations
+- **What:** the user asked for Services to sit next to Integrations under a better name, with the AI spend added. The page is now **Usage** at `/usage` (`3047d44`), at [features/usage/UsagePage.tsx](frontend/src/features/usage/UsagePage.tsx).
+  - It shows **AI spending this month** (you vs site, per-task breakdown). The card moved from Settings → Account into [AiSpendCard.tsx](frontend/src/features/usage/AiSpendCard.tsx).
+  - It also shows your lookups this month, and **Service status** (formerly titled "Integrations").
+  - Integrations now has only Gmail and GitHub.
+  - `/integrations/services` and `/settings/integrations` redirect to `/usage`. The top-bar status dot, Home's attention items, and Home's AI "Details" link all point to it.
+  - The command palette no longer shows "Usage › Usage".
+  - Every AI task gets a readable label (resume_parse, keywords added), with a fallback for new ones.
+- **Status:** verified live (redirect, light/dark, 390px). Settings → Account no longer shows AI spend.
+
 ### 2026-10-15 — Google sign-in: button + public legal pages
 - **What:**
   - "Continue with Google/GitHub" is on the sign-in and sign-up pages ([providers.ts](frontend/src/features/auth/providers.ts) reads Supabase `/auth/v1/settings`). It appears only once the provider is enabled in Supabase, with no redeploy. New OAuth users get the market question from MarketGate.

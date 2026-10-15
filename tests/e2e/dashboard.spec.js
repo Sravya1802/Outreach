@@ -7,8 +7,8 @@ skipWithoutAuthEnv()
 test('home renders for authed user', async ({ page }) => {
   await page.goto('/home')
   await expect(page.getByRole('heading', { name: /^(Good (morning|afternoon|evening)|Working late),/, level: 1 })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Your applications' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Needs attention' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'So far' })).toBeVisible()
 })
 
 test('old /dashboard bookmark lands on home', async ({ page }) => {

@@ -1,17 +1,19 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Check } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
 import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useNightlySettings, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
 import { api, type CatalogListing, type RoleType } from '@/lib/api'
+import { useDailyPlan } from '@/features/applications/useDailyPlan'
 import { marketInfo, marketPhrase } from '@/lib/markets'
 import { cn } from '@/lib/cn'
-import { formatNumber, greeting, lowerFirst, nameFromEmail, percent } from '@/lib/format'
-import { ButtonLink, ErrorState, Page, Skeleton } from '@/ui'
+import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
+import { Button, ButtonLink, ErrorState, Page, Skeleton } from '@/ui'
 import { postedLabel } from '@/features/jobs/catalog'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
+import { needsYouCount, todayItems, type TodayTone } from './today'
 
 function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -42,16 +44,32 @@ function SetupChecklist() {
   const anyError = [resume, profile, nightly, answers, github, gmail].some(q => q.isError)
   const loading = steps.some(s => s.done === undefined) && !anyError
   const doneCount = steps.filter(s => s.done).length
+  const [open, setOpen] = useState(false)
   if (!loading && doneCount === steps.length) return null
   const next = steps.find(s => s.done === false)
+  const pct = Math.round((doneCount / steps.length) * 100)
 
   return (
-    <section aria-labelledby="setup-h" className="rounded-[4px] border border-line bg-surface p-5">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="setup-h" className="font-display text-[20px] font-semibold text-fg">Before the app can apply and email for you</h2>
-        <span className="text-[13px] text-subtle">{loading ? 'Checking…' : `${doneCount} of ${steps.length} done`}</span>
+    <section aria-labelledby="setup-h" className="rounded-[4px] border border-line bg-surface px-5 py-4">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="setup-h" className="text-[15px] font-medium text-fg">Finish setting up</h2>
+            <span className="text-[13px] text-subtle">{loading ? 'Checking…' : `${doneCount} of ${steps.length} done`}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-hover" aria-hidden="true">
+            <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {next && <ButtonLink to={next.to} size="sm" variant="primary">Next: {next.title}</ButtonLink>}
+          <Button size="sm" variant="ghost" aria-expanded={open} aria-controls="setup-steps" onClick={() => setOpen(v => !v)}
+            icon={<ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />}>
+            {open ? 'Hide steps' : 'All steps'}
+          </Button>
+        </div>
       </div>
-      <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {open && <ol id="setup-steps" className="mt-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {steps.map((s, i) => (
           <li key={s.id}>
             <Link to={s.to} title={s.description}
@@ -68,7 +86,7 @@ function SetupChecklist() {
             </Link>
           </li>
         ))}
-      </ol>
+      </ol>}
     </section>
   )
 }
@@ -90,7 +108,7 @@ function RoleRow({ r, kind }: { r: CatalogListing; kind: string }) {
 function NewRoles() {
   const market = useMarket()
   const region = marketInfo(market).region
-  const fetchType = (roleType: RoleType) => api.catalog({ roleType, region, page: 0, pageSize: 5 })
+  const fetchType = (roleType: RoleType) => api.catalog({ roleType, region, page: 0, pageSize: 3 })
   const intern = useQuery({ queryKey: qk.catalog({ home: 'intern', region }), queryFn: () => fetchType('intern') })
   const grad = useQuery({ queryKey: qk.catalog({ home: 'new_grad', region }), queryFn: () => fetchType('new_grad') })
   const loading = intern.isLoading || grad.isLoading
@@ -104,41 +122,62 @@ function NewRoles() {
         <div className="space-y-3 pt-2">{[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="h-10" />)}</div>
       ) : (
         <ul>
-          {(intern.data?.rows ?? []).slice(0, 4).map(r => <RoleRow key={r.id} r={r} kind="Internship" />)}
-          {(grad.data?.rows ?? []).slice(0, 4).map(r => <RoleRow key={r.id} r={r} kind="New grad" />)}
+          {(intern.data?.rows ?? []).slice(0, 3).map(r => <RoleRow key={r.id} r={r} kind="Internship" />)}
+          {(grad.data?.rows ?? []).slice(0, 3).map(r => <RoleRow key={r.id} r={r} kind="New grad" />)}
         </ul>
       )}
     </section>
   )
 }
 
-function WaitingOnYou() {
+/** Everything that needs the user, or is happening for them, today. Shared by the header and the Today list. */
+function useToday() {
+  const [now] = useState(() => Date.now())
+  const plan = useDailyPlan()
   const queue = useAutoApplyQueue()
   const { services } = useServiceHealth()
   const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
-  const c = queue.data?.counts
-  const items: { id: string; tone: 'warning' | 'danger'; text: string; to: string }[] = []
-  if (c?.needs_review) items.push({ id: 'review', tone: 'warning', text: `${c.needs_review} ${c.needs_review === 1 ? 'application needs' : 'applications need'} an answer from you`, to: '/applications/auto-apply' })
-  if (c?.failed) items.push({ id: 'failed', tone: 'danger', text: `${c.failed} ${c.failed === 1 ? 'application' : 'applications'} couldn’t be sent`, to: '/applications/auto-apply' })
-  if (gmail.data?.connected && gmail.data.status === 'error') {
-    items.push({ id: 'gmail', tone: 'danger', text: 'Gmail stopped accepting the app password, so emails are on hold. Reconnect it', to: '/integrations/gmail' })
-  }
-  for (const s of services.filter(sv => sv.state === 'down')) {
-    items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/usage' })
-  }
+  const pipeline = useQuery({ queryKey: qk.pipeline, queryFn: api.pipeline })
+  const replies = useQuery({ queryKey: qk.replies, queryFn: api.replies, enabled: Boolean(gmail.data?.connected) })
+  const outbox = useQuery({ queryKey: qk.outbox, queryFn: api.outbox, enabled: Boolean(gmail.data?.connected) })
+  const items = todayItems({
+    now,
+    plan: plan.data,
+    queue: queue.data?.counts,
+    tracked: pipeline.data ? Object.values(pipeline.data.columns).flatMap(c => c.items) : [],
+    replies: replies.data,
+    outbox: outbox.data,
+    gmail: gmail.data,
+    servicesDown: services.filter(sv => sv.state === 'down'),
+  })
+  return { items, loading: plan.isLoading || queue.isLoading || pipeline.isLoading }
+}
+
+const TONE_DOT: Record<TodayTone, string> = { danger: 'bg-danger', action: 'bg-accent', info: 'bg-subtle' }
+
+function Today() {
+  const { items, loading } = useToday()
   return (
-    <section aria-labelledby="wait-h">
-      <SectionTitle><span id="wait-h">Waiting on you</span></SectionTitle>
-      {queue.isLoading ? <Skeleton className="mt-2 h-10" /> : items.length === 0 ? (
-        <p className="py-3 text-[14px] text-muted">Nothing. You’re all caught up.</p>
+    <section aria-labelledby="today-h">
+      <SectionTitle action={<Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">Today’s list</Link>}>
+        <span id="today-h">Today</span>
+      </SectionTitle>
+      {loading ? <div className="space-y-2 pt-2">{[0, 1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : items.length === 0 ? (
+        <div className="py-6">
+          <p className="text-[15px] text-fg">Nothing needs you today.</p>
+          <p className="mt-1 text-[14px] text-muted">Your list arrives each evening. Until then, browse new roles or evaluate one you found.</p>
+        </div>
       ) : (
         <ul>
           {items.map(it => (
             <li key={it.id}>
-              <Link to={it.to} className="group flex items-center gap-3 border-b border-line py-3 text-[14px] text-fg hover:bg-hover/40">
-                <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', it.tone === 'danger' ? 'bg-danger' : 'bg-warning')} />
-                <span className="min-w-0 flex-1">{it.text}</span>
-                <ArrowRight className="size-3.5 text-subtle transition-transform group-hover:translate-x-0.5" />
+              <Link to={it.to} className="group flex items-start gap-3 border-b border-line py-3.5 hover:bg-hover/40">
+                <span className={cn('mt-[7px] size-2 shrink-0 rounded-full', TONE_DOT[it.tone])} aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <span className={cn('block text-[15px]', it.tone === 'info' ? 'text-muted' : 'font-medium text-fg')}>{it.title}</span>
+                  {it.detail && <span className="block truncate text-[13px] text-subtle">{it.detail}</span>}
+                </span>
+                <ArrowRight className="mt-1 size-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </Link>
             </li>
           ))}
@@ -162,7 +201,7 @@ function Pipeline() {
   return (
     <section aria-labelledby="pipe-h">
       <SectionTitle action={<Link to="/applications/auto-apply#tracker" className="text-[14px] text-accent hover:underline">Track them</Link>}>
-        <span id="pipe-h">Your applications</span>
+        <span id="pipe-h">So far</span>
       </SectionTitle>
       {metrics.isError ? <ErrorState compact error={metrics.error} onRetry={() => void metrics.refetch()} /> : metrics.isLoading ? <Skeleton className="mt-2 h-32" /> : (
         <dl className="divide-y divide-line">
@@ -193,10 +232,10 @@ export default function HomePage() {
   const profile = useProfile()
   const market = useMarket()
   const daily = useDailyUpdates()
-  const queue = useAutoApplyQueue()
+  const todayList = useToday()
   const name = displayName(profile.data, nameFromEmail(email))
   const newToday = (daily.data?.intern.today ?? 0) + (daily.data?.newGrad.today ?? 0)
-  const waiting = (queue.data?.counts.needs_review ?? 0) + (queue.data?.counts.failed ?? 0)
+  const waiting = needsYouCount(todayList.items)
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
@@ -211,8 +250,8 @@ export default function HomePage() {
             <>
               <b className="font-medium text-fg">{formatNumber(newToday)} new roles</b> in {marketPhrase(market)} today.{' '}
               {waiting > 0
-                ? <><Link to="/applications/auto-apply" className="text-accent hover:underline">{waiting} {waiting === 1 ? 'thing needs' : 'things need'} you</Link>.</>
-                : 'Nothing is waiting on you.'}
+                ? <><a href="#today-h" className="text-accent hover:underline">{waiting} {waiting === 1 ? 'thing needs' : 'things need'} you</a>.</>
+                : 'Nothing needs you right now.'}
             </>
           )}
         </p>
@@ -225,10 +264,10 @@ export default function HomePage() {
       <div className="space-y-10">
         <SetupChecklist />
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <NewRoles />
+          <Today />
           <div className="space-y-10">
-            <WaitingOnYou />
             <Pipeline />
+            <NewRoles />
           </div>
         </div>
       </div>

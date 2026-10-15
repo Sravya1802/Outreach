@@ -124,6 +124,18 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — People → Messages
+- **What:** a new tab, [MessagesPage.tsx](frontend/src/features/outreach/MessagesPage.tsx), backed by [messages.js](backend/services/messages.js) and `/api/messages/*`.
+  - Lists every company where the user has people: LinkedIn connections, merged with saved contacts by `companyKey`. Each shows open roles (catalog, 30 days, the user's region), connections, contacts with email, and how many were contacted.
+  - Sorted: open roles first, then connections, then emails. Search and filters (All / Open roles / Connections / Has email), 25 per page.
+  - Opening a company lists its people (connections first, then recruiters, engineers, others). Connections and found contacts are merged by LinkedIn URL or name.
+  - "Write message" (or "Write messages for everyone", run sequentially with progress) drafts a LinkedIn note (≤ 300) plus an email via Groq. It's personalized to the person's title, connection or not, and the best open role for the user there (top or worth plan item, else the newest listing); with no role, it asks for a short chat.
+  - Drafts are saved on `job_contacts.generated_*`. A connection without a contact row gets one (`contactFor`).
+  - Buttons: Copy & open LinkedIn, Mark sent (→ dm_sent), Send at the best time (outbox) or Open in Gmail, Copy email, Mark emailed, Rewrite.
+- **Status:** live and tested on the e2e account (Stripe and Garmin from sample connections). The draft, copy (toast confirmed), opening the profile, Mark sent and the filter all work; no sideways scroll on phone.
+  - The prompt was tightened after the first draft invented "senior" and what the other person works on.
+- **Note:** the other session's commit c40dfc9 swept in my App.tsx/nav.ts edits before MessagesPage.tsx was pushed (a brief broken build window); it's fixed by 257196e.
+
 ### 2026-10-15 — "How it works" tab; top bar fits 8 sections
 - **What:** the user asked for the queue explainers in their own tab next to Usage. `/how-it-works` ([HowItWorksPage.tsx](frontend/src/features/howitworks/HowItWorksPage.tsx)) holds both flows (job queue, 8 stages; outreach email, 6 stages), with logic still in `features/home/queueFlow.ts`. Home is back to setup, Today, Top picks and So far (`c40dfc9`).
 - **Top bar** (`119f215`): the main bar is now Home · Dashboard · Jobs · Applications · People · Integrations · Usage · How it works.

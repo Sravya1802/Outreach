@@ -124,6 +124,10 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Light theme is now "Ocean"
+- **What:** the user picked **B Ocean** from the palette sheet (`8627d8d`, [app.css](frontend/src/styles/app.css)): page #eef4fa, white cards, lines #d9e4ef / #c3d3e3, text #0f2236, accent #0b6bcb, success #0f7a55, danger #c8321f. Dark (Graphite) is unchanged. This replaces the Clean white entry below.
+- **Status:** verified live on Home and Roles. No console errors.
+
 ### 2026-10-15 — Home: Top picks for you; palette picker sent
 - **What:** the user asked where the top role recommendations are. Home now has **Top picks for you** under Today (`c05faf2`). It shows the best 5 items from today's daily plan (top tier, then worth a look; skipped and expired are hidden), using the shared `ItemRow` (now exported from DailyPlan.tsx) with Approve / Skip. With no plan it offers "Build today's list". Today dropped its "worth a look" line.
 - **Colours:** the user still dislikes the colours after Clean white. A palette picker artifact was sent (https://claude.ai/artifact/8rJgWbtMwUt3hKGQgZVwxK): A Clean white (current), B Ocean, C Sage, D Lavender, E Slate & coral, F Graphite (current dark), G Midnight, H Forest night. **Waiting for the user's letter**; then update the `--ui-*` tokens in app.css.

@@ -172,6 +172,16 @@ export const api = {
     disconnect: ()                => apiCall('/github/connection', { method: 'DELETE' }),
   },
 
+  // The evening list (daily plan)
+  dailyPlan: {
+    overview:   ()            => apiCall('/daily-plan'),
+    save:       (body)        => apiCall('/daily-plan/settings', { method: 'PUT', body }),
+    build:      (rebuild)     => apiCall('/daily-plan/build', { method: 'POST', body: { rebuild: !!rebuild } }),
+    email:      ()            => apiCall('/daily-plan/email', { method: 'POST' }),
+    decide:     (id, decision) => apiCall(`/daily-plan/items/${id}/decision`, { method: 'POST', body: { decision } }),
+    approveAll: (planId)      => apiCall(`/daily-plan/plans/${planId}/approve-all`, { method: 'POST' }),
+  },
+
   // Each user's own Gmail (app password): outreach outbox + replies
   gmail: {
     status:     ()            => apiCall('/gmail/status'),

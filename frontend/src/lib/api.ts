@@ -359,6 +359,63 @@ export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluati
 }
 export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
 
+// ── Daily plan (the evening list) ────────────────────────────────────────────
+
+export interface DailyPlanSettings {
+  enabled: boolean
+  /** Local hour, 17–23 */
+  listHour: number
+  timezone: string
+  minScore: number
+  maxPerDay: number
+  referralFirst: boolean
+  referralWaitDays: number
+}
+export type PlanStage = 'proposed' | 'tailoring' | 'asking_referral' | 'waiting_referral' | 'ready_to_apply' | 'applying' | 'applied' | 'referred' | 'needs_you' | 'done'
+export interface PlanItem {
+  id: number
+  evaluation_id: number | null
+  company_name: string
+  title: string
+  apply_url: string
+  location: string | null
+  pay: string | null
+  sponsorship: string | null
+  tier: 'top' | 'worth'
+  score: string | number | null
+  reason: string | null
+  decision: 'pending' | 'approved' | 'skipped' | 'expired'
+  stage: PlanStage
+  stage_note: string | null
+}
+export interface ActivePlanItem {
+  id: number
+  evaluation_id: number | null
+  company_name: string
+  title: string
+  apply_url: string
+  location: string | null
+  score: string | number | null
+  stage: PlanStage
+  stage_note: string | null
+  referral_status: 'none' | 'asked' | 'link' | 'submitted' | 'declined'
+  wait_until: string | null
+  apply_after: string | null
+  applied_at: string | null
+  decided_at: string | null
+  ats_score: number | null
+}
+export interface DailyPlan {
+  id: number
+  plan_date: string
+  status: 'building' | 'ready' | 'failed'
+  stats: { considered?: number; scored?: number; top?: number; worth?: number; low?: number; excluded?: number; costUsd?: number }
+  error: string | null
+  built_at: string | null
+  emailed_at: string | null
+}
+export interface DailyPlanOverview { settings: DailyPlanSettings; plan: DailyPlan | null; items: PlanItem[]; active: ActivePlanItem[]; gmailConnected: boolean }
+
 // ── Gmail (each user's own account) ──────────────────────────────────────────
 
 export interface GmailStatus {
@@ -589,6 +646,12 @@ export const api = {
   resumeStatus: (): Promise<ResumeStatus> => legacy.career.resume(),
   resumeHistory: (): Promise<ResumeHistory> => legacy.career.resumeFiles(),
   tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
+  dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
+  saveDailyPlanSettings: (body: Partial<DailyPlanSettings>): Promise<DailyPlanSettings> => legacy.dailyPlan.save(body),
+  buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),
+  emailDailyPlan: (): Promise<{ ok?: boolean; skipped?: string }> => legacy.dailyPlan.email(),
+  decidePlanItem: (id: number, decision: 'approved' | 'skipped' | 'pending'): Promise<PlanItem> => legacy.dailyPlan.decide(id, decision),
+  approveAllPlan: (planId: number): Promise<{ approved: number }> => legacy.dailyPlan.approveAll(planId),
   gmailStatus: (): Promise<GmailStatus> => legacy.gmail.status(),
   connectGmail: (body: { email: string; appPassword: string; displayName?: string }): Promise<GmailStatus> => legacy.gmail.connect(body),
   gmailSettings: (body: { displayName?: string; dailyCap?: number }): Promise<GmailStatus> => legacy.gmail.settings(body),

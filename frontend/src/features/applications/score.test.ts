@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { globalOutOf10, looksLikeUrl, scoreOutOf10, scoreTone, stageFor } from './score'
 import { atsTone, tailoringHeadline } from './tailoring'
+import { STAGE_LABEL, hourLabel, num, tzLabel } from './plan'
 
 describe('scores out of 10', () => {
   it('converts both scales', () => {
@@ -46,5 +47,18 @@ describe('tailored resume', () => {
     expect(tailoringHeadline({ status: 'needs_review', approved_at: '2026-10-14', ats_score: 80, ats: ats([]) })).toMatch(/chose to send it anyway/)
     expect(tailoringHeadline({ status: 'needs_review', approved_at: null, ats_score: 70, ats: ats([{ term: 'Go', importance: 'required' }, { term: 'Git', importance: 'required' }, { term: 'GraphQL', importance: 'preferred' }]) }))
       .toBe('Below the 90% target, so it won’t be sent without you. The posting requires Go and Git, which your resume doesn’t show.')
+  })
+})
+
+describe('daily plan helpers', () => {
+  it('labels hours and zones', () => {
+    expect(hourLabel(22)).toBe('10 PM')
+    expect(hourLabel(17)).toBe('5 PM')
+    expect(hourLabel(9)).toBe('9 AM')
+    expect(tzLabel('America/Chicago')).toBe('Central')
+    expect(tzLabel('Asia/Tokyo')).toBe('Tokyo')
+    expect(num('9.4')).toBe(9.4)
+    expect(num(null)).toBeNull()
+    expect(STAGE_LABEL.asking_referral).toBe('Asking for a referral')
   })
 })

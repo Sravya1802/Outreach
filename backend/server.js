@@ -33,6 +33,8 @@ import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
 import resumeEngineRouter from './routes/resumeEngine.js';
 import gmailRouter from './routes/gmail.js';
+import dailyPlanRouter from './routes/dailyPlan.js';
+import { tick as dailyPlanTick } from './services/dailyPlan.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
@@ -123,6 +125,7 @@ app.use('/api/profile',    profileRouter);
 app.use('/api/github',     githubRouter);
 app.use('/api/resume-engine', resumeEngineRouter);
 app.use('/api/gmail', gmailRouter);
+app.use('/api/daily-plan', dailyPlanRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────
@@ -507,6 +510,13 @@ cron.schedule('*/2 * * * *', async () => {
     const r = await runOutbox();
     if (r.sent) console.log(`[outbox] sent ${r.sent} of ${r.due} due`);
   } catch (err) { console.error('[outbox] pass failed:', err.message); }
+}, CRON_OPTS);
+// Daily plan: build lists an hour before each user's list time, email at list time, move approved roles on.
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const r = await dailyPlanTick();
+    if (r.built || r.emailed) console.log(`[daily-plan] built ${r.built}, emailed ${r.emailed}`);
+  } catch (err) { console.error('[daily-plan] tick failed:', err.message); }
 }, CRON_OPTS);
 cron.schedule('*/10 * * * *', async () => {
   try {

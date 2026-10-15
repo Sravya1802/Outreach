@@ -11,6 +11,9 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
         </div>
         <div className="rounded-[4px] border border-line bg-surface p-6">{children}</div>
         {footer && <div className="mt-6 text-center text-[13px] text-subtle">{footer}</div>}
+        <p className="mt-8 text-center text-[12px] text-subtle">
+          <a href="/privacy" className="hover:text-fg">Privacy</a> · <a href="/terms" className="hover:text-fg">Terms</a>
+        </p>
       </div>
     </div>
   )

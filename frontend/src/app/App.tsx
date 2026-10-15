@@ -22,6 +22,8 @@ const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPag
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
+const PrivacyPage = lazyWithRetry(() => import('@/features/legal/PrivacyPage'), 'PrivacyPage')
+const TermsPage = lazyWithRetry(() => import('@/features/legal/TermsPage'), 'TermsPage')
 const ResetPasswordPage = lazyWithRetry(() => import('@/features/auth/ResetPasswordPage'), 'ResetPasswordPage')
 
 // Pages not rebuilt yet — rendered inside the new shell until they are.
@@ -100,6 +102,9 @@ export default function App() {
 
   // The recovery link lands here with or without a session; it handles both.
   if (pathname === '/reset-password') return <ResetPasswordPage />
+  // Public: Google's consent screen links to these.
+  if (pathname === '/privacy') return <PrivacyPage />
+  if (pathname === '/terms') return <TermsPage />
   if (session === undefined) return <div className="flex h-full bg-canvas"><PageSpinner /></div>
   if (!session) return <LoginPage />
   return <MarketGate><SignedInRoutes /></MarketGate>

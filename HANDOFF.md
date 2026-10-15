@@ -124,6 +124,15 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Home rebuilt "Today first"; AI card removed
+- **What:** the user asked to remove "AI this month" from Home (`60763cf`, it's on Usage) and then to rework Home. They picked the "Today first" layout (`64aef0f`):
+  - **Header:** "N things need you" counts the Today items that aren't informational, and links to #today-h.
+  - **Setup:** a slim "Finish setting up" bar showing a progress bar, X of 6, and a **Next: <step>** button. "All steps" expands the six-step grid. It still hides once everything is done.
+  - **Today** (left), built by [today.ts](frontend/src/features/home/today.ts) with tests. Order: Gmail rejected, services down, needs you (plan `needs_you` plus queue `needs_review`), couldn't send, roles waiting for your OK (top tier pending), follow-ups (7+ days quiet), next steps due today or overdue, new replies (72h, real replies only), approved roles on the way (with a referral-wait note), emails going out in 24h, and worth-a-look. It folds in the old "Waiting on you".
+  - **Right column:** **So far** (the old "Your applications" funnel) and the newest roles (3 intern plus 3 new grad).
+  - Replies and outbox are fetched only when Gmail is connected.
+- **Status:** verified live with the e2e user (seeded tracker rows, since deleted, plus their real daily-plan data). The All steps toggle shows 6 and the header link jumps to Today. Checked light, dark and 390px. dashboard.spec updated (Today / So far).
+
 ### 2026-10-15 — Home: Connect Gmail is a setup step
 - **What:** the Home checklist now has 6 steps, with **Connect Gmail** after GitHub (`2f616c6`). The step links to Integrations → Gmail and counts as done when it's connected and the status isn't `error`. The heading now reads "Before the app can apply and email for you". The grid is 3 columns on tablet and 6 on desktop.
 - **Also:** "Waiting on you" shows a red item when Gmail is connected but Google rejected the app password (emails on hold), linking to the reconnect page.
@@ -970,3 +979,8 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Files:** n/a — investigation only. `git log main` tops at `3c5be1b`. `feat/ia-discover-apply-outreach` tip: `cbadab2`.
 - **Status:** Blocked awaiting user decision: add Completed tab on `feat/ia-discover-apply-outreach` directly, or merge Phase C → main first then add on main. Also unclear what Vercel (`outreach-jt.vercel.app`) is tracking — screenshot shows Phase C live in prod, so either the feature branch is deployed or Phase C was rebased/pushed to main under a different hash.
 - **Follow-up:** Next session — ask user which branch to land the Completed tab on. Per memory rule, do NOT switch branches with the OutreachPage.jsx fix still uncommitted without stashing first.
+
+### 2026-10-15 — Rotated Apify API token
+- **What:** User saved a new `APIFY_API_TOKEN` (ends `…8Gsy`, Apify account `charitable_raisin`) in local `.env`; copied it to the VM's `~/outreach/.env` and ran `pm2 restart outreach-backend --update-env`.
+- **Status:** Live. Apify `/v2/users/me` accepts the token; `/api/health` → `ok`, `has_apify: true`. Old token backed up on the VM at `~/outreach/.env.bak-apify` (delete once confirmed unneeded).
+- **Follow-up:** If Vercel env vars also hold an Apify token, update it in the Vercel dashboard (frontend doesn't normally need it).

@@ -43,7 +43,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           <span>Search</span>
           <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
         </button>
-        <Link to="/integrations/services" title={isLoading ? 'Checking services…' : overall.label}
+        <Link to="/usage" title={isLoading ? 'Checking services…' : overall.label}
           aria-label={`Service status: ${isLoading ? 'checking' : overall.label}`}
           className="grid size-8 place-items-center rounded-[4px] hover:bg-hover">
           <StatusDot tone={isLoading ? 'neutral' : healthTone[overall.state] ?? 'neutral'} />

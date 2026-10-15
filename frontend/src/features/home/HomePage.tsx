@@ -118,7 +118,7 @@ function WaitingOnYou() {
   if (c?.needs_review) items.push({ id: 'review', tone: 'warning', text: `${c.needs_review} ${c.needs_review === 1 ? 'application needs' : 'applications need'} an answer from you`, to: '/applications/auto-apply' })
   if (c?.failed) items.push({ id: 'failed', tone: 'danger', text: `${c.failed} ${c.failed === 1 ? 'application' : 'applications'} couldn’t be sent`, to: '/applications/auto-apply' })
   for (const s of services.filter(sv => sv.state === 'down')) {
-    items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/integrations/services' })
+    items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/usage' })
   }
   return (
     <section aria-labelledby="wait-h">
@@ -189,7 +189,7 @@ function AiSpend() {
   const pct = Math.min(100, percent(Math.round(spent.mine * 100), Math.round(caps.user * 100)))
   return (
     <section aria-labelledby="ai-h">
-      <SectionTitle action={<Link to="/settings/account" className="text-[14px] text-accent hover:underline">Details</Link>}>
+      <SectionTitle action={<Link to="/usage" className="text-[14px] text-accent hover:underline">Details</Link>}>
         <span id="ai-h">AI this month</span>
       </SectionTitle>
       <p className="pt-2 text-[14px] text-muted">

@@ -3,6 +3,7 @@ import { useProviderUsage, useServiceHealth } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, Card, CardHeader, ErrorState, Page, PageHeader, Skeleton, StatusDot, type Tone } from '@/ui'
+import { AiSpendCard } from './AiSpendCard'
 
 const stateTone: Record<string, Tone> = { ok: 'success', warn: 'warning', down: 'danger', off: 'neutral' }
 const stateLabel: Record<string, string> = { ok: 'Working', warn: 'Attention', down: 'Unavailable', off: 'Not set up' }
@@ -37,16 +38,17 @@ function UsageCard() {
   )
 }
 
-export default function ServicesPage() {
+export default function UsagePage() {
   const { services, isLoading, error, checkedAt, refetch } = useServiceHealth()
   return (
     <Page>
-    <PageHeader title="Services" description="The APIs OutreachOS runs on, and how much of your monthly lookup allowance you’ve used." />
+    <PageHeader title="Usage" description="What you’ve spent on AI and lookups this month, and whether each service the app depends on is working." />
     <div className="space-y-4">
+    <AiSpendCard />
     <UsageCard />
     <Card>
       <CardHeader
-        title="Integrations"
+        title="Service status"
         description={checkedAt ? `Checked ${timeAgo(checkedAt)}. Keys are set on the server.` : 'Keys are set on the server.'}
         actions={<Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} onClick={refetch}>Recheck</Button>}
       />

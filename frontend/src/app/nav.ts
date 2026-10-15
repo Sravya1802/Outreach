@@ -1,4 +1,4 @@
-import { Briefcase, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,7 +8,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'jobs' | 'applications' | 'people' | 'integrations' | 'profile' | 'settings'
+  id: 'home' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -54,8 +54,11 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies' },
       { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in' },
-      { label: 'Services', to: '/integrations/services', keywords: 'status api keys health usage lookups hunter apollo' },
     ],
+  },
+  {
+    id: 'usage', label: 'Usage', icon: Gauge, to: '/usage',
+    tabs: [{ label: 'Usage', to: '/usage', keywords: 'services status api keys health lookups hunter apollo prospeo ai spending cost limit' }],
   },
   {
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',

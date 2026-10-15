@@ -53,7 +53,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       const tabs = s.tabs.length ? s.tabs : [{ label: s.label, to: s.to, keywords: '' }]
       return tabs.map(t => ({
         id: `nav:${t.to}`,
-        label: s.tabs.length ? `${s.label} › ${t.label}` : s.label,
+        label: s.tabs.length && t.label !== s.label ? `${s.label} › ${t.label}` : s.label,
         group: 'Go to' as const,
         icon: <Icon className="size-4" />,
         keywords: `${s.label} ${t.label} ${t.keywords ?? ''}`,

@@ -52,7 +52,7 @@ export function Sidebar({ onOpenPalette, onNavigate }: { onOpenPalette: () => vo
       </nav>
 
       <div className="space-y-0.5 border-t border-line px-3 py-2">
-        <Link to="/integrations/services" onClick={onNavigate}
+        <Link to="/usage" onClick={onNavigate}
           className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-xs text-subtle transition-colors hover:bg-hover/60 hover:text-muted"
           title="Service status">
           <StatusDot tone={isLoading ? 'neutral' : healthTone[overall.state] ?? 'neutral'} />

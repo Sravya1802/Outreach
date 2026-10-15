@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — WhatsApp templates reformatted (snj_*)
+- The user wanted a friendlier format. Each template now has a bold **header** (one variable), a body starting "Hello," and ending "Good luck! ;)", a footer "Scout’n’Jobs", and a **URL button** to the site instead of a long link. `templateDefinition(kind)` builds Meta's component list; `sendTemplate` sends header + body params (`{ header, body: [] }`). The in-window free-text versions use the same shape with WhatsApp bold/italics.
+- Submitted via the API as `snj_daily_list`, `snj_reply_alert`, `snj_needs_you`, `snj_morning_summary` (en_US, UTILITY); all PENDING. The old `oos_*` ones were deleted. `WHATSAPP_TEMPLATE_NEEDS` override removed from the VM .env.
+- Sent the user a free-text preview of the new list format. Tests: backend 149, frontend 79.
+
 ### 2026-10-15 — WhatsApp templates submitted; Meta/Google renamed
 - The user renamed the Meta app, the business portfolio and the Google consent screen to Scout’n’Jobs, and deleted the old templates.
 - I submitted the 4 templates through the API (language **en_US**; `WHATSAPP_TEMPLATE_LANG=en_US` on the VM): `oos_daily_list`, `oos_reply_alert`, `oos_morning_summary`, and `oos_needs_you_v2` (Meta blocks a deleted name for a while, so the needs template is renamed via `WHATSAPP_TEMPLATE_NEEDS=oos_needs_you_v2`). All PENDING at submit time. `/api/whatsapp/templates` now reports the effective names.

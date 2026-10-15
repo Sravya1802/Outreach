@@ -39,7 +39,7 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
           <p className="mt-1 max-w-2xl text-[14px] text-muted">
             Each evening the day’s new roles are scored against your resume. The best ones are emailed to you at {hourLabel(s.listHour)} {tzLabel(s.timezone)} time.
             Only the roles you approve go on. {s.referralFirst ? `For each one, we ask for a referral first and apply ${s.referralWaitDays} business days later if none comes.` : 'Each one is applied to the next morning.'}
-            {!data.settings.enabled && ' Turning this on lets OutreachOS submit applications, with your tailored resume, for the roles you approve, and only those.'}
+            {!data.settings.enabled && ' Turning this on lets Scout’n’Jobs submit applications, with your tailored resume, for the roles you approve, and only those.'}
           </p>
         </div>
         <Button variant={s.enabled ? 'secondary' : 'primary'} loading={save.isPending && 'enabled' in (save.variables ?? {})}

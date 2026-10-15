@@ -8,10 +8,10 @@ import { test, expect } from '@playwright/test'
 test('unknown URL falls through the catch-all', async ({ page }) => {
   await page.goto('/this-route-does-not-exist')
   // Without a session every route renders the login screen.
-  await expect(page.getByRole('heading', { name: 'Sign in to OutreachOS', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to Scout’n’Jobs', level: 1 })).toBeVisible()
 })
 
 test('direct nav to a protected route while unauth renders the login form', async ({ page }) => {
   await page.goto('/jobs/companies')
-  await expect(page.getByRole('heading', { name: 'Sign in to OutreachOS', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to Scout’n’Jobs', level: 1 })).toBeVisible()
 })

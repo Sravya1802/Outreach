@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export const APP_NAME = 'OutreachOS'
+export const APP_NAME = 'Scout’n’Jobs'
 export const CONTACT_EMAIL = 'lakshmisravyar@gmail.com'
 export const UPDATED = 'October 15, 2026'
 

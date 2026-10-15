@@ -113,7 +113,7 @@ export default function GithubPage() {
         <section className="max-w-2xl rounded-[4px] border border-line bg-surface p-6">
           <h2 className="font-display text-[22px] font-semibold text-fg">Connect GitHub</h2>
           <p className="mt-2 text-[14px] leading-relaxed text-muted">
-            You’ll sign in on github.com. OutreachOS can then read your profile and <b className="text-fg">public</b> repos, and nothing else.
+            You’ll sign in on github.com. Scout’n’Jobs can then read your profile and <b className="text-fg">public</b> repos, and nothing else.
             It can’t see private repos or change anything. You can disconnect here any time, or revoke access in GitHub’s settings.
           </p>
           {status.data?.configured === false
@@ -153,7 +153,7 @@ export default function GithubPage() {
       <ConfirmDialog
         open={confirmDisconnect}
         title="Disconnect GitHub?"
-        description="OutreachOS forgets your repos and asks GitHub to revoke its access. Tailored resumes already made keep their projects."
+        description="Scout’n’Jobs forgets your repos and asks GitHub to revoke its access. Tailored resumes already made keep their projects."
         confirmLabel="Disconnect"
         danger
         busy={disconnect.isPending}

@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="rounded-[4px] p-1.5 text-muted hover:bg-hover hover:text-fg">
             <Menu className="size-5" />
           </button>
-          <span className="font-display text-[18px] font-semibold">OutreachOS</span>
+          <span className="font-display text-[18px] font-semibold">Scout’n’Jobs</span>
         </div>
         <SectionTabs />
       </header>

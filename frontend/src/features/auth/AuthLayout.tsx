@@ -5,7 +5,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
     <div className="flex min-h-full flex-col items-center justify-center bg-canvas px-4 py-12 text-fg">
       <div className="w-full max-w-[400px]" style={{ animation: 'ui-slide-up 200ms ease-out' }}>
         <div className="mb-8 flex flex-col items-center text-center">
-          <span className="mb-6 font-display text-[26px] font-semibold tracking-tight">OutreachOS</span>
+          <span className="mb-6 font-display text-[26px] font-semibold tracking-tight">Scout’n’Jobs</span>
           <h1 className="font-display text-[28px] leading-tight font-normal tracking-tight">{title}</h1>
           {subtitle && <p className="mt-2 text-[14px] text-muted">{subtitle}</p>}
         </div>

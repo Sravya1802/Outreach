@@ -143,7 +143,7 @@ export default function DetailsPage() {
           <section aria-labelledby="sec-consent" className="border-t border-rule pt-5">
             <h2 id="sec-consent" className="mb-4 font-display text-[22px] font-semibold text-fg">Permission</h2>
             <Toggle checked={values.auto_apply_consent === '1'} onChange={on => set('auto_apply_consent')(on ? '1' : '0')}
-              label="Let OutreachOS submit applications for me"
+              label="Let Scout’n’Jobs submit applications for me"
               description="Only roles on your daily plan, after the plan has been sent to you. You can turn this off at any time." />
           </section>
 

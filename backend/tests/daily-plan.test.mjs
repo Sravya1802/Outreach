@@ -52,7 +52,7 @@ test('evening email lists the top roles and says what happens next', () => {
     ],
     stats: { excluded: 2 }, settings, date: '2026-10-15', firstName: 'Sravya',
   });
-  assert.equal(mail.subject, '[OutreachOS] 1 role to approve tonight · Thu, Oct 15');
+  assert.equal(mail.subject, '[Scout’n’Jobs] 1 role to approve tonight · Thu, Oct 15');
   assert.match(mail.text, /^Good evening, Sravya\. 1 new role scored 9 or higher today\./);
   assert.match(mail.text, /9\.4 {2}Ramp · SWE Intern · New York · \$55\/hr · Sponsors visas/);
   assert.match(mail.text, /ask someone at the company for a referral tomorrow morning, and apply 2 business days later/);

@@ -111,14 +111,14 @@ function ConnectForm({ email, setEmail, password, setPassword, name, setName, su
 }) {
   return (
     <Card>
-      <CardHeader title="Your Gmail isn’t connected yet" description="Emails go out from your own address, so replies land in your inbox. OutreachOS reads only replies to what it sent, plus LinkedIn’s notification emails." />
+      <CardHeader title="Your Gmail isn’t connected yet" description="Emails go out from your own address, so replies land in your inbox. Scout’n’Jobs reads only replies to what it sent, plus LinkedIn’s notification emails." />
       <CardBody>
         <ol className="mb-6 space-y-2 text-[14px] leading-relaxed text-muted">
           <li><b className="font-medium text-fg">1.</b> Turn on 2-Step Verification for your Google account, if it isn’t on.</li>
           <li>
             <b className="font-medium text-fg">2.</b> Open{' '}
             <a href={APP_PASSWORDS_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">Google app passwords <ExternalLink className="size-3" /></a>,
-            name it “OutreachOS” and click Create.
+            name it “Scout’n’Jobs” and click Create.
           </li>
           <li><b className="font-medium text-fg">3.</b> Copy the 16-letter password Google shows and paste it below. It’s stored encrypted, and you can revoke it at Google any time.</li>
         </ol>

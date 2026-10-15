@@ -74,7 +74,7 @@ export function payFromLever(p) {
 }
 
 async function getJson(url, fetchImpl) {
-  const res = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'OutreachOS job catalog' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  const res = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'Scout’n’Jobs job catalog' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();

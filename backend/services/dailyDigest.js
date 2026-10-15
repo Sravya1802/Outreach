@@ -64,7 +64,7 @@ function digestHtml(d, { windowDays = 1, unsubscribeNote = true } = {}) {
       <div style="flex:1;background:#faf5ff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:#7c3aed">${d.companies}</div><div style="font-size:12px;color:#475569">Companies</div></div>
     </div>
     ${d.sample.length ? `<table style="width:100%;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden">${rows}</table>` : '<p style="color:#94a3b8">No matching new roles in this window.</p>'}
-    <p style="color:#94a3b8;font-size:11px;margin-top:16px">Sources: ${sources || '—'}. Sent by OutreachOS Job Alerts.${unsubscribeNote ? ' Manage or unsubscribe from the dashboard.' : ''}</p>
+    <p style="color:#94a3b8;font-size:11px;margin-top:16px">Sources: ${sources || '—'}. Sent by Scout’n’Jobs Job Alerts.${unsubscribeNote ? ' Manage or unsubscribe from the dashboard.' : ''}</p>
   </div>`;
 }
 

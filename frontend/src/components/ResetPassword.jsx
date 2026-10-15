@@ -46,7 +46,7 @@ export default function ResetPassword() {
       <div style={{ background:'#fff', borderRadius:16, padding:'40px 36px', width:'100%', maxWidth:420, boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
         <div style={{ textAlign:'center', marginBottom:24 }}>
           <div style={{ fontSize:22, fontWeight:800, color:'#0f172a', marginBottom:6 }}>
-            <span style={{ color:'#6366f1' }}>◈</span> OutreachOS
+            <span style={{ color:'#6366f1' }}>◈</span> Scout’n’Jobs
           </div>
           <div style={{ fontSize:13, color:'#64748b' }}>Set a new password</div>
         </div>

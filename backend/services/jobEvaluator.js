@@ -99,7 +99,7 @@ async function fetchWorkdayJD(jobUrl) {
   // Helper: given a CXS URL, try GET it and parse the description.
   async function fetchAndParse(apiUrl) {
     const res = await fetch(apiUrl, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OutreachOS/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!res.ok) return { status: res.status };
@@ -130,7 +130,7 @@ async function fetchWorkdayJD(jobUrl) {
       const searchUrl = `${u.protocol}//${u.hostname}/wday/cxs/${tenant}/${site}/jobs`;
       const searchRes = await fetch(searchUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OutreachOS/1.0' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
         body: JSON.stringify({ searchText: jobReqId, limit: 5, offset: 0 }),
         signal: AbortSignal.timeout(10000),
       });
@@ -171,7 +171,7 @@ async function fetchAshbyJD(jobUrl) {
     const jobId = parts[1];
     if (!org || !jobId) return null;
     const res = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(org)}?includeCompensation=true`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OutreachOS/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;
@@ -200,7 +200,7 @@ async function fetchGreenhouseJD(jobUrl) {
     if (!m) return null;
     const [, board, id] = m;
     const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${id}?content=true`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OutreachOS/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;
@@ -227,7 +227,7 @@ async function fetchLeverJD(jobUrl) {
     if (!m) return null;
     const [, org, id] = m;
     const res = await fetch(`https://api.lever.co/v0/postings/${encodeURIComponent(org)}/${encodeURIComponent(id)}?mode=json`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OutreachOS/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!res.ok) return null;

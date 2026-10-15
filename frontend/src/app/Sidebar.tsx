@@ -27,7 +27,7 @@ export function Sidebar({ onOpenPalette, onNavigate }: { onOpenPalette: () => vo
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 items-center gap-2 px-4">
-        <span className="font-display text-[18px] font-semibold tracking-tight text-fg">OutreachOS</span>
+        <span className="font-display text-[18px] font-semibold tracking-tight text-fg">Scout’n’Jobs</span>
       </div>
 
       <div className="px-3 pb-2">

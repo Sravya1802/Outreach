@@ -45,7 +45,7 @@ export default function WhatsAppPage() {
 function NotSetUp() {
   return (
     <Card>
-      <CardHeader title="Not set up yet" description="WhatsApp needs OutreachOS’s business number connected on the server first. The steps are below." />
+      <CardHeader title="Not set up yet" description="WhatsApp needs Scout’n’Jobs’s business number connected on the server first. The steps are below." />
     </Card>
   )
 }
@@ -62,14 +62,14 @@ function Link({ s }: { s: WhatsAppStatus }) {
   const link = join.data?.link ?? (s.businessNumber && code ? `https://wa.me/${s.businessNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`JOIN ${code}`)}` : null)
   return (
     <Card>
-      <CardHeader title="Link your WhatsApp" description="You send one message from your phone. That proves the number is yours and lets OutreachOS message you." />
+      <CardHeader title="Link your WhatsApp" description="You send one message from your phone. That proves the number is yours and lets Scout’n’Jobs message you." />
       <CardBody className="space-y-4">
         {!code ? (
           <Button variant="primary" icon={<MessageCircle className="size-4" />} loading={join.isPending} onClick={() => join.mutate()}>Get my code</Button>
         ) : (
           <>
             <p className="text-[14px] text-muted">
-              Send <b className="font-mono text-fg">JOIN {code}</b> to <b className="text-fg">{s.businessNumber || 'the OutreachOS number'}</b> on WhatsApp. The code works for 30 minutes.
+              Send <b className="font-mono text-fg">JOIN {code}</b> to <b className="text-fg">{s.businessNumber || 'the Scout’n’Jobs number'}</b> on WhatsApp. The code works for 30 minutes.
             </p>
             <div className="flex flex-wrap gap-2">
               {link && <a href={link} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-[4px] bg-accent px-4 text-[14px] font-semibold text-on-accent hover:bg-accent-hover"><MessageCircle className="size-4" /> Open WhatsApp with the message</a>}
@@ -119,14 +119,14 @@ function Linked({ s }: { s: WhatsAppStatus }) {
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Reply to OutreachOS" description="Send these to the OutreachOS number any time." />
+        <CardHeader title="Reply to Scout’n’Jobs" description="Send these to the Scout’n’Jobs number any time." />
         <CardBody>
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[14px]">
             {COMMANDS.map(([c, d]) => <div key={c} className="contents"><dt className="font-mono text-fg">{c}</dt><dd className="text-muted">{d}</dd></div>)}
           </dl>
         </CardBody>
       </Card>
-      <ConfirmDialog open={confirm} title="Unlink WhatsApp?" description="OutreachOS stops messaging this number. You can link again any time."
+      <ConfirmDialog open={confirm} title="Unlink WhatsApp?" description="Scout’n’Jobs stops messaging this number. You can link again any time."
         confirmLabel="Unlink" danger busy={unlink.isPending} onConfirm={() => unlink.mutate()} onCancel={() => setConfirm(false)} />
     </>
   )
@@ -139,7 +139,7 @@ function OwnerSetup({ configured }: { configured: boolean }) {
   const webhook = 'https://outreach-jt.duckdns.org/api/whatsapp/webhook'
   return (
     <Card>
-      <CardHeader title="Set up the business number" description={configured ? 'Done. Kept here for reference.' : 'One-time, for whoever runs OutreachOS.'}
+      <CardHeader title="Set up the business number" description={configured ? 'Done. Kept here for reference.' : 'One-time, for whoever runs Scout’n’Jobs.'}
         actions={<Button size="sm" variant="ghost" onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Show'}</Button>} />
       {open && (
         <CardBody className="space-y-4 text-[14px] leading-relaxed text-muted">

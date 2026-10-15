@@ -1,4 +1,4 @@
-# OutreachOS 🚀
+# Scout’n’Jobs 🚀
 
 **AI-powered internship job search automation** — Evaluate companies, track applications, and auto-apply with intelligent resume tailoring.
 
@@ -152,7 +152,7 @@ npm run lint --prefix frontend
 
 ## 🗺️ Geographic scope
 
-**OutreachOS is intentionally US-focused.** It targets US-based internships and assumes US work authorization, so:
+**Scout’n’Jobs is intentionally US-focused.** It targets US-based internships and assumes US work authorization, so:
 
 - Scrapers pass `countryCode=US` / `location=United States` to LinkedIn, Wellfound, etc.
 - The Greenhouse / Lever / Ashby portal scanner drops non-US roles.

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OutreachOS backend DB module — Postgres (Supabase) via node-postgres.
+// Scout’n’Jobs backend DB module — Postgres (Supabase) via node-postgres.
 //
 // Replaces the original better-sqlite3 version. Same logical responsibility
 // (app-wide singleton Pool + convenience helpers) but the helpers are async.

@@ -200,7 +200,7 @@ export async function websiteEmails(domain) {
   const pages = await Promise.allSettled(STAFF_PATHS.map(async (p) => {
     const { res, text } = await safeFetch(`https://${host}${p}`, {
       timeoutMs: 8000, maxBytes: 2 * 1024 * 1024,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OutreachOS/1.0)', Accept: 'text/html' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Scout’n’Jobs/1.0)', Accept: 'text/html' },
     });
     return res.ok ? text() : '';
   }));

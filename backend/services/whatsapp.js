@@ -1,5 +1,5 @@
 /**
- * whatsapp.js — Meta's WhatsApp Cloud API, from one OutreachOS business number.
+ * whatsapp.js — Meta's WhatsApp Cloud API, from one Scout’n’Jobs business number.
  *
  * Linking: the user gets a code in Integrations → WhatsApp and sends
  * "JOIN <code>" to the business number. That proves the phone is theirs and
@@ -29,22 +29,22 @@ const WINDOW_MS = 23 * 3600_000; // stay inside Meta's 24 hours
 export const WHATSAPP_TEMPLATES = {
   list: {
     name: 'oos_daily_list',
-    text: 'Your OutreachOS list for {{1}} has {{2}} roles to approve: {{3}}. Open {{4}} for details, or reply YES to approve all or YES 1 3 to approve some.',
+    text: 'Your Scout’n’Jobs list for {{1}} has {{2}} roles to approve: {{3}}. Open {{4}} for details, or reply YES to approve all or YES 1 3 to approve some.',
     example: ['Thu, Oct 15', '3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
   reply: {
     name: 'oos_reply_alert',
-    text: 'New reply on OutreachOS: {{1}} from {{2}} wrote "{{3}}". Open Gmail to answer them.',
+    text: 'New reply on Scout’n’Jobs: {{1}} from {{2}} wrote "{{3}}". Open Gmail to answer them.',
     example: ['Ana Lee', 'Ramp', 'Happy to chat on Thursday'],
   },
   needs: {
     name: 'oos_needs_you',
-    text: 'OutreachOS: {{1}} of your approved roles need you: {{2}}. Open {{3}} to take care of them.',
+    text: 'Scout’n’Jobs: {{1}} of your approved roles need you: {{2}}. Open {{3}} to take care of them.',
     example: ['2', 'Ramp: resume scored 84% · Stripe: enter your referral code', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
   summary: {
     name: 'oos_morning_summary',
-    text: 'Your OutreachOS summary for today: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Open {{4}} for the details.',
+    text: 'Your Scout’n’Jobs summary for today: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Open {{4}} for the details.',
     example: ['2', '1', '3', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
 };
@@ -227,7 +227,7 @@ export async function unlink(userId) {
 export async function sendTest(userId) {
   const link = await linkFor(userId);
   if (!link?.verified_at) throw Object.assign(new Error('Link WhatsApp first.'), { status: 400 });
-  const text = 'OutreachOS test: WhatsApp is working. You’ll get your 10 PM list, reply alerts, roles that need you, and the morning summary here. Reply HELP for commands.';
+  const text = 'Scout’n’Jobs test: WhatsApp is working. You’ll get your 10 PM list, reply alerts, roles that need you, and the morning summary here. Reply HELP for commands.';
   return inWindow(link)
     ? sendText(userId, link.phone, text, 'test')
     : sendTemplate(userId, link.phone, 'summary', ['0', '0', '0', `${SITE}/applications/auto-apply`]);
@@ -248,7 +248,7 @@ export function listMessage(items, date) {
   const short = items.map((i, n) => `${n + 1}) ${i.company_name} · ${i.title} · ${Number(i.score).toFixed(1)}`).join('  ');
   const link = `${SITE}/applications/auto-apply`;
   const text = [
-    `Your OutreachOS list for ${day}: ${items.length} role${items.length === 1 ? '' : 's'} to approve.`,
+    `Your Scout’n’Jobs list for ${day}: ${items.length} role${items.length === 1 ? '' : 's'} to approve.`,
     '',
     ...items.map((i, n) => `${n + 1}) ${i.company_name} · ${i.title} · ${Number(i.score).toFixed(1)}${i.location ? `\n   ${i.location}` : ''}${i.reason ? `\n   ${i.reason}` : ''}`),
     '',
@@ -282,7 +282,7 @@ const hourText = (h) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
 
 export function welcomeMessage(listHour = 22) {
   return [
-    '✅ *You’re connected to OutreachOS*',
+    '✅ *You’re connected to Scout’n’Jobs*',
     '',
     'I’ll message you here when:',
     `• your evening list is ready (${hourText(listHour)})`,
@@ -314,7 +314,7 @@ export async function handleInbound(from, text) {
   const c = parseCommand(text);
   if (c?.cmd === 'join') {
     const pending = await one("SELECT * FROM whatsapp_links WHERE join_code = $1 AND join_code_expires > NOW()", [c.code]);
-    if (!pending) return reply(null, phone, 'That code has expired or isn’t right. Get a new one in OutreachOS → Integrations → WhatsApp.');
+    if (!pending) return reply(null, phone, 'That code has expired or isn’t right. Get a new one in Scout’n’Jobs → Integrations → WhatsApp.');
     await run('UPDATE whatsapp_links SET phone = NULL, verified_at = NULL WHERE phone = $1 AND user_id <> $2', [phone, pending.user_id]);
     await run('UPDATE whatsapp_links SET phone = $2, verified_at = NOW(), enabled = true, join_code = NULL, join_code_expires = NULL, last_inbound_at = NOW() WHERE user_id = $1', [pending.user_id, phone]);
     const { getSettings } = await import('./dailyPlan.js');
@@ -322,7 +322,7 @@ export async function handleInbound(from, text) {
     return reply(pending.user_id, phone, welcomeMessage(listHour));
   }
   const link = await one('SELECT * FROM whatsapp_links WHERE phone = $1 AND verified_at IS NOT NULL', [phone]);
-  if (!link) return reply(null, phone, `This number isn’t linked to OutreachOS. Get a code in ${SITE}/integrations/whatsapp and send JOIN <code>.`);
+  if (!link) return reply(null, phone, `This number isn’t linked to Scout’n’Jobs. Get a code in ${SITE}/integrations/whatsapp and send JOIN <code>.`);
   await run('UPDATE whatsapp_links SET last_inbound_at = NOW() WHERE user_id = $1', [link.user_id]);
   const userId = link.user_id;
   if (!c) return reply(userId, phone, chatReply(text));

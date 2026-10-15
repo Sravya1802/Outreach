@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OutreachOS frontend → backend API client.
+// Scout’n’Jobs frontend → backend API client.
 //
 // Every route hits the Express backend at VITE_API_URL (Oracle VM in prod,
 // '' in dev for vite proxy). No direct Supabase table access — the backend

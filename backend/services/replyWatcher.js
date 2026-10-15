@@ -189,8 +189,8 @@ async function notify(userId, events) {
   const subject = events.length === 1
     ? (first.kind === 'reply' ? `${first.contact?.name || first.fromName || 'Someone'} replied` : lines[0].slice(0, 90))
     : `${events.length} updates on your outreach`;
-  const text = `${lines.join('\n\n')}\n\nSee everything: ${SITE}/outreach/outbox\n\n(OutreachOS sent this from your own Gmail.)`;
-  await sendToSelf(userId, { subject: `[OutreachOS] ${subject}`, text });
+  const text = `${lines.join('\n\n')}\n\nSee everything: ${SITE}/people/outbox\n\n(Scout’n’Jobs sent this from your own Gmail.)`;
+  await sendToSelf(userId, { subject: `[Scout’n’Jobs] ${subject}`, text });
   for (const e of events.filter(x => x.kind === 'reply' || x.kind === 'linkedin_message')) {
     const who = e.contact?.name || e.fromName || 'Someone';
     const company = e.contact?.company_name || 'a company';

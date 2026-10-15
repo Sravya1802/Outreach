@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Playwright config — OutreachOS e2e tests.
+// Playwright config — Scout’n’Jobs e2e tests.
 //
 // PR-A landed the harness + landing page smoke test (auth.spec.js).
 // PR-B adds:

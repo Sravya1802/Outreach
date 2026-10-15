@@ -12,7 +12,7 @@ import { test, expect } from '@playwright/test'
 test('landing page shows login form', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { name: 'Sign in to OutreachOS', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to Scout’n’Jobs', level: 1 })).toBeVisible()
 
   // Email + password inputs are labelled and interactable.
   const email = page.getByLabel('Email')
@@ -42,5 +42,5 @@ test('login switches between sign-in modes', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
   await expect(page.getByLabel('Password')).toHaveCount(0)
   await page.getByRole('button', { name: 'Back to sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Sign in to OutreachOS' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to Scout’n’Jobs' })).toBeVisible()
 })

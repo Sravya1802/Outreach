@@ -40,7 +40,7 @@ export async function sendMail({ to, subject, html, text }) {
   const recipient = to || notifyRecipient();
   if (!recipient) return { skipped: true, reason: 'no_recipient' };
   const info = await t.sendMail({
-    from: `OutreachOS <${process.env.GMAIL_USER}>`,
+    from: `Scout’n’Jobs <${process.env.GMAIL_USER}>`,
     to: recipient,
     subject,
     text: text || undefined,

@@ -291,15 +291,15 @@ export function planEmail({ items, stats, settings, date, firstName }) {
     <td style="padding:14px 0;border-bottom:1px solid #dcd7cb"><b>${esc(i.company_name)}</b> · ${esc(i.title)}<br>
     <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span></td></tr>`).join('');
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:640px;margin:0 auto;padding:24px">
-    <p style="font-size:20px;font-weight:600;margin:0 0 16px">OutreachOS</p>
+    <p style="font-size:20px;font-weight:600;margin:0 0 16px">Scout’n’Jobs</p>
     <h1 style="font-size:24px;font-weight:500;margin:0 0 10px">${esc(text.split('\n')[0])}</h1>
     ${top.length ? `<p style="font-size:15px;line-height:1.6;color:#4f525a">${esc(when)} Anything you don't approve isn't sent.</p>
     <p style="margin:18px 0"><a href="${link}" style="background:#1f3bc4;color:#fff;padding:11px 18px;border-radius:4px;text-decoration:none;font-weight:600">Review and approve</a></p>
     <table style="width:100%;border-collapse:collapse;border-top:1px solid #17181a">${rows}</table>` : ''}
     ${worth.length ? `<p style="font-size:14px;color:#4f525a;margin-top:20px"><b>Also worth a look:</b> ${worth.length} role${worth.length === 1 ? '' : 's'} scored 7.0–${(settings.minScore - 0.1).toFixed(1)}. They're on the site.</p>` : ''}
     ${stats.excluded ? `<p style="font-size:14px;color:#4f525a"><b>Left out:</b> ${stats.excluded} (sponsorship, or a company you applied to recently).</p>` : ''}
-    <p style="font-size:12px;color:#6a6d75;margin-top:24px">Nothing is applied without your approval. Sent from your own Gmail by OutreachOS. Change the time or turn this off on the Auto-apply page.</p></div>`;
-  return { subject: `[OutreachOS] ${subject}`, text, html };
+    <p style="font-size:12px;color:#6a6d75;margin-top:24px">Nothing is applied without your approval. Sent from your own Gmail by Scout’n’Jobs. Change the time or turn this off on the Auto-apply page.</p></div>`;
+  return { subject: `[Scout’n’Jobs] ${subject}`, text, html };
 }
 
 export async function emailPlan(userId, planId) {

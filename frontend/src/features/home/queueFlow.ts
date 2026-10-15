@@ -151,7 +151,7 @@ export function whatsappSteps(w?: WhatsAppStatus): FlowStep[] {
     !linked ? { count: 0, countLabel: 'link your phone first', state: 'idle' } : on(k) ? { count: 1, countLabel: 'on', state: 'busy' } : { count: 0, countLabel: 'off', state: 'idle' }
   return [
     { id: 'wa-link', title: 'Link your phone', to: '/integrations/whatsapp',
-      explain: 'Integrations → WhatsApp gives you a code. Send “JOIN” and the code to the OutreachOS number from your phone. That proves the number is yours.',
+      explain: 'Integrations → WhatsApp gives you a code. Send “JOIN” and the code to the Scout’n’Jobs number from your phone. That proves the number is yours.',
       count: linked ? 1 : 0,
       countLabel: !w ? '…' : !w.configured ? 'not available yet' : linked ? `linked${w.phone ? ` · ${w.phone}` : ''}` : 'not linked',
       state: !w?.configured ? 'idle' : linked ? 'busy' : 'you' },

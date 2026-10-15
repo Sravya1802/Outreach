@@ -43,8 +43,8 @@ router.delete('/connection', async (req, res) => {
 router.post('/test', async (req, res) => {
   try {
     const r = await sendToSelf(req.user.id, {
-      subject: '[OutreachOS] Your Gmail is connected',
-      text: 'This is a test from OutreachOS, sent from your own Gmail to yourself.\n\nOutreach emails, follow-ups, your evening list and reply alerts will come from this account.',
+      subject: '[Scout’n’Jobs] Your Gmail is connected',
+      text: 'This is a test from Scout’n’Jobs, sent from your own Gmail to yourself.\n\nOutreach emails, follow-ups, your evening list and reply alerts will come from this account.',
     });
     if (r.skipped) return res.status(400).json({ error: 'Connect your Gmail first.' });
     res.json(r);

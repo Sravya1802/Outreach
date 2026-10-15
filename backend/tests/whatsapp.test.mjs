@@ -38,7 +38,7 @@ test('list message numbers roles the way YES 1 3 reads them', () => {
   assert.equal(m.params[0], 'Thu, Oct 15');
   assert.equal(m.params[1], '2');
   assert.equal(m.params[2], '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1');
-  assert.match(m.text, /^Your OutreachOS list for Thu, Oct 15: 2 roles to approve\./);
+  assert.match(m.text, /^Your Scout’n’Jobs list for Thu, Oct 15: 2 roles to approve\./);
   assert.match(m.text, /1\) Ramp · SWE Intern · 9\.4\n {3}New York\n {3}Kafka match/);
   assert.match(m.text, /Reply YES to approve all, YES 1 3/);
 });
@@ -68,7 +68,7 @@ test('every template has as many example values as placeholders', () => {
 
 test('welcome and small talk', () => {
   const w = welcomeMessage(21);
-  assert.match(w, /^✅ \*You’re connected to OutreachOS\*/);
+  assert.match(w, /^✅ \*You’re connected to Scout’n’Jobs\*/);
   assert.match(w, /evening list is ready \(9 PM\)/);
   assert.match(w, /\*YES 1 3\*  approve only those numbers/);
   assert.match(chatReply('thank you'), /^You’re welcome!/);

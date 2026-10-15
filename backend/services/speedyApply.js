@@ -113,7 +113,7 @@ export function parseSpeedyApplyMarkdown(md, { roleType, region = 'usa', repo = 
 export async function discoverRepos({ fetchImpl = fetch, now = new Date() } = {}) {
   try {
     const res = await fetchImpl(`https://api.github.com/orgs/${ORG}/repos?per_page=100`, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'OutreachOS' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Scout’n’Jobs' },
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
@@ -138,7 +138,7 @@ export async function fetchSpeedyApplyListings({ includeInternational = true, fe
   await Promise.all(targets.map(async ({ repo, file, roleType, usa }) => {
     try {
       const res = await fetchImpl(`https://raw.githubusercontent.com/${ORG}/${repo}/main/${file}`, {
-        headers: { 'User-Agent': 'OutreachOS' },
+        headers: { 'User-Agent': 'Scout’n’Jobs' },
         signal: AbortSignal.timeout(20_000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

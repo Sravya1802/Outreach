@@ -11,7 +11,7 @@ import { useOAuthProviders, type OAuthProvider } from './providers'
 type Mode = 'signin' | 'signup' | 'magic' | 'forgot'
 
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = {
-  signin: { title: 'Sign in to OutreachOS', subtitle: 'Your internship and new-grad job search, automated.', submit: 'Sign in' },
+  signin: { title: 'Sign in to Scout’n’Jobs', subtitle: 'Your internship and new-grad job search, automated.', submit: 'Sign in' },
   signup: { title: 'Create your account', subtitle: 'Free while in beta. Roles, alerts and auto-apply follow the country you pick.', submit: 'Create account' },
   magic: { title: 'Sign in with a link', subtitle: 'We’ll email you a one-time sign-in link.', submit: 'Email me a link' },
   forgot: { title: 'Reset your password', subtitle: 'We’ll email you a link to choose a new one.', submit: 'Send reset link' },

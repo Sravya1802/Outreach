@@ -65,8 +65,8 @@ export async function saveSettings(userId, patch) {
   // Turning the list on is the user's consent to apply to the roles they approve.
   if (next.enabled) {
     await run(
-      `INSERT INTO user_profile (user_id, auto_apply_consent) VALUES ($1, true)
-       ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE SET auto_apply_consent = true`,
+      `INSERT INTO user_profile (user_id, auto_apply_consent) VALUES ($1, 1)
+       ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE SET auto_apply_consent = 1`,
       [userId],
     );
   }

@@ -23,7 +23,7 @@
 import crypto from 'crypto';
 import { all, one, run } from '../db.js';
 
-const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://outreach-jt.vercel.app').replace(/\/+$/, '');
+const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 const WINDOW_MS = 23 * 3600_000; // stay inside Meta's 24 hours
 
 export const WHATSAPP_TEMPLATES = {

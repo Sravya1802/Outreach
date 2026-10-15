@@ -27,7 +27,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://outreach-jt.vercel.app',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://scoutnjobs.vercel.app',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

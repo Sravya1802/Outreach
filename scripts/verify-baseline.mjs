@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BACKEND_URL  = process.env.BACKEND_URL  || 'https://outreach-jt.duckdns.org'
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://outreach-jt.vercel.app'
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://scoutnjobs.vercel.app'
 
 // Audit-flagged endpoints. Each entry says: how to call it, what the pre-fix
 // status looks like, and what proves the fix is live.

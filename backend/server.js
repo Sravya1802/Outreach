@@ -53,7 +53,7 @@ import { mailerConfigured } from './services/mailer.js';
 const app = express();
 
 // ── CORS — allow local dev + configured production frontend origin(s) ──────
-// Single origin: set FRONTEND_ORIGIN=https://outreach-jt.vercel.app
+// Single origin: set FRONTEND_ORIGIN=https://scoutnjobs.vercel.app
 // Multiple origins (e.g. preview URLs): set CORS_ORIGINS="https://a.vercel.app,https://b.vercel.app"
 const DEFAULT_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 const envOrigins = (process.env.CORS_ORIGINS || '')

@@ -32,7 +32,7 @@ Production runs across three free-tier services:
 ```
 ┌──────────────────────────┐   HTTPS    ┌───────────────────────────┐
 │ Vercel (frontend)        │ ─────────▶ │ Oracle Cloud Always Free  │
-│ outreach-jt.vercel.app   │            │ VM, Ubuntu 22.04 ARM      │
+│ scoutnjobs.vercel.app   │            │ VM, Ubuntu 22.04 ARM      │
 │ React 19 + Vite SPA      │            │ Express + pm2 + nginx     │
 └──────────────────────────┘            │ Playwright + Let's Encrypt│
                                          └─────────────┬─────────────┘
@@ -84,7 +84,7 @@ DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-1-<region>.pooler.supaba
 AI_PROVIDER=openai
 OPENAI_API_KEY=...
 # Optional
-FRONTEND_ORIGIN=https://outreach-jt.vercel.app
+FRONTEND_ORIGIN=https://scoutnjobs.vercel.app
 CORS_ORIGINS=https://preview-a.vercel.app,https://preview-b.vercel.app  # comma-separated
 APIFY_API_TOKEN=... SERPER_API_KEY=... APOLLO_API_KEY=... HUNTER_API_KEY=...
 LINKEDIN_SESSION_COOKIE=... PROSPEO_API_KEY=...

@@ -171,7 +171,7 @@ async function applyEvent(userId, e) {
   }
 }
 
-const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://outreach-jt.vercel.app').replace(/\/+$/, '');
+const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 
 export function describeEvent(e) {
   const who = e.contact?.name || e.fromName || 'Someone';

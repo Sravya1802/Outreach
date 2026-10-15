@@ -38,7 +38,7 @@ test('list message numbers roles the way YES 1 3 reads them', () => {
   assert.equal(m.params.header, 'Thu, Oct 15');
   assert.deepEqual(m.params.body, ['2', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1']);
   assert.match(m.text, /^\*Tonight’s list · Thu, Oct 15\*\nHello,\n2 roles scored 9\+ today:/);
-  assert.match(m.text, /1\) \*Ramp\* · SWE Intern · 9\.4\n {3}New York\n {3}_Kafka match_/);
+  assert.match(m.text, /\*1\)\*\nCompany: \*Ramp\*\nRole: SWE Intern\nScore: 9\.4\/10\nWhere: New York\nWhy: _Kafka match_\n/);
   assert.match(m.text, /Reply \*YES\* to approve all, or \*YES 1 3\*/);
   assert.match(m.text, /Good luck! ;\)$/);
 });

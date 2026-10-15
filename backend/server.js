@@ -31,6 +31,7 @@ import scrapedRolesRouter from './routes/scrapedRoles.js';
 import alertsRouter        from './routes/alerts.js';
 import profileRouter from './routes/profile.js';
 import githubRouter, { githubCallback } from './routes/github.js';
+import whatsappRouter, { webhookVerify as whatsappWebhookVerify, webhookReceive as whatsappWebhookReceive } from './routes/whatsapp.js';
 import resumeEngineRouter from './routes/resumeEngine.js';
 import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
@@ -72,7 +73,8 @@ const CORS_ORIGINS = [...new Set([
 app.set('trust proxy', 1);
 
 app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+// Keep the raw body for webhooks that sign it (WhatsApp).
+app.use(express.json({ limit: '10mb', verify: (req, _res, buf) => { if (req.originalUrl?.startsWith('/api/whatsapp/webhook')) req.rawBody = buf; } }));
 
 app.use('/api', rateLimit({ windowMs: 60_000, max: 200, standardHeaders: true, legacyHeaders: false }));
 
@@ -101,6 +103,8 @@ app.get('/api/health', (req, res) => {
 // GitHub's OAuth redirect lands with no app session; the signed `state`
 // parameter identifies the user instead.
 app.get('/api/github/callback', githubCallback);
+app.get('/api/whatsapp/webhook', whatsappWebhookVerify);
+app.post('/api/whatsapp/webhook', whatsappWebhookReceive);
 
 // ── Auth middleware for everything else under /api ──────────────────────────
 // Controlled by AUTH_MODE env var. See backend/middleware/requireAuth.js.
@@ -128,6 +132,7 @@ app.use('/api/resume-engine', resumeEngineRouter);
 app.use('/api/gmail', gmailRouter);
 app.use('/api/daily-plan', dailyPlanRouter);
 app.use('/api/messages', messagesRouter);
+app.use('/api/whatsapp', whatsappRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

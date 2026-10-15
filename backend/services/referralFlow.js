@@ -22,6 +22,7 @@ import { connectionsAt, companyKey } from './linkedinConnections.js';
 import { scheduleEmail, scheduleThreadNote } from './outbox.js';
 import { businessDaysLater, nextSendSlot, partsIn } from './sendWindow.js';
 import { sendToSelf } from './gmail.js';
+import { notify as whatsappNotify } from './whatsapp.js';
 import { detectPlatform } from './resumeRegistry.js';
 
 const SITE = process.env.FRONTEND_URL || 'https://outreach-jt.vercel.app';
@@ -339,6 +340,10 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
     subject: `[OutreachOS] Today: ${applied.length} applied${needsYou.length ? ` · ${needsYou.length} need you` : ''}`,
     text: `${lines.join('\n\n')}\n\nOpen your plan: ${SITE}/applications/auto-apply`,
   }).catch(() => ({ skipped: true }));
+  await whatsappNotify(userId, 'summary', {
+    params: [String(applied.length), String(needsYou.length), String(toSend.length), `${SITE}/applications/auto-apply`],
+    text: `Today in OutreachOS\n\n${lines.join('\n\n')}\n\n${SITE}/applications/auto-apply`,
+  }).catch(() => {});
   if (r.ok || r.skipped) await mark();
   return r;
 }

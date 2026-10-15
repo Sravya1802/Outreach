@@ -13,6 +13,7 @@
 import { all, one, run } from '../db.js';
 import { connectionFor, friendlyGmailError, imapClient, markError, sendToSelf } from './gmail.js';
 import { cancelForContact } from './outbox.js';
+import { notify as whatsappNotify } from './whatsapp.js';
 
 const LOOKBACK_DAYS = 2;
 const MAX_MESSAGES = 400;
@@ -190,6 +191,14 @@ async function notify(userId, events) {
     : `${events.length} updates on your outreach`;
   const text = `${lines.join('\n\n')}\n\nSee everything: ${SITE}/outreach/outbox\n\n(OutreachOS sent this from your own Gmail.)`;
   await sendToSelf(userId, { subject: `[OutreachOS] ${subject}`, text });
+  for (const e of events.filter(x => x.kind === 'reply' || x.kind === 'linkedin_message')) {
+    const who = e.contact?.name || e.fromName || 'Someone';
+    const company = e.contact?.company_name || 'a company';
+    await whatsappNotify(userId, 'reply', {
+      params: [who, company, e.kind === 'linkedin_message' ? 'sent you a LinkedIn message' : (e.snippet || e.subject || '')],
+      text: describeEvent(e),
+    }).catch(() => {});
+  }
 }
 
 let busy = false;

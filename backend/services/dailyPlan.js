@@ -21,6 +21,7 @@ import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring } from './resumeEngine.js';
 import { advanceReferrals, asksFor, maybeSendSummary } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
+import { notify as whatsappNotify, sendPlanList } from './whatsapp.js';
 
 const KEY = 'daily_plan_settings';
 const SITE = process.env.FRONTEND_URL || 'https://outreach-jt.vercel.app';
@@ -399,6 +400,22 @@ export async function advanceUser(userId) {
   }
 }
 
+/** One WhatsApp message for roles that newly need the user. */
+export async function notifyNeedsYou(userId) {
+  const fresh = await all(
+    "SELECT id, company_name, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'needs_you' AND whatsapp_needs_at IS NULL ORDER BY decided_at",
+    [userId],
+  );
+  if (!fresh.length) return { skipped: 'none' };
+  await run('UPDATE plan_items SET whatsapp_needs_at = NOW() WHERE id = ANY($1)', [fresh.map(f => f.id)]);
+  const short = fresh.map(f => `${f.company_name}: ${String(f.stage_note || 'needs you').split('.')[0]}`).join(' · ');
+  const link = `${SITE}/applications/auto-apply`;
+  return whatsappNotify(userId, 'needs', {
+    params: [String(fresh.length), short, link],
+    text: `${fresh.length} of your approved roles need you:\n\n${fresh.map(f => `• ${f.company_name}: ${f.stage_note || 'needs you'}`).join('\n')}\n\n${link}`,
+  });
+}
+
 // ── Cron entry point ────────────────────────────────────────────────────────
 
 let ticking = false;
@@ -429,9 +446,14 @@ export async function tick(now = new Date()) {
             const r = await emailPlan(u.user_id, plan.id);
             if (r.ok) done.emailed += 1;
           }
+          if (plan?.status === 'ready' && !plan.whatsapp_at && hour >= s.listHour) {
+            await run('UPDATE daily_plans SET whatsapp_at = NOW() WHERE id = $1', [plan.id]);
+            await sendPlanList(u.user_id).catch(err => console.warn('[daily-plan] whatsapp list:', err.message));
+          }
         }
         await advanceUser(u.user_id);
         await advanceReferrals(u.user_id, s);
+        await notifyNeedsYou(u.user_id).catch(err => console.warn('[daily-plan] whatsapp needs:', err.message));
         if (s.enabled) await maybeSendSummary(u.user_id, s, now);
         done.advanced += 1;
       } catch (err) {

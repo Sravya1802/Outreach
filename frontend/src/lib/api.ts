@@ -361,6 +361,21 @@ export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluati
 }
 export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFileUse[] }
 
+// ── WhatsApp ─────────────────────────────────────────────────────────────────
+
+export type WhatsAppKind = 'list' | 'replies' | 'needs' | 'summary'
+export interface WhatsAppStatus {
+  configured: boolean
+  businessNumber: string | null
+  linked: boolean
+  phone: string | null
+  enabled: boolean
+  prefs: Record<WhatsAppKind, boolean>
+  verifiedAt: string | null
+  pending: { code: string; expires: string } | null
+}
+export interface WhatsAppTemplate { name: string; text: string; example: string[] }
+
 // ── People → Messages ───────────────────────────────────────────────────────
 
 export interface MessageCompany { key: string; name: string; connections: number; contacts: number; emails: number; contacted: number; drafted: number; openRoles: number }
@@ -713,6 +728,12 @@ export const api = {
   tailoring: (evalId: number): Promise<TailoringState> => legacy.career.tailoring(evalId),
   /** The master resume read into sections (reads it once if it never was). */
   parsedResume: async (): Promise<ParsedResume> => (await legacy.career.readMasterResume()).parsed ?? {},
+  whatsappStatus: (): Promise<WhatsAppStatus> => legacy.whatsapp.status(),
+  whatsappJoin: (): Promise<{ code: string; number: string; link: string | null }> => legacy.whatsapp.join(),
+  whatsappPrefs: (body: { prefs?: Partial<Record<WhatsAppKind, boolean>>; enabled?: boolean }): Promise<WhatsAppStatus> => legacy.whatsapp.prefs(body),
+  whatsappUnlink: (): Promise<{ ok: boolean }> => legacy.whatsapp.unlink(),
+  whatsappTest: (): Promise<{ ok: boolean }> => legacy.whatsapp.test(),
+  whatsappTemplates: async (): Promise<Record<string, WhatsAppTemplate>> => (await legacy.whatsapp.templates()).templates,
   messageCompanies: (q: { q?: string; filter?: MessageFilter; page?: number }): Promise<MessageCompanyPage> => legacy.messages.companies(q),
   messageCompany: (key: string): Promise<MessageCompanyDetail> => legacy.messages.company(key),
   writeMessage: (key: string, ref: string): Promise<MessagePerson> => legacy.messages.write(key, ref),

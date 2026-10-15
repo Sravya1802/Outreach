@@ -124,6 +124,19 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — WhatsApp (Meta Cloud API)
+- **What:** one OutreachOS business number, [whatsapp.js](backend/services/whatsapp.js).
+  - **Linking:** Integrations → WhatsApp gives a 6-digit code (30 minutes). The user sends `JOIN <code>` to the number, which proves it's theirs and opts them in.
+  - **Outbound,** per-user prefs: the 10 PM list (daily_plans.whatsapp_at), reply alerts (replyWatcher.notify), "needs you" (plan_items.whatsapp_needs_at, batched per tick) and the morning summary (maybeSendSummary).
+  - Inside Meta's 24-hour window it sends free text with full detail; outside it, the approved templates `oos_daily_list`, `oos_reply_alert`, `oos_needs_you` and `oos_morning_summary`. The exact text is in `WHATSAPP_TEMPLATES` and shown in the page's owner setup.
+  - **Inbound commands:** YES, YES 1 3 (numbered like the list), SKIP 2, LIST, STOP, START, HELP.
+  - **Public webhook:** `/api/whatsapp/webhook` (GET handshake, POST deliveries). The X-Hub-Signature-256 check is required; with no app secret configured, POSTs are refused. The raw body is captured in express.json verify. Deliveries are deduped by message id.
+  - **Env:** WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_NUMBER, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET, plus WHATSAPP_API_VERSION (default v25.0, supported to July 2028; v26.0 is the latest).
+- **Files:** [028_whatsapp.sql](supabase/migrations/028_whatsapp.sql), [routes/whatsapp.js](backend/routes/whatsapp.js), [WhatsAppPage.tsx](frontend/src/features/integrations/WhatsAppPage.tsx).
+- **Status:** see the next entry for the deploy and test results. It needs the owner's Meta setup (the steps are on the page) before anything is sent.
+
+2026-10-15 — List builds now survive restarts: on boot, server.js marks daily_plans still on 'building' as failed (so the page shows Rebuild again) and rebuilds today's (8ce217d). Before this, every pm2 restart left the list stuck on 'building', with no Rebuild button and no cron retry. (From the other session; my 07:03 deploy had interrupted the user's build, and it resumed on its own.)
+
 ### 2026-10-15 — Tracker moved to the Dashboard; Referrals panel; needs_reason fix
 - **What:**
   - "After you apply" (Tracker) is removed from Auto-apply and now sits at the bottom of the Dashboard. Every `/applications/auto-apply…#tracker` link now goes to `/dashboard…#tracker` (Home, today.ts, queueFlow, the old Pipeline/Board/Ranked redirects). The page scrolls to it after the charts load.
@@ -1089,3 +1102,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 ### 2026-10-15 — Fix: long Details page scrolled the whole app shell
 - **What:** After "Fill from resume" added the user's 5 roles, the top bar slid off and a blank band appeared below the content. Cause: each experience card's `sr-only` `<legend>` (position:absolute) had no positioned ancestor, so it sat against the document at its static position (~4000px down), making `<html>` scrollable even though the shell is `h-full overflow-hidden`. Fix: `relative` on `Page`'s scroller ([PageHeader.tsx](frontend/src/ui/PageHeader.tsx)) and on the experience `<fieldset>`.
 - **Status:** `a20dd82` live on Vercel. Verified on prod with 6 mocked roles: document scrollHeight = viewport (900), only the inner scroller moves, no console errors. "Fill from resume" itself was fine for the user (their 5 roles and dates all mapped correctly).
+
+### 2026-10-15 — Delete earlier master resume versions
+- **What:** Trash button + ConfirmDialog on Profile → Resume → Earlier versions. New `DELETE /api/career/resume/files/:id` → `deleteMasterVersion()` in [resumeFiles.js](backend/services/resumeFiles.js): master kind only; refuses the current version (400) and any version an evaluation points at via `resume_file_id`/`applied_resume_file_id` (409); removes the Supabase Storage object (tolerates already-gone) then the row. `resumeHistory()` masters now carry `in_use`; in-use rows show no trash button.
+- **Status:** `f5ac292` on main (Vercel live); backend applied on VM as `94abed4`. Verified live as e2e user: current-version delete → 400 with message; deleted the e2e user's old unused `test-resume.pdf` version via the UI (toast, row gone, API list confirms). The 409 in-use path wasn't exercised live (no in-use earlier version exists).

@@ -16,6 +16,7 @@ const GithubPage = lazyWithRetry(() => import('@/features/profile/GithubPage'), 
 const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 'ResumePage')
 const GmailPage = lazyWithRetry(() => import('@/features/integrations/GmailPage'), 'GmailPage')
 const LinkedInPage = lazyWithRetry(() => import('@/features/integrations/LinkedInPage'), 'LinkedInPage')
+const WhatsAppPage = lazyWithRetry(() => import('@/features/integrations/WhatsAppPage'), 'WhatsAppPage')
 const UsagePage = lazyWithRetry(() => import('@/features/usage/UsagePage'), 'UsagePage')
 const DashboardPage = lazyWithRetry(() => import('@/features/dashboard/DashboardPage'), 'DashboardPage')
 const HowItWorksPage = lazyWithRetry(() => import('@/features/howitworks/HowItWorksPage'), 'HowItWorksPage')
@@ -90,6 +91,7 @@ function SignedInRoutes() {
         <Route path="/integrations/gmail" element={<GmailPage />} />
         <Route path="/integrations/github" element={<GithubPage />} />
         <Route path="/integrations/linkedin" element={<LinkedInPage />} />
+        <Route path="/integrations/whatsapp" element={<WhatsAppPage />} />
         <Route path="/integrations/services" element={<Navigate to="/usage" replace />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/how-it-works" element={<HowItWorksPage />} />

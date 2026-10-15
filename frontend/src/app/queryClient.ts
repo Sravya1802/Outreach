@@ -44,6 +44,7 @@ export const qk = {
   dailyPlan: ['daily-plan'] as const,
   connections: ['linkedin-connections'] as const,
   referralStats: ['referral-stats'] as const,
+  whatsapp: ['whatsapp-status'] as const,
   messageCompanies: (q: object) => ['message-companies', q] as const,
   messageCompany: (key: string) => ['message-company', key] as const,
   outbox: ['gmail-outbox'] as const,

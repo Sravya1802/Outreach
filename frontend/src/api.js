@@ -172,6 +172,16 @@ export const api = {
     disconnect: ()                => apiCall('/github/connection', { method: 'DELETE' }),
   },
 
+  // WhatsApp (Meta Cloud API)
+  whatsapp: {
+    status:    ()     => apiCall('/whatsapp/status'),
+    join:      ()     => apiCall('/whatsapp/join', { method: 'POST' }),
+    prefs:     (body) => apiCall('/whatsapp/prefs', { method: 'PATCH', body }),
+    unlink:    ()     => apiCall('/whatsapp/link', { method: 'DELETE' }),
+    test:      ()     => apiCall('/whatsapp/test', { method: 'POST' }),
+    templates: ()     => apiCall('/whatsapp/templates'),
+  },
+
   // People → Messages
   messages: {
     companies: (params)       => apiCall(`/messages/companies${qs(params)}`),

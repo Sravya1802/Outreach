@@ -18,11 +18,13 @@ const GmailPage = lazyWithRetry(() => import('@/features/integrations/GmailPage'
 const LinkedInPage = lazyWithRetry(() => import('@/features/integrations/LinkedInPage'), 'LinkedInPage')
 const UsagePage = lazyWithRetry(() => import('@/features/usage/UsagePage'), 'UsagePage')
 const DashboardPage = lazyWithRetry(() => import('@/features/dashboard/DashboardPage'), 'DashboardPage')
+const HowItWorksPage = lazyWithRetry(() => import('@/features/howitworks/HowItWorksPage'), 'HowItWorksPage')
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
+const MessagesPage = lazyWithRetry(() => import('@/features/outreach/MessagesPage'), 'MessagesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
 const PrivacyPage = lazyWithRetry(() => import('@/features/legal/PrivacyPage'), 'PrivacyPage')
 const TermsPage = lazyWithRetry(() => import('@/features/legal/TermsPage'), 'TermsPage')
@@ -77,6 +79,7 @@ function SignedInRoutes() {
         <Route path="/people/contacts" element={<ContactsPage />} />
         <Route path="/people/templates" element={<TemplatesPage />} />
         <Route path="/people/outbox" element={<OutboxPage />} />
+        <Route path="/people/messages" element={<MessagesPage />} />
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />
@@ -89,6 +92,7 @@ function SignedInRoutes() {
         <Route path="/integrations/linkedin" element={<LinkedInPage />} />
         <Route path="/integrations/services" element={<Navigate to="/usage" replace />} />
         <Route path="/usage" element={<UsagePage />} />
+        <Route path="/how-it-works" element={<HowItWorksPage />} />
 
         <Route path="/settings/*" element={<SettingsPage />} />
 

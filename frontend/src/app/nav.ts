@@ -1,4 +1,4 @@
-import { Briefcase, ChartColumnBig, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, CircleHelp, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -8,7 +8,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'how' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -48,6 +48,7 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'people', label: 'People', icon: Users, to: '/people',
     tabs: [
+      { label: 'Messages', to: '/people/messages', keywords: 'linkedin notes connections personalized email copy send referral' },
       { label: 'Contacts', to: '/people/contacts', keywords: 'outreach referrals emails messages crm' },
       { label: 'Templates', to: '/people/templates', keywords: 'outreach email linkedin dm referral ask' },
       { label: 'Outbox', to: '/people/outbox', keywords: 'outreach gmail scheduled sent follow-ups replies' },
@@ -64,6 +65,10 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'usage', label: 'Usage', icon: Gauge, to: '/usage',
     tabs: [{ label: 'Usage', to: '/usage', keywords: 'services status api keys health lookups hunter apollo prospeo ai spending cost limit' }],
+  },
+  {
+    id: 'how', label: 'How it works', icon: CircleHelp, to: '/how-it-works',
+    tabs: [{ label: 'How it works', to: '/how-it-works', keywords: 'queue pipeline steps evening list referral apply emails outreach follow up explained help' }],
   },
   {
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',

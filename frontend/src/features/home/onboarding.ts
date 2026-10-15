@@ -1,15 +1,17 @@
-// The setup checklist on Home: what auto-apply needs before it can work for you.
+// The setup checklist on Home: what auto-apply and automatic emails need before they can work for you.
 
 export interface SetupInputs {
   hasResume: boolean | undefined
   profileComplete: boolean | undefined
   answers: number | undefined
   githubConnected: boolean | undefined
+  /** Connected and Google still accepts the app password. */
+  gmailConnected: boolean | undefined
   rulesSet: boolean | undefined
 }
 
 export interface SetupStep {
-  id: 'resume' | 'details' | 'answers' | 'github' | 'rules'
+  id: 'resume' | 'details' | 'answers' | 'github' | 'gmail' | 'rules'
   title: string
   description: string
   to: string
@@ -31,6 +33,8 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
       to: '/profile/answers', cta: 'Answer', done: i.answers === undefined ? undefined : i.answers >= MIN_ANSWERS },
     { id: 'github', title: 'Connect GitHub', description: 'Your public repos become projects each resume can pick from.',
       to: '/integrations/github', cta: 'Connect', done: i.githubConnected },
+    { id: 'gmail', title: 'Connect Gmail', description: 'Referral asks, follow-ups and your daily list go out from your own address, and replies are tracked.',
+      to: '/integrations/gmail', cta: 'Connect', done: i.gmailConnected },
     { id: 'rules', title: 'Set your auto-apply rules', description: 'The score that puts a role on your daily plan, and how many a day.',
       to: '/applications/auto-apply', cta: 'Set', done: i.rulesSet },
   ]

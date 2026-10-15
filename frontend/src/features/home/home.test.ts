@@ -20,16 +20,16 @@ describe('activity formatting', () => {
 
 describe('setup checklist', () => {
   it('stays undefined while loading', () => {
-    const steps = setupSteps({ hasResume: undefined, profileComplete: undefined, answers: undefined, githubConnected: undefined, rulesSet: undefined })
+    const steps = setupSteps({ hasResume: undefined, profileComplete: undefined, answers: undefined, githubConnected: undefined, gmailConnected: undefined, rulesSet: undefined })
     expect(steps.every(s => s.done === undefined)).toBe(true)
   })
 
   it('marks steps done from data', () => {
-    const steps = setupSteps({ hasResume: true, profileComplete: false, answers: 2, githubConnected: true, rulesSet: false })
+    const steps = setupSteps({ hasResume: true, profileComplete: false, answers: 2, githubConnected: true, gmailConnected: false, rulesSet: false })
     expect(Object.fromEntries(steps.map(s => [s.id, s.done]))).toEqual({
-      resume: true, details: false, answers: false, github: true, rules: false,
+      resume: true, details: false, answers: false, github: true, gmail: false, rules: false,
     })
-    expect(setupSteps({ hasResume: true, profileComplete: true, answers: 3, githubConnected: true, rulesSet: true }).every(s => s.done)).toBe(true)
+    expect(setupSteps({ hasResume: true, profileComplete: true, answers: 3, githubConnected: true, gmailConnected: true, rulesSet: true }).every(s => s.done)).toBe(true)
   })
 
   it('requires name, email and phone for a complete profile', () => {

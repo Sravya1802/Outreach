@@ -28,16 +28,18 @@ function SetupChecklist() {
   const nightly = useNightlySettings()
   const answers = useQuery({ queryKey: qk.answers, queryFn: api.answers })
   const github = useQuery({ queryKey: qk.githubStatus, queryFn: api.githubStatus })
+  const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
 
   const steps = setupSteps({
     hasResume: resume.data,
     profileComplete: isProfileComplete(profile.data),
     answers: answers.data?.filter(a => a.status === 'answered').length,
     githubConnected: github.data?.connected,
+    gmailConnected: gmail.data ? gmail.data.connected && gmail.data.status !== 'error' : undefined,
     // Rules count as set once saved away from the old defaults (85 / 50).
     rulesSet: nightly.data ? nightly.data.minScore !== 85 || nightly.data.maxApps !== 50 : undefined,
   })
-  const anyError = [resume, profile, nightly, answers, github].some(q => q.isError)
+  const anyError = [resume, profile, nightly, answers, github, gmail].some(q => q.isError)
   const loading = steps.some(s => s.done === undefined) && !anyError
   const doneCount = steps.filter(s => s.done).length
   if (!loading && doneCount === steps.length) return null
@@ -46,10 +48,10 @@ function SetupChecklist() {
   return (
     <section aria-labelledby="setup-h" className="rounded-[4px] border border-line bg-surface p-5">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="setup-h" className="font-display text-[20px] font-semibold text-fg">Before auto-apply can work for you</h2>
+        <h2 id="setup-h" className="font-display text-[20px] font-semibold text-fg">Before the app can apply and email for you</h2>
         <span className="text-[13px] text-subtle">{loading ? 'Checking…' : `${doneCount} of ${steps.length} done`}</span>
       </div>
-      <ol className="grid gap-2 sm:grid-cols-5">
+      <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {steps.map((s, i) => (
           <li key={s.id}>
             <Link to={s.to} title={s.description}
@@ -113,10 +115,14 @@ function NewRoles() {
 function WaitingOnYou() {
   const queue = useAutoApplyQueue()
   const { services } = useServiceHealth()
+  const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
   const c = queue.data?.counts
   const items: { id: string; tone: 'warning' | 'danger'; text: string; to: string }[] = []
   if (c?.needs_review) items.push({ id: 'review', tone: 'warning', text: `${c.needs_review} ${c.needs_review === 1 ? 'application needs' : 'applications need'} an answer from you`, to: '/applications/auto-apply' })
   if (c?.failed) items.push({ id: 'failed', tone: 'danger', text: `${c.failed} ${c.failed === 1 ? 'application' : 'applications'} couldn’t be sent`, to: '/applications/auto-apply' })
+  if (gmail.data?.connected && gmail.data.status === 'error') {
+    items.push({ id: 'gmail', tone: 'danger', text: 'Gmail stopped accepting the app password, so emails are on hold. Reconnect it', to: '/integrations/gmail' })
+  }
   for (const s of services.filter(sv => sv.state === 'down')) {
     items.push({ id: `svc-${s.id}`, tone: 'danger', text: `${s.name} is unavailable, so ${lowerFirst(s.purpose)} won’t work`, to: '/usage' })
   }

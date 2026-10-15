@@ -33,9 +33,10 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   busy: 'track' | 'auto' | null
 }) {
   const visa = visaLabel(role.sponsorship, role.jd_read)
+  const visaTitle = role.sponsorship_quote ? `“${role.sponsorship_quote}”` : visa ? 'The job description doesn’t mention visas.' : 'The job description hasn’t been read yet.'
   const others = (role.also_on ?? []).filter(s => s !== role.source)
   return (
-    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_120px_170px_110px_auto] md:items-center md:gap-4">
+    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_auto] md:items-center md:gap-4">
       <div className="min-w-0">
         <a href={role.apply_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-fg hover:text-accent">
           <span className="truncate">{role.title}</span>
@@ -46,7 +47,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
           {role.tier === 'quant' && <Badge tone="info">Quant</Badge>}
           {role.salary_range && <span className="font-mono text-success md:hidden">{role.salary_range}</span>}
           {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
-          {visa && <span title={role.sponsorship_quote ? `“${role.sponsorship_quote}”` : 'The job description doesn’t mention visas.'}><Badge tone={visa.tone}>{visa.text}</Badge></span>}
+          {visa && <span className="md:hidden" title={visaTitle}><Badge tone={visa.tone}>{visa.text}</Badge></span>}
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''} · {postedLabel(role.posted_at, role.scraped_at)}</span>
         </p>
@@ -54,6 +55,9 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
       <p className={cn('hidden truncate font-mono text-[13px] md:block', role.salary_range ? 'text-fg' : 'text-subtle')}
         title={role.salary_range ? 'Pay range from the job posting' : 'This posting doesn’t list pay'}>
         {role.salary_range || 'Not posted'}
+      </p>
+      <p className="hidden text-xs md:block" title={visaTitle}>
+        {visa ? <Badge tone={visa.tone}>{visa.text}</Badge> : <span className="text-subtle">Not checked</span>}
       </p>
       <p className="hidden truncate text-xs text-subtle md:block" title={role.location || undefined}>{role.location || '—'}</p>
       <div className="hidden text-xs text-subtle md:block">
@@ -235,8 +239,8 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[minmax(0,1fr)_120px_170px_110px_auto] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
-          <span>Role</span><span>Pay</span><span>Location</span><span>Source</span><span className="w-40 text-right">&nbsp;</span>
+        <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_auto] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
+          <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span>Source</span><span className="w-40 text-right">&nbsp;</span>
         </div>
         {listing.isLoading ? (
           <ul className="divide-y divide-line">{Array.from({ length: 8 }, (_, i) => (

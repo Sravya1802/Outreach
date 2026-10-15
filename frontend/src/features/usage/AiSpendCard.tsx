@@ -6,8 +6,11 @@ import { Card, CardHeader, ErrorState, Skeleton } from '@/ui'
 
 const TASK_LABELS: Record<string, string> = {
   score: 'Quick scores', evaluate: 'Job evaluations', email: 'Emails', categorize: 'Company labels',
-  resume: 'Tailored resumes', cover_letter: 'Cover letters',
+  resume: 'Tailored resumes', cover_letter: 'Cover letters', resume_parse: 'Reading your resume', keywords: 'Job keywords',
 }
+
+/** "fact_check" → "Fact check" for tasks without a label yet. */
+const taskLabel = (task: string) => TASK_LABELS[task] ?? task.charAt(0).toUpperCase() + task.slice(1).replace(/_/g, ' ')
 
 export function AiSpendCard() {
   const usage = useQuery({ queryKey: qk.aiUsage, queryFn: api.aiUsage })
@@ -42,7 +45,7 @@ export function AiSpendCard() {
             <dl className="divide-y divide-line border-t border-line text-[14px]">
               {u.byTask.map(t => (
                 <div key={t.task} className="flex justify-between py-2">
-                  <dt className="text-muted">{TASK_LABELS[t.task] ?? t.task} <span className="text-subtle">· {t.calls}</span></dt>
+                  <dt className="text-muted">{taskLabel(t.task)} <span className="text-subtle">· {t.calls}</span></dt>
                   <dd className="font-mono text-fg">${t.cost.toFixed(t.cost < 0.1 ? 3 : 2)}</dd>
                 </div>
               ))}

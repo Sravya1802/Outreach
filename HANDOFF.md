@@ -124,6 +124,14 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — "How it works" tab; top bar fits 8 sections
+- **What:** the user asked for the queue explainers in their own tab next to Usage. `/how-it-works` ([HowItWorksPage.tsx](frontend/src/features/howitworks/HowItWorksPage.tsx)) holds both flows (job queue, 8 stages; outreach email, 6 stages), with logic still in `features/home/queueFlow.ts`. Home is back to setup, Today, Top picks and So far (`c40dfc9`).
+- **Top bar** (`119f215`): the main bar is now Home · Dashboard · Jobs · Applications · People · Integrations · Usage · How it works.
+  - Spacing is tighter below xl, and the search button is icon-only below 1280px.
+  - The phone drawer now takes over **below 1024px** (it was 768); AppShell uses `lg:`.
+  - The active sub-tab underline uses `border-accent`, since the soft Ocean rule colour barely showed.
+- **Status:** verified live at 900 (drawer lists all 8 + Profile/Settings), 1024, 1100 and 1280. One line, no horizontal scroll.
+
 ### 2026-10-15 — Home explains both queues; new Dashboard tab
 - **Home → "How your job queue works"** (`129df34`, [queueFlow.ts](frontend/src/features/home/queueFlow.ts) with tests). It shows 8 stages (find, score, evening list, tailor, referral, apply, track, follow up). Each stage is explained with the user's own daily-plan settings (list hour/tz, min score, per-day cap, referral wait) and a live count. States are idle, busy, you (accent) and stuck (danger). A settings line says whether the evening list is on.
 - **Home → "How your outreach emails go out"** (`7ecfe83`). It shows 6 stages (connect Gmail, find people, write & schedule, send 8–11 AM recipient tz at the daily cap, follow-ups at days 4/10, replies), counted from the outbox and replies. This answers the user's "where is the Gmail automatic sending".

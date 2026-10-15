@@ -328,6 +328,8 @@ export async function decide(userId, itemId, decision) {
       )).rows[0].id;
     }
     await run("UPDATE plan_items SET decision = 'approved', decided_at = NOW(), evaluation_id = $2, stage = 'tailoring', stage_note = 'Writing your tailored resume' WHERE id = $1", [item.id, evalId]);
+    // Start the resume now rather than at the next cron pass.
+    advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
   } else if (decision !== 'approved') {
     await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL WHERE id = $1", [item.id, decision]);
   }
@@ -395,10 +397,17 @@ export async function tick(now = new Date()) {
   ticking = true;
   const done = { built: 0, emailed: 0, advanced: 0 };
   try {
-    const users = await all("SELECT user_id, value FROM meta WHERE key = $1", [KEY]);
+    // Users with the list on, plus anyone with approved roles still moving (settings never saved = defaults).
+    const users = await all(
+      `SELECT u.user_id, m.value FROM (
+         SELECT user_id FROM meta WHERE key = $1
+         UNION SELECT DISTINCT user_id FROM plan_items WHERE decision = 'approved' AND stage IN ('tailoring','needs_you')
+       ) u LEFT JOIN meta m ON m.user_id = u.user_id AND m.key = $1`,
+      [KEY],
+    );
     for (const u of users) {
       let s;
-      try { s = normalizeSettings(JSON.parse(u.value)); } catch { continue; }
+      try { s = normalizeSettings(u.value ? JSON.parse(u.value) : {}); } catch { s = normalizeSettings({}); }
       try {
         if (s.enabled) {
           const hour = localHour(s.timezone, now);

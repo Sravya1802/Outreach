@@ -52,7 +52,7 @@ describe('todayItems', () => {
       ] as ReplyItem[],
       outbox: [{ id: 1, status: 'scheduled', send_after: '2026-10-16T13:00:00Z', company_name: 'Gusto' }] as OutboxItem[],
     })
-    expect(items.map(t => t.id)).toEqual(['gmail', 'needs-you', 'approve', 'follow-up', 'next-steps', 'replies', 'going-out', 'emails', 'worth'])
+    expect(items.map(t => t.id)).toEqual(['gmail', 'needs-you', 'approve', 'follow-up', 'next-steps', 'replies', 'going-out', 'emails'])
     expect(items.find(t => t.id === 'approve')?.title).toBe('1 role is waiting for your OK')
     expect(items.find(t => t.id === 'replies')?.detail).toBe('Ramp')
     expect(items.find(t => t.id === 'going-out')?.detail).toBe('1 waiting on a referral first')

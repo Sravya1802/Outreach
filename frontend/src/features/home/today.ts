@@ -100,10 +100,6 @@ export function todayItems(i: TodayInput): TodayItem[] {
     out.push({ id: 'emails', tone: 'info', title: `${plural(sending.length, 'email goes', 'emails go')} out in the next day`,
       detail: nameList(sending.map(o => o.company_name || o.to_name)), to: '/people/outbox' })
   }
-  const worth = (i.plan?.items ?? []).filter(p => p.tier === 'worth' && p.decision === 'pending')
-  if (worth.length) {
-    out.push({ id: 'worth', tone: 'info', title: `${plural(worth.length, 'more role is', 'more roles are')} worth a look`, detail: 'Scored 7.0 to 8.9, so they wait for one tap.', to: '/applications/auto-apply' })
-  }
   return out
 }
 

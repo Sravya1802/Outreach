@@ -1,16 +1,18 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
 import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useNightlySettings, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
 import { api } from '@/lib/api'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
+import { ItemRow } from '@/features/applications/DailyPlan'
+import { num } from '@/features/applications/plan'
 import { marketPhrase } from '@/lib/markets'
 import { cn } from '@/lib/cn'
 import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
-import { Button, ButtonLink, ErrorState, Page, Skeleton } from '@/ui'
+import { Button, ButtonLink, ErrorState, Page, Skeleton, Spinner, useToast } from '@/ui'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
 import { needsYouCount, todayItems, type TodayTone } from './today'
 
@@ -147,6 +149,53 @@ function Today() {
   )
 }
 
+const TOP_PICKS = 5
+
+/** The best-scoring roles from today's list, with Approve / Skip right here. */
+function TopPicks() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const plan = useDailyPlan()
+  const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
+  const decide = useMutation({
+    mutationFn: ({ id, decision }: { id: number; decision: 'approved' | 'skipped' | 'pending' }) => api.decidePlanItem(id, decision),
+    onSuccess: refresh,
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const build = useMutation({
+    mutationFn: () => api.buildDailyPlan(false),
+    onSuccess: () => { toast.success('Building today’s list. This takes a few minutes.'); refresh() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const d = plan.data
+  // Top tier first, then the best of "worth a look"; skipped and expired ones drop out.
+  const picks = (d?.items ?? [])
+    .filter(i => i.decision === 'pending' || i.decision === 'approved')
+    .sort((a, b) => (a.tier === b.tier ? 0 : a.tier === 'top' ? -1 : 1) || (num(b.score) ?? 0) - (num(a.score) ?? 0))
+  const busyId = decide.isPending ? decide.variables?.id : null
+
+  return (
+    <section aria-labelledby="picks-h">
+      <SectionTitle action={picks.length > TOP_PICKS ? <Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">See all {picks.length}</Link> : undefined}>
+        <span id="picks-h">Top picks for you</span>
+      </SectionTitle>
+      {plan.isError ? <ErrorState compact error={plan.error} onRetry={() => void plan.refetch()} /> : plan.isLoading ? <Skeleton className="mt-2 h-32" /> : !d?.plan ? (
+        <div className="py-5">
+          <p className="text-[15px] text-fg">No list yet today.</p>
+          <p className="mt-1 text-[14px] text-muted">Each evening the app scores the day’s new roles against your resume and picks the best. You can build today’s now.</p>
+          <Button className="mt-3" size="sm" variant="primary" loading={build.isPending} onClick={() => build.mutate()}>Build today’s list</Button>
+        </div>
+      ) : d.plan.status === 'building' ? (
+        <p className="flex items-center gap-2 py-5 text-[14px] text-muted" role="status"><Spinner /> Scoring today’s new roles. This takes a few minutes.</p>
+      ) : picks.length === 0 ? (
+        <p className="py-5 text-[14px] text-muted">Nothing scored high enough today. New roles are scored again tonight.</p>
+      ) : (
+        <ul>{picks.slice(0, TOP_PICKS).map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={dec => decide.mutate({ id: i.id, decision: dec })} />)}</ul>
+      )}
+    </section>
+  )
+}
+
 function Pipeline() {
   const metrics = useJobMetrics()
   const f = metrics.data?.applyFunnel
@@ -224,7 +273,10 @@ export default function HomePage() {
       <div className="space-y-10">
         <SetupChecklist />
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <Today />
+          <div className="space-y-10">
+            <Today />
+            <TopPicks />
+          </div>
           <Pipeline />
         </div>
       </div>

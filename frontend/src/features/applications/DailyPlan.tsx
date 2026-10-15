@@ -78,7 +78,7 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
   )
 }
 
-function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending') => void }) {
+export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending') => void }) {
   const score = num(item.score)
   const sponsor = item.sponsorship ? SPONSOR_TEXT[item.sponsorship] : null
   return (

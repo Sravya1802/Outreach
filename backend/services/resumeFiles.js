@@ -11,7 +11,7 @@
 
 import crypto from 'crypto';
 import { all, one, query, run, tx } from '../db.js';
-import { BUCKETS, putObject, getObject, objectToTemp } from './resumeStorage.js';
+import { BUCKETS, putObject, getObject, objectToTemp, deleteObject } from './resumeStorage.js';
 import { marketFor } from './markets.js';
 
 const COLUMNS = 'id, kind, filename, size_bytes, market, evaluation_id, is_current, created_at';
@@ -111,6 +111,25 @@ export async function fileForUser(userId, id) {
   return one('SELECT * FROM resume_files WHERE id = $1 AND user_id = $2', [n, userId]);
 }
 
+/**
+ * Delete an earlier master version (cloud copy and row). Never the current
+ * one, and never one an application was tailored from or sent with.
+ */
+export async function deleteMasterVersion(userId, id) {
+  const file = await fileForUser(userId, id);
+  if (!file || file.kind !== 'master') throw Object.assign(new Error('File not found'), { status: 404 });
+  if (file.is_current) throw Object.assign(new Error('That’s your current resume. Upload a new one to replace it.'), { status: 400 });
+  const used = await one(
+    'SELECT company_name FROM evaluations WHERE user_id = $1 AND $2 IN (applied_resume_file_id, resume_file_id) LIMIT 1', [userId, file.id]);
+  if (used) throw Object.assign(new Error(used.company_name ? `Kept: your ${used.company_name} application uses this version.` : 'Kept: an application uses this version.'), { status: 409 });
+  try {
+    await deleteObject(file.bucket, file.object_path);
+  } catch (err) {
+    if (!/\((400|404)\)|not.?found/i.test(err.message)) throw err; // already gone from storage
+  }
+  await run('DELETE FROM resume_files WHERE id = $1 AND user_id = $2', [file.id, userId]);
+}
+
 export const fileBytes  = (file) => getObject(file.bucket, file.object_path);
 export const fileToTemp = (file) => objectToTemp(file.bucket, file.object_path);
 
@@ -120,7 +139,9 @@ export const fileToTemp = (file) => objectToTemp(file.bucket, file.object_path);
  */
 export async function resumeHistory(userId) {
   const masters = await all(
-    `SELECT ${COLUMNS} FROM resume_files WHERE user_id = $1 AND kind = 'master' ORDER BY created_at DESC LIMIT 50`, [userId]);
+    `SELECT ${COLUMNS},
+            EXISTS (SELECT 1 FROM evaluations e WHERE e.user_id = f.user_id AND f.id IN (e.applied_resume_file_id, e.resume_file_id)) AS in_use
+       FROM resume_files f WHERE user_id = $1 AND kind = 'master' ORDER BY created_at DESC LIMIT 50`, [userId]);
   const applications = await all(
     `SELECT e.id AS evaluation_id, e.company_name, e.job_title, e.job_url, e.apply_status, e.applied_at,
             (e.applied_resume_file_id IS NOT NULL) AS sent,

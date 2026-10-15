@@ -26,7 +26,7 @@ import { parseNotesPatch } from '../services/pipelineNotes.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
-import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, resumeHistory } from '../services/resumeFiles.js';
+import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, resumeHistory, deleteMasterVersion } from '../services/resumeFiles.js';
 import { parsedMaster } from '../services/resumeEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -128,6 +128,17 @@ router.get('/resume/files', async (req, res) => {
     res.json(await resumeHistory(req.user.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/career/resume/files/:id — an earlier master version ─────────
+router.delete('/resume/files/:id', async (req, res) => {
+  try {
+    await deleteMasterVersion(req.user.id, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    if (!err.status) console.error('[careerOps] resume file delete error:', err.message);
+    res.status(err.status || 500).json({ error: err.status ? err.message : 'Couldn’t delete that file' });
   }
 });
 

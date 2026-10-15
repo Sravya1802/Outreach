@@ -451,6 +451,7 @@ export const api = {
     startTailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/tailor`, { method: 'POST' }),
     startCoverLetter: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/cover-letter`, { method: 'POST' }),
     approveTailoring: (id) => apiCall(`/resume-engine/tailorings/${id}/approve`, { method: 'POST' }),
+    deleteResumeFile: (id) => apiCall(`/career/resume/files/${id}`, { method: 'DELETE' }),
     downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
     // Upload a custom resume PDF for a specific evaluation. Backend writes

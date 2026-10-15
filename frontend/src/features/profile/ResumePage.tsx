@@ -1,13 +1,13 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { Cloud, Download, FileText, Upload } from 'lucide-react'
-import { api, type ResumeHistory } from '@/lib/api'
+import { Cloud, Download, FileText, Trash2, Upload } from 'lucide-react'
+import { api, type ResumeFile, type ResumeHistory } from '@/lib/api'
 import type { Market } from '@/lib/markets'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Badge, Button, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { KIND_LABEL, countryLabel, countryOf, formatBytes } from './resumeFiles'
 
 const MAX_BYTES = 10 * 1024 * 1024
@@ -36,6 +36,17 @@ export default function ResumePage() {
     onError: (e: Error) => toast.error(e.message),
   })
   const get = (f: { id: number; filename: string }) => download.mutate({ id: f.id, filename: f.filename })
+
+  const [confirmDelete, setConfirmDelete] = useState<ResumeFile | null>(null)
+  const remove = useMutation({
+    mutationFn: (id: number) => api.deleteResumeFile(id),
+    onSuccess: () => {
+      toast.success('Version deleted')
+      setConfirmDelete(null)
+      void qc.invalidateQueries({ queryKey: qk.resumeHistory })
+    },
+    onError: (e: Error) => { toast.error(e.message); setConfirmDelete(null) },
+  })
 
   function pick(file: File | undefined) {
     if (!file) return
@@ -105,11 +116,25 @@ export default function ResumePage() {
                     <span className="min-w-0 flex-1 truncate text-fg">{m.filename}</span>
                     <span className="text-[13px] text-subtle">{timeAgo(m.created_at)} · {formatBytes(m.size_bytes)}</span>
                     <Button size="sm" variant="ghost" aria-label={`Download ${m.filename}`} icon={<Download className="size-3.5" />} onClick={() => get(m)} />
+                    {m.in_use
+                      ? <span className="w-8 text-center text-subtle" title="An application uses this version, so it’s kept"><span className="sr-only">Kept: an application uses this version</span>·</span>
+                      : <Button size="sm" variant="ghost" aria-label={`Delete ${m.filename} from ${timeAgo(m.created_at)}`} icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDelete(m)} />}
                   </li>
                 ))}
               </ul>
             </section>
           )}
+
+          <ConfirmDialog
+            open={confirmDelete != null}
+            onCancel={() => setConfirmDelete(null)}
+            onConfirm={() => confirmDelete && remove.mutate(confirmDelete.id)}
+            title="Delete this version?"
+            description={confirmDelete ? `${confirmDelete.filename}, uploaded ${timeAgo(confirmDelete.created_at)}, is removed from the cloud. Your current resume isn’t affected.` : ''}
+            confirmLabel="Delete"
+            danger
+            busy={remove.isPending}
+          />
 
           {r?.textPreview && (
             <section aria-labelledby="read-h">

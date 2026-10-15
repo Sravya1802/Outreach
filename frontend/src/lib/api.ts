@@ -344,6 +344,8 @@ export interface ResumeFile {
   evaluation_id: number | null
   is_current: boolean
   created_at: string
+  /** Master versions only: an application was tailored from or sent with it, so it can't be deleted. */
+  in_use?: boolean
 }
 export interface ResumeFileUse extends Omit<ResumeFile, 'is_current' | 'evaluation_id'> {
   evaluation_id: number
@@ -741,6 +743,8 @@ export const api = {
   startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
+  /** An earlier master version; the server refuses the current one and any an application uses. */
+  deleteResumeFile: (id: number): Promise<{ ok: boolean }> => legacy.career.deleteResumeFile(id),
   uploadResume: async (file: File): Promise<ResumeStatus> => {
     const r = await legacy.career.uploadResume(file)
     if (!r.success) throw new Error(r.error || 'Upload failed')

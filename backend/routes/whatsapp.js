@@ -26,7 +26,11 @@ router.post('/test', async (req, res) => {
   try { res.json(await sendTest(req.user.id)); } catch (err) { fail(res, err); }
 });
 // The message templates the owner registers in WhatsApp Manager.
-router.get('/templates', (req, res) => res.json({ templates: WHATSAPP_TEMPLATES }));
+router.get('/templates', (req, res) => {
+  // A WHATSAPP_TEMPLATE_<KIND> env var renames one (Meta holds deleted names for a while).
+  const templates = Object.fromEntries(Object.entries(WHATSAPP_TEMPLATES).map(([k, t]) => [k, { ...t, name: process.env[`WHATSAPP_TEMPLATE_${k.toUpperCase()}`] || t.name }]));
+  res.json({ templates });
+});
 
 export default router;
 

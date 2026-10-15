@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — WhatsApp templates submitted; Meta/Google renamed
+- The user renamed the Meta app, the business portfolio and the Google consent screen to Scout’n’Jobs, and deleted the old templates.
+- I submitted the 4 templates through the API (language **en_US**; `WHATSAPP_TEMPLATE_LANG=en_US` on the VM): `oos_daily_list`, `oos_reply_alert`, `oos_morning_summary`, and `oos_needs_you_v2` (Meta blocks a deleted name for a while, so the needs template is renamed via `WHATSAPP_TEMPLATE_NEEDS=oos_needs_you_v2`). All PENDING at submit time. `/api/whatsapp/templates` now reports the effective names.
+- Until they're APPROVED, WhatsApp notifications only go out inside the 24-hour window after the user last messaged the number.
+
 ### 2026-10-15 — Site moved to scoutnjobs.vercel.app
 - **What:** the Vercel project was renamed `scoutnjobs`; `outreach-jt.vercel.app` 307-redirects to `scoutnjobs.vercel.app` (path kept). The backend reads one `FRONTEND_URL` for every link it writes (emails, WhatsApp, GitHub OAuth return), falling back to `FRONTEND_ORIGIN`. VM .env: `FRONTEND_URL=https://scoutnjobs.vercel.app`, `CORS_ORIGINS` allows both addresses. Supabase Site URL/redirects and the Google OAuth client origins + consent-screen links were updated by the user.
 - **Unchanged:** the backend URL (outreach-jt.duckdns.org), so Meta's WhatsApp webhook and the GitHub OAuth callback still work. Repo and env names unchanged.

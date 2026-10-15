@@ -124,6 +124,30 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Step 4b: referral first, then apply
+- **What:** [referralFlow.js](backend/services/referralFlow.js), driven by the daily-plan tick.
+  - **`asking_referral` → ask.** Who: LinkedIn connections at the company first (recruiters, then engineers, then managers), then saved contacts; at most 2.
+  - Each ask is drafted by Groq (`email` task, JSON), with a template fallback.
+  - With an email address it goes out as an outbox email (`purpose = 'referral'`: no generic follow-ups) at the recipient's 8–11 AM slot. Otherwise it's a LinkedIn note: the user clicks "Copy note & open profile" and then "I sent it".
+  - Nobody known → a LinkedIn people search (company + school) plus a note.
+  - **`waiting_referral`.** apply_after = `businessDaysLater(now, referralWaitDays, company tz)` at 6–10 AM. Email replies are flagged ("X replied, tell us what happened"). Buttons:
+    - Got a link or code: a Greenhouse/Lever/Ashby link → apply through it next morning; otherwise, or a code → needs_you with instructions.
+    - They submitted me → `referred`, and the evaluation is marked submitted.
+    - They said no → apply next morning.
+    - Apply now.
+    - I applied.
+  - **`ready_to_apply`.** One application per tick through `processOneEvaluation` (it needs `auto_apply_consent`, which turning on the evening list now records). Other sites → needs_you "apply yourself". After applying, an "I've applied" note goes in each referral email thread (`scheduleThreadNote`).
+  - **Morning summary** at 11 AM user time, once a day, when something was applied, needs the user, or has a note to send.
+  - **LinkedIn connections** (Integrations → LinkedIn): upload Connections.csv. `companyKey` drops legal and region suffixes (Garmin International = Garmin, but WorkRamp ≠ Ramp). Plan rows show "You know N people here".
+- **Files:** [026_referrals.sql](supabase/migrations/026_referrals.sql), [referralFlow.js](backend/services/referralFlow.js), [linkedinConnections.js](backend/services/linkedinConnections.js), outbox `purpose` + `scheduleThreadNote`, [Referrals.tsx](frontend/src/features/applications/Referrals.tsx), [LinkedInPage.tsx](frontend/src/features/integrations/LinkedInPage.tsx).
+- **Status:** live and tested on the e2e account.
+  - Garmin (2 known people): 2 drafted notes, recruiter first, apply set for Mon 9:54 AM company time.
+  - Fidelity (nobody known): search link plus note. Said no → apply next morning. Apply now → LinkedIn URL → needs_you. I applied → the tracker shows submitted.
+  - Browser test passed: copy and open profile, I sent it, referral code, said no.
+  - No real application was submitted; both test roles were LinkedIn URLs. Tests: backend 145/145.
+- **Big gap:** only about 8% of fresh US roles are Greenhouse/Lever/Ashby (102 of 1,349). The rest are LinkedIn 39%, Workday 23% and other sites 28%, so most approved roles end as "apply yourself". Next options: resolve LinkedIn and Indeed links to the company's own posting (JobSpy `job_url_direct`), prefer roles on supported sites in the list, and Workday support (needs per-company accounts).
+- **Coordination:** another session is editing the frontend in parallel (theme, Home Top picks, `/usage`, People section). Commit only your own files.
+
 ### 2026-10-15 — Light theme is now "Ocean"
 - **What:** the user picked **B Ocean** from the palette sheet (`8627d8d`, [app.css](frontend/src/styles/app.css)): page #eef4fa, white cards, lines #d9e4ef / #c3d3e3, text #0f2236, accent #0b6bcb, success #0f7a55, danger #c8321f. Dark (Graphite) is unchanged. This replaces the Clean white entry below.
 - **Status:** verified live on Home and Roles. No console errors.
@@ -1028,3 +1052,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Status:** `33cac42` on main (Vercel live). Backend route applied on the VM as `fd0c4fb` (only the backend file, `git show … | git apply`). Verified live as the e2e user: toast "Filled 11 fields…", experience entry added, no console errors, no horizontal scroll at 390px. Not saved.
 
 - **2026-10-15 — Fix "Turn on" on Auto-apply.** `saveSettings` in `backend/services/dailyPlan.js` wrote `auto_apply_consent = true`, but the column is `INT` (migration 006), so Postgres rejected it ("column auto_apply_consent is of type integer but expression is of type boolean"). Now writes `1`. Commit `944b4cb` on main; cherry-picked to the VM as `ffb5d28`, pm2 restarted, health 200.
+
+### 2026-10-15 — Fix: long Details page scrolled the whole app shell
+- **What:** After "Fill from resume" added the user's 5 roles, the top bar slid off and a blank band appeared below the content. Cause: each experience card's `sr-only` `<legend>` (position:absolute) had no positioned ancestor, so it sat against the document at its static position (~4000px down), making `<html>` scrollable even though the shell is `h-full overflow-hidden`. Fix: `relative` on `Page`'s scroller ([PageHeader.tsx](frontend/src/ui/PageHeader.tsx)) and on the experience `<fieldset>`.
+- **Status:** `a20dd82` live on Vercel. Verified on prod with 6 mocked roles: document scrollHeight = viewport (900), only the inner scroller moves, no console errors. "Fill from resume" itself was fine for the user (their 5 roles and dates all mapped correctly).

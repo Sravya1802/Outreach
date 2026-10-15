@@ -23,14 +23,14 @@
 import crypto from 'crypto';
 import { all, one, run } from '../db.js';
 
-const SITE = process.env.FRONTEND_URL || 'https://outreach-jt.vercel.app';
+const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://outreach-jt.vercel.app').replace(/\/+$/, '');
 const WINDOW_MS = 23 * 3600_000; // stay inside Meta's 24 hours
 
 export const WHATSAPP_TEMPLATES = {
   list: {
     name: 'oos_daily_list',
     text: 'Your Scout’n’Jobs list for {{1}} has {{2}} roles to approve: {{3}}. Open {{4}} for details, or reply YES to approve all or YES 1 3 to approve some.',
-    example: ['Thu, Oct 15', '3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1', 'https://outreach-jt.vercel.app/applications/auto-apply'],
+    example: ['Thu, Oct 15', '3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1', `${SITE}/applications/auto-apply`],
   },
   reply: {
     name: 'oos_reply_alert',
@@ -40,12 +40,12 @@ export const WHATSAPP_TEMPLATES = {
   needs: {
     name: 'oos_needs_you',
     text: 'Scout’n’Jobs: {{1}} of your approved roles need you: {{2}}. Open {{3}} to take care of them.',
-    example: ['2', 'Ramp: resume scored 84% · Stripe: enter your referral code', 'https://outreach-jt.vercel.app/applications/auto-apply'],
+    example: ['2', 'Ramp: resume scored 84% · Stripe: enter your referral code', `${SITE}/applications/auto-apply`],
   },
   summary: {
     name: 'oos_morning_summary',
     text: 'Your Scout’n’Jobs summary for today: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Open {{4}} for the details.',
-    example: ['2', '1', '3', 'https://outreach-jt.vercel.app/applications/auto-apply'],
+    example: ['2', '1', '3', `${SITE}/applications/auto-apply`],
   },
 };
 

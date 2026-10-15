@@ -124,6 +124,15 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Google sign-in: button + public legal pages
+- **What:**
+  - "Continue with Google/GitHub" is on the sign-in and sign-up pages ([providers.ts](frontend/src/features/auth/providers.ts) reads Supabase `/auth/v1/settings`). It appears only once the provider is enabled in Supabase, with no redeploy. New OAuth users get the market question from MarketGate.
+  - Public `/privacy` and `/terms` pages ([features/legal/](frontend/src/features/legal/)), rendered without a session, for the Google consent screen. The privacy policy includes the Google API Limited Use statement. Contact email: lakshmisravyar@gmail.com (in LegalLayout). AuthLayout links to both.
+- **User setup in progress:**
+  - Google Auth Platform, project "Resume Builder". Branding needs home `https://outreach-jt.vercel.app`, privacy `/privacy`, terms `/terms`, and authorized domains `outreach-jt.vercel.app` (vercel.app alone is rejected as a public suffix).
+  - Then Audience → Publish, Clients → Web client (origin `https://outreach-jt.vercel.app`, redirect `https://dkifhfqgoremdjhkcojc.supabase.co/auth/v1/callback`), then Supabase → Auth → Providers → Google.
+- **Note:** another session renamed Outreach to **People** (`/people/*`, bb49694). The app rename is still pending; when it happens, update APP_NAME in LegalLayout too.
+
 ### 2026-10-15 — Roles: Visa column
 - **What:** Jobs → Roles now has its own **Visa** column between Pay and Location (`429fc3e`, `93a972e`). It shows Sponsors visas / No sponsorship / US citizens only / Visa not stated, or "Not checked" when the description was never read. Hovering shows the quoted sentence. Phones keep the badge under the title. The actions column now has a fixed 176px width, so rows with "Tracking" line up.
 - **Status:** verified live (light theme, 1400px and 390px, no horizontal scroll).

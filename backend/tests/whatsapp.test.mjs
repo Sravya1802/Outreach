@@ -62,6 +62,7 @@ test('every template has as many example values as placeholders', () => {
   for (const t of Object.values(WHATSAPP_TEMPLATES)) {
     const n = (t.text.match(/\{\{\d+\}\}/g) || []).length;
     assert.equal(t.example.length, n, t.name);
+    assert.ok(!/^\{\{|\}\}$/.test(t.text.trim()), `${t.name} must not start or end with a variable`);
   }
 });
 

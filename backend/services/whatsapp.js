@@ -8,7 +8,8 @@
  * Sending: inside Meta's 24-hour window (the user messaged us recently) we
  * send plain text with full detail; outside it, an approved template.
  * Templates (utility) the owner creates in WhatsApp Manager — exact text in
- * WHATSAPP_TEMPLATES below.
+ * WHATSAPP_TEMPLATES below. Meta rejects a template that starts or ends
+ * with a variable, so none does.
  *
  * Replies the user can send: YES (approve all of tonight's list), YES 1 3,
  * SKIP 2, LIST, STOP, START, HELP.
@@ -28,22 +29,22 @@ const WINDOW_MS = 23 * 3600_000; // stay inside Meta's 24 hours
 export const WHATSAPP_TEMPLATES = {
   list: {
     name: 'oos_daily_list',
-    text: 'Your OutreachOS list for {{1}}: {{2}} roles to approve. {{3}} Reply YES to approve all, YES 1 3 to approve some, or open {{4}}',
+    text: 'Your OutreachOS list for {{1}} has {{2}} roles to approve: {{3}}. Open {{4}} for details, or reply YES to approve all or YES 1 3 to approve some.',
     example: ['Thu, Oct 15', '3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
   reply: {
     name: 'oos_reply_alert',
-    text: '{{1}} from {{2}} replied to your outreach: "{{3}}". Open Gmail to answer.',
+    text: 'New reply on OutreachOS: {{1}} from {{2}} wrote "{{3}}". Open Gmail to answer them.',
     example: ['Ana Lee', 'Ramp', 'Happy to chat on Thursday'],
   },
   needs: {
     name: 'oos_needs_you',
-    text: '{{1}} of your approved roles need you in OutreachOS: {{2}}. Open {{3}}',
+    text: 'OutreachOS: {{1}} of your approved roles need you: {{2}}. Open {{3}} to take care of them.',
     example: ['2', 'Ramp: resume scored 84% · Stripe: enter your referral code', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
   summary: {
     name: 'oos_morning_summary',
-    text: 'Today in OutreachOS: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Details: {{4}}',
+    text: 'Your OutreachOS summary for today: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Open {{4}} for the details.',
     example: ['2', '1', '3', 'https://outreach-jt.vercel.app/applications/auto-apply'],
   },
 };

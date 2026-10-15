@@ -156,15 +156,25 @@ export async function askForReferral(userId, item, settings) {
 
   const tz = item.company_tz || settings.timezone;
   const applyAt = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
-  const emails = people.filter(p => p.email).length;
-  const notes = people.length - emails;
-  const note = people.length
-    ? `Asked ${people.map(p => p.name).join(' and ')}${emails ? ` (${emails} by email, sent at their morning)` : ''}${notes ? `${emails ? ',' : ''} ${notes} LinkedIn note${notes > 1 ? 's' : ''} for you to send` : ''}. Applying ${describeDay(applyAt, tz)} unless a referral comes first.`
-    : `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${describeDay(applyAt, tz)} otherwise.`;
+  const asked = await all('SELECT channel, person_name FROM referral_asks WHERE plan_item_id = $1', [item.id]);
+  const note = referralNote(asked, describeDay(applyAt, tz));
   await run(
     "UPDATE plan_items SET stage = 'waiting_referral', referral_status = 'asked', wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
     [item.id, applyAt, note],
   );
+}
+
+const names = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+
+/** The status line under a waiting role. */
+export function referralNote(asks, when) {
+  const emailed = asks.filter(a => a.channel === 'email').map(a => a.person_name);
+  const notes = asks.filter(a => a.channel === 'linkedin').map(a => a.person_name);
+  if (!emailed.length && !notes.length) return `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${when} otherwise.`;
+  const parts = [];
+  if (emailed.length) parts.push(`Emailing ${names(emailed)} at their next morning`);
+  if (notes.length) parts.push(`${emailed.length ? 'n' : 'N'}otes for ${names(notes)} are ready for you to send on LinkedIn`);
+  return `${parts.join('; ')}. Applying ${when} unless a referral comes first.`;
 }
 
 function describeDay(date, tz) {

@@ -28,3 +28,16 @@ test('LinkedIn export with its notes preamble', () => {
   assert.equal(people[1].full, 'Bo');
   assert.throws(() => parseConnections('name,age\nx,1'), /Connections\.csv/);
 });
+
+test('referral status line', async () => {
+  const { referralNote, templateAsk, linkedinSearchUrl } = await import('../services/referralFlow.js');
+  assert.equal(referralNote([{ channel: 'linkedin', person_name: 'Riya' }, { channel: 'linkedin', person_name: 'Jordan' }], 'Mon 9 AM'),
+    'Notes for Riya and Jordan are ready for you to send on LinkedIn. Applying Mon 9 AM unless a referral comes first.');
+  assert.equal(referralNote([{ channel: 'email', person_name: 'Ana' }, { channel: 'linkedin', person_name: 'Bo' }], 'Tue'),
+    'Emailing Ana at their next morning; notes for Bo are ready for you to send on LinkedIn. Applying Tue unless a referral comes first.');
+  assert.match(referralNote([{ channel: 'search' }], 'Wed'), /^Nobody you know there yet/);
+  const t = templateAsk({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', why: '' });
+  assert.ok(t.note.length <= 300 && t.note.startsWith('Hi Ana,'));
+  assert.match(t.body, /The posting: https:\/\/x/);
+  assert.match(linkedinSearchUrl('Ramp', 'UIC'), /keywords=Ramp%20UIC/);
+});

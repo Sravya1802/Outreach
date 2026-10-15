@@ -374,7 +374,7 @@ export interface WhatsAppStatus {
   verifiedAt: string | null
   pending: { code: string; expires: string } | null
 }
-export interface WhatsAppTemplate { name: string; text: string; example: string[] }
+export interface WhatsAppTemplate { name: string; header: string; body: string; footer: string; button: string; example: string[] }
 
 // ── People → Messages ───────────────────────────────────────────────────────
 

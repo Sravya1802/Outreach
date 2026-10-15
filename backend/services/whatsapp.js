@@ -26,28 +26,63 @@ import { all, one, run } from '../db.js';
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 const WINDOW_MS = 23 * 3600_000; // stay inside Meta's 24 hours
 
+const APP = 'Scout’n’Jobs';
+
+// Each template: a bold header (one variable at most), a body, a small
+// footer and a button that opens the site. Body numbering restarts at {{1}}.
 export const WHATSAPP_TEMPLATES = {
   list: {
-    name: 'oos_daily_list',
-    text: 'Your Scout’n’Jobs list for {{1}} has {{2}} roles to approve: {{3}}. Open {{4}} for details, or reply YES to approve all or YES 1 3 to approve some.',
-    example: ['Thu, Oct 15', '3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1', `${SITE}/applications/auto-apply`],
+    name: 'snj_daily_list',
+    header: { text: 'Tonight’s list · {{1}}', example: 'Thu, Oct 15' },
+    body: {
+      text: 'Hello,\n{{1}} roles scored 9+ today:\n{{2}}\n\nReply YES to approve all, or YES 1 3 for a couple of them.\nOpen Scout’n’Jobs to read each JD.\n\nGood luck! ;)',
+      example: ['3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1  3) Figma · SWE Intern · 9.0'],
+    },
+    footer: APP,
+    button: { text: 'Review and approve', path: '/applications/auto-apply' },
   },
   reply: {
-    name: 'oos_reply_alert',
-    text: 'New reply on Scout’n’Jobs: {{1}} from {{2}} wrote "{{3}}". Open Gmail to answer them.',
-    example: ['Ana Lee', 'Ramp', 'Happy to chat on Thursday'],
+    name: 'snj_reply_alert',
+    header: { text: 'New reply · {{1}}', example: 'Ana Lee' },
+    body: {
+      text: 'Hello,\n{{1}} from {{2}} wrote:\n“{{3}}”\n\nOpen Gmail to answer them.\n\nGood luck! ;)',
+      example: ['Ana Lee', 'Ramp', 'Happy to chat on Thursday'],
+    },
+    footer: APP,
+    button: { text: 'See all replies', path: '/people/outbox' },
   },
   needs: {
-    name: 'oos_needs_you',
-    text: 'Scout’n’Jobs: {{1}} of your approved roles need you: {{2}}. Open {{3}} to take care of them.',
-    example: ['2', 'Ramp: resume scored 84% · Stripe: enter your referral code', `${SITE}/applications/auto-apply`],
+    name: 'snj_needs_you',
+    header: { text: 'Needs you · {{1}}', example: '2 roles' },
+    body: {
+      text: 'Hello,\nThese approved roles are waiting on you:\n{{1}}\n\nOpen Scout’n’Jobs to take care of them.\n\nGood luck! ;)',
+      example: ['Ramp: resume scored 84%  ·  Stripe: enter your referral code'],
+    },
+    footer: APP,
+    button: { text: 'Open my roles', path: '/applications/auto-apply' },
   },
   summary: {
-    name: 'oos_morning_summary',
-    text: 'Your Scout’n’Jobs summary for today: {{1}} applied, {{2}} need you, {{3}} LinkedIn notes to send. Open {{4}} for the details.',
-    example: ['2', '1', '3', `${SITE}/applications/auto-apply`],
+    name: 'snj_morning_summary',
+    header: { text: 'Today’s summary', example: null },
+    body: {
+      text: 'Hello,\n{{1}} applied · {{2}} need you · {{3}} LinkedIn notes to send.\n\nOpen Scout’n’Jobs for the details.\n\nGood luck! ;)',
+      example: ['2', '1', '3'],
+    },
+    footer: APP,
+    button: { text: 'See the details', path: '/applications/auto-apply' },
   },
 };
+
+/** The components Meta's API expects when creating a template. */
+export function templateDefinition(kind) {
+  const t = WHATSAPP_TEMPLATES[kind];
+  const components = [];
+  components.push({ type: 'HEADER', format: 'TEXT', text: t.header.text, ...(t.header.example ? { example: { header_text: [t.header.example] } } : {}) });
+  components.push({ type: 'BODY', text: t.body.text, example: { body_text: [t.body.example] } });
+  if (t.footer) components.push({ type: 'FOOTER', text: t.footer });
+  components.push({ type: 'BUTTONS', buttons: [{ type: 'URL', text: t.button.text, url: `${SITE}${t.button.path}` }] });
+  return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: true, components };
+}
 
 const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary' };
 
@@ -130,17 +165,17 @@ export async function sendText(userId, phone, text, kind = 'text') {
 export async function sendTemplate(userId, phone, kind, params) {
   const t = WHATSAPP_TEMPLATES[kind];
   const name = process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name;
-  const clean = params.map(p => cleanParam(p));
+  const bodyParams = (params.body || []).map(p => cleanParam(p));
+  const components = [];
+  if (t.header.example) components.push({ type: 'header', parameters: [{ type: 'text', text: cleanParam(params.header, 60) }] });
+  components.push({ type: 'body', parameters: bodyParams.map(text => ({ type: 'text', text })) });
+  const logged = `[${name}] ${[params.header, ...bodyParams].filter(Boolean).join(' | ')}`;
   try {
-    const waId = await graphPost({
-      to: phone,
-      type: 'template',
-      template: { name, language: { code: cfg().lang }, components: [{ type: 'body', parameters: clean.map(text => ({ type: 'text', text })) }] },
-    });
-    await logOut(userId, { kind, body: `[${name}] ${clean.join(' | ')}`, waId });
+    const waId = await graphPost({ to: phone, type: 'template', template: { name, language: { code: cfg().lang }, components } });
+    await logOut(userId, { kind, body: logged, waId });
     return { ok: true, waId };
   } catch (err) {
-    await logOut(userId, { kind, body: `[${name}] ${clean.join(' | ')}`, error: err.message });
+    await logOut(userId, { kind, body: logged, error: err.message });
     throw err;
   }
 }
@@ -230,7 +265,7 @@ export async function sendTest(userId) {
   const text = 'Scout’n’Jobs test: WhatsApp is working. You’ll get your 10 PM list, reply alerts, roles that need you, and the morning summary here. Reply HELP for commands.';
   return inWindow(link)
     ? sendText(userId, link.phone, text, 'test')
-    : sendTemplate(userId, link.phone, 'summary', ['0', '0', '0', `${SITE}/applications/auto-apply`]);
+    : sendTemplate(userId, link.phone, 'summary', { body: ['0', '0', '0'] });
 }
 
 // ── Messages ────────────────────────────────────────────────────────────────
@@ -246,16 +281,18 @@ async function numberedTop(userId) {
 export function listMessage(items, date) {
   const day = new Date(`${String(date).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
   const short = items.map((i, n) => `${n + 1}) ${i.company_name} · ${i.title} · ${Number(i.score).toFixed(1)}`).join('  ');
-  const link = `${SITE}/applications/auto-apply`;
   const text = [
-    `Your Scout’n’Jobs list for ${day}: ${items.length} role${items.length === 1 ? '' : 's'} to approve.`,
+    `*Tonight’s list · ${day}*`,
+    'Hello,',
+    `${items.length} role${items.length === 1 ? '' : 's'} scored 9+ today:`,
+    ...items.map((i, n) => `${n + 1}) *${i.company_name}* · ${i.title} · ${Number(i.score).toFixed(1)}${i.location ? `\n   ${i.location}` : ''}${i.reason ? `\n   _${i.reason}_` : ''}`),
     '',
-    ...items.map((i, n) => `${n + 1}) ${i.company_name} · ${i.title} · ${Number(i.score).toFixed(1)}${i.location ? `\n   ${i.location}` : ''}${i.reason ? `\n   ${i.reason}` : ''}`),
+    'Reply *YES* to approve all, or *YES 1 3* for a couple of them.',
+    `Open Scout’n’Jobs to read each JD: ${SITE}/applications/auto-apply`,
     '',
-    'Reply YES to approve all, YES 1 3 to approve some, SKIP 2 to skip one.',
-    link,
+    'Good luck! ;)',
   ].join('\n');
-  return { params: [day, String(items.length), short, link], text };
+  return { params: { header: day, body: [String(items.length), short] }, text };
 }
 
 export async function sendPlanList(userId) {

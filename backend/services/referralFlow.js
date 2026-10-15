@@ -341,8 +341,8 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
     text: `${lines.join('\n\n')}\n\nOpen your plan: ${SITE}/applications/auto-apply`,
   }).catch(() => ({ skipped: true }));
   await whatsappNotify(userId, 'summary', {
-    params: [String(applied.length), String(needsYou.length), String(toSend.length), `${SITE}/applications/auto-apply`],
-    text: `Today in Scout’n’Jobs\n\n${lines.join('\n\n')}\n\n${SITE}/applications/auto-apply`,
+    params: { body: [String(applied.length), String(needsYou.length), String(toSend.length)] },
+    text: `*Today’s summary*\nHello,\n${lines.join('\n\n')}\n\nSee the details: ${SITE}/applications/auto-apply\n\nGood luck! ;)`,
   }).catch(() => {});
   if (r.ok || r.skipped) await mark();
   return r;

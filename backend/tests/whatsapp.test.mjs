@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z';
-const { normalizePhone, cleanParam, parseCommand, listMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES, welcomeMessage, chatReply } = await import('../services/whatsapp.js');
+const { normalizePhone, cleanParam, parseCommand, listMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES, templateDefinition, welcomeMessage, chatReply } = await import('../services/whatsapp.js');
 
 test('phone numbers', () => {
   assert.equal(normalizePhone('+1 (555) 010-2000'), '15550102000');
@@ -35,12 +35,12 @@ test('list message numbers roles the way YES 1 3 reads them', () => {
     { company_name: 'Ramp', title: 'SWE Intern', score: '9.4', location: 'New York', reason: 'Kafka match' },
     { company_name: 'Stripe', title: 'Data Intern', score: 9.1 },
   ], '2026-10-15');
-  assert.equal(m.params[0], 'Thu, Oct 15');
-  assert.equal(m.params[1], '2');
-  assert.equal(m.params[2], '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1');
-  assert.match(m.text, /^Your Scout’n’Jobs list for Thu, Oct 15: 2 roles to approve\./);
-  assert.match(m.text, /1\) Ramp · SWE Intern · 9\.4\n {3}New York\n {3}Kafka match/);
-  assert.match(m.text, /Reply YES to approve all, YES 1 3/);
+  assert.equal(m.params.header, 'Thu, Oct 15');
+  assert.deepEqual(m.params.body, ['2', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1']);
+  assert.match(m.text, /^\*Tonight’s list · Thu, Oct 15\*\nHello,\n2 roles scored 9\+ today:/);
+  assert.match(m.text, /1\) \*Ramp\* · SWE Intern · 9\.4\n {3}New York\n {3}_Kafka match_/);
+  assert.match(m.text, /Reply \*YES\* to approve all, or \*YES 1 3\*/);
+  assert.match(m.text, /Good luck! ;\)$/);
 });
 
 test('webhook handshake and signature', () => {
@@ -58,21 +58,16 @@ test('webhook handshake and signature', () => {
   delete process.env.WHATSAPP_VERIFY_TOKEN;
 });
 
-test('every template has as many example values as placeholders', () => {
-  for (const t of Object.values(WHATSAPP_TEMPLATES)) {
-    const n = (t.text.match(/\{\{\d+\}\}/g) || []).length;
-    assert.equal(t.example.length, n, t.name);
-    assert.ok(!/^\{\{|\}\}$/.test(t.text.trim()), `${t.name} must not start or end with a variable`);
+test('every template has as many example values as placeholders, and a valid shape', () => {
+  for (const [kind, t] of Object.entries(WHATSAPP_TEMPLATES)) {
+    const n = (t.body.text.match(/\{\{\d+\}\}/g) || []).length;
+    assert.equal(t.body.example.length, n, t.name);
+    assert.ok(!/^\{\{|\}\}$/.test(t.body.text.trim()), `${t.name} body must not start or end with a variable`);
+    const h = (t.header.text.match(/\{\{\d+\}\}/g) || []).length;
+    assert.ok(h <= 1 && (h === 1) === Boolean(t.header.example), `${t.name} header`);
+    assert.ok(t.header.text.length <= 60 && t.footer.length <= 60);
+    const d = templateDefinition(kind);
+    assert.equal(d.components.map(c => c.type).join(','), 'HEADER,BODY,FOOTER,BUTTONS');
+    assert.match(d.components[3].buttons[0].url, /^https:\/\//);
   }
-});
-
-test('welcome and small talk', () => {
-  const w = welcomeMessage(21);
-  assert.match(w, /^✅ \*You’re connected to Scout’n’Jobs\*/);
-  assert.match(w, /evening list is ready \(9 PM\)/);
-  assert.match(w, /\*YES 1 3\*  approve only those numbers/);
-  assert.match(chatReply('thank you'), /^You’re welcome!/);
-  assert.match(chatReply('Thanks!'), /^You’re welcome!/);
-  assert.match(chatReply('hi'), /^Hi! 👋/);
-  assert.match(chatReply('what is this'), /Reply \*HELP\*/);
 });

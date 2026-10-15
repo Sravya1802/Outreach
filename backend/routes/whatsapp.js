@@ -1,7 +1,7 @@
 // WhatsApp: link your phone, choose what comes there, and the webhook Meta calls.
 import { Router } from 'express';
 import {
-  WHATSAPP_TEMPLATES, handleWebhook, savePrefs, sendTest, signatureOk, startJoin, unlink, verifyHandshake, whatsappStatus,
+  WHATSAPP_TEMPLATES, templateDefinition, handleWebhook, savePrefs, sendTest, signatureOk, startJoin, unlink, verifyHandshake, whatsappStatus,
 } from '../services/whatsapp.js';
 
 const router = Router();
@@ -28,7 +28,11 @@ router.post('/test', async (req, res) => {
 // The message templates the owner registers in WhatsApp Manager.
 router.get('/templates', (req, res) => {
   // A WHATSAPP_TEMPLATE_<KIND> env var renames one (Meta holds deleted names for a while).
-  const templates = Object.fromEntries(Object.entries(WHATSAPP_TEMPLATES).map(([k, t]) => [k, { ...t, name: process.env[`WHATSAPP_TEMPLATE_${k.toUpperCase()}`] || t.name }]));
+  const templates = Object.fromEntries(Object.keys(WHATSAPP_TEMPLATES).map(k => {
+    const d = templateDefinition(k);
+    const t = WHATSAPP_TEMPLATES[k];
+    return [k, { name: d.name, header: t.header.text, body: t.body.text, footer: t.footer, button: t.button.text, example: [t.header.example, ...t.body.example].filter(Boolean) }];
+  }));
   res.json({ templates });
 });
 

@@ -411,8 +411,8 @@ export async function notifyNeedsYou(userId) {
   const short = fresh.map(f => `${f.company_name}: ${String(f.stage_note || 'needs you').split('.')[0]}`).join(' · ');
   const link = `${SITE}/applications/auto-apply`;
   return whatsappNotify(userId, 'needs', {
-    params: [String(fresh.length), short, link],
-    text: `${fresh.length} of your approved roles need you:\n\n${fresh.map(f => `• ${f.company_name}: ${f.stage_note || 'needs you'}`).join('\n')}\n\n${link}`,
+    params: { header: `${fresh.length} role${fresh.length === 1 ? '' : 's'}`, body: [short] },
+    text: `*Needs you · ${fresh.length} role${fresh.length === 1 ? '' : 's'}*\nHello,\nThese approved roles are waiting on you:\n${fresh.map(f => `• *${f.company_name}*: ${f.stage_note || 'needs you'}`).join('\n')}\n\nOpen Scout’n’Jobs to take care of them: ${link}\n\nGood luck! ;)`,
   });
 }
 

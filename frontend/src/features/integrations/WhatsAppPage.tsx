@@ -148,14 +148,16 @@ function OwnerSetup({ configured }: { configured: boolean }) {
             <li>In <b className="text-fg">WhatsApp → API Setup</b>, copy the <b className="text-fg">Phone number ID</b>. Create a <b className="text-fg">System user</b> in Business Settings with a permanent token that has <span className="font-mono">whatsapp_business_messaging</span>.</li>
             <li>In <b className="text-fg">WhatsApp → Configuration</b>, set the webhook URL to <span className="font-mono text-fg">{webhook}</span>, pick any verify token, and subscribe to <span className="font-mono">messages</span>.</li>
             <li>Put these in the server’s <span className="font-mono">.env</span>: <span className="font-mono text-fg">WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_NUMBER, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET</span> (App settings → Basic).</li>
-            <li>In <b className="text-fg">WhatsApp Manager → Message templates</b>, create these four, category <b className="text-fg">Utility</b>, language English (US), with exactly this text:</li>
+            <li>In <b className="text-fg">WhatsApp Manager → Message templates</b>, these four are created for you through Meta’s API (category Utility, English US). Shown here for reference:</li>
           </ol>
           {templates.data && (
             <ul className="space-y-3">
               {Object.values(templates.data).map(t => (
                 <li key={t.name} className="rounded-[4px] border border-line bg-raised p-3">
                   <p className="font-mono text-[13px] text-fg">{t.name}</p>
-                  <p className="mt-1 text-[13px] text-fg">{t.text}</p>
+                  <p className="mt-2 text-[13px] font-semibold text-fg">{t.header}</p>
+                  <p className="mt-1 text-[13px] whitespace-pre-line text-fg">{t.body}</p>
+                  <p className="mt-1 text-[12px] text-subtle">{t.footer} · button: “{t.button}”</p>
                   <p className="mt-1 text-[12px] text-subtle">Example values: {t.example.join(' | ')}</p>
                 </li>
               ))}

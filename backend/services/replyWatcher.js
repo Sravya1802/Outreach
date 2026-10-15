@@ -195,8 +195,8 @@ async function notify(userId, events) {
     const who = e.contact?.name || e.fromName || 'Someone';
     const company = e.contact?.company_name || 'a company';
     await whatsappNotify(userId, 'reply', {
-      params: [who, company, e.kind === 'linkedin_message' ? 'sent you a LinkedIn message' : (e.snippet || e.subject || '')],
-      text: describeEvent(e),
+      params: { header: who, body: [who, company, e.kind === 'linkedin_message' ? 'sent you a LinkedIn message' : (e.snippet || e.subject || '')] },
+      text: `*New reply · ${who}*\nHello,\n${describeEvent(e)}\n\nSee all replies: ${SITE}/people/outbox\n\nGood luck! ;)`,
     }).catch(() => {});
   }
 }

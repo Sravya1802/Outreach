@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Home: Connect Gmail is a setup step
+- **What:** the Home checklist now has 6 steps, with **Connect Gmail** after GitHub (`2f616c6`). The step links to Integrations → Gmail and counts as done when it's connected and the status isn't `error`. The heading now reads "Before the app can apply and email for you". The grid is 3 columns on tablet and 6 on desktop.
+- **Also:** "Waiting on you" shows a red item when Gmail is connected but Google rejected the app password (emails on hold), linking to the reconnect page.
+- **Status:** verified live with the e2e user (light, dark, 390px). Unit tests were updated ([onboarding.ts](frontend/src/features/home/onboarding.ts), home.test.ts).
+
 ### 2026-10-15 — Decision: keep the Gmail app-password page
 - The user asked to remove Integrations → Gmail, thinking "Continue with Google" already covered it. It doesn't: the sign-in requests no Gmail scopes (`LoginPage.tsx` signInWithOAuth has no `scopes`), and sending, follow-ups, reply tracking and daily emails all use the app password.
 - Explained, and the user chose to **keep the app-password page as is**. Moving Gmail onto Google sign-in (gmail.send/readonly scopes, unverified-app warning, 100-user cap until review) was offered and declined for now.

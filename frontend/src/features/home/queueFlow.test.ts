@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { DailyPlanOverview, EvaluationSummary } from '@/lib/api'
-import { flowSettingsLine, flowSteps } from './queueFlow'
+import type { DailyPlanOverview, EvaluationSummary, OutboxItem, ReplyItem } from '@/lib/api'
+import { emailSteps, flowSettingsLine, flowSteps } from './queueFlow'
 
 const NOW = new Date('2026-10-15T15:00:00Z').getTime()
 const row = (p: Partial<EvaluationSummary>): EvaluationSummary => ({
@@ -50,5 +50,30 @@ describe('flowSteps', () => {
 describe('flowSettingsLine', () => {
   it('says when the list is off', () => {
     expect(flowSettingsLine()).toMatch(/off/)
+  })
+})
+
+describe('emailSteps', () => {
+  it('asks for Gmail first when it is not connected', () => {
+    const steps = emailSteps({ contactsWithEmail: 0 })
+    expect(steps.map(s => s.id)).toEqual(['gmail', 'people', 'schedule', 'send', 'followups', 'replies'])
+    expect(steps[0]?.state).toBe('you')
+    expect(steps[0]?.countLabel).toBe('not connected')
+  })
+  it('counts the outbox by step and status', () => {
+    const outbox = [
+      { step: 0, status: 'scheduled' }, { step: 0, status: 'sent' }, { step: 0, status: 'sent' },
+      { step: 1, status: 'scheduled' }, { step: 2, status: 'cancelled' }, { step: 0, status: 'failed' },
+    ] as OutboxItem[]
+    const replies = [{ kind: 'reply' }, { kind: 'bounce' }] as ReplyItem[]
+    const steps = emailSteps({ gmail: { connected: true, status: 'ok', email: 'me@gmail.com', daily_cap: 15 }, contactsWithEmail: 12, outbox, replies })
+    const by = Object.fromEntries(steps.map(s => [s.id, s])) as Record<string, (typeof steps)[number]>
+    expect(by.gmail?.countLabel).toBe('connected as me@gmail.com')
+    expect(by.schedule?.countLabel).toBe('1 scheduled')
+    expect(by.send?.countLabel).toBe('2 sent')
+    expect(by.send?.alert).toBe('1 failed')
+    expect(by.send?.explain).toContain('at most 15 a day')
+    expect(by.followups?.countLabel).toBe('1 scheduled')
+    expect(by.replies?.countLabel).toBe('1 reply')
   })
 })

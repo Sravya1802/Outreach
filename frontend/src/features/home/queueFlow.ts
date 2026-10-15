@@ -1,6 +1,6 @@
 // "How your job queue works" on Home: each stage from finding a role to following up,
 // explained with the user's own settings and a live count.
-import type { DailyPlanOverview, EvaluationSummary } from '@/lib/api'
+import type { DailyPlanOverview, EvaluationSummary, GmailStatus, OutboxItem, ReplyItem } from '@/lib/api'
 import { followUpDays } from '@/features/applications/pipeline'
 import { stageFor } from '@/features/applications/score'
 import { hourLabel, tzLabel } from '@/features/applications/plan'
@@ -86,4 +86,50 @@ export function flowSettingsLine(plan?: DailyPlanOverview): string {
   const s = { ...DEFAULTS, ...(plan?.settings ?? {}) }
   if (!s.enabled) return 'The evening list is off. Turn it on in Auto-apply and the queue runs every night.'
   return `On · list at ${hourLabel(s.listHour)} ${tzLabel(s.timezone)} · score ${Number(s.minScore).toFixed(1)}+ · up to ${s.maxPerDay} a day · ${s.referralFirst ? `referral wait ${s.referralWaitDays} business day${s.referralWaitDays === 1 ? '' : 's'}` : 'no referral asks'}`
+}
+
+export interface EmailFlowInput {
+  gmail?: GmailStatus
+  contactsWithEmail: number
+  outbox?: OutboxItem[]
+  replies?: ReplyItem[]
+}
+
+const REAL_REPLY: ReplyItem['kind'][] = ['reply', 'linkedin_message', 'linkedin_accept']
+
+/** How outreach email goes out from the user's own Gmail, with live counts. */
+export function emailSteps(i: EmailFlowInput): FlowStep[] {
+  const connected = Boolean(i.gmail?.connected)
+  const broken = connected && i.gmail?.status === 'error'
+  const cap = i.gmail?.daily_cap || 20
+  const out = i.outbox ?? []
+  const firstScheduled = out.filter(o => o.step === 0 && o.status === 'scheduled').length
+  const firstSent = out.filter(o => o.step === 0 && o.status === 'sent').length
+  const followScheduled = out.filter(o => o.step > 0 && o.status === 'scheduled').length
+  const failed = out.filter(o => o.status === 'failed').length
+  const replies = (i.replies ?? []).filter(r => REAL_REPLY.includes(r.kind)).length
+
+  return [
+    { id: 'gmail', title: 'Connect your Gmail', to: '/integrations/gmail',
+      explain: 'Emails go out from your own address, so replies land in your inbox. Referral asks from your evening list use it too.',
+      count: connected ? 1 : 0,
+      countLabel: broken ? 'needs reconnecting' : connected ? `connected${i.gmail?.email ? ` as ${i.gmail.email}` : ''}` : 'not connected',
+      state: broken ? 'stuck' : connected ? 'busy' : 'you' },
+    { id: 'people', title: 'Find people', to: '/people/contacts',
+      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found.',
+      count: i.contactsWithEmail, countLabel: `${i.contactsWithEmail} with email`, state: i.contactsWithEmail ? 'busy' : 'idle' },
+    { id: 'schedule', title: 'Write and schedule', to: '/people/contacts',
+      explain: 'The AI drafts each email from your template for that person and company. You read it, edit if you like, and schedule it.',
+      count: firstScheduled, countLabel: `${firstScheduled} scheduled`, state: firstScheduled ? 'busy' : 'idle' },
+    { id: 'send', title: 'Send from your Gmail', to: '/people/outbox',
+      explain: `Sent on weekdays between 8 and 11 AM in the recipient’s time zone, at least 3 minutes apart, and at most ${cap} a day.`,
+      count: firstSent, countLabel: `${firstSent} sent`, state: failed ? 'stuck' : firstSent ? 'busy' : 'idle',
+      alert: failed ? `${failed} failed` : undefined },
+    { id: 'followups', title: 'Follow up automatically', to: '/people/outbox',
+      explain: 'Two follow-ups go out in the same thread, 4 and 10 business days later. Any reply, or a bounce, cancels the rest.',
+      count: followScheduled, countLabel: `${followScheduled} scheduled`, state: followScheduled ? 'busy' : 'idle' },
+    { id: 'replies', title: 'Catch replies', to: '/people/outbox',
+      explain: 'Your inbox is checked for replies to these emails and for LinkedIn notifications, and the contact is marked Replied.',
+      count: replies, countLabel: `${replies} ${replies === 1 ? 'reply' : 'replies'}`, state: replies ? 'you' : 'idle' },
+  ]
 }

@@ -124,6 +124,13 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Tracker moved to the Dashboard; Referrals panel; needs_reason fix
+- **What:**
+  - "After you apply" (Tracker) is removed from Auto-apply and now sits at the bottom of the Dashboard. Every `/applications/auto-apply…#tracker` link now goes to `/dashboard…#tracker` (Home, today.ts, queueFlow, the old Pipeline/Board/Ranked redirects). The page scrolls to it after the charts load.
+  - New **Referrals** panel on the Dashboard (`GET /api/daily-plan/referral-stats`): roles asked, referrals got (and rate), emails sent/scheduled, LinkedIn notes sent/to send, replies, connections imported, and an outcomes bar list.
+  - **Bug fix (027 `plan_items.needs_reason`):** advanceUser re-advanced every `needs_you` row whose resume had passed. A role waiting on the user for a referral code was sent back to `asking_referral` and asked again. Now only `needs_reason = 'resume'` rows auto-advance, and `askForReferral` never re-asks when asks exist. The e2e Garmin row was repaired.
+- **Status:** live (bf7d647, VM too). The browser test passed (the tracker isn't on Auto-apply, the tracker and Referrals are on the Dashboard with real numbers, `/applications/pipeline` → `/dashboard#tracker`). Tests: backend 143/143, frontend 75/75.
+
 ### 2026-10-15 — People → Messages
 - **What:** a new tab, [MessagesPage.tsx](frontend/src/features/outreach/MessagesPage.tsx), backed by [messages.js](backend/services/messages.js) and `/api/messages/*`.
   - Lists every company where the user has people: LinkedIn connections, merged with saved contacts by `companyKey`. Each shows open roles (catalog, 30 days, the user's region), connections, contacts with email, and how many were contacted.

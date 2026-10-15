@@ -8,8 +8,8 @@
 /* ── Design tokens ────────────────────────────────────────────────────────────
    Raw values live on --ui-*; Tailwind colours point at them so one
    data-theme switch re-themes every utility. Dark is the default. */
-/* "Paper" direction: editorial type (Fraunces display, IBM Plex text) and
-   hairline rules. Dark is the default; light is the cream original. */
+/* Editorial type (Fraunces display, IBM Plex text) with soft hairline rules.
+   Dark is the default; light is "Clean white". */
 :root {
   color-scheme: dark;
   --ui-canvas:        #121315;
@@ -18,7 +18,7 @@
   --ui-hover:         #26272c;
   --ui-border:        #2c2d31;
   --ui-border-strong: #3d3e44;
-  --ui-rule:          #ece9e2;
+  --ui-rule:          #3d3e44;
   --ui-fg:            #ece9e2;
   --ui-muted:         #b3afa7;
   --ui-subtle:        #8a877f;
@@ -39,31 +39,32 @@
 }
 
 :root[data-theme="light"] {
+  /* "Clean white": white cards on a cool light-grey page, soft grey lines, indigo accent. */
   color-scheme: light;
-  --ui-canvas:        #f5f3ee;
-  --ui-surface:       #fbfaf7;
+  --ui-canvas:        #f7f8fa;
+  --ui-surface:       #ffffff;
   --ui-raised:        #ffffff;
-  --ui-hover:         #ece8df;
-  --ui-border:        #dcd7cb;
-  --ui-border-strong: #cfc9bb;
-  --ui-rule:          #17181a;
-  --ui-fg:            #17181a;
-  --ui-muted:         #4f525a;
-  --ui-subtle:        #6a6d75;
-  --ui-accent:        #1f3bc4;
-  --ui-accent-hover:  #152a8f;
-  --ui-accent-soft:   rgb(31 59 196 / 0.09);
+  --ui-hover:         #f0f2f5;
+  --ui-border:        #e4e7ec;
+  --ui-border-strong: #d0d5dd;
+  --ui-rule:          #d0d5dd;
+  --ui-fg:            #101828;
+  --ui-muted:         #475467;
+  --ui-subtle:        #667085;
+  --ui-accent:        #4f46e5;
+  --ui-accent-hover:  #4338ca;
+  --ui-accent-soft:   rgb(79 70 229 / 0.08);
   --ui-on-accent:     #ffffff;
-  --ui-success:       #1e6b52;
-  --ui-success-soft:  rgb(30 107 82 / 0.10);
-  --ui-warning:       #8a5a00;
-  --ui-warning-soft:  rgb(138 90 0 / 0.10);
-  --ui-danger:        #b4441c;
-  --ui-danger-soft:   rgb(180 68 28 / 0.09);
-  --ui-info:          #1f3bc4;
-  --ui-info-soft:     rgb(31 59 196 / 0.08);
-  --ui-shadow:        0 8px 30px rgb(23 24 26 / 0.12), 0 0 0 1px rgb(23 24 26 / 0.06);
-  --ui-ring:          rgb(31 59 196 / 0.35);
+  --ui-success:       #067647;
+  --ui-success-soft:  rgb(6 118 71 / 0.08);
+  --ui-warning:       #b54708;
+  --ui-warning-soft:  rgb(181 71 8 / 0.08);
+  --ui-danger:        #d92d20;
+  --ui-danger-soft:   rgb(217 45 32 / 0.08);
+  --ui-info:          #4f46e5;
+  --ui-info-soft:     rgb(79 70 229 / 0.08);
+  --ui-shadow:        0 8px 30px rgb(16 24 40 / 0.08), 0 0 0 1px rgb(16 24 40 / 0.05);
+  --ui-ring:          rgb(79 70 229 / 0.35);
 }
 
 @theme inline {

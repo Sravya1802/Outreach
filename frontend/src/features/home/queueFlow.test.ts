@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { DailyPlanOverview, EvaluationSummary, OutboxItem, ReplyItem } from '@/lib/api'
-import { emailSteps, flowSettingsLine, flowSteps } from './queueFlow'
+import type { DailyPlanOverview, EvaluationSummary, OutboxItem, ReplyItem, WhatsAppStatus } from '@/lib/api'
+import { emailSteps, flowSettingsLine, flowSteps, whatsappSteps } from './queueFlow'
 
 const NOW = new Date('2026-10-15T15:00:00Z').getTime()
 const row = (p: Partial<EvaluationSummary>): EvaluationSummary => ({
@@ -56,7 +56,7 @@ describe('flowSettingsLine', () => {
 describe('emailSteps', () => {
   it('asks for Gmail first when it is not connected', () => {
     const steps = emailSteps({ contactsWithEmail: 0 })
-    expect(steps.map(s => s.id)).toEqual(['gmail', 'people', 'schedule', 'send', 'followups', 'replies'])
+    expect(steps.map(s => s.id)).toEqual(['gmail', 'linkedin', 'people', 'write', 'send', 'notes', 'followups', 'replies'])
     expect(steps[0]?.state).toBe('you')
     expect(steps[0]?.countLabel).toBe('not connected')
   })
@@ -66,14 +66,34 @@ describe('emailSteps', () => {
       { step: 1, status: 'scheduled' }, { step: 2, status: 'cancelled' }, { step: 0, status: 'failed' },
     ] as OutboxItem[]
     const replies = [{ kind: 'reply' }, { kind: 'bounce' }] as ReplyItem[]
-    const steps = emailSteps({ gmail: { connected: true, status: 'ok', email: 'me@gmail.com', daily_cap: 15 }, contactsWithEmail: 12, outbox, replies })
+    const steps = emailSteps({ gmail: { connected: true, status: 'ok', email: 'me@gmail.com', daily_cap: 15 }, contactsWithEmail: 12, connections: 340, outbox, replies })
     const by = Object.fromEntries(steps.map(s => [s.id, s])) as Record<string, (typeof steps)[number]>
     expect(by.gmail?.countLabel).toBe('connected as me@gmail.com')
-    expect(by.schedule?.countLabel).toBe('1 scheduled')
+    expect(by.write?.countLabel).toBe('1 email scheduled')
+    expect(by.linkedin?.countLabel).toBe('340 connections')
     expect(by.send?.countLabel).toBe('2 sent')
     expect(by.send?.alert).toBe('1 failed')
     expect(by.send?.explain).toContain('at most 15 a day')
     expect(by.followups?.countLabel).toBe('1 scheduled')
     expect(by.replies?.countLabel).toBe('1 reply')
+  })
+})
+
+describe('whatsappSteps', () => {
+  const base: WhatsAppStatus = { configured: true, businessNumber: '+15550100', linked: false, phone: null, enabled: true, prefs: { list: true, replies: true, needs: true, summary: false }, verifiedAt: null, pending: null }
+  it('asks to link the phone first', () => {
+    const steps = whatsappSteps(base)
+    expect(steps[0]?.state).toBe('you')
+    expect(steps[1]?.countLabel).toBe('link your phone first')
+  })
+  it('shows each message type as on or off once linked', () => {
+    const steps = whatsappSteps({ ...base, linked: true, phone: '+1 555 0100' })
+    const by = Object.fromEntries(steps.map(s => [s.id, s.countLabel]))
+    expect(by['wa-link']).toBe('linked · +1 555 0100')
+    expect(by['wa-list']).toBe('on')
+    expect(by['wa-summary']).toBe('off')
+  })
+  it('says when WhatsApp is not set up on the server', () => {
+    expect(whatsappSteps({ ...base, configured: false })[0]?.countLabel).toBe('not available yet')
   })
 })

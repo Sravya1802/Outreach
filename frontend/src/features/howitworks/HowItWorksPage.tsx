@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { Page, PageHeader, Skeleton } from '@/ui'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
-import { emailSteps, flowSettingsLine, flowSteps, type FlowState, type FlowStep } from '@/features/home/queueFlow'
+import { emailSteps, flowSettingsLine, flowSteps, whatsappSteps, type FlowState, type FlowStep } from '@/features/home/queueFlow'
 
 function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -56,17 +56,19 @@ export default function HowItWorksPage() {
   const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
   const outbox = useQuery({ queryKey: qk.outbox, queryFn: api.outbox, enabled: Boolean(gmail.data?.connected) })
   const replies = useQuery({ queryKey: qk.replies, queryFn: api.replies, enabled: Boolean(gmail.data?.connected) })
+  const connections = useQuery({ queryKey: qk.connections, queryFn: api.connections })
+  const whatsapp = useQuery({ queryKey: qk.whatsapp, queryFn: api.whatsappStatus })
   const apply = flowSteps({
     now,
     newToday: (daily.data?.intern.today ?? 0) + (daily.data?.newGrad.today ?? 0),
     plan: plan.data,
     tracked: pipeline.data ? Object.values(pipeline.data.columns).flatMap(c => c.items) : [],
   })
-  const email = emailSteps({ gmail: gmail.data, contactsWithEmail: metrics.data?.summary.contactsWithEmail ?? 0, outbox: outbox.data, replies: replies.data })
+  const email = emailSteps({ gmail: gmail.data, contactsWithEmail: metrics.data?.summary.contactsWithEmail ?? 0, connections: connections.data?.total, outbox: outbox.data, replies: replies.data })
 
   return (
     <Page wide>
-      <PageHeader title="How it works" description="What happens to every role and every email, step by step, with where each one is right now." />
+      <PageHeader title="How it works" description="What happens to every role, email and message, step by step, with where each one is right now." />
       <div className="space-y-10">
       <div>
         <SectionTitle action={<Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">Change settings</Link>}>
@@ -77,10 +79,17 @@ export default function HowItWorksPage() {
       </div>
       <div>
         <SectionTitle action={<Link to="/people/outbox" className="text-[14px] text-accent hover:underline">Outbox</Link>}>
-          <span id="email-flow-h">How your outreach emails go out</span>
+          <span id="email-flow-h">How your outreach goes out</span>
         </SectionTitle>
-        <p className="mb-4 text-[14px] text-muted">Cold emails and referral asks are sent automatically from your Gmail on a schedule, and follow-ups stop the moment someone replies.</p>
-        <FlowGrid steps={email} loading={gmail.isLoading || metrics.isLoading} cols="lg:grid-cols-3" />
+        <p className="mb-4 text-[14px] text-muted">Emails and referral asks go out automatically from your Gmail on a schedule, with follow-ups that stop the moment someone replies. LinkedIn notes are written for you and sent by you.</p>
+        <FlowGrid steps={email} loading={gmail.isLoading || metrics.isLoading || connections.isLoading} cols="lg:grid-cols-4" />
+      </div>
+      <div>
+        <SectionTitle action={<Link to="/integrations/whatsapp" className="text-[14px] text-accent hover:underline">WhatsApp settings</Link>}>
+          <span id="wa-flow-h">On your phone with WhatsApp</span>
+        </SectionTitle>
+        <p className="mb-4 text-[14px] text-muted">The same updates on WhatsApp, and you can approve your list just by replying.</p>
+        <FlowGrid steps={whatsappSteps(whatsapp.data)} loading={whatsapp.isLoading} cols="lg:grid-cols-3" />
       </div>
       </div>
     </Page>

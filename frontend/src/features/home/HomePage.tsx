@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
-import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useNightlySettings, useProfile, useServiceHealth } from '@/app/queries'
+import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
 import { api } from '@/lib/api'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
@@ -28,7 +28,7 @@ function SectionTitle({ children, action }: { children: ReactNode; action?: Reac
 function SetupChecklist() {
   const resume = useHasResume()
   const profile = useProfile()
-  const nightly = useNightlySettings()
+  const plan = useDailyPlan()
   const answers = useQuery({ queryKey: qk.answers, queryFn: api.answers })
   const github = useQuery({ queryKey: qk.githubStatus, queryFn: api.githubStatus })
   const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
@@ -39,10 +39,10 @@ function SetupChecklist() {
     answers: answers.data?.filter(a => a.status === 'answered').length,
     githubConnected: github.data?.connected,
     gmailConnected: gmail.data ? gmail.data.connected && gmail.data.status !== 'error' : undefined,
-    // Rules count as set once saved away from the old defaults (85 / 50).
-    rulesSet: nightly.data ? nightly.data.minScore !== 85 || nightly.data.maxApps !== 50 : undefined,
+    // Auto-apply's rules live on the daily list; the step is done once the list is on.
+    rulesSet: plan.data?.settings.enabled,
   })
-  const anyError = [resume, profile, nightly, answers, github, gmail].some(q => q.isError)
+  const anyError = [resume, profile, plan, answers, github, gmail].some(q => q.isError)
   const loading = steps.some(s => s.done === undefined) && !anyError
   const doneCount = steps.filter(s => s.done).length
   const [open, setOpen] = useState(false)

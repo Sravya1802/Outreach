@@ -10,7 +10,7 @@ import {
   Badge, Button, ButtonLink, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pager, Segmented, Select, Skeleton, useToast,
 } from '@/ui'
 import { AlertsDialog } from './AlertsDialog'
-import { countsByList, listForKind, listsForMarket, postedDate, postedLabel, sourceLabel, visaLabel, type CatalogList } from './catalog'
+import { countsByList, listForKind, listsForMarket, postedDate, postedWords, sourceLabel, visaLabel, type CatalogList } from './catalog'
 import { useMarket, useProfile } from '@/app/queries'
 import { marketPhrase, type Market } from '@/lib/markets'
 
@@ -37,7 +37,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
   const others = (role.also_on ?? []).filter(s => s !== role.source)
   const posted = postedDate(role.posted_at, role.scraped_at)
   return (
-    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_100px_120px_140px_88px_110px_176px] md:items-center md:gap-4">
+    <li className="group grid grid-cols-1 gap-2 px-4 py-3 transition-colors hover:bg-hover/40 md:grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_176px] md:items-center md:gap-4 xl:grid-cols-[minmax(0,1fr)_100px_120px_140px_88px_110px_176px]">
       <div className="min-w-0">
         <a href={role.apply_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-[13px] font-medium text-fg hover:text-accent">
           <span className="truncate">{role.title}</span>
@@ -50,7 +50,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
           {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
           {visa && <span className="md:hidden" title={visaTitle}><Badge tone={visa.tone}>{visa.text}</Badge></span>}
           {role.company_name}
-          <span className="md:hidden">{role.location ? ` · ${role.location}` : ''} · {postedLabel(role.posted_at, role.scraped_at)}</span>
+          <span className="md:hidden">{role.location ? ` · ${role.location}` : ''}{posted ? ` · ${postedWords(posted)}` : ''}</span>
         </p>
       </div>
       <p className={cn('hidden truncate font-mono text-[13px] md:block', role.salary_range ? 'text-fg' : 'text-subtle')}
@@ -61,7 +61,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
         {visa ? <Badge tone={visa.tone}>{visa.text}</Badge> : <span className="text-subtle">Not checked</span>}
       </p>
       <p className="hidden truncate text-xs text-subtle md:block" title={role.location || undefined}>{role.location || '—'}</p>
-      <p className="hidden text-xs md:block"
+      <p className="hidden text-xs xl:block"
         title={posted ? (posted.known ? `Posted ${posted.date}` : 'This site doesn’t say when the job was posted. This is the day we first found it.') : undefined}>
         {posted ? (
           <>
@@ -73,6 +73,7 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
       <div className="hidden text-xs text-subtle md:block">
         <span className={role.source === 'speedyapply' ? 'font-medium text-accent' : undefined}>{sourceLabel(role.source)}</span>
         {others.length > 0 && <span className="block" title="The same job is listed there too">also on {others.map(sourceLabel).join(', ')}</span>}
+        {posted && <span className="block xl:hidden">{postedWords(posted)}</span>}
       </div>
       <div className="flex items-center gap-1.5 md:justify-end">
         {role.autoQueued ? (
@@ -248,8 +249,8 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_140px_88px_110px_176px] gap-4 border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
-          <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span>Posted</span><span>Source</span><span>&nbsp;</span>
+        <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_176px] gap-4 xl:grid-cols-[minmax(0,1fr)_100px_120px_140px_88px_110px_176px] border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
+          <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span className="hidden xl:block">Posted</span><span>Source</span><span>&nbsp;</span>
         </div>
         {listing.isLoading ? (
           <ul className="divide-y divide-line">{Array.from({ length: 8 }, (_, i) => (

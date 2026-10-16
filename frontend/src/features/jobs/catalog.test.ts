@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countsByList, listForKind, postedDate, postedLabel, sourceLabel } from './catalog'
+import { countsByList, listForKind, postedDate, postedWords, sourceLabel } from './catalog'
 
 describe('catalog helpers', () => {
   it('labels sources', () => {
@@ -15,12 +15,9 @@ describe('catalog helpers', () => {
     expect(listForKind('new-grad-intl', 'india')).toMatchObject({ roleType: 'new_grad', region: 'india' })
     expect(listForKind('other', 'usa')).toBeNull()
   })
-  it('formats posted dates', () => {
-    const now = new Date('2026-10-13T12:00:00Z').getTime()
-    expect(postedLabel('2026-10-13T08:00:00Z', '2026-10-13T09:00:00Z', now)).toBe('today')
-    expect(postedLabel(null, '2026-10-12T08:00:00Z', now)).toBe('yesterday')
-    expect(postedLabel('2026-10-08T08:00:00Z', '', now)).toBe('5d ago')
-    expect(postedLabel('garbage', 'garbage', now)).toBe('')
+  it('says the date in words where there is no Posted column', () => {
+    expect(postedWords({ date: 'Oct 13', known: true })).toBe('Posted Oct 13')
+    expect(postedWords({ date: 'Oct 12', known: false })).toBe('First seen Oct 12')
   })
   it('gives the opening date for the Posted column', () => {
     const now = new Date('2026-10-13T18:00:00Z').getTime()

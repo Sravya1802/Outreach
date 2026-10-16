@@ -36,18 +36,6 @@ export function listForKind(kind: string | undefined, market: Market): CatalogLi
   return listsForMarket(market).find(l => l.kind === base) ?? null
 }
 
-/** Short "posted" label: "today", "3d ago", "Sep 21". Falls back to scraped date. */
-export function postedLabel(postedAt: string | null, scrapedAt: string, now: number = Date.now()): string {
-  const iso = postedAt || scrapedAt
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ''
-  const days = Math.floor((now - t) / 86_400_000)
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 14) return `${days}d ago`
-  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
 /**
  * The opening date for the Posted column: "Oct 15" (plus the year when it isn't
  * this year) and how long ago. `known` is false when the source gives no posting
@@ -63,6 +51,11 @@ export function postedDate(postedAt: string | null, scrapedAt: string, now: numb
   const days = Math.floor((now - t) / 86_400_000)
   const ago = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`
   return { date, ago, known: Boolean(postedAt) && !Number.isNaN(new Date(postedAt as string).getTime()) }
+}
+
+/** The date in words, where there's no Posted column: "Posted Oct 15" / "First seen Oct 15". */
+export function postedWords(p: { date: string; known: boolean }): string {
+  return `${p.known ? 'Posted' : 'First seen'} ${p.date}`
 }
 
 /** Listings per list in this market, from the per-source counts. */

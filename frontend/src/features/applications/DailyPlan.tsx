@@ -98,6 +98,15 @@ function PostingTitle({ company, title, url }: { company: string; title: string;
   )
 }
 
+/** "3 people with email" → that company's people. */
+function PeopleFound({ n, companyId }: { n?: number; companyId?: number | null }) {
+  if (!n) return null
+  const text = `${n} ${n === 1 ? 'person' : 'people'} with email`
+  return companyId
+    ? <Link to={`/company/${companyId}`} className="text-accent hover:underline">{text}</Link>
+    : <span className="text-accent">{text}</span>
+}
+
 export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending') => void }) {
   const score = num(item.score)
   const sponsor = item.sponsorship ? SPONSOR_TEXT[item.sponsorship] : null
@@ -112,6 +121,7 @@ export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolea
           {[item.location, item.pay].filter(Boolean).join(' · ')}
           {sponsor && <span className={sponsor.tone === 'success' ? 'text-success' : 'text-danger'}>{sponsor.text}</span>}
           {item.connections > 0 && <span className="text-accent">You know {item.connections} {item.connections === 1 ? 'person' : 'people'} here</span>}
+          <PeopleFound n={item.people} companyId={item.company_id} />
         </p>
         {item.reason && <p className="mt-1 text-[14px] text-muted">{item.reason}</p>}
       </div>
@@ -222,6 +232,7 @@ export function InProgress({ data }: { data: DailyPlanOverview }) {
                 <p className="text-[15px]">
                   <PostingTitle company={a.company_name} title={a.title} url={a.apply_url} />
                   {a.connections > 0 && <span className="ml-2 text-[13px] text-accent">You know {a.connections} here</span>}
+                  {(a.people ?? 0) > 0 && <span className="ml-2 text-[13px]"><PeopleFound n={a.people} companyId={a.company_id} /></span>}
                 </p>
                 <p className={cn('text-[13px]', a.stage === 'needs_you' ? 'text-danger' : 'text-subtle')}>
                   {(a.stage === 'tailoring' || a.stage === 'applying') && <Spinner size={12} className="mr-1.5 align-[-1px]" />}{a.stage_note || STAGE_LABEL[a.stage]}

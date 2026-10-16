@@ -31,6 +31,8 @@ import { detectPlatform } from './resumeRegistry.js';
 
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 const MAX_ASKS_PER_ROLE = 2;
+// Companies looked up ahead of time per evening list (each lookup spends the user's monthly allowance).
+const CONTACTS_PER_LIST = Number(process.env.DAILY_PLAN_CONTACTS_PER_LIST || 5);
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
 const str = (v) => String(v ?? '').trim();
@@ -137,6 +139,34 @@ async function liveAsks(itemId) {
       WHERE a.plan_item_id = $1 AND (a.channel <> 'email' OR o.status IS DISTINCT FROM 'cancelled') ORDER BY a.id`,
     [itemId],
   );
+}
+
+/**
+ * People ready before the user decides: for the list's best top roles, look up
+ * who works there (engineers, recruiters, with email) and save them, so People
+ * → Contacts shows them and an approved role's referral ask can go at once.
+ * One company per call (the 5-minute tick); at most CONTACTS_PER_LIST lookups
+ * per list. Companies that already have people are marked without a lookup.
+ */
+export async function prepareContacts(userId, planId) {
+  const used = Number((await one('SELECT COUNT(*)::int AS n FROM plan_items WHERE plan_id = $1 AND contacts_lookup', [planId]))?.n || 0);
+  if (used >= CONTACTS_PER_LIST) return null;
+  for (let i = 0; i < 10; i += 1) {
+    const item = await one(
+      `SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND tier = 'top' AND decision IN ('pending', 'approved') AND contacts_at IS NULL
+        ORDER BY score DESC NULLS LAST, id LIMIT 1`,
+      [planId, userId],
+    );
+    if (!item) return null;
+    // Claimed first, so a failing company isn't retried every tick.
+    await run('UPDATE plan_items SET contacts_at = NOW() WHERE id = $1', [item.id]);
+    if (await hasEmailContact(userId, item.company_name)) continue;
+    await run('UPDATE plan_items SET contacts_lookup = true WHERE id = $1', [item.id]);
+    const jobId = await companyRow(userId, item.company_name, item.location);
+    const added = await findEmailsAt(userId, jobId, item).catch(err => { console.warn('[referrals] contact lookup failed', item.company_name, err.message); return 0; });
+    return { company: item.company_name, added };
+  }
+  return null;
 }
 
 /**

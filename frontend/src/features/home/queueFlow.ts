@@ -123,7 +123,7 @@ export function emailSteps(i: EmailFlowInput): FlowStep[] {
       explain: 'Upload the connections file LinkedIn lets you export. People you already know at a company are asked first, since they refer far more often.',
       count: conns, countLabel: conns ? `${conns} connections` : 'not imported', state: conns ? 'busy' : 'you' },
     { id: 'people', title: 'Find people', to: '/people/contacts',
-      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found. For roles you approve, the company’s emails are looked up on their own.',
+      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found. Each night the companies behind your list’s 5 best roles are looked up on their own, and so is any role you approve.',
       count: i.contactsWithEmail, countLabel: `${i.contactsWithEmail} with email`, state: i.contactsWithEmail ? 'busy' : 'idle' },
     { id: 'write', title: 'Write the messages', to: '/people/messages',
       explain: 'People → Messages writes a LinkedIn note and an email for each person, for the role that fits you at their company. You read and edit them.',

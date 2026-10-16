@@ -431,6 +431,10 @@ export interface PlanItem {
   stage_note: string | null
   /** LinkedIn connections the user has at this company */
   connections: number
+  /** People found there with an email address (People → Contacts) */
+  people?: number
+  /** The company page holding them */
+  company_id?: number | null
 }
 export interface ReferralAsk {
   id: number
@@ -475,6 +479,8 @@ export interface ActivePlanItem {
   referral_link: string | null
   company_tz: string | null
   connections: number
+  people?: number
+  company_id?: number | null
   asks: ReferralAsk[]
 }
 export interface DailyPlan {

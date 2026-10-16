@@ -249,7 +249,16 @@ export async function asksFor(userId, itemIds) {
 // ── Applying ────────────────────────────────────────────────────────────────
 
 async function applyItem(userId, item) {
-  const url = item.referral_link && /^https?:\/\//i.test(item.referral_link) ? item.referral_link : item.apply_url;
+  let url = item.referral_link && /^https?:\/\//i.test(item.referral_link) ? item.referral_link : item.apply_url;
+  // A LinkedIn (or unknown-site) link: look for the same role on the company's own board.
+  if (!AUTO_PLATFORMS.includes(detectPlatform(url))) {
+    const { resolveToBoard } = await import('./boardResolver.js');
+    const found = await resolveToBoard(item.company_name, item.title).catch(() => null);
+    if (found) {
+      url = found.url;
+      await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [item.id, `Found the same role on ${item.company_name}’s ${found.kind} page, applying there.`]);
+    }
+  }
   if (!AUTO_PLATFORMS.includes(detectPlatform(url))) {
     await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'apply', stage_note = $2 WHERE id = $1",
       [item.id, 'This job site can’t be filled in automatically. Apply yourself with the tailored resume (download it from the role), then press “I applied”.']);

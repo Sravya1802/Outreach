@@ -27,7 +27,7 @@ import { complete } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
-import { applyRules, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
+import { applyRules, diffChanges, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
 import { resumeTex, coverLetterTex, compileTex, checkPreamble, RESUME_PREAMBLE } from './latex.js';
 
 const STALE_MINUTES = 20;
@@ -56,7 +56,6 @@ export const DRAFT_SCHEMA = obj({
   projects: { type: 'array', items: obj({ source: { type: 'string', enum: ['resume', 'github', 'planned'] }, ref: S, name: S, tech: SA, bullets: SA, why: S }) },
   skills: { type: 'array', items: obj({ category: S, items: SA }) },
   proposed_project: obj({ needed: { type: 'boolean' }, reuse_id: S, name: S, tech: SA, bullets: SA, covers: SA, why: S, plan: SA }),
-  changes: { type: 'array', items: obj({ section: S, before: S, after: S, why: S }) },
   notes: S,
 });
 
@@ -100,7 +99,7 @@ Scores
 14. The ATS match must end up above 90% (aim for 95%): every required skill the candidate truly has appears at least once, in the job's spelling. Never inflate or invent to get there.
 
 Report
-15. changes: every change you made, with before (the original text, or "" if new), after, and why (which job requirement). No silent edits. notes: one or two sentences on the overall angle.`;
+15. notes: one or two sentences on the overall angle. (Every change is listed for the candidate by comparing the documents, so don't list them.)`;
 
 const JUDGE_SYSTEM = `You are a senior technical recruiter with 25 years of hiring SWE, ML, AI and quant engineers. You screen applications for one job. Be honest and calibrated; never inflate.
 Callback % = the chance a recruiter screening this application shortlists it for an interview, from the resume alone (no referral).
@@ -545,10 +544,9 @@ ${ev.job_description.slice(0, 7000)}`;
   }
 
   const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(ctx.parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
-  const removedText = new Set(pass.removed.map(r => r.what));
   const fields = rowFields(ctx, pass, judged, {
     notes: str(draft.notes),
-    changes: list(draft.changes).filter(c => str(c.after) && !removedText.has(str(c.after))),
+    changes: diffChanges(ctx.parsed, pass.doc, ctx.keywords, Object.fromEntries(list(draft.projects).flatMap(d => [[str(d.ref), str(d.why)], [str(d.name), str(d.why)]]))),
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: str(list(draft.projects).find(d => str(d.ref) === p.ref)?.why) })),
     proposedProject,
     revised,

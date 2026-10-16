@@ -343,3 +343,69 @@ export function keywordPlaces(doc, keywords) {
   for (const x of list(doc.extras)) places.push({ name: str(x.heading), text: list(x.items).join('\n') });
   return list(keywords).map(k => ({ term: k.term, importance: k.importance, where: places.filter(p => hasTerm(p.text, k)).map(p => p.name) }));
 }
+
+// ── The change report, computed (no AI) ────────────────────────────────────
+
+const words = (s) => new Set(str(s).toLowerCase().match(/[a-z0-9+#.]+/g) || []);
+function similarity(a, b) {
+  const A = words(a);
+  const B = words(b);
+  if (!A.size || !B.size) return 0;
+  let both = 0;
+  for (const w of A) if (B.has(w)) both += 1;
+  return both / (A.size + B.size - both);
+}
+
+/** The job keywords a new line carries that the old one didn't. */
+function why(before, after, keywords) {
+  const added = list(keywords).filter(k => hasTerm(after, k) && !hasTerm(before, k)).map(k => k.term);
+  return added.length ? `Adds ${added.slice(0, 5).join(', ')}` : before ? 'Reworded toward the job' : 'New line for the job';
+}
+
+/** Bullet-level changes inside one entry: each new bullet against its closest original. */
+function bulletChanges(section, original, final, keywords) {
+  const out = [];
+  for (const b of list(final)) {
+    if (list(original).some(o => str(o) === str(b))) continue;
+    let best = '';
+    let score = 0;
+    for (const o of list(original)) {
+      const s = similarity(o, b);
+      if (s > score) { score = s; best = o; }
+    }
+    const before = score >= 0.2 ? str(best) : '';
+    out.push({ section, before, after: str(b), why: why(before, b, keywords) });
+  }
+  return out;
+}
+
+/**
+ * Every change between the master resume and the tailored one, the way the
+ * user's rules ask ("flag every change, no silent edits"), worked out by
+ * comparing the two documents. `why` names the job keywords a change adds.
+ */
+export function diffChanges(master, doc, keywords = [], projectWhy = {}) {
+  const changes = [];
+  if (str(doc.summary) && str(doc.summary) !== str(master.summary)) {
+    changes.push({ section: 'Summary', before: str(master.summary), after: str(doc.summary), why: why(master.summary, doc.summary, keywords) });
+  }
+  const byId = new Map(list(master.experience).map(e => [str(e.id), e]));
+  for (const e of list(doc.experience)) {
+    const m = byId.get(str(e.id));
+    if (m) changes.push(...bulletChanges(`${e.title} at ${e.company}`, m.bullets, e.bullets, keywords));
+  }
+  const norm = (s) => str(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const masterProjects = list(master.projects);
+  for (const p of list(doc.projects)) {
+    const m = masterProjects.find(x => (p.source === 'resume' && str(x.id) === str(p.ref)) || norm(x.name) === norm(p.name));
+    if (m) changes.push(...bulletChanges(p.name, m.bullets, p.bullets, keywords));
+    else changes.push({ section: 'Projects', before: '', after: p.name, why: projectWhy[str(p.ref)] || projectWhy[p.name] || (p.source === 'github' ? 'From your GitHub' : p.source === 'planned' ? 'A project to build for this role' : 'Added for the job') });
+  }
+  const left = masterProjects.filter(x => !list(doc.projects).some(p => (p.source === 'resume' && str(p.ref) === str(x.id)) || norm(p.name) === norm(x.name)));
+  if (left.length) changes.push({ section: 'Projects', before: left.map(x => x.name).join('; '), after: '', why: 'Left out: less relevant to this job, to keep one page' });
+  const order = (skills) => list(skills).map(g => str(g.category)).join(', ');
+  if (order(doc.skills) !== order(master.skills)) {
+    changes.push({ section: 'Technical Skills', before: order(master.skills), after: order(doc.skills), why: 'Most relevant groups first, at most 6 groups of 8' });
+  }
+  return changes;
+}

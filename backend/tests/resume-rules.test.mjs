@@ -42,6 +42,29 @@ test('a project to build stays on the page only if the ATS rule still holds', as
   assert.equal(keepProjectOnPage(85, null), false);
 });
 
+test('the change report is computed: before/after per bullet, why = keywords added', async () => {
+  const { diffChanges } = await import('../services/resumeRules.js');
+  const master = {
+    summary: '',
+    experience: [{ id: 'e1', title: 'SWE', company: 'Acme', bullets: ['Built ETL pipelines with Python', 'Made dashboards'] }],
+    projects: [{ id: 'p1', name: 'Chat', bullets: ['Realtime chat'] }, { id: 'p2', name: 'Old', bullets: ['x'] }],
+    skills: [{ category: 'Languages', items: ['Python'] }, { category: 'Cloud', items: ['AWS'] }],
+  };
+  const doc = {
+    summary: '',
+    experience: [{ id: 'e1', title: 'SWE', company: 'Acme', bullets: ['Built ETL pipelines with Python and Apache Spark', 'Made dashboards'] }],
+    projects: [{ name: 'Chat', source: 'resume', ref: 'p1', bullets: ['Realtime chat'] }, { name: 'rag-search', source: 'github', ref: 'ana/rag-search', bullets: ['RAG'] }],
+    skills: [{ category: 'Cloud', items: ['AWS'] }, { category: 'Languages', items: ['Python'] }],
+  };
+  const c = diffChanges(master, doc, [k('Apache Spark'), k('Python')], { 'ana/rag-search': 'Proves RAG' });
+  assert.deepEqual(c.map(x => [x.section, x.before, x.after, x.why]), [
+    ['SWE at Acme', 'Built ETL pipelines with Python', 'Built ETL pipelines with Python and Apache Spark', 'Adds Apache Spark'],
+    ['Projects', '', 'rag-search', 'Proves RAG'],
+    ['Projects', 'Old', '', 'Left out: less relevant to this job, to keep one page'],
+    ['Technical Skills', 'Languages, Cloud', 'Cloud, Languages', 'Most relevant groups first, at most 6 groups of 8'],
+  ]);
+});
+
 test('dashes and filler are caught; dashes become commas', () => {
   assert.equal(fixDashes('Built a tool — fast and simple'), 'Built a tool, fast and simple');
   assert.equal(fixDashes('Built a tool---fast'), 'Built a tool, fast');

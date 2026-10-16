@@ -45,6 +45,7 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue daily plan rules submit tracker pipeline board kanban sent applied interview offer follow up' },
       { label: 'Evaluate', to: '/applications/evaluate', keywords: 'score fit grade job link description' },
+      { label: 'Tracker', to: '/applications/tracker', keywords: 'sheet spreadsheet applications submitted status rejected waiting referral import csv google sheets monitor' },
     ],
   },
   {

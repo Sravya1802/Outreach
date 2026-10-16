@@ -375,6 +375,11 @@ export const api = {
     evaluations:      () => apiCall('/career/evaluations'),
     evaluation:       (id) => apiCall(`/career/evaluations/${id}`),
     deleteEvaluation: (id) => apiCall(`/career/evaluations/${id}`, { method: 'DELETE' }),
+    trackerRows: () => apiCall('/tracker'),
+    trackerAdd: (body) => apiCall('/tracker', { method: 'POST', body }),
+    trackerUpdate: (id, body) => apiCall(`/tracker/${id}`, { method: 'PATCH', body }),
+    trackerImport: (csv) => apiCall('/tracker/import', { method: 'POST', body: { csv } }),
+    trackerDownload: () => downloadAuthenticatedFile('/tracker/export.csv', `applications-${new Date().toISOString().slice(0, 10)}.csv`),
 
     // ── Apply-state ──────────────────────────────────────────────────────────
     setApplyStatus: (id, status) => apiCall(`/career/evaluations/${id}/apply-status`, { method: 'PATCH', body: { status } }),

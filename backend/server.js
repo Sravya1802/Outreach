@@ -36,6 +36,7 @@ import resumeEngineRouter from './routes/resumeEngine.js';
 import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
+import trackerRouter from './routes/tracker.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { runOutbox } from './services/outbox.js';
@@ -134,6 +135,7 @@ app.use('/api/gmail', gmailRouter);
 app.use('/api/daily-plan', dailyPlanRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/whatsapp', whatsappRouter);
+app.use('/api/tracker', trackerRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────

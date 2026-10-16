@@ -40,6 +40,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     what: 'Where you decide what to apply to.',
     when: 'Open it when your evening list arrives, or when you find a role yourself.',
     tabs: {
+      '/applications/tracker': 'Every application as a sheet: company, role, link, submitted, status and referral. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
       '/applications/auto-apply': 'Your evening list. Approve the roles you want and each gets a tailored resume, a referral ask, then an application. You also set the score cutoff and how many a day here.',
       '/applications/evaluate': 'Paste a job link or description and get a fit score out of 10 against your resume, with the reasons.',
     },

@@ -639,6 +639,24 @@ export interface Tailoring {
   /** Set while a nightly resume waits in Anthropic's batch (half price). */
   batch?: { phase: 'queued' | 'drafting' | 'revise_queued' | 'revising'; submittedAt?: string } | null
 }
+/** One row of Applications → Tracker (the sheet view of every application). */
+export type TrackerStatus = 'not_started' | 'submitted' | 'responded' | 'interview' | 'offer' | 'rejected'
+export type TrackerReferral = 'yes' | 'no' | 'not_required' | 'asked'
+export interface TrackerRow {
+  id: number
+  company_name: string
+  job_title: string
+  job_url: string | null
+  apply_status: TrackerStatus
+  submitted: boolean
+  referral: TrackerReferral | null
+  /** True when the app applied (or will apply) for you. */
+  by_app: boolean
+  applied_at: string | null
+  updated_at: string
+}
+export interface TrackerImport { total: number; added: number; updated: number; unchanged: number; skipped: string[] }
+
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
 /** The LaTeX preamble resumes are built in. */
 export interface ResumeTemplate { custom: boolean; preamble: string; updatedAt: string | null }
@@ -829,6 +847,11 @@ export const api = {
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
   startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
+  trackerRows: async (): Promise<TrackerRow[]> => (await legacy.career.trackerRows()).rows ?? [],
+  trackerAdd: (body: { company: string; role: string; link?: string; status?: TrackerStatus; referral?: TrackerReferral | null }): Promise<{ id: number }> => legacy.career.trackerAdd(body),
+  trackerUpdate: async (id: number, body: Partial<{ company: string; role: string; link: string; status: TrackerStatus; submitted: boolean; referral: TrackerReferral | null }>): Promise<TrackerRow> => (await legacy.career.trackerUpdate(id, body)).row,
+  trackerImport: (csv: string): Promise<TrackerImport> => legacy.career.trackerImport(csv),
+  trackerDownload: (): Promise<void> => legacy.career.trackerDownload(),
   resumeTemplate: (): Promise<ResumeTemplate> => legacy.career.resumeTemplate(),
   saveResumeTemplate: (tex: string): Promise<ResumeTemplate> => legacy.career.saveResumeTemplate(tex),
   resetResumeTemplate: (): Promise<ResumeTemplate> => legacy.career.resetResumeTemplate(),

@@ -12,6 +12,7 @@ function askLine(a: ReferralAsk): string {
   const who = `${a.person_name || 'Someone'}${a.person_title ? `, ${a.person_title}` : ''}`
   if (a.channel === 'email') {
     if (a.status === 'replied' || a.contact_status === 'replied') return `${who} replied by email. Read it in Gmail.`
+    if (a.email_status === 'draft') return `Email to ${who} is waiting for your OK in People → Outbox (also in your Gmail Drafts).`
     if (a.email_status === 'sent') return `Emailed ${who} ${timeAgo(a.sent_at)}.`
     if (a.email_status === 'cancelled') return `Email to ${who} was cancelled.`
     if (a.email_status === 'failed') return `Email to ${who} failed to send.`

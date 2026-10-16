@@ -39,7 +39,7 @@ describe('flowSteps', () => {
     expect(by.list?.explain).toContain('9 PM Eastern')
     expect(by.list?.explain).toContain('8.5')
     expect(by.tailor?.count).toBe(1)
-    expect(by.referral?.explain).toContain('1 business day,')
+    expect(by.referral?.explain).toContain('1 business day after the email goes')
     expect(by.apply?.state).toBe('stuck')
     expect(by.apply?.alert).toBe('1 needs you')
     expect(by.track?.countLabel).toBe('1 of 2 heard back')
@@ -56,20 +56,22 @@ describe('flowSettingsLine', () => {
 describe('emailSteps', () => {
   it('asks for Gmail first when it is not connected', () => {
     const steps = emailSteps({ contactsWithEmail: 0 })
-    expect(steps.map(s => s.id)).toEqual(['gmail', 'linkedin', 'people', 'write', 'send', 'notes', 'followups', 'replies'])
+    expect(steps.map(s => s.id)).toEqual(['gmail', 'linkedin', 'people', 'write', 'approve', 'send', 'notes', 'followups', 'replies'])
     expect(steps[0]?.state).toBe('you')
     expect(steps[0]?.countLabel).toBe('not connected')
   })
   it('counts the outbox by step and status', () => {
     const outbox = [
       { step: 0, status: 'scheduled' }, { step: 0, status: 'sent' }, { step: 0, status: 'sent' },
-      { step: 1, status: 'scheduled' }, { step: 2, status: 'cancelled' }, { step: 0, status: 'failed' },
+      { step: 1, status: 'scheduled' }, { step: 2, status: 'cancelled' }, { step: 0, status: 'failed' }, { step: 0, status: 'draft' },
     ] as OutboxItem[]
     const replies = [{ kind: 'reply' }, { kind: 'bounce' }] as ReplyItem[]
     const steps = emailSteps({ gmail: { connected: true, status: 'ok', email: 'me@gmail.com', daily_cap: 15 }, contactsWithEmail: 12, connections: 340, outbox, replies })
     const by = Object.fromEntries(steps.map(s => [s.id, s])) as Record<string, (typeof steps)[number]>
     expect(by.gmail?.countLabel).toBe('connected as me@gmail.com')
     expect(by.write?.countLabel).toBe('1 email scheduled')
+    expect(by.approve?.countLabel).toBe('1 waiting')
+    expect(by.approve?.state).toBe('you')
     expect(by.linkedin?.countLabel).toBe('340 connections')
     expect(by.send?.countLabel).toBe('2 sent')
     expect(by.send?.alert).toBe('1 failed')

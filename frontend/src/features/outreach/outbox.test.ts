@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OutboxItem } from '@/lib/api'
-import { cityOf, groupThreads, inZone, itemStatus, replyText } from './outbox'
+import { cityOf, draftsOf, groupThreads, inZone, itemStatus, replyText } from './outbox'
 
 const item = (p: Partial<OutboxItem>): OutboxItem => ({
   id: 1, contact_id: 1, step: 0, thread_root_id: null, to_email: 'a@x.com', to_name: 'Ana', subject: 's', body: 'b', recipient_tz: 'America/New_York',
@@ -21,6 +21,11 @@ describe('outbox', () => {
     expect(itemStatus(item({ status: 'cancelled', cancel_reason: 'They replied' })).text).toBe('Not sent: they replied')
     expect(itemStatus(item({ status: 'failed', error: 'boom' })).tone).toBe('danger')
     expect(itemStatus(item({ error: 'Waiting for you to reconnect Gmail in Settings' })).text).toMatch(/· held: Waiting for you to reconnect/)
+  })
+  it('lists drafts waiting for an OK, oldest first', () => {
+    const d = draftsOf([item({ id: 9, status: 'draft' }), item({ id: 4, status: 'draft' }), item({ id: 5 }), item({ id: 6, status: 'cancelled' })])
+    expect(d.map(x => x.id)).toEqual([4, 9])
+    expect(itemStatus(item({ status: 'draft' }))).toEqual({ text: 'Waiting for your OK', tone: 'accent' })
   })
   it('describes replies', () => {
     expect(replyText({ id: 1, contact_id: 1, channel: 'linkedin', kind: 'linkedin_accept', from_email: null, from_name: null, subject: null, snippet: null, received_at: '', contact_name: 'Ana Lee', company_name: null, company_id: null }))

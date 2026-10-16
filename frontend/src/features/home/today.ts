@@ -69,6 +69,11 @@ export function todayItems(i: TodayInput): TodayItem[] {
     out.push({ id: 'approve', tone: 'action', title: `${plural(pending.length, 'role is', 'roles are')} waiting for your OK`,
       detail: nameList(pending.map(p => p.company_name)), to: '/applications/auto-apply' })
   }
+  const drafts = (i.outbox ?? []).filter(o => o.status === 'draft' && o.step === 0)
+  if (drafts.length) {
+    out.push({ id: 'drafts', tone: 'action', title: `${plural(drafts.length, 'email is', 'emails are')} waiting for your OK`,
+      detail: `Referral asks with your resume attached: ${nameList(drafts.map(o => o.company_name || o.to_name))}`, to: '/people/outbox' })
+  }
   const quiet = (i.tracked ?? []).filter(r => followUpDays(r, i.now) != null)
   const due = (i.tracked ?? []).filter(r => {
     const d = nextStepDue(r.next_step_at, today)

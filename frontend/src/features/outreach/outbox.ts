@@ -30,7 +30,13 @@ export function cityOf(tz: string): string {
   return tz.split('/').pop()?.replace(/_/g, ' ') ?? tz
 }
 
+/** Emails the app wrote that are waiting for the user's OK, oldest first. */
+export function draftsOf(items: OutboxItem[]): OutboxItem[] {
+  return items.filter(i => i.status === 'draft' && i.step === 0).sort((a, b) => a.id - b.id)
+}
+
 export function itemStatus(it: OutboxItem, now = Date.now()): { text: string; tone: 'success' | 'warning' | 'danger' | 'neutral' | 'accent' } {
+  if (it.status === 'draft') return { text: 'Waiting for your OK', tone: 'accent' }
   if (it.status === 'sent') return { text: `Sent ${timeAgo(it.sent_at, now)}`, tone: 'success' }
   if (it.status === 'cancelled') return { text: it.cancel_reason ? `Not sent: ${it.cancel_reason.toLowerCase()}` : 'Cancelled', tone: 'neutral' }
   if (it.status === 'failed') return { text: `Failed: ${it.error || 'unknown error'}`, tone: 'danger' }

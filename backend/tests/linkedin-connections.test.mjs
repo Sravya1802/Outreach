@@ -36,9 +36,15 @@ test('referral status line', async () => {
   assert.equal(referralNote([{ channel: 'email', person_name: 'Ana' }, { channel: 'linkedin', person_name: 'Bo' }], 'Tue'),
     'Emailing Ana at their next morning; notes for Bo are ready for you to send on LinkedIn. Applying Tue unless a referral comes first.');
   assert.match(referralNote([{ channel: 'search' }], 'Wed'), /^Nobody you know there yet/);
+  assert.equal(referralNote([{ channel: 'email', person_name: 'Ana', status: 'draft' }, { channel: 'email', person_name: 'Bo', status: 'draft' }], 'Thu'),
+    'Your emails to Ana and Bo are waiting for your OK in People → Outbox. Applying Thu unless a referral comes first.');
+  assert.equal(referralNote([{ channel: 'email', person_name: 'Ana', status: 'draft' }, { channel: 'email', person_name: 'Bo', status: 'scheduled' }], 'Fri'),
+    'Your email to Ana is waiting for your OK in People → Outbox; emailing Bo at their next morning. Applying Fri unless a referral comes first.');
   const t = templateAsk({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', why: '' });
   assert.ok(t.note.length <= 300 && t.note.startsWith('Hi Ana,'));
   assert.match(t.body, /The posting: https:\/\/x/);
+  assert.match(t.body, /I can send my resume/);
+  assert.match(templateAsk({ personName: 'Ana', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', attached: true }).body, /My resume is attached\. The posting/);
   assert.match(linkedinSearchUrl('Ramp', 'UIC'), /keywords=Ramp%20UIC/);
 });
 

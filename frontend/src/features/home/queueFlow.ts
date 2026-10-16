@@ -65,7 +65,7 @@ export function flowSteps(i: FlowInput): FlowStep[] {
       count: writing, countLabel: `${writing} being written`, state: writing ? 'busy' : 'idle' },
     { id: 'referral', title: 'Ask for a referral', to: '/applications/auto-apply',
       explain: s.referralFirst
-        ? `The next morning, someone you know there (from your LinkedIn connections) or a contact you saved is asked to refer you: by email when there’s an address, otherwise a LinkedIn note you send. Report a link or code, “they submitted me” or “they said no”. With no referral after ${s.referralWaitDays} business day${s.referralWaitDays === 1 ? '' : 's'}, it applies anyway.`
+        ? `Someone you know there (from your LinkedIn connections) or a contact at the company is asked to refer you. If nobody has an email address yet, the company’s emails are looked up. The email is written with your tailored resume attached and waits for your OK in People → Outbox (a copy is in your Gmail Drafts); once you approve, it goes at their next morning. Without an address, it’s a LinkedIn note you send. Report a link or code, “they submitted me” or “they said no”. With no referral ${s.referralWaitDays} business day${s.referralWaitDays === 1 ? '' : 's'} after the email goes, it applies anyway.`
         : 'Referral asks are turned off, so approved roles go straight to applying the next morning.',
       count: referral, countLabel: s.referralFirst ? `${referral} waiting` : 'off', state: referral ? 'busy' : 'idle' },
     { id: 'apply', title: 'Apply', to: '/applications/auto-apply',
@@ -105,6 +105,7 @@ export function emailSteps(i: EmailFlowInput): FlowStep[] {
   const broken = connected && i.gmail?.status === 'error'
   const cap = i.gmail?.daily_cap || 20
   const out = i.outbox ?? []
+  const drafts = out.filter(o => o.step === 0 && o.status === 'draft').length
   const firstScheduled = out.filter(o => o.step === 0 && o.status === 'scheduled').length
   const firstSent = out.filter(o => o.step === 0 && o.status === 'sent').length
   const followScheduled = out.filter(o => o.step > 0 && o.status === 'scheduled').length
@@ -122,11 +123,14 @@ export function emailSteps(i: EmailFlowInput): FlowStep[] {
       explain: 'Upload the connections file LinkedIn lets you export. People you already know at a company are asked first, since they refer far more often.',
       count: conns, countLabel: conns ? `${conns} connections` : 'not imported', state: conns ? 'busy' : 'you' },
     { id: 'people', title: 'Find people', to: '/people/contacts',
-      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found.',
+      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found. For roles you approve, the company’s emails are looked up on their own.',
       count: i.contactsWithEmail, countLabel: `${i.contactsWithEmail} with email`, state: i.contactsWithEmail ? 'busy' : 'idle' },
     { id: 'write', title: 'Write the messages', to: '/people/messages',
       explain: 'People → Messages writes a LinkedIn note and an email for each person, for the role that fits you at their company. You read and edit them.',
       count: firstScheduled, countLabel: `${firstScheduled} ${firstScheduled === 1 ? 'email' : 'emails'} scheduled`, state: firstScheduled ? 'busy' : 'idle' },
+    { id: 'approve', title: 'Approve the drafts', to: '/people/outbox',
+      explain: 'Referral emails for roles you approved are written for you with that role’s tailored resume attached, and wait here and in your Gmail Drafts. Edit them in either place. Nothing goes out until you approve.',
+      count: drafts, countLabel: `${drafts} waiting`, state: drafts ? 'you' : 'idle' },
     { id: 'send', title: 'Send emails from your Gmail', to: '/people/outbox',
       explain: `Weekdays between 8 and 11 AM in the recipient’s time zone, at least 3 minutes apart, and at most ${cap} a day.`,
       count: firstSent, countLabel: `${firstSent} sent`, state: failed ? 'stuck' : firstSent ? 'busy' : 'idle',

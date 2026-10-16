@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z'; // modules import db.js; these tests make no queries
-const { normalizeAppPassword, isAppPassword, friendlyGmailError, newMessageId } = await import('../services/gmail.js');
+const { normalizeAppPassword, isAppPassword, friendlyGmailError, newMessageId, buildMime, draftHash } = await import('../services/gmail.js');
 const { parseHeaderBlock, messageIdsIn, linkedinEvent, looksAutoReply, isBounceSender, normName, describeEvent } = await import('../services/replyWatcher.js');
 const { followupBody } = await import('../services/outbox.js');
 
@@ -53,4 +53,18 @@ test('follow-ups quote the original and stay short', () => {
   assert.match(b, /^Hi Ana,\n\nFollowing up on my note below/);
   assert.match(b, /On Thu, Oct 15, 2026, Sravya R wrote:\n> Hi Ana,\n> I applied/);
   assert.match(followupBody(2, { toName: '', company: 'Ramp', sender: '', original: 'x', sentAt: new Date(), tz: 'UTC' }), /^Hi there,\n\nOne last note.*Ramp's internship/s);
+});
+
+test('drafts: the resume rides along, and only real edits count as edits', async () => {
+  const raw = String(await buildMime({
+    from: { name: 'Sravya R', address: 'me@gmail.com' }, to: { name: 'Ana Lee', address: 'ana@ramp.com' }, subject: 'Referral?', text: 'Hi Ana,\n\nMy resume is attached.',
+    attachments: [{ filename: 'Sravya-Ramp.pdf', content: Buffer.from('%PDF-1.4'), contentType: 'application/pdf' }], messageId: '<oos-1@gmail.com>',
+  }));
+  assert.match(raw, /^From: Sravya R <me@gmail\.com>$/m);
+  assert.match(raw, /^To: Ana Lee <ana@ramp\.com>$/m);
+  assert.match(raw, /Content-Disposition: attachment; filename=Sravya-Ramp\.pdf/);
+  assert.match(raw, /^Message-ID: <oos-1@gmail\.com>$/m);
+  // Gmail re-wraps lines and trims; that isn't an edit.
+  assert.equal(draftHash('Referral?', 'Hi Ana,\n\nMy resume is attached.'), draftHash(' Referral? ', 'Hi Ana,\r\n\r\nMy resume\nis attached.\n'));
+  assert.notEqual(draftHash('Referral?', 'Hi Ana, my resume is attached.'), draftHash('Referral?', 'Hi Ana, my resume is attached. Thanks!'));
 });

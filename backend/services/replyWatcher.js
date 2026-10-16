@@ -12,7 +12,8 @@
 
 import { all, one, run } from '../db.js';
 import { connectionFor, friendlyGmailError, imapClient, markError, sendToSelf } from './gmail.js';
-import { cancelForContact } from './outbox.js';
+import { cancelForContact, syncDrafts } from './outbox.js';
+import { referralEmailMoved } from './referralFlow.js';
 import { notify as whatsappNotify } from './whatsapp.js';
 
 const LOOKBACK_DAYS = 2;
@@ -155,7 +156,10 @@ export async function checkInbox(userId) {
     await client.logout().catch(() => {});
   }
   if (events.some(e => e.kind !== 'auto_reply')) await notify(userId, events.filter(e => e.kind !== 'auto_reply')).catch(err => console.warn('[replies] notify failed:', err.message));
-  return { events: events.length };
+  // Drafts the user sent (or deleted) in Gmail instead of approving here.
+  const moved = await syncDrafts(userId).catch(err => { console.warn('[replies] draft sync failed:', err.message); return []; });
+  for (const row of moved) await referralEmailMoved(userId, row).catch(err => console.warn('[replies] referral wait update failed:', err.message));
+  return { events: events.length, drafts: moved.length };
 }
 
 async function applyEvent(userId, e) {

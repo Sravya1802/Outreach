@@ -216,6 +216,7 @@ export const api = {
     schedule:   (body)        => apiCall('/gmail/outbox', { method: 'POST', body }),
     edit:       (id, body)    => apiCall(`/gmail/outbox/${id}`, { method: 'PATCH', body }),
     cancel:     (id)          => apiCall(`/gmail/outbox/${id}`, { method: 'DELETE' }),
+    approve:    (id, body)    => apiCall(`/gmail/outbox/${id}/approve`, { method: 'POST', body }),
     replies:    ()            => apiCall('/gmail/replies'),
     check:      ()            => apiCall('/gmail/check', { method: 'POST' }),
   },

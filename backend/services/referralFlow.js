@@ -3,10 +3,14 @@
  * ready (dailyPlan.advanceUser hands it over at stage `asking_referral`):
  *
  *   1. Ask for a referral. Who: people the user knows there (LinkedIn
- *      connections export), else contacts they already saved for the company.
- *      Email when we have an address (outbox, the recipient's next 8–11 AM
- *      weekday slot); otherwise a drafted LinkedIn note the user sends
- *      themselves. Nobody known → a LinkedIn search link + a note.
+ *      connections export), else contacts saved for the company; when none of
+ *      them has an email address, the company's emails are looked up first
+ *      (contactFinder, within the monthly lookup allowance).
+ *      With an address: an email draft with the tailored resume attached,
+ *      waiting for the user's OK (People → Outbox, also in Gmail Drafts); once
+ *      approved it goes at the recipient's next 8–11 AM weekday slot.
+ *      Otherwise a drafted LinkedIn note the user sends themselves. Nobody
+ *      known → a LinkedIn search link + a note.
  *   2. Wait `referralWaitDays` business days. The user reports what happened:
  *      a link or code / "they submitted me" / "they said no". Email replies
  *      are flagged automatically (replyWatcher).
@@ -19,9 +23,9 @@
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { connectionsAt, companyKey } from './linkedinConnections.js';
-import { scheduleEmail, scheduleThreadNote } from './outbox.js';
+import { cancelScheduled, scheduleEmail, scheduleThreadNote } from './outbox.js';
 import { businessDaysLater, nextSendSlot, partsIn } from './sendWindow.js';
-import { sendToSelf } from './gmail.js';
+import { connectionFor, sendToSelf } from './gmail.js';
 import { notify as whatsappNotify } from './whatsapp.js';
 import { detectPlatform } from './resumeRegistry.js';
 
@@ -38,12 +42,13 @@ export function linkedinSearchUrl(company, school) {
 }
 
 /** Plain template, used when the AI is unavailable and for the "search" case. */
-export function templateAsk({ personName, me, school, title, company, jobUrl, why }) {
+export function templateAsk({ personName, me, school, title, company, jobUrl, why, attached = false }) {
   const hi = `Hi ${first(personName)},`;
   const intro = `I'm ${me || 'a student'}${school ? ` at ${school}` : ''}, applying for the ${title} role at ${company}.`;
   const fit = why ? ` ${why}` : '';
   const note = `${hi} ${intro} Would you be open to referring me, or pointing me to the right person? Happy to send my resume. Thank you!`.slice(0, 300);
-  const body = `${hi}\n\n${intro}${fit}\n\nWould you be open to referring me for it, or pointing me to the right person? I can send my resume and anything else that helps. The posting: ${jobUrl}\n\nThank you for considering it,\n${me || ''}`.trim();
+  const resume = attached ? 'My resume is attached.' : 'I can send my resume and anything else that helps.';
+  const body = `${hi}\n\n${intro}${fit}\n\nWould you be open to referring me for it, or pointing me to the right person? ${resume} The posting: ${jobUrl}\n\nThank you for considering it,\n${me || ''}`.trim();
   return { subject: `Referral for the ${title} role?`.slice(0, 120), body, note };
 }
 
@@ -56,7 +61,7 @@ async function draftAsk(userId, ctx) {
       userId,
       system: `You write a short, polite referral request from a student to someone at a company.
 Return JSON: {"subject": "...", "body": "...", "note": "..."}
-- body: under 110 words. Greeting with their first name; who the student is (name, school) in one line; the role; one specific reason they fit (from FIT, never invented); the ask (refer me, or point me to the right person); the job link; thanks. No flattery, no "I hope this finds you well".
+- body: under 110 words. Greeting with their first name; who the student is (name, school) in one line; the role; one specific reason they fit (from FIT, never invented); the ask (refer me, or point me to the right person); ${ctx.attached ? 'one line saying their resume is attached' : 'an offer to send their resume'}; the job link; thanks. No flattery, no "I hope this finds you well".
 - note: a LinkedIn connection note under 280 characters with the same ask.
 - subject: under 60 characters.
 - ${ctx.knows ? 'They are a LinkedIn connection of the student, so a warmer tone is fine.' : 'They don\'t know the student; keep it brief and respectful.'}`,
@@ -99,10 +104,57 @@ export async function contactFor(userId, jobId, person) {
   )).rows[0];
 }
 
+async function hasEmailContact(userId, companyName) {
+  return Boolean(await one(
+    `SELECT 1 FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+      WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid'
+        AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed') LIMIT 1`,
+    [userId, companyName],
+  ));
+}
+
+/** Look up email addresses at the company (engineering and recruiting people) and save them as contacts. */
+export async function findEmailsAt(userId, jobId, item) {
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  if (!job) return 0;
+  const { findCompanyEmails, upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+  const result = await findCompanyEmails({ ...job, url: job.url || item.apply_url }, { userId });
+  if (!result.domain) return 0;
+  await run('UPDATE jobs SET domain = $1, domain_source = $2 WHERE id = $3 AND user_id = $4',
+    [result.domain, result.domainSource === 'mx' ? 'guess' : result.domainSource, jobId, userId]);
+  let added = 0;
+  for (const c of result.candidates) {
+    if ((await upsertContact({ all, run }, { userId, jobId, contact: c, seniorityScore: seniorityScore(c.title) })) === 'inserted') added += 1;
+  }
+  return added;
+}
+
+/**
+ * A referral email left draft: approved (scheduled), or sent from Gmail. The
+ * wait restarts from when it goes out, so the person gets the full wait to answer.
+ */
+export async function referralEmailMoved(userId, row) {
+  if (row?.purpose !== 'referral' || !['scheduled', 'sending', 'sent'].includes(row.status)) return;
+  const ask = await one('SELECT * FROM referral_asks WHERE outbox_id = $1 AND user_id = $2', [row.id, userId]);
+  if (!ask) return;
+  await run("UPDATE referral_asks SET status = $2 WHERE id = $1 AND status = 'draft'", [ask.id, row.status === 'sent' ? 'sent' : 'scheduled']);
+  const item = await one("SELECT * FROM plan_items WHERE id = $1 AND stage = 'waiting_referral'", [ask.plan_item_id]);
+  if (!item) return;
+  const { getSettings } = await import('./dailyPlan.js');
+  const settings = await getSettings(userId);
+  const tz = item.company_tz || settings.timezone;
+  const goes = new Date(row.sent_at || row.send_after);
+  const at = businessDaysLater(goes, settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+  const applyAfter = item.apply_after && new Date(item.apply_after) > at ? new Date(item.apply_after) : at;
+  const asks = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
+  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, referralNote(asks, describeDay(applyAfter, tz))]);
+}
+
 /** Step 1: ask. Moves the role to waiting_referral with its apply time set. */
 export async function askForReferral(userId, item, settings) {
   // Never ask twice for one role: if asks exist, only (re)set the wait.
-  const existing = await all('SELECT channel, person_name FROM referral_asks WHERE plan_item_id = $1', [item.id]);
+  const existing = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
   if (existing.length) {
     const tz0 = item.company_tz || settings.timezone;
     const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), settings.referralWaitDays, tz0, { startHour: 6, endHour: 10 });
@@ -112,14 +164,23 @@ export async function askForReferral(userId, item, settings) {
   }
   const who = await me(userId);
   const jobId = await companyRow(userId, item.company_name, item.location);
-  const latest = await one("SELECT report FROM resume_tailorings WHERE id = $1", [item.tailoring_id]);
+  const latest = await one("SELECT report, file_id FROM resume_tailorings WHERE id = $1", [item.tailoring_id]);
   const why = str(item.reason) || str(latest?.report?.notes).slice(0, 200);
+  // The role's tailored resume goes with the email.
+  const attachmentFileId = latest?.file_id
+    || (item.evaluation_id && (await one('SELECT resume_file_id FROM evaluations WHERE id = $1 AND user_id = $2', [item.evaluation_id, userId]))?.resume_file_id)
+    || null;
+  const gmail = await connectionFor(userId);
 
   // People: connections first, then contacts already saved for this company.
   const people = [];
   for (const c of (await connectionsAt(userId, item.company_name)).slice(0, MAX_ASKS_PER_ROLE)) {
     const contact = await contactFor(userId, jobId, c);
     people.push({ name: c.full_name, title: c.position, linkedin: c.profile_url, email: contact.email || c.email, contactId: contact.id, connectionId: c.id, knows: true });
+  }
+  // Nobody with an email address yet: look the company's up (only worth it when Gmail can send).
+  if (gmail && people.length < MAX_ASKS_PER_ROLE && !people.some(p => p.email) && !(await hasEmailContact(userId, item.company_name))) {
+    await findEmailsAt(userId, jobId, item).catch(err => console.warn('[referrals] email lookup failed', item.company_name, err.message));
   }
   if (people.length < MAX_ASKS_PER_ROLE) {
     const saved = await all(
@@ -135,7 +196,7 @@ export async function askForReferral(userId, item, settings) {
     }
   }
 
-  const base = { me: who.name, school: who.school, title: item.title, company: item.company_name, jobUrl: item.apply_url, why };
+  const base = { me: who.name, school: who.school, title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId) };
   if (!people.length) {
     const t = templateAsk({ ...base, personName: '' });
     await run(
@@ -150,9 +211,10 @@ export async function askForReferral(userId, item, settings) {
     let channel = 'linkedin';
     if (p.email) {
       try {
-        const o = await scheduleEmail(userId, { contactId: p.contactId, subject: d.subject, body: d.body, when: 'best', purpose: 'referral' });
+        // A draft: nothing goes out until the user approves it.
+        const o = await scheduleEmail(userId, { contactId: p.contactId, subject: d.subject, body: d.body, purpose: 'referral', draft: true, attachmentFileId });
         outboxId = o.id;
-        status = 'scheduled';
+        status = 'draft';
         channel = 'email';
       } catch { /* already emailed, no Gmail, etc.: fall back to a LinkedIn note */ }
     }
@@ -166,7 +228,7 @@ export async function askForReferral(userId, item, settings) {
 
   const tz = item.company_tz || settings.timezone;
   const applyAt = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
-  const asked = await all('SELECT channel, person_name FROM referral_asks WHERE plan_item_id = $1', [item.id]);
+  const asked = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
   const note = referralNote(asked, describeDay(applyAt, tz));
   await run(
     "UPDATE plan_items SET stage = 'waiting_referral', referral_status = 'asked', wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
@@ -178,13 +240,16 @@ const names = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', 
 
 /** The status line under a waiting role. */
 export function referralNote(asks, when) {
-  const emailed = asks.filter(a => a.channel === 'email').map(a => a.person_name);
+  const drafts = asks.filter(a => a.channel === 'email' && a.status === 'draft').map(a => a.person_name);
+  const emailed = asks.filter(a => a.channel === 'email' && a.status !== 'draft').map(a => a.person_name);
   const notes = asks.filter(a => a.channel === 'linkedin').map(a => a.person_name);
-  if (!emailed.length && !notes.length) return `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${when} otherwise.`;
+  if (!drafts.length && !emailed.length && !notes.length) return `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${when} otherwise.`;
   const parts = [];
-  if (emailed.length) parts.push(`Emailing ${names(emailed)} at their next morning`);
-  if (notes.length) parts.push(`${emailed.length ? 'n' : 'N'}otes for ${names(notes)} are ready for you to send on LinkedIn`);
-  return `${parts.join('; ')}. Applying ${when} unless a referral comes first.`;
+  if (drafts.length) parts.push(`your email${drafts.length > 1 ? 's' : ''} to ${names(drafts)} ${drafts.length > 1 ? 'are' : 'is'} waiting for your OK in People → Outbox`);
+  if (emailed.length) parts.push(`emailing ${names(emailed)} at their next morning`);
+  if (notes.length) parts.push(`notes for ${names(notes)} are ready for you to send on LinkedIn`);
+  const line = parts.join('; ');
+  return `${line[0].toUpperCase()}${line.slice(1)}. Applying ${when} unless a referral comes first.`;
 }
 
 function describeDay(date, tz) {
@@ -203,7 +268,9 @@ export async function referralAction(userId, itemId, { action, link }) {
   if (action === 'submitted') {
     await run("UPDATE plan_items SET referral_status = 'submitted', stage = 'referred', stage_note = 'They submitted you, so we won’t apply again.' WHERE id = $1", [item.id]);
     if (item.evaluation_id) await run("UPDATE evaluations SET apply_status = 'submitted', applied_at = NOW()::text, apply_error = 'Referred: the referrer submitted the application' WHERE id = $1 AND user_id = $2", [item.evaluation_id, userId]);
-    await run("UPDATE email_outbox SET status = 'cancelled', cancel_reason = 'Referred' WHERE status = 'scheduled' AND id IN (SELECT outbox_id FROM referral_asks WHERE plan_item_id = $1)", [item.id]);
+    for (const a of await all("SELECT a.outbox_id FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND o.step = 0 AND o.status IN ('draft', 'scheduled')", [item.id])) {
+      await cancelScheduled(userId, a.outbox_id, 'Referred');
+    }
   } else if (action === 'link') {
     const v = str(link);
     if (!v) throw Object.assign(new Error('Paste the referral link or code.'), { status: 400 });
@@ -335,14 +402,16 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
   const needsYou = await all("SELECT company_name, title, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'needs_you'", [userId]);
   const waiting = await all("SELECT company_name, title, apply_after FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'waiting_referral'", [userId]);
   const toSend = await all("SELECT a.person_name, pi.company_name FROM referral_asks a JOIN plan_items pi ON pi.id = a.plan_item_id WHERE a.user_id = $1 AND a.status = 'to_send' AND pi.stage = 'waiting_referral'", [userId]);
+  const drafts = await all("SELECT o.to_name, j.name AS company_name FROM email_outbox o LEFT JOIN job_contacts c ON c.id = o.contact_id LEFT JOIN jobs j ON j.id = c.job_id WHERE o.user_id = $1 AND o.status = 'draft'", [userId]);
   const mark = async () => {
     await run("INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, key, date]);
     await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'daily_plan_summary_at', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, now.toISOString()]);
   };
-  if (!applied.length && !needsYou.length && !toSend.length) { await mark(); return { skipped: 'nothing' }; }
+  if (!applied.length && !needsYou.length && !toSend.length && !drafts.length) { await mark(); return { skipped: 'nothing' }; }
   const lines = [];
   if (applied.length) lines.push(`Applied (${applied.length}):\n${applied.map(a => `  • ${a.company_name} · ${a.title}`).join('\n')}`);
   if (needsYou.length) lines.push(`Needs you (${needsYou.length}):\n${needsYou.map(a => `  • ${a.company_name} · ${a.title}: ${a.stage_note || ''}`).join('\n')}`);
+  if (drafts.length) lines.push(`Emails waiting for your OK (${drafts.length}), in People → Outbox or your Gmail Drafts:\n${drafts.map(a => `  • ${a.to_name || 'Someone'}${a.company_name ? ` at ${a.company_name}` : ''}`).join('\n')}`);
   if (toSend.length) lines.push(`LinkedIn notes to send (${toSend.length}):\n${toSend.map(a => `  • ${a.person_name || 'Find someone'} at ${a.company_name}`).join('\n')}`);
   if (waiting.length) lines.push(`Waiting on a referral: ${waiting.length}`);
   const r = await sendToSelf(userId, {

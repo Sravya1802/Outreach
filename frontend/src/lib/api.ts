@@ -442,8 +442,8 @@ export interface ReferralAsk {
   email: string | null
   subject: string | null
   message: string
-  status: 'scheduled' | 'sent' | 'to_send' | 'marked_sent' | 'replied'
-  email_status: 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | null
+  status: 'draft' | 'scheduled' | 'sent' | 'to_send' | 'marked_sent' | 'replied'
+  email_status: 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled' | null
   send_after: string | null
   sent_at: string | null
   recipient_tz: string | null
@@ -511,8 +511,10 @@ export interface OutboxItem {
   subject: string
   body: string
   recipient_tz: string
+  /** For a draft, a placeholder until it's approved. */
   send_after: string
-  status: 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled'
+  /** draft = written by the app, waiting for the user's OK */
+  status: 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelled'
   cancel_reason: string | null
   error: string | null
   sent_at: string | null
@@ -520,6 +522,13 @@ export interface OutboxItem {
   company_name: string | null
   company_id: number | null
   contact_status: string | null
+  contact_title?: string | null
+  purpose?: 'outreach' | 'referral'
+  approved_at?: string | null
+  /** A copy sits in the user's Gmail Drafts. */
+  in_gmail_drafts?: boolean
+  attachment_file_id?: number | null
+  attachment_name?: string | null
 }
 export interface ReplyItem {
   id: number
@@ -760,6 +769,8 @@ export const api = {
   scheduleEmail: (body: { contactId: number; subject: string; body: string; when: 'best' | 'now' }): Promise<OutboxItem & { when: string }> => legacy.gmail.schedule(body),
   editOutbox: (id: number, body: { subject?: string; body?: string }): Promise<OutboxItem> => legacy.gmail.edit(id, body),
   cancelOutbox: (id: number): Promise<OutboxItem> => legacy.gmail.cancel(id),
+  /** The user's OK on a draft; `when` = the recipient's next morning (best) or now. */
+  approveOutbox: (id: number, when: 'best' | 'now' = 'best'): Promise<OutboxItem & { when: string; edited_in_gmail?: boolean }> => legacy.gmail.approve(id, { when }),
   replies: async (): Promise<ReplyItem[]> => (await legacy.gmail.replies()).replies ?? [],
   checkReplies: (): Promise<{ events?: number }> => legacy.gmail.check(),
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,

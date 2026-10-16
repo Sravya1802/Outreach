@@ -3,8 +3,9 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { connectGmail, disconnectGmail, gmailStatus, sendToSelf } from '../services/gmail.js';
-import { cancelScheduled, editScheduled, listOutbox, scheduleEmail } from '../services/outbox.js';
+import { approveDraft, cancelScheduled, editScheduled, listOutbox, scheduleEmail } from '../services/outbox.js';
 import { checkInbox, listReplies } from '../services/replyWatcher.js';
+import { referralEmailMoved } from '../services/referralFlow.js';
 import { run } from '../db.js';
 
 const router = Router();
@@ -70,6 +71,17 @@ router.patch('/outbox/:id', async (req, res) => {
   try {
     const row = await editScheduled(req.user.id, id, req.body || {});
     if (!row) return res.status(404).json({ error: 'Only emails that haven’t gone out can be edited' });
+    res.json(row);
+  } catch (err) { fail(res, err); }
+});
+
+// The user's OK on a draft: it goes at the recipient's best time (or now).
+router.post('/outbox/:id/approve', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try {
+    const row = await approveDraft(req.user.id, id, { when: req.body?.when === 'now' ? 'now' : 'best' });
+    await referralEmailMoved(req.user.id, row).catch(err => console.warn('[gmail] referral wait update failed:', err.message));
     res.json(row);
   } catch (err) { fail(res, err); }
 });

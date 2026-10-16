@@ -50,13 +50,18 @@ describe('todayItems', () => {
         { id: 2, kind: 'bounce', company_name: 'Nope', received_at: '2026-10-15T09:00:00Z' },
         { id: 3, kind: 'reply', company_name: 'Old', received_at: '2026-10-01T09:00:00Z' },
       ] as ReplyItem[],
-      outbox: [{ id: 1, status: 'scheduled', send_after: '2026-10-16T13:00:00Z', company_name: 'Gusto' }] as OutboxItem[],
+      outbox: [
+        { id: 1, step: 0, status: 'scheduled', send_after: '2026-10-16T13:00:00Z', company_name: 'Gusto' },
+        { id: 2, step: 0, status: 'draft', send_after: '2026-10-15T00:00:00Z', company_name: 'Vercel' },
+      ] as OutboxItem[],
     })
-    expect(items.map(t => t.id)).toEqual(['gmail', 'needs-you', 'approve', 'follow-up', 'next-steps', 'replies', 'going-out', 'emails'])
+    expect(items.map(t => t.id)).toEqual(['gmail', 'needs-you', 'approve', 'drafts', 'follow-up', 'next-steps', 'replies', 'going-out', 'emails'])
+    expect(items.find(t => t.id === 'drafts')?.title).toBe('1 email is waiting for your OK')
+    expect(items.find(t => t.id === 'drafts')?.to).toBe('/people/outbox')
     expect(items.find(t => t.id === 'approve')?.title).toBe('1 role is waiting for your OK')
     expect(items.find(t => t.id === 'replies')?.detail).toBe('Ramp')
     expect(items.find(t => t.id === 'going-out')?.detail).toBe('1 waiting on a referral first')
     expect(items.find(t => t.id === 'follow-up')?.to).toBe('/dashboard?stage=followup#tracker')
-    expect(needsYouCount(items)).toBe(6)
+    expect(needsYouCount(items)).toBe(7)
   })
 })

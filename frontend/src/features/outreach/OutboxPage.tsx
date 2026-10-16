@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw } from 'lucide-react'
+import { Paperclip, RefreshCw } from 'lucide-react'
 import { api, type OutboxItem } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, ButtonLink, ConfirmDialog, Dialog, EmptyState, ErrorState, Field, Input, Page, PageHeader, Skeleton, Textarea, useToast } from '@/ui'
-import { STEP_LABEL, groupThreads, itemStatus, replyText } from './outbox'
+import { STEP_LABEL, cityOf, draftsOf, groupThreads, itemStatus, replyText } from './outbox'
 
 export default function OutboxPage() {
   const qc = useQueryClient()
@@ -29,7 +29,7 @@ export default function OutboxPage() {
   })
   const cancel = useMutation({
     mutationFn: (id: number) => api.cancelOutbox(id),
-    onSuccess: () => { setCancelling(null); toast.success('Cancelled'); refresh() },
+    onSuccess: r => { setCancelling(null); toast.success(r.cancel_reason === 'You discarded it' ? 'Discarded' : 'Cancelled'); refresh() },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -46,7 +46,8 @@ export default function OutboxPage() {
     )
   }
 
-  const threads = groupThreads(outbox.data ?? [])
+  const drafts = draftsOf(outbox.data ?? [])
+  const threads = groupThreads((outbox.data ?? []).filter(i => i.status !== 'draft'))
   const scheduled = (outbox.data ?? []).filter(i => i.status === 'scheduled').length
   const replyList = replies.data ?? []
 
@@ -54,9 +55,22 @@ export default function OutboxPage() {
     <Page>
       <PageHeader
         title="Outbox"
-        description={`From ${gmail.data.email}. ${scheduled} scheduled · inbox checked ${timeAgo(gmail.data.last_checked_at)}.`}
+        description={`From ${gmail.data.email}. ${drafts.length ? `${drafts.length} waiting for your OK · ` : ''}${scheduled} scheduled · inbox checked ${timeAgo(gmail.data.last_checked_at)}.`}
         actions={<Button icon={<RefreshCw className="size-4" />} loading={check.isPending} onClick={() => check.mutate()}>Check for replies</Button>}
       />
+
+      {drafts.length > 0 && (
+        <section aria-labelledby="drafts-h" className="mb-10">
+          <h2 id="drafts-h" className="font-display text-[20px] font-semibold text-fg">Waiting for your OK</h2>
+          <p className="mb-3 mt-1 max-w-[70ch] text-[14px] leading-relaxed text-muted">
+            Referral emails for roles you approved, each with that role’s tailored resume attached. Nothing is sent until you approve it.
+            A copy is also in your Gmail Drafts. If you edit it there, your edited version is the one that goes out.
+          </p>
+          <ul className="border-t border-rule">
+            {drafts.map(d => <DraftRow key={d.id} item={d} onEdit={() => setEditing(d)} onDiscard={() => setCancelling(d)} onDone={refresh} />)}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="replies-h" className="mb-10">
         <h2 id="replies-h" className="mb-2 font-display text-[20px] font-semibold text-fg">Replies</h2>
@@ -124,15 +138,57 @@ export default function OutboxPage() {
       {editing && <EditDialog item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
       <ConfirmDialog
         open={cancelling != null}
-        title={cancelling?.step === 0 ? 'Cancel this email and its follow-ups?' : 'Cancel this follow-up?'}
-        description={cancelling ? `To ${cancelling.to_name || cancelling.to_email}: “${cancelling.subject}”` : ''}
-        confirmLabel="Cancel it"
+        title={cancelling?.status === 'draft' ? 'Discard this draft?' : cancelling?.step === 0 ? 'Cancel this email and its follow-ups?' : 'Cancel this follow-up?'}
+        description={cancelling ? `To ${cancelling.to_name || cancelling.to_email}: “${cancelling.subject}”${cancelling.status === 'draft' && cancelling.in_gmail_drafts ? '. It’s removed from your Gmail Drafts too.' : ''}` : ''}
+        confirmLabel={cancelling?.status === 'draft' ? 'Discard' : 'Cancel it'}
         danger
         busy={cancel.isPending}
         onConfirm={() => cancelling && cancel.mutate(cancelling.id)}
         onCancel={() => setCancelling(null)}
       />
     </Page>
+  )
+}
+
+function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdit: () => void; onDiscard: () => void; onDone: () => void }) {
+  const toast = useToast()
+  const approve = useMutation({
+    mutationFn: () => api.approveOutbox(item.id),
+    onSuccess: r => { toast.success(`Approved. It goes ${r.when} ${cityOf(item.recipient_tz)} time${r.edited_in_gmail ? ', with your Gmail edits' : ''}.`); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const download = useMutation({
+    mutationFn: () => api.downloadResumeFile(item.attachment_file_id as number, item.attachment_name || 'resume.pdf'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const first = (item.to_name || '').split(/\s+/)[0]
+  return (
+    <li className="border-b border-line py-4">
+      <p className="text-[15px]">
+        <b className="font-medium text-fg">{item.to_name || item.to_email}</b>
+        {item.contact_title && <span className="text-muted">, {item.contact_title}</span>}
+        {item.company_name && <span className="text-muted"> · {item.company_id ? <Link to={`/company/${item.company_id}`} className="hover:text-accent">{item.company_name}</Link> : item.company_name}</span>}
+      </p>
+      <p className="text-[13px] text-subtle">{item.to_email}</p>
+      <div className="mt-3 rounded-[4px] border border-line bg-raised p-3">
+        <p className="text-[14px] font-medium text-fg">{item.subject}</p>
+        <p className="mt-2 whitespace-pre-line break-words text-[14px] leading-relaxed text-fg">{item.body}</p>
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2 text-[13px]">
+          {item.attachment_file_id ? (
+            <button type="button" onClick={() => download.mutate()} className="inline-flex min-w-0 items-center gap-1.5 text-accent hover:underline" title="Download the attached resume">
+              <Paperclip className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{item.attachment_name || 'resume.pdf'}</span>
+            </button>
+          ) : <span className="text-subtle">No resume attached</span>}
+          <span className="text-subtle">{item.in_gmail_drafts ? 'Also in your Gmail Drafts' : 'Not in Gmail Drafts (Gmail couldn’t be reached)'}</span>
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="primary" loading={approve.isPending} onClick={() => approve.mutate()}>Approve</Button>
+        <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
+        <Button size="sm" variant="ghost" onClick={onDiscard}>Discard</Button>
+        <span className="text-[13px] text-subtle">Once approved, it goes on {first ? `${first}’s` : 'their'} next weekday morning, 8–11 AM {cityOf(item.recipient_tz)} time.</span>
+      </div>
+    </li>
   )
 }
 
@@ -148,7 +204,8 @@ function EditDialog({ item, onClose, onSaved }: { item: OutboxItem; onClose: () 
   return (
     <Dialog open onClose={onClose} label="Edit email" className="max-w-xl">
       <div className="space-y-3 p-5">
-        <h3 className="font-display text-[20px] font-semibold text-fg">Edit {STEP_LABEL[item.step].toLowerCase()}</h3>
+        <h3 className="font-display text-[20px] font-semibold text-fg">{item.status === 'draft' ? 'Edit draft' : `Edit ${STEP_LABEL[item.step].toLowerCase()}`}</h3>
+        {item.status === 'draft' && item.in_gmail_drafts && <p className="text-[13px] text-muted">Saving replaces the copy in your Gmail Drafts.</p>}
         <Field label="Subject">{f => <Input {...f} value={subject} onChange={e => setSubject(e.target.value)} />}</Field>
         <Field label="Message">{f => <Textarea {...f} rows={10} value={body} onChange={e => setBody(e.target.value)} />}</Field>
         <div className="flex justify-end gap-2">

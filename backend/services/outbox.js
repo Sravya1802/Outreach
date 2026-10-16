@@ -5,11 +5,16 @@
  *   • at most `daily_cap` (default 20) a day per user, at least 3 minutes apart
  *   • two follow-ups in the same thread, 4 and 10 business days after the
  *     first one; any reply (or bounce) cancels what's left
+ *   • emails the app writes on its own (referral asks) start as drafts: a copy
+ *     goes to the user's Gmail Drafts with the resume attached, and nothing is
+ *     sent until they approve it here (their edits in Gmail are kept). Sending
+ *     or deleting the draft in Gmail is noticed by syncDrafts().
  * runOutbox() is called by a cron every 2 minutes.
  */
 
 import { all, one, run } from '../db.js';
-import { connectionFor, sendAs } from './gmail.js';
+import { connectionFor, draftHash, messagesTo, putDraft, readDraft, removeDraft, sendAs, specialFolder, withImap } from './gmail.js';
+import { fileBytes, fileForUser } from './resumeFiles.js';
 import { nextSendSlot, businessDaysLater, timezoneFor, describeSlot } from './sendWindow.js';
 import { marketFor } from './markets.js';
 
@@ -52,9 +57,10 @@ export function followupBody(step, { toName, company, sender, original, sentAt, 
 
 /**
  * Schedule (or send now) the first email to a contact. Returns the outbox row
- * with a human description of when it goes.
+ * with a human description of when it goes. `draft` holds it for the user's OK
+ * (and puts a copy in their Gmail Drafts); `attachmentFileId` is a resume_files id.
  */
-export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach' }) {
+export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach', draft = false, attachmentFileId = null }) {
   const contact = await one(
     `SELECT c.*, j.name AS company_name FROM job_contacts c LEFT JOIN jobs j ON j.id = c.job_id WHERE c.id = $1 AND c.user_id = $2`,
     [contactId, userId],
@@ -66,21 +72,124 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   if (!str(subject) || !str(body)) throw Object.assign(new Error('Write a subject and a message first.'), { status: 400 });
   if (!(await connectionFor(userId))) throw Object.assign(new Error('Connect your Gmail under Integrations → Gmail to send from here.'), { status: 400 });
   const active = await one(
-    "SELECT id FROM email_outbox WHERE user_id = $1 AND contact_id = $2 AND step = 0 AND status IN ('scheduled','sending','sent') LIMIT 1",
+    "SELECT id, status FROM email_outbox WHERE user_id = $1 AND contact_id = $2 AND step = 0 AND status IN ('draft','scheduled','sending','sent') LIMIT 1",
     [userId, contactId],
   );
+  if (active?.status === 'draft') throw Object.assign(new Error('An email to this person is already waiting for your OK in People → Outbox.'), { status: 409 });
   if (active) throw Object.assign(new Error('You’ve already emailed or scheduled this person. Follow-ups go out on their own.'), { status: 409 });
 
   const tz = await recipientTimezone(userId, contactId);
-  const sendAfter = when === 'now' ? new Date() : nextSendSlot(tz);
+  // A draft's send time is set when it's approved.
+  const sendAfter = when === 'now' || draft ? new Date() : nextSendSlot(tz);
   const row = (await run(
-    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after, purpose)
-     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [userId, contactId, str(contact.email).toLowerCase(), contact.name, str(subject).slice(0, 300), str(body).slice(0, 20000), tz, sendAfter, purpose === 'referral' ? 'referral' : 'outreach'],
+    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after, purpose, status, attachment_file_id)
+     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [userId, contactId, str(contact.email).toLowerCase(), contact.name, str(subject).slice(0, 300), str(body).slice(0, 20000), tz, sendAfter,
+      purpose === 'referral' ? 'referral' : 'outreach', draft ? 'draft' : 'scheduled', attachmentFileId || null],
   )).rows[0];
   await run('UPDATE job_contacts SET generated_subject = $1, generated_body = $2 WHERE id = $3 AND user_id = $4', [str(subject), str(body), contactId, userId]);
+  if (draft) {
+    const inGmail = await copyToGmailDrafts(row);
+    return { ...row, in_gmail_drafts: inGmail, when: 'draft' };
+  }
   if (when === 'now') return { ...(await sendOne(row.id)), when: 'now' };
   return { ...row, when: describeSlot(sendAfter, tz) };
+}
+
+/** The row's attachment (the role's tailored resume), ready for nodemailer. */
+async function attachmentsFor(row) {
+  if (!row.attachment_file_id) return [];
+  const file = await fileForUser(row.user_id, row.attachment_file_id);
+  if (!file) return [];
+  return [{ filename: file.filename || 'resume.pdf', content: await fileBytes(file), contentType: 'application/pdf' }];
+}
+
+/** Put (or replace) the Gmail Drafts copy of a draft row. False when Gmail couldn't be reached. */
+async function copyToGmailDrafts(row) {
+  try {
+    const hash = await putDraft(row.user_id, {
+      to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, attachments: await attachmentsFor(row), since: row.created_at,
+    });
+    await run('UPDATE email_outbox SET gmail_draft_hash = $2 WHERE id = $1', [row.id, hash]);
+    return true;
+  } catch (err) {
+    console.warn('[outbox] Gmail draft copy failed', row.id, err.message);
+    return false;
+  }
+}
+
+/**
+ * The user's OK on a draft. If they edited the Gmail copy, that version is
+ * what goes. Then it's scheduled like any first email (or sent now).
+ */
+export async function approveDraft(userId, id, { when = 'best' } = {}) {
+  const row = await one('SELECT * FROM email_outbox WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (row.status !== 'draft') throw Object.assign(new Error('This email isn’t waiting for your OK any more.'), { status: 409 });
+  if (!(await connectionFor(userId))) throw Object.assign(new Error('Connect your Gmail under Integrations → Gmail to send from here.'), { status: 400 });
+
+  let edit = null;
+  if (row.gmail_draft_hash) {
+    let copy;
+    try {
+      copy = await readDraft(userId, { to: row.to_email, since: row.created_at });
+    } catch {
+      throw Object.assign(new Error('Couldn’t check your Gmail draft for edits. Try again in a minute.'), { status: 502 });
+    }
+    if (copy && draftHash(copy.subject, copy.text) !== row.gmail_draft_hash && str(copy.text)) edit = copy;
+  }
+  const sendAfter = when === 'now' ? new Date() : nextSendSlot(row.recipient_tz);
+  const updated = (await run(
+    `UPDATE email_outbox SET status = 'scheduled', subject = $3, body = $4, body_html = $5, send_after = $6, approved_at = NOW(), error = NULL
+      WHERE id = $1 AND user_id = $2 AND status = 'draft' RETURNING *`,
+    [row.id, userId, edit ? (str(edit.subject) || row.subject).slice(0, 300) : row.subject, edit ? str(edit.text).slice(0, 20000) : row.body, edit?.html || null, sendAfter],
+  )).rows[0];
+  if (!updated) throw Object.assign(new Error('This email isn’t waiting for your OK any more.'), { status: 409 });
+  // The Gmail copy goes, so it can't be sent twice.
+  if (row.gmail_draft_hash) await removeDraft(userId, { to: row.to_email, since: row.created_at }).catch(err => console.warn('[outbox] draft cleanup', row.id, err.message));
+  if (when === 'now') return { ...(await sendOne(row.id)), when: 'now', edited_in_gmail: Boolean(edit) };
+  return { ...updated, when: describeSlot(sendAfter, row.recipient_tz), edited_in_gmail: Boolean(edit) };
+}
+
+/** The user sent the Gmail copy themselves: record it as sent (follow-ups as usual). */
+async function markSentFromGmail(row, sent) {
+  const set = async (messageId) => (await run(
+    `UPDATE email_outbox SET status = 'sent', sent_at = $2, message_id = $3, subject = $4, body = $5, approved_at = NOW(), error = NULL
+      WHERE id = $1 AND status = 'draft' RETURNING *`,
+    [row.id, sent.date || new Date(), messageId, str(sent.subject) || row.subject, str(sent.text) || row.body],
+  )).rows[0];
+  let r;
+  try { r = await set(sent.messageId); } catch { r = await set(null); } // a duplicate Message-ID shouldn't block it
+  if (!r) return null;
+  if (r.contact_id) {
+    await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [r.contact_id]);
+  }
+  if (r.purpose !== 'referral') await queueFollowups(r);
+  return r;
+}
+
+/**
+ * Compare the user's drafts with their Gmail: a copy that's gone from Drafts
+ * and shows up in Sent was sent by them; gone from both means they deleted it.
+ * Returns the rows that changed.
+ */
+export async function syncDrafts(userId) {
+  const drafts = await all("SELECT * FROM email_outbox WHERE user_id = $1 AND status = 'draft' AND gmail_draft_hash IS NOT NULL ORDER BY id LIMIT 50", [userId]);
+  if (!drafts.length) return [];
+  const changed = [];
+  await withImap(userId, async (client) => {
+    const draftsFolder = await specialFolder(client, '\\Drafts');
+    const sentFolder = await specialFolder(client, '\\Sent');
+    for (const row of drafts) {
+      if ((await messagesTo(client, draftsFolder, row.to_email, row.created_at)).length) continue;
+      const sent = (await messagesTo(client, sentFolder, row.to_email, row.created_at))[0];
+      const r = sent
+        ? await markSentFromGmail(row, sent)
+        : (await run("UPDATE email_outbox SET status = 'cancelled', cancel_reason = 'You deleted it from Gmail Drafts' WHERE id = $1 AND status = 'draft' RETURNING *", [row.id])).rows[0];
+      if (r) changed.push(r);
+    }
+  });
+  return changed;
 }
 
 async function sentInLastDay(userId) {
@@ -134,7 +243,10 @@ export async function sendOne(id) {
     inReplyTo = root?.message_id || null;
   }
   try {
-    const messageId = await sendAs(row.user_id, { to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, inReplyTo });
+    const messageId = await sendAs(row.user_id, {
+      to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, html: row.body_html || undefined, inReplyTo,
+      attachments: await attachmentsFor(row),
+    });
     await run("UPDATE email_outbox SET status = 'sent', sent_at = NOW(), message_id = $2, in_reply_to = $3, error = NULL WHERE id = $1", [row.id, messageId, inReplyTo]);
     if (row.contact_id) {
       await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [row.contact_id]);
@@ -221,10 +333,13 @@ export async function runOutbox({ limit = 25 } = {}) {
 export async function listOutbox(userId) {
   return all(
     `SELECT o.id, o.contact_id, o.step, o.thread_root_id, o.to_email, o.to_name, o.subject, o.body, o.recipient_tz, o.send_after,
-            o.status, o.cancel_reason, o.error, o.sent_at, o.created_at, j.name AS company_name, j.id AS company_id, c.status AS contact_status
+            o.status, o.cancel_reason, o.error, o.sent_at, o.created_at, o.purpose, o.approved_at, (o.gmail_draft_hash IS NOT NULL) AS in_gmail_drafts,
+            o.attachment_file_id, f.filename AS attachment_name,
+            j.name AS company_name, j.id AS company_id, c.status AS contact_status, c.title AS contact_title
        FROM email_outbox o
        LEFT JOIN job_contacts c ON c.id = o.contact_id
        LEFT JOIN jobs j ON j.id = c.job_id
+       LEFT JOIN resume_files f ON f.id = o.attachment_file_id AND f.user_id = o.user_id
       WHERE o.user_id = $1
       ORDER BY COALESCE(o.thread_root_id, o.id) DESC, o.step
       LIMIT 600`,
@@ -232,23 +347,30 @@ export async function listOutbox(userId) {
   );
 }
 
+/** Edit an email that hasn't gone out. A draft's Gmail copy is replaced to match. */
 export async function editScheduled(userId, id, { subject, body }) {
   const r = await run(
-    `UPDATE email_outbox SET subject = COALESCE($3, subject), body = COALESCE($4, body)
-      WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING *`,
+    `UPDATE email_outbox SET subject = COALESCE($3, subject), body = COALESCE($4, body), body_html = NULL
+      WHERE id = $1 AND user_id = $2 AND status IN ('draft', 'scheduled') RETURNING *`,
     [id, userId, str(subject) || null, str(body) || null],
   );
-  return r.rows[0] || null;
+  const row = r.rows[0] || null;
+  if (row?.status === 'draft' && row.gmail_draft_hash) await copyToGmailDrafts(row);
+  return row;
 }
 
-/** Cancel one email; cancelling the first email cancels its follow-ups too. */
-export async function cancelScheduled(userId, id) {
+/** Cancel one email (or discard a draft); cancelling the first email cancels its follow-ups too. */
+export async function cancelScheduled(userId, id, reason = null) {
   const row = await one('SELECT * FROM email_outbox WHERE id = $1 AND user_id = $2', [id, userId]);
   if (!row) return null;
+  const why = reason || (row.status === 'draft' ? 'You discarded it' : 'You cancelled it');
   await run(
-    "UPDATE email_outbox SET status = 'cancelled', cancel_reason = 'You cancelled it' WHERE user_id = $1 AND status = 'scheduled' AND (id = $2 OR thread_root_id = $2)",
-    [userId, row.step === 0 ? row.id : -1],
+    "UPDATE email_outbox SET status = 'cancelled', cancel_reason = $3 WHERE user_id = $1 AND status IN ('draft', 'scheduled') AND (id = $2 OR thread_root_id = $2)",
+    [userId, row.step === 0 ? row.id : -1, why],
   );
-  if (row.step !== 0) await run("UPDATE email_outbox SET status = 'cancelled', cancel_reason = 'You cancelled it' WHERE id = $1 AND status = 'scheduled'", [id]);
+  if (row.step !== 0) await run("UPDATE email_outbox SET status = 'cancelled', cancel_reason = $2 WHERE id = $1 AND status = 'scheduled'", [id, why]);
+  if (row.status === 'draft' && row.gmail_draft_hash) {
+    await removeDraft(userId, { to: row.to_email, since: row.created_at }).catch(err => console.warn('[outbox] draft cleanup', row.id, err.message));
+  }
   return one('SELECT * FROM email_outbox WHERE id = $1', [id]);
 }

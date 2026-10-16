@@ -124,6 +124,12 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Evening list: agencies left out, scores spread out
+- **staffing.js (8786068, aeb0d9f):** `looksLikeAgency(company, jd)` checks a known-agency list, name words (staffing, recruiting, talent solutions…) and JD phrases ("our client", C2C, contract-to-hire). It needs 2 phrases, or 1 phrase plus an agency-ish name. It runs on the company name before scoring and on the posting text after the JD fetch, and agencies go to `excluded`. The first version wrongly caught BAE Systems through "systems inc", so that pattern and the consulting patterns were removed. Tests now cover BAE Systems, Apple Inc, Cisco Systems, Oracle Consulting and Palantir Technologies.
+- **blendScore:** the scorer now returns counts of required and preferred qualifications met plus a level fit. The final score is `0.5*model + 0.5*10*(0.65*req + 0.2*pref + 0.15*level)`, and a role at the wrong level is capped at 6.5. `refreshPlan(userId, planId)` drops agencies and rescores pending top and worth items from the stored JD, then re-tiers them.
+- **User's list (2026-10-15) refreshed:** 9 agency postings removed, 100 rescored ($0.04). Result: **20 top** scored 9.4–9.8 (Whatnot, Caselle, Google, American Express, Vagaro, CoreWeave, Instacart, VAST Data, Valon…), 72 worth, 57 excluded. BAE was restored to worth.
+- **Sent:** WhatsApp (free text, inside the 24-hour window) and email. The cron had already emailed the old 18-role list at 02:00 UTC, before the refresh, so I cleared `emailed_at` and sent the refreshed list again. The user got two list emails tonight; the second one is correct.
+
 ### 2026-10-15 — Evening list: more roles scored; minimum of 10; LinkedIn → company board; ASCII headers fix
 - **Bug fix (974f866):** the rename put the curly apostrophe of "Scout’n’Jobs" into `User-Agent` headers, and fetch throws on non-ASCII header values, so posting fetch, GitHub sync, SpeedyApply and pay lookups failed for ~45 min (23:24–00:08 UTC). No scheduled job ran in that window. Headers now say `ScoutnJobs`; `tests/ascii-headers.test.mjs` guards it.
 - **boardResolver.js:** before applying, a LinkedIn/unknown-site role is looked up on the company's own Greenhouse/Lever/Ashby board (public APIs, 1-day cache) and applied there if the title matches. Measured ~9% of LinkedIn-only US roles (49 of 528).

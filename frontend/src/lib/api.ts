@@ -408,6 +408,8 @@ export interface DailyPlanSettings {
   timezone: string
   minScore: number
   maxPerDay: number
+  /** Fill up to this many with close matches (8+) when fewer clear the bar */
+  minPerDay: number
   referralFirst: boolean
   referralWaitDays: number
 }

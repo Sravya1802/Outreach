@@ -52,7 +52,7 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
           Connect your Gmail so the list can be emailed to you. Until then, it shows up here. <Link to="/integrations/gmail" className="text-accent hover:underline">Connect Gmail</Link>
         </p>
       )}
-      <form className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto] lg:items-end"
+      <form className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2 lg:grid-cols-[repeat(6,minmax(0,1fr))_auto] lg:items-end"
         onSubmit={e => { e.preventDefault(); save.mutate(draft) }}>
         <Field label="List arrives at">
           {f => <Select {...f} value={s.listHour} onChange={e => set({ listHour: Number(e.target.value) })}>{HOURS.map(h => <option key={h} value={h}>{hourLabel(h)}</option>)}</Select>}
@@ -62,6 +62,9 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
         </Field>
         <Field label="Score at least">
           {f => <Input {...f} type="number" min={5} max={10} step={0.1} value={s.minScore} onChange={e => set({ minScore: Number(e.target.value) })} />}
+        </Field>
+        <Field label="At least a day" hint="Filled with close matches (8+)">
+          {f => <Input {...f} type="number" min={0} max={30} value={s.minPerDay} onChange={e => set({ minPerDay: Number(e.target.value) })} />}
         </Field>
         <Field label="At most a day">
           {f => <Input {...f} type="number" min={1} max={30} value={s.maxPerDay} onChange={e => set({ maxPerDay: Number(e.target.value) })} />}

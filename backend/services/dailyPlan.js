@@ -25,7 +25,11 @@ import { notify as whatsappNotify, sendPlanList } from './whatsapp.js';
 
 const KEY = 'daily_plan_settings';
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
-const MAX_SCORED_PER_NIGHT = 40;
+// Groq scoring is ~$0.0003 a role; 150 a night is ~5 cents and ~10 minutes.
+const MAX_SCORED_PER_NIGHT = Number(process.env.DAILY_PLAN_MAX_SCORED || 150);
+const SCORE_CONCURRENCY = 3;
+// Filling up to the minimum never goes below this score.
+const CLOSE_MATCH_FLOOR = 8.0;
 const FRESH_DAYS = 4;
 const COMPANY_COOLDOWN_DAYS = 30;
 
@@ -35,6 +39,7 @@ export const DEFAULT_SETTINGS = {
   timezone: 'America/Chicago',
   minScore: 9.0,
   maxPerDay: 15,
+  minPerDay: 10,
   referralFirst: true,
   referralWaitDays: 2,
 };
@@ -49,6 +54,7 @@ export function normalizeSettings(s = {}) {
     timezone: isValidTz(s.timezone) ? s.timezone : d.timezone,
     minScore: Math.round(clamp(s.minScore, 5, 10, d.minScore) * 10) / 10,
     maxPerDay: Math.round(clamp(s.maxPerDay, 1, 30, d.maxPerDay)),
+    minPerDay: Math.round(clamp(s.minPerDay, 0, 30, d.minPerDay)),
     referralFirst: s.referralFirst !== false,
     referralWaitDays: Math.round(clamp(s.referralWaitDays, 0, 5, d.referralWaitDays)),
   };
@@ -89,13 +95,18 @@ export const localHour = (tz, now = new Date()) => partsIn(now, tz).hour;
 
 const lc = (s) => String(s ?? '').trim().toLowerCase();
 
+export const CLOSE_MATCH = 'Close match · ';
+
 /**
  * Scored rows → tiers. One role per company on the list (the best one); the
- * list is capped; the next-best go to "worth a look".
+ * list is capped at maxPerDay. When fewer than minPerDay clear the bar, the
+ * best remaining roles scoring CLOSE_MATCH_FLOOR+ fill it up, marked "Close
+ * match". Everything else 7+ is "worth a look".
  */
-export function assignTiers(scored, { minScore, maxPerDay }) {
-  const out = scored.map(r => ({ ...r }));
+export function assignTiers(scored, { minScore, maxPerDay, minPerDay = 0 }) {
+  const out = scored.map(r => ({ ...r, reason: r.reason == null ? r.reason : String(r.reason).split(CLOSE_MATCH).join('') }));
   const ranked = out.filter(r => r.tier !== 'excluded' && r.score != null).sort((a, b) => b.score - a.score);
+  for (const r of ranked) r.tier = undefined;
   const companies = new Set();
   let top = 0;
   for (const r of ranked) {
@@ -103,15 +114,43 @@ export function assignTiers(scored, { minScore, maxPerDay }) {
       r.tier = 'top';
       companies.add(lc(r.company_name));
       top += 1;
-    } else if (r.score >= 7) {
+    }
+  }
+  const floor = Math.min(CLOSE_MATCH_FLOOR, minScore);
+  for (const r of ranked) {
+    if (top >= Math.min(minPerDay, maxPerDay)) break;
+    if (!r.tier && r.score >= floor && !companies.has(lc(r.company_name))) {
+      r.tier = 'top';
+      r.reason = `${CLOSE_MATCH}${r.reason || ''}`;
+      companies.add(lc(r.company_name));
+      top += 1;
+    }
+  }
+  for (const r of ranked) {
+    if (r.tier) continue;
+    if (r.score >= 7) {
       r.tier = 'worth';
       if (r.score >= minScore && companies.has(lc(r.company_name))) r.reason = `${r.reason || ''} (another ${r.company_name} role is on the list)`.trim();
-    } else {
-      r.tier = 'low';
-    }
+    } else r.tier = 'low';
   }
   for (const r of out) if (!r.tier) r.tier = 'low';
   return out;
+}
+
+/** Words from the candidate's resume that make a job title worth scoring first. */
+export function relevanceWords(parsed) {
+  const words = new Set(['software', 'engineer', 'developer', 'swe', 'backend', 'frontend', 'full stack', 'fullstack', 'data', 'machine learning', 'ml', 'ai', 'platform', 'cloud', 'infrastructure']);
+  for (const e of parsed?.experience || []) for (const w of String(e.title || '').toLowerCase().split(/[^a-z+#]+/)) if (w.length > 2) words.add(w);
+  for (const s of parsed?.skills || []) for (const it of s.items || []) { const w = String(it).toLowerCase().trim(); if (w.length > 1 && w.length < 25) words.add(w); }
+  for (const w of ['intern', 'internship', 'new', 'grad', 'graduate', 'junior', 'associate', 'entry']) words.delete(w);
+  return [...words];
+}
+
+export function titleRelevance(title, words) {
+  const t = ` ${String(title || '').toLowerCase()} `;
+  let n = 0;
+  for (const w of words) if (t.includes(w.includes(' ') ? w : ` ${w} `) || t.includes(` ${w},`) || t.includes(` ${w}/`)) n += 1;
+  return n;
 }
 
 async function profileFor(userId) {
@@ -199,9 +238,13 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
           AND NOT EXISTS (SELECT 1 FROM plan_items pi WHERE pi.user_id = $1 AND pi.scraped_role_id = sr.id)
           AND NOT EXISTS (SELECT 1 FROM evaluations e WHERE e.user_id = $1 AND e.job_url = sr.apply_url)
         ORDER BY COALESCE(sr.posted_at, sr.scraped_at) DESC
-        LIMIT 300`,
+        LIMIT 800`,
       [userId, region, types, FRESH_DAYS],
     );
+    // Score the titles closest to the resume first (newest first among equals).
+    const master = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
+    const words = relevanceWords(master?.parsed);
+    candidates.sort((a, b) => titleRelevance(b.title, words) - titleRelevance(a.title, words));
     const recentCompanies = new Set((await all(
       `SELECT lower(company_name) AS c FROM evaluations WHERE user_id = $1 AND apply_status IN ('submitted','responded','interview','offer') AND NULLIF(applied_at, '')::timestamptz > NOW() - make_interval(days => $2)
        UNION SELECT lower(company_name) FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND decided_at > NOW() - make_interval(days => $2)`,
@@ -213,6 +256,7 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
     const rows = [];
     let scoredCount = 0;
     let cost = 0;
+    const toScore = [];
     for (const role of candidates) {
       const base = { role, company_tz: timezoneFor(role.location) || null };
       if (recentCompanies.has(lc(role.company_name))) { rows.push({ ...base, tier: 'excluded', reason: `You applied to ${role.company_name} in the last ${COMPANY_COOLDOWN_DAYS} days` }); continue; }
@@ -220,39 +264,58 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
         rows.push({ ...base, tier: 'excluded', reason: role.sponsorship === 'citizens_only' ? 'Needs US citizens' : 'Won’t sponsor a visa' });
         continue;
       }
-      if (scoredCount >= MAX_SCORED_PER_NIGHT) continue; // left for tomorrow, still fresh
-      const jd = await jobText(role);
+      if (toScore.length < MAX_SCORED_PER_NIGHT) toScore.push(base); // the rest wait for tomorrow, still fresh
+    }
+    let budgetErr = null;
+    const scoreRole = async (base) => {
+      const jd = await jobText(base.role);
       if (sponsor && jd) {
         const s = classifySponsorship(jd);
         if (['citizens_only', 'no_sponsorship'].includes(s.status)) {
           rows.push({ ...base, jd, tier: 'excluded', reason: s.status === 'citizens_only' ? 'Needs US citizens' : 'Won’t sponsor a visa' });
-          continue;
+          return;
         }
       }
-      if (jd.length < 200) { rows.push({ ...base, tier: 'low', reason: 'Couldn’t read the posting', score: null }); continue; }
+      if (jd.length < 200) { rows.push({ ...base, tier: 'low', reason: 'Couldn’t read the posting', score: null }); return; }
       scoredCount += 1;
       try {
-        const s = await scoreOne({ userId, summary, profile, role, jd });
+        const s = await scoreOne({ userId, summary, profile, role: base.role, jd });
         cost += s.cost;
         rows.push({ ...base, jd, score: s.score, reason: s.why });
       } catch (err) {
-        if (err.status === 402) throw err; // budget: stop, don't half-build silently
+        if (err.status === 402) { budgetErr = err; return; }
         rows.push({ ...base, jd, tier: 'low', reason: `Couldn’t score it (${String(err.message).slice(0, 80)})`, score: null });
       }
+    };
+    for (let i = 0; i < toScore.length && !budgetErr; i += SCORE_CONCURRENCY) {
+      await Promise.all(toScore.slice(i, i + SCORE_CONCURRENCY).map(scoreRole));
     }
+    if (budgetErr && !rows.some(r => r.score != null)) throw budgetErr; // nothing scored: fail loudly
 
-    const tiered = assignTiers(rows.map(r => ({ ...r, company_name: r.role.company_name })), settings);
-    for (const r of tiered) {
+    for (const r of rows) {
       await run(
         `INSERT INTO plan_items (plan_id, user_id, scraped_role_id, company_name, title, apply_url, location, pay, sponsorship, tier, score, reason, company_tz, job_description)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (user_id, scraped_role_id) DO NOTHING`,
         [plan.id, userId, r.role.id, r.role.company_name, r.role.title, r.role.apply_url, r.role.location, r.role.salary_range, r.role.sponsorship,
-          r.tier, r.score ?? null, r.reason ?? null, r.company_tz, r.jd ? String(r.jd).slice(0, 20000) : null],
+          r.tier || 'low', r.score ?? null, r.reason ?? null, r.company_tz, r.jd ? String(r.jd).slice(0, 20000) : null],
       );
     }
+    // Tier the whole plan together, so a rebuild adds to tonight's list instead of starting a second one.
+    const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1", [plan.id]);
+    const tiered = assignTiers(all_.map(r => ({ ...r, score: r.score == null ? null : Number(r.score) })), settings);
+    for (const r of tiered) {
+      const was = all_.find(x => x.id === r.id);
+      if (was.decision !== 'pending' || (was.tier === r.tier && was.reason === r.reason)) continue;
+      await run('UPDATE plan_items SET tier = $2, reason = $3 WHERE id = $1', [r.id, r.tier, r.reason ?? null]);
+    }
     const count = (t) => tiered.filter(r => r.tier === t).length;
-    const stats = { considered: candidates.length, scored: scoredCount, top: count('top'), worth: count('worth'), low: count('low'), excluded: count('excluded'), costUsd: Number(cost.toFixed(5)) };
+    const prev = plan.stats || {};
+    const stats = {
+      considered: (prev.considered || 0) + candidates.length, scored: (prev.scored || 0) + scoredCount,
+      top: count('top'), worth: count('worth'), low: count('low'), excluded: count('excluded'),
+      costUsd: Number(((prev.costUsd || 0) + cost).toFixed(5)), ...(budgetErr ? { stoppedEarly: 'AI budget reached' } : {}),
+    };
     await run("UPDATE daily_plans SET status = 'ready', stats = $2, built_at = NOW() WHERE id = $1", [plan.id, JSON.stringify(stats)]);
   } catch (err) {
     await run("UPDATE daily_plans SET status = 'failed', error = $2 WHERE id = $1", [plan.id, String(err.message).slice(0, 300)]);

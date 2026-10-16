@@ -63,3 +63,29 @@ test('evening email lists the top roles and says what happens next', () => {
   const none = planEmail({ items: [{ tier: 'worth', score: 7.5, company_name: 'A', title: 'B' }], stats: {}, settings, date: '2026-10-15' });
   assert.match(none.subject, /No 9\+ roles tonight · 1 worth a look/);
 });
+
+test('fills up to the daily minimum with close matches (8+), never below', async () => {
+  const { assignTiers: tiers, CLOSE_MATCH } = await import('../services/dailyPlan.js');
+  const rows = [
+    { company_name: 'A', score: 9.3 }, { company_name: 'B', score: 9.0 }, { company_name: 'C', score: 8.8 },
+    { company_name: 'D', score: 8.4 }, { company_name: 'D', score: 8.3 }, { company_name: 'E', score: 7.9 }, { company_name: 'F', score: 6 },
+  ];
+  const t = tiers(rows, { minScore: 9, maxPerDay: 15, minPerDay: 10 });
+  const top = t.filter(r => r.tier === 'top');
+  assert.deepEqual(top.map(r => r.company_name), ['A', 'B', 'C', 'D']); // one per company; E is under 8
+  assert.ok(top.filter(r => r.score < 9).every(r => r.reason.startsWith(CLOSE_MATCH)));
+  assert.ok(!top.find(r => r.company_name === 'A').reason);
+  assert.equal(t.find(r => r.company_name === 'E').tier, 'worth');
+  // Re-tiering doesn't stack the label.
+  const again = tiers(t, { minScore: 9, maxPerDay: 15, minPerDay: 10 });
+  assert.equal(again.find(r => r.company_name === 'C').reason.split(CLOSE_MATCH).length, 2);
+  // minPerDay 0 = old behaviour.
+  assert.equal(tiers(rows, { minScore: 9, maxPerDay: 15, minPerDay: 0 }).filter(r => r.tier === 'top').length, 2);
+});
+
+test('relevant titles are scored first', async () => {
+  const { relevanceWords, titleRelevance } = await import('../services/dailyPlan.js');
+  const words = relevanceWords({ experience: [{ title: 'Data Engineering Intern' }], skills: [{ items: ['Python', 'Kafka', 'React'] }] });
+  assert.ok(titleRelevance('Software Engineer, Data Platform (Python)', words) > titleRelevance('Marketing Associate', words));
+  assert.equal(titleRelevance('Account Executive', words), 0);
+});

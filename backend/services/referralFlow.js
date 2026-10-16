@@ -61,7 +61,7 @@ async function draftAsk(userId, ctx) {
       userId,
       system: `You write a short, polite referral request from a student to someone at a company.
 Return JSON: {"subject": "...", "body": "...", "note": "..."}
-- body: under 110 words. Greeting with their first name; who the student is (name, school) in one line; the role; one specific reason they fit (from FIT, never invented); the ask (refer me, or point me to the right person); ${ctx.attached ? 'one line saying their resume is attached' : 'an offer to send their resume'}; the job link; thanks. No flattery, no "I hope this finds you well".
+- body: under 110 words of plain text in 3–4 short paragraphs separated by a blank line. Greeting with their first name; who the student is (name, school) in one line; the role; one specific reason they fit (from FIT, never invented); the ask (refer me, or point me to the right person); ${ctx.attached ? 'one line saying their resume is attached' : 'an offer to send their resume'}; the job link; thanks, then the student's full name on its own line. No flattery, no "I hope this finds you well".
 - note: a LinkedIn connection note under 280 characters with the same ask.
 - subject: under 60 characters.
 - ${ctx.knows ? 'They are a LinkedIn connection of the student, so a warmer tone is fine.' : 'They don\'t know the student; keep it brief and respectful.'}`,
@@ -130,25 +130,39 @@ export async function findEmailsAt(userId, jobId, item) {
   return added;
 }
 
+/** A role's asks that are still out (a discarded email doesn't count). */
+async function liveAsks(itemId) {
+  return all(
+    `SELECT a.channel, a.person_name, a.status FROM referral_asks a LEFT JOIN email_outbox o ON o.id = a.outbox_id
+      WHERE a.plan_item_id = $1 AND (a.channel <> 'email' OR o.status IS DISTINCT FROM 'cancelled') ORDER BY a.id`,
+    [itemId],
+  );
+}
+
 /**
- * A referral email left draft: approved (scheduled), or sent from Gmail. The
- * wait restarts from when it goes out, so the person gets the full wait to answer.
+ * A referral email left draft: approved (scheduled), sent from Gmail, or
+ * discarded. Once it goes, the wait restarts from then, so the person gets
+ * the full wait to answer. The role's status line is rewritten either way.
  */
 export async function referralEmailMoved(userId, row) {
-  if (row?.purpose !== 'referral' || !['scheduled', 'sending', 'sent'].includes(row.status)) return;
+  if (row?.purpose !== 'referral' || !['scheduled', 'sending', 'sent', 'cancelled'].includes(row.status)) return;
   const ask = await one('SELECT * FROM referral_asks WHERE outbox_id = $1 AND user_id = $2', [row.id, userId]);
   if (!ask) return;
-  await run("UPDATE referral_asks SET status = $2 WHERE id = $1 AND status = 'draft'", [ask.id, row.status === 'sent' ? 'sent' : 'scheduled']);
+  const goesOut = row.status !== 'cancelled';
+  if (goesOut) await run("UPDATE referral_asks SET status = $2 WHERE id = $1 AND status = 'draft'", [ask.id, row.status === 'sent' ? 'sent' : 'scheduled']);
   const item = await one("SELECT * FROM plan_items WHERE id = $1 AND stage = 'waiting_referral'", [ask.plan_item_id]);
   if (!item) return;
   const { getSettings } = await import('./dailyPlan.js');
   const settings = await getSettings(userId);
   const tz = item.company_tz || settings.timezone;
-  const goes = new Date(row.sent_at || row.send_after);
-  const at = businessDaysLater(goes, settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
-  const applyAfter = item.apply_after && new Date(item.apply_after) > at ? new Date(item.apply_after) : at;
-  const asks = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
-  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, referralNote(asks, describeDay(applyAfter, tz))]);
+  let applyAfter = item.apply_after ? new Date(item.apply_after) : new Date();
+  if (goesOut) {
+    const at = businessDaysLater(new Date(row.sent_at || row.send_after), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+    if (at > applyAfter) applyAfter = at;
+  }
+  const asks = await liveAsks(item.id);
+  const note = asks.length ? referralNote(asks, describeDay(applyAfter, tz)) : `No referral ask is out. Applying ${describeDay(applyAfter, tz)} unless you get a referral yourself.`;
+  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, note]);
 }
 
 /** Step 1: ask. Moves the role to waiting_referral with its apply time set. */
@@ -159,7 +173,7 @@ export async function askForReferral(userId, item, settings) {
     const tz0 = item.company_tz || settings.timezone;
     const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), settings.referralWaitDays, tz0, { startHour: 6, endHour: 10 });
     await run("UPDATE plan_items SET stage = 'waiting_referral', referral_status = CASE WHEN referral_status = 'none' THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
-      [item.id, at, referralNote(existing, describeDay(at, tz0))]);
+      [item.id, at, referralNote(await liveAsks(item.id), describeDay(at, tz0))]);
     return;
   }
   const who = await me(userId);

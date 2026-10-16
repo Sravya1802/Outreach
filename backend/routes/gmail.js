@@ -92,6 +92,7 @@ router.delete('/outbox/:id', async (req, res) => {
   try {
     const row = await cancelScheduled(req.user.id, id);
     if (!row) return res.status(404).json({ error: 'Not found' });
+    await referralEmailMoved(req.user.id, row).catch(err => console.warn('[gmail] referral note update failed:', err.message));
     res.json(row);
   } catch (err) { fail(res, err); }
 });

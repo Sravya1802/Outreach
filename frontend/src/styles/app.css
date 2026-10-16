@@ -10,8 +10,10 @@
    left of center so the floating Help button (bottom right) has its own room. */
 @layer components {
   .app-frame { width: 100%; max-width: 80rem; margin-inline: auto; }
-  @media (min-width: 80rem) {
+  @media (min-width: 64rem) {
     .app-frame { margin-left: max(0px, calc((100% - 80rem) / 2 - 4rem)); margin-right: auto; }
+    /* Page content also keeps clear of the Help button when there's no spare margin. */
+    .app-frame-page { max-width: min(80rem, 100% - 7rem); }
   }
 }
 

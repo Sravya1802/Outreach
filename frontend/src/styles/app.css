@@ -5,17 +5,10 @@
 @import "tailwindcss";
 @import "./legacy.css" layer(legacy);
 
-/* The shared page width for the top bar, the section tabs and every page.
-   Centered, but from 1024px up the frame sits up to --frame-shift left of
-   center so the floating Help button (bottom right) has its own room. */
+/* The shared page width for the top bar, the section tabs and every page:
+   centered, 80rem at most. One place to change it. */
 @layer components {
-  .app-frame { --frame-shift: 1rem; width: 100%; max-width: 80rem; margin-inline: auto; }
-  @media (min-width: 64rem) {
-    .app-frame { margin-left: max(0px, calc(50% - 40rem - var(--frame-shift))); margin-right: auto; }
-    /* Page content also stops short of the ? button (44px wide, 24px from the
-       edge) with a gap, when the window has no spare margin. */
-    .app-frame-page { max-width: min(80rem, calc(100% - 4.5rem - max(0px, calc(50% - 40rem - var(--frame-shift))))); }
-  }
+  .app-frame { width: 100%; max-width: 80rem; margin-inline: auto; }
 }
 
 /* ── Design tokens ────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ export interface NavTab {
   to: string
   /** Extra words the command palette matches on. */
   keywords?: string
+  /** Show this integration's connected/not dot beside the tab. */
+  integration?: 'gmail' | 'github' | 'linkedin' | 'whatsapp'
 }
 
 export interface NavSection {
@@ -58,10 +60,10 @@ export const SECTIONS: NavSection[] = [
     id: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations',
     tabs: [
       { label: 'Overview', to: '/integrations', keywords: 'connect accounts what does it do explained' },
-      { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies' },
-      { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in' },
-      { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv' },
-      { label: 'WhatsApp', to: '/integrations/whatsapp', keywords: 'phone messages approve reply alerts notifications' },
+      { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies', integration: 'gmail' },
+      { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in', integration: 'github' },
+      { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv', integration: 'linkedin' },
+      { label: 'WhatsApp', to: '/integrations/whatsapp', keywords: 'phone messages approve reply alerts notifications', integration: 'whatsapp' },
     ],
   },
   {

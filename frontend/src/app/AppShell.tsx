@@ -2,13 +2,23 @@ import { Suspense, useCallback, useEffect, useState, type ReactNode } from 'reac
 import { Link, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
-import { PageSpinner } from '@/ui'
+import { PageSpinner, StatusDot } from '@/ui'
+import { STATE_LABEL, STATE_TONE } from '@/features/integrations/overview'
+import { useIntegrations } from '@/features/integrations/useIntegrations'
+import type { NavTab } from './nav'
 import { CommandPalette } from './CommandPalette'
 import { sectionFor } from './nav'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+
+function IntegrationDot({ id }: { id: NonNullable<NavTab['integration']> }) {
+  const { cards } = useIntegrations()
+  const c = cards.find(x => x.id === id)
+  if (!c) return null
+  return <StatusDot tone={STATE_TONE[c.state]} label={STATE_LABEL[c.state]} className="ml-1.5 align-middle" />
+}
 
 /** Horizontal tab bar for the current section (hidden when a section has one view). */
 function SectionTabs() {
@@ -29,6 +39,7 @@ function SectionTabs() {
               className={cn('-mb-px border-b-2 py-2.5 text-[14px] whitespace-nowrap transition-colors',
                 isActive ? 'border-accent font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
               {t.label}
+              {t.integration && <IntegrationDot id={t.integration} />}
             </Link>
           )
         })}

@@ -124,6 +124,22 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-16 — People found when you approve a role (emails + LinkedIn beyond connections)
+- **Why:** the user asked "why can't I see the scraped list in People". Their account had 0 approved roles, so 0 contacts. They want people found for every role or company they approve: emails, plus LinkedIn beyond their own connections. Saved in memory (feedback_ai_email_approval).
+- **What** (`8ff05c8`, `a7770c5`, `bab11a3`; migration 031 adds `plan_items.contacts_at` and `contacts_lookup`):
+  - **`referralFlow.prepareContacts(userId)`:** called from the 5-minute tick. It picks one approved role (≤3 days old, stage tailoring/needs_you/asking_referral, `contacts_at` NULL) and runs **`findPeopleFor`** in the background (an in-memory `peopleRunning` set).
+    - The company email lookup (`findEmailsAt`) runs only when Gmail is connected and nobody there has an email yet.
+    - **`findLinkedInPeopleAt`** (`apify.findPeopleAtLinkedInCompany`: Apollo → Apify → Google/Serper) runs when fewer than 3 LinkedIn profiles are known. Results are saved via `upsertContact`.
+    - The first version (`8ff05c8`) prefetched the top 5 *unapproved* list roles; `a7770c5` replaced that with approval-only, which the user asked for.
+  - **`askForReferral`** waits for that search (it runs it inline if it never ran).
+    - The pool is connections + saved contacts. `rankForAsk` order: known people, then recruiters, then engineers, then the rest. CEO/founder/chief/president and "ex-"/"former" titles are dropped unless known.
+    - If fewer than 2 recruiters/engineers have an email, `findEmailFor` → `findPersonEmail` runs (Apollo match by LinkedIn URL, Hunter, Prospeo, website), at most 2 per role.
+    - `pickTargets` → up to **2 email drafts** (resume attached, need the user's OK) and up to **2 LinkedIn notes to other people** (profile link; the user sends by hand).
+  - **UI:** plan rows and approved rows show "N people found, M with email", linking to `/company/:id`. The Contacts empty state and How it works text were updated.
+- **Verified live** (e2e account, real company Plaid; cleaned up after): the search took ~40s and found 2 Hunter emails + 10 Google LinkedIn profiles (the Apify actor errored upstream; Google covered it). The CEO and the ex-Plaid person were skipped. Person lookups found emails for Paul Duran (Sr. Tech Recruiter) and Sarah Trout, who got drafts; Miguel Chucaralao and Jennifer Kustić got LinkedIn notes. The UI row read "12 people found, 4 with email" and Contacts listed them, with 0 console errors. Tests: backend 161, frontend 94.
+- **Cost per approved role** (from that run): ~3 Apollo, ~2–3 Hunter, ~1 Prospeo, ~3 Serper calls. Against the per-user monthly allowance (Hunter 15 / Prospeo 25 / Apollo 40 / Serper 150), good email coverage lasts ~10–15 approved roles a month. After that it falls back to Prospeo/website and LinkedIn notes.
+- **Deploy note:** VM order was c4's c10b6c0 (3e6fe63), then mine (9ae8b14, 7d575ef, bab11a3 on the VM). email-tracker-1e is next with `git am` d71d749 (resume engine; expect a one-line import conflict in dailyPlan.js).
+
 ### 2026-10-16 — Referral emails wait for your OK, with the role's resume attached
 - **Why:** the user's vision: the AI writes the email, attaches that role's tailored resume, and nothing goes out until they read the draft and approve it; contacts' emails are found for the roles being applied to. They chose **approve in the app** (not "press Send in Gmail").
 - **What** (`f4acf33`, fix `5f8133b`):

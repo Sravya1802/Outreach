@@ -398,7 +398,9 @@ export function planEmail({ items, stats, settings, date, firstName }) {
   const when = settings.referralFirst
     ? `For each one you approve, I'll write a tailored resume tonight, ask someone at the company for a referral tomorrow morning, and apply ${settings.referralWaitDays} business days later in the company's morning if no referral comes through.`
     : 'For each one you approve, I’ll write a tailored resume tonight and apply tomorrow between 6 and 10 AM in the company’s time zone.';
-  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}`;
+  // Only http(s) links go into the email.
+  const posting = (i) => (/^https?:\/\//i.test(String(i.apply_url || '')) ? i.apply_url : null);
+  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}${posting(i) ? `\n      ${posting(i)}` : ''}`;
   const text = [
     `Good evening${firstName ? `, ${firstName}` : ''}. ${top.length ? `${top.length} new role${top.length === 1 ? '' : 's'} scored ${settings.minScore} or higher today.` : `Nothing scored ${settings.minScore} or higher today.`}`,
     top.length ? `Approve the ones you want before bed: ${link}\n\n${when}` : '',
@@ -409,7 +411,7 @@ export function planEmail({ items, stats, settings, date, firstName }) {
   ].filter(Boolean).join('\n\n');
   const rows = top.map(i => `
     <tr><td style="padding:14px 0;border-bottom:1px solid #dcd7cb;vertical-align:top;width:48px;font-family:monospace;font-size:17px;color:#1e6b52">${esc(i.score?.toFixed(1) ?? '–')}</td>
-    <td style="padding:14px 0;border-bottom:1px solid #dcd7cb"><b>${esc(i.company_name)}</b> · ${esc(i.title)}<br>
+    <td style="padding:14px 0;border-bottom:1px solid #dcd7cb"><b>${esc(i.company_name)}</b> · ${posting(i) ? `<a href="${esc(posting(i))}" style="color:#1f3bc4">${esc(i.title)}</a>` : esc(i.title)}<br>
     <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span></td></tr>`).join('');
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:640px;margin:0 auto;padding:24px">
     <p style="font-size:20px;font-weight:600;margin:0 0 16px">Scout’n’Jobs</p>

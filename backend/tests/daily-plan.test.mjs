@@ -47,13 +47,18 @@ test('evening email lists the top roles and says what happens next', () => {
   const settings = normalizeSettings({ enabled: true });
   const mail = planEmail({
     items: [
-      { tier: 'top', score: 9.4, company_name: 'Ramp', title: 'SWE Intern', location: 'New York', pay: '$55/hr', sponsorship: 'sponsors', reason: 'Kafka + Python match' },
+      { tier: 'top', score: 9.4, company_name: 'Ramp', title: 'SWE Intern', location: 'New York', pay: '$55/hr', sponsorship: 'sponsors', reason: 'Kafka + Python match', apply_url: 'https://jobs.ramp.com/swe?a=1&b=2' },
+      { tier: 'top', score: 9.1, company_name: 'Evil', title: 'Intern', apply_url: 'javascript:alert(1)' },
       { tier: 'worth', score: 8.1, company_name: 'Acme', title: 'Data Intern' },
     ],
     stats: { excluded: 2 }, settings, date: '2026-10-15', firstName: 'Sravya',
   });
-  assert.equal(mail.subject, '[Scout’n’Jobs] 1 role to approve tonight · Thu, Oct 15');
-  assert.match(mail.text, /^Good evening, Sravya\. 1 new role scored 9 or higher today\./);
+  assert.equal(mail.subject, '[Scout’n’Jobs] 2 roles to approve tonight · Thu, Oct 15');
+  // Each role links to its posting; only http(s) links.
+  assert.match(mail.html, /<a href="https:\/\/jobs\.ramp\.com\/swe\?a=1&amp;b=2" style="color:#1f3bc4">SWE Intern<\/a>/);
+  assert.match(mail.text, /Kafka \+ Python match\n {6}https:\/\/jobs\.ramp\.com\/swe\?a=1&b=2/);
+  assert.ok(!mail.html.includes('javascript:') && !mail.text.includes('javascript:'));
+  assert.match(mail.text, /^Good evening, Sravya\. 2 new roles scored 9 or higher today\./);
   assert.match(mail.text, /9\.4 {2}Ramp · SWE Intern · New York · \$55\/hr · Sponsors visas/);
   assert.match(mail.text, /ask someone at the company for a referral tomorrow morning, and apply 2 business days later/);
   assert.match(mail.text, /Also worth a look: 1 role/);

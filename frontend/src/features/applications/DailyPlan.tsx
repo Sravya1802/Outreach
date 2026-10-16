@@ -83,6 +83,21 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
   )
 }
 
+/** "Company · Title", the title linking to the job posting. */
+function PostingTitle({ company, title, url }: { company: string; title: string; url: string | null | undefined }) {
+  const href = url && /^https?:\/\//i.test(url) ? url : null
+  return (
+    <>
+      <b className="font-medium text-fg">{company}</b> <span className="text-muted">·</span>{' '}
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" title="Open the job posting" className="text-muted underline decoration-line underline-offset-[3px] hover:text-accent hover:decoration-accent">
+          {title}<ExternalLink className="ml-1 inline size-3.5 align-[-2px]" aria-hidden />
+        </a>
+      ) : <span className="text-muted">{title}</span>}
+    </>
+  )
+}
+
 export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending') => void }) {
   const score = num(item.score)
   const sponsor = item.sponsorship ? SPONSOR_TEXT[item.sponsorship] : null
@@ -91,8 +106,7 @@ export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolea
       <span className={cn('font-mono text-[18px]', score != null && score >= 9 ? 'text-success' : 'text-warning')}>{score?.toFixed(1) ?? '—'}</span>
       <div className="min-w-0">
         <p className="text-[15px]">
-          <b className="font-medium text-fg">{item.company_name}</b> <span className="text-muted">· {item.title}</span>
-          <a href={item.apply_url} target="_blank" rel="noreferrer" aria-label={`Open the ${item.company_name} posting`} className="ml-1.5 inline-flex align-middle text-subtle hover:text-fg"><ExternalLink className="size-3.5" /></a>
+          <PostingTitle company={item.company_name} title={item.title} url={item.apply_url} />
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-subtle">
           {[item.location, item.pay].filter(Boolean).join(' · ')}
@@ -206,7 +220,7 @@ export function InProgress({ data }: { data: DailyPlanOverview }) {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <div className="min-w-0 flex-1 basis-[260px]">
                 <p className="text-[15px]">
-                  <b className="font-medium text-fg">{a.company_name}</b> <span className="text-muted">· {a.title}</span>
+                  <PostingTitle company={a.company_name} title={a.title} url={a.apply_url} />
                   {a.connections > 0 && <span className="ml-2 text-[13px] text-accent">You know {a.connections} here</span>}
                 </p>
                 <p className={cn('text-[13px]', a.stage === 'needs_you' ? 'text-danger' : 'text-subtle')}>

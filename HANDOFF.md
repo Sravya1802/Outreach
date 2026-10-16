@@ -148,7 +148,7 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
   - ATS 72 → 93 without a project, with no rule issues. Callback 5 → 28 (stricter rubric: base rate × fit, capped at 35). Verdict apply.
   - Opus proposed "OpsPilot | LangGraph Agent…" (7-step plan). With it, ATS fell to 89 because it pushed keywords off the page, which is what led to `keepProjectOnPage`.
 - **Also found:** 9 of tonight's 20 top roles have JDs under 600 chars (the posting couldn't be read), so their 9.4–9.8 scores rest mostly on the title. Not fixed yet; raised with the user.
-- **Status:** committed from a worktree. Backend 179 and frontend 95 tests pass.
+- **Status:** live. Commits `c1a2c23` and `71b0b3d` are on main and on Vercel; the backend patch is on the VM as `d99679e` (phase-4-pg). Backend 179 and frontend 95 tests pass, on the VM too. Checked on prod as the e2e user with a seeded tailoring at 1400px and 390px: score blocks, verdict, top 5, project card, keyword table and gaps all render, with no page errors and no horizontal scroll. The seed rows were deleted. The user's own template is saved (fontawesome included).
 
 ### 2026-10-16 — People found when you approve a role (emails + LinkedIn beyond connections)
 - **Why:** the user asked "why can't I see the scraped list in People". Their account had 0 approved roles, so 0 contacts. They want people found for every role or company they approve: emails, plus LinkedIn beyond their own connections. Saved in memory (feedback_ai_email_approval).

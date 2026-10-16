@@ -86,7 +86,10 @@ function TourCard({ onClose }: { onClose: () => void }) {
         className="absolute flex max-h-[calc(100vh-32px)] flex-col rounded-[6px] border border-line bg-surface shadow-pop transition-[top,left] duration-200 ease-out"
         style={{ top: p.top, left: p.left, width: p.width }}>
         {p.caret !== null && (
-          <span aria-hidden="true" className="absolute -top-[7px] size-3 rotate-45 border-t border-l border-line bg-surface" style={{ left: p.caret - 6 }} />
+          <span aria-hidden="true" style={{ left: p.caret - 6 }}
+            className={p.side === 'top'
+              ? 'absolute -top-[7px] size-3 rotate-45 border-t border-l border-line bg-surface'
+              : 'absolute -bottom-[7px] size-3 rotate-45 border-r border-b border-line bg-surface'} />
         )}
         <div className="overflow-y-auto px-5 pt-4 pb-3">
           <p className="font-mono text-[12px] text-subtle">{i + 1} of {steps.length}</p>

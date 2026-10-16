@@ -20,7 +20,7 @@ export function Page({ children, wide = false }: { children: ReactNode; wide?: b
   // scroller instead of stretching the document and scrolling the whole shell.
   return (
     <div className="relative flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-9">
+      <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-24 sm:px-8 sm:pt-9">
         <div className={wide ? '' : 'max-w-5xl'}>{children}</div>
       </div>
     </div>

@@ -22,11 +22,17 @@ describe('tourSteps', () => {
 describe('place', () => {
   const card = { width: 380, height: 200 }
   it('centers when there is nothing to point at', () => {
-    expect(place(null, card, 1400, 900)).toEqual({ width: 380, left: 510, top: 350, caret: null })
+    expect(place(null, card, 1400, 900)).toEqual({ width: 380, left: 510, top: 350, caret: null, side: 'top' })
   })
   it('sits under the element with the caret on its center', () => {
     const p = place({ top: 10, left: 600, width: 100, height: 40 }, card, 1400, 900)
-    expect(p).toEqual({ width: 380, left: 460, top: 62, caret: 190 })
+    expect(p).toEqual({ width: 380, left: 460, top: 62, caret: 190, side: 'top' })
+  })
+  it('goes above an element in the lower half, like the Help button', () => {
+    const p = place({ top: 840, left: 1290, width: 90, height: 40 }, card, 1400, 900)
+    expect(p.side).toBe('bottom')
+    expect(p.top).toBe(840 - 12 - 200)
+    expect(p.left + p.width).toBe(1384)
   })
   it('stays inside the screen near the right edge and on phones', () => {
     const right = place({ top: 10, left: 1350, width: 32, height: 32 }, card, 1400, 900)

@@ -3,7 +3,6 @@ import { Moon, Search, Sun } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Kbd, StatusDot, type Tone } from '@/ui'
 import { AccountMenu } from './AccountMenu'
-import { HelpButton } from './tour/HelpButton'
 import { PRIMARY_SECTIONS, sectionFor } from './nav'
 import { useServiceHealth } from './queries'
 import { useTheme } from './theme'
@@ -47,7 +46,6 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
             <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
           </span>
         </button>
-        <HelpButton showLabel />
         <Link to="/usage" data-tour="status" title={isLoading ? 'Checking services…' : overall.label}
           aria-label={`Service status: ${isLoading ? 'checking' : overall.label}`}
           className="grid size-8 place-items-center rounded-[4px] hover:bg-hover">

@@ -12,7 +12,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
-import { HelpButton } from './tour/HelpButton'
+import { HelpLauncher } from './tour/HelpLauncher'
 import { TourProvider } from './tour/Tour'
 
 function IntegrationDot({ id }: { id: NonNullable<NavTab['integration']> }) {
@@ -82,8 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="rounded-[4px] p-1.5 text-muted hover:bg-hover hover:text-fg">
             <Menu className="size-5" />
           </button>
-          <span className="flex-1 font-display text-[18px] font-semibold">Scout’n’Jobs</span>
-          <HelpButton />
+          <span className="font-display text-[18px] font-semibold">Scout’n’Jobs</span>
         </div>
         <SectionTabs />
       </header>
@@ -108,6 +107,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       {paletteOpen && <CommandPalette onClose={closePalette} />}
+      <HelpLauncher />
     </div>
     </TourProvider>
   )

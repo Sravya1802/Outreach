@@ -1,5 +1,6 @@
 // The Integrations overview: what each connection does for you, in plain words, and where it stands.
 import type { ConnectionsSummary, GithubStatus, GmailStatus, WhatsAppStatus } from '@/lib/api'
+import { formatPhone } from './phone'
 
 export type IntegrationId = 'gmail' | 'linkedin' | 'whatsapp' | 'github'
 export type IntegrationState = 'loading' | 'off' | 'on' | 'problem'
@@ -60,7 +61,7 @@ export function integrationCards(i: OverviewInputs): IntegrationCard[] {
       gives: ['Evening list, reply alerts and a morning summary on WhatsApp', 'Reply with a number to approve or skip a role', 'Turn each kind of message on or off'],
       effort: 'About 1 minute',
       state: state(Boolean(i.whatsapp), Boolean(i.whatsapp?.linked && i.whatsapp.enabled), false, e.whatsapp),
-      detail: i.whatsapp?.linked ? (i.whatsapp.enabled ? i.whatsapp.phone ?? undefined : 'Linked but paused') : undefined,
+      detail: i.whatsapp?.linked ? (i.whatsapp.enabled ? formatPhone(i.whatsapp.phone) || undefined : 'Linked but paused') : undefined,
     },
     {
       id: 'github', title: 'GitHub', to: '/integrations/github',

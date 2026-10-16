@@ -48,6 +48,23 @@ export function postedLabel(postedAt: string | null, scrapedAt: string, now: num
   return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/**
+ * The opening date for the Posted column: "Oct 15" (plus the year when it isn't
+ * this year) and how long ago. `known` is false when the source gives no posting
+ * date and this is the day we first found the role.
+ */
+export function postedDate(postedAt: string | null, scrapedAt: string, now: number = Date.now()): { date: string; ago: string; known: boolean } | null {
+  const iso = postedAt || scrapedAt
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return null
+  const d = new Date(t)
+  const sameYear = d.getFullYear() === new Date(now).getFullYear()
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })
+  const days = Math.floor((now - t) / 86_400_000)
+  const ago = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`
+  return { date, ago, known: Boolean(postedAt) && !Number.isNaN(new Date(postedAt as string).getTime()) }
+}
+
 /** Listings per list in this market, from the per-source counts. */
 export function countsByList(rows: { role_type: RoleType; region?: Region; n: number; swe?: number; ai?: number }[], market: Market, field?: Field): Record<ListKind, number> {
   const lists = listsForMarket(market)

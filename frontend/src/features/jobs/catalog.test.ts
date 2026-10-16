@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countsByList, listForKind, postedLabel, sourceLabel } from './catalog'
+import { countsByList, listForKind, postedDate, postedLabel, sourceLabel } from './catalog'
 
 describe('catalog helpers', () => {
   it('labels sources', () => {
@@ -21,6 +21,15 @@ describe('catalog helpers', () => {
     expect(postedLabel(null, '2026-10-12T08:00:00Z', now)).toBe('yesterday')
     expect(postedLabel('2026-10-08T08:00:00Z', '', now)).toBe('5d ago')
     expect(postedLabel('garbage', 'garbage', now)).toBe('')
+  })
+  it('gives the opening date for the Posted column', () => {
+    const now = new Date('2026-10-13T18:00:00Z').getTime()
+    expect(postedDate('2026-10-13T08:00:00Z', '2026-10-13T09:00:00Z', now)).toEqual({ date: 'Oct 13', ago: 'today', known: true })
+    expect(postedDate('2026-09-21T12:00:00Z', '2026-10-01T12:00:00Z', now)).toEqual({ date: 'Sep 21', ago: '22d ago', known: true })
+    // No posting date from the source: the day we first found it, marked as such.
+    expect(postedDate(null, '2026-10-12T12:00:00Z', now)).toEqual({ date: 'Oct 12', ago: 'yesterday', known: false })
+    expect(postedDate('2025-12-30T12:00:00Z', '', now)?.date).toBe('Dec 30, 2025')
+    expect(postedDate('garbage', 'garbage', now)).toBeNull()
   })
   it('sums counts per list', () => {
     const rows = [

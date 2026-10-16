@@ -89,3 +89,14 @@ test('relevant titles are scored first', async () => {
   assert.ok(titleRelevance('Software Engineer, Data Platform (Python)', words) > titleRelevance('Marketing Associate', words));
   assert.equal(titleRelevance('Account Executive', words), 0);
 });
+
+test('scores spread out by qualifications met', async () => {
+  const { blendScore } = await import('../services/dailyPlan.js');
+  const all = blendScore({ score: 9.2, required_total: 6, required_met: 6, preferred_total: 4, preferred_met: 4, level: 'match' });
+  const most = blendScore({ score: 9.2, required_total: 6, required_met: 6, preferred_total: 4, preferred_met: 1, level: 'match' });
+  const gap = blendScore({ score: 9.2, required_total: 6, required_met: 5, preferred_total: 4, preferred_met: 1, level: 'match' });
+  assert.ok(all > most && most > gap, `${all} > ${most} > ${gap}`);
+  assert.equal(all, 9.6);
+  assert.ok(blendScore({ score: 9.5, required_total: 5, required_met: 5, level: 'wrong' }) <= 6.5, 'wrong level is capped');
+  assert.ok(blendScore({ score: 8 }) > 0, 'works without counts');
+});

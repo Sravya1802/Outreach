@@ -16,6 +16,7 @@ import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { marketFor, regionForMarket } from './markets.js';
 import { classifySponsorship } from './sponsorship.js';
+import { looksLikeAgency } from './staffing.js';
 import { partsIn, timezoneFor, isValidTz, nextSendSlot } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring } from './resumeEngine.js';
@@ -182,24 +183,40 @@ async function candidateSummary(userId) {
 }
 
 const SCORE_SYSTEM = `You rate how well one candidate fits one job, for a student or new-grad job search.
-Return JSON: {"score": 8.4, "why": "one plain sentence"}
-- score 0–10, one decimal. 9+ = meets nearly all required qualifications and the level matches (internship / new grad); 7–8.9 = a real fit with clear gaps; under 7 = weak fit or wrong level (senior, PhD-only, unrelated field).
-- Judge only from the resume given. Don't assume skills it doesn't show.
-- why: under 140 characters, specific (name the matching skill or the main gap). No praise.`;
+First list the job's qualifications, then judge each one only from the resume given (don't assume skills it doesn't show).
+Return JSON: {"required_total": 6, "required_met": 5, "preferred_total": 4, "preferred_met": 2, "level": "match", "score": 8.6, "why": "one plain sentence"}
+- required = must-haves / minimum qualifications; preferred = nice-to-haves / bonus points. Count each listed item once.
+- level: "match" (internship or new-grad / entry level), "stretch" (asks 1–2 years), "wrong" (senior, staff, manager, PhD-only, or an unrelated field).
+- score 0–10 with one decimal, and use the whole range: 9.5+ only when every required and most preferred items are met at the right level; 9.0–9.4 every required met; 8.0–8.9 one required gap; 7.0–7.9 two gaps; under 7 weak or wrong level. Two different jobs should rarely get the same score.
+- why: under 140 characters, specific (the strongest match or the main gap). No praise.`;
+
+/** The final score blends the model's judgment with the qualification counts, so scores spread out. */
+export function blendScore(p) {
+  const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
+  const model = clampNum(p.score, 0, 10);
+  const reqT = clampNum(p.required_total, 0, 50), reqM = clampNum(p.required_met, 0, reqT);
+  const prefT = clampNum(p.preferred_total, 0, 50), prefM = clampNum(p.preferred_met, 0, prefT);
+  const req = reqT ? reqM / reqT : model / 10;
+  const pref = prefT ? prefM / prefT : req;
+  const level = { match: 1, stretch: 0.6, wrong: 0 }[String(p.level || '').toLowerCase()] ?? 0.8;
+  const counted = 10 * (0.65 * req + 0.2 * pref + 0.15 * level);
+  const blended = 0.5 * model + 0.5 * counted;
+  // A wrong-level job can't score as a fit however many skills match.
+  return Math.round(Math.min(blended, level === 0 ? 6.5 : 10) * 10) / 10;
+}
 
 async function scoreOne({ userId, summary, profile, role, jd }) {
   const prefs = `Wants: ${profile.target_job_type || 'intern or new grad'} roles${profile.preferred_locations ? `, prefers ${profile.preferred_locations}` : ''}.`;
   const r = await complete({
     task: 'score',
     json: true,
-    maxTokens: 600,
+    maxTokens: 900,
     userId,
     system: SCORE_SYSTEM,
     user: `CANDIDATE\n${summary}\n${prefs}\n\nJOB: ${role.title} at ${role.company_name} (${role.location || 'location not given'})\n${jd.slice(0, 6000)}`,
   });
   const parsed = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
-  const score = Math.round(clamp(parsed.score, 0, 10, 0) * 10) / 10;
-  return { score, why: String(parsed.why || '').slice(0, 200), cost: r.costUsd };
+  return { score: blendScore(parsed), why: String(parsed.why || '').slice(0, 200), cost: r.costUsd };
 }
 
 async function jobText(role) {
@@ -264,6 +281,8 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
         rows.push({ ...base, tier: 'excluded', reason: role.sponsorship === 'citizens_only' ? 'Needs US citizens' : 'Won’t sponsor a visa' });
         continue;
       }
+      const byName = looksLikeAgency(role.company_name);
+      if (byName.agency) { rows.push({ ...base, tier: 'excluded', reason: byName.why }); continue; }
       if (toScore.length < MAX_SCORED_PER_NIGHT) toScore.push(base); // the rest wait for tomorrow, still fresh
     }
     let budgetErr = null;
@@ -277,6 +296,8 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
         }
       }
       if (jd.length < 200) { rows.push({ ...base, tier: 'low', reason: 'Couldn’t read the posting', score: null }); return; }
+      const byText = looksLikeAgency(base.role.company_name, jd);
+      if (byText.agency) { rows.push({ ...base, jd, tier: 'excluded', reason: byText.why }); return; }
       scoredCount += 1;
       try {
         const s = await scoreOne({ userId, summary, profile, role: base.role, jd });
@@ -322,6 +343,43 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
     throw err;
   }
   return one('SELECT * FROM daily_plans WHERE id = $1', [plan.id]);
+}
+
+/**
+ * Re-check a plan already built: drop agencies and re-score the roles still
+ * waiting for a decision with the current scoring, then re-tier. Uses the
+ * posting text saved on each item, so no page is fetched again.
+ */
+export async function refreshPlan(userId, planId) {
+  const settings = await getSettings(userId);
+  const profile = await profileFor(userId);
+  const summary = await candidateSummary(userId);
+  const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND decision = 'pending' AND tier IN ('top','worth')", [planId, userId]);
+  let removed = 0, rescored = 0, cost = 0;
+  for (let i = 0; i < items.length; i += SCORE_CONCURRENCY) {
+    await Promise.all(items.slice(i, i + SCORE_CONCURRENCY).map(async (it) => {
+      const a = looksLikeAgency(it.company_name, it.job_description || '');
+      if (a.agency) { await run("UPDATE plan_items SET tier = 'excluded', reason = $2 WHERE id = $1", [it.id, a.why]); removed += 1; return; }
+      if (String(it.job_description || '').length < 200) return;
+      try {
+        const s = await scoreOne({ userId, summary, profile, role: { title: it.title, company_name: it.company_name, location: it.location }, jd: it.job_description });
+        cost += s.cost; rescored += 1;
+        await run('UPDATE plan_items SET score = $2, reason = $3 WHERE id = $1', [it.id, s.score, s.why]);
+      } catch (err) { if (err.status === 402) throw err; }
+    }));
+  }
+  const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1", [planId]);
+  const tiered = assignTiers(all_.map(r => ({ ...r, score: r.score == null ? null : Number(r.score) })), settings);
+  for (const r of tiered) {
+    const was = all_.find(x => x.id === r.id);
+    if (was.decision !== 'pending' || (was.tier === r.tier && was.reason === r.reason)) continue;
+    await run('UPDATE plan_items SET tier = $2, reason = $3 WHERE id = $1', [r.id, r.tier, r.reason ?? null]);
+  }
+  const plan = await one('SELECT stats FROM daily_plans WHERE id = $1', [planId]);
+  const count = (t) => tiered.filter(r => r.tier === t).length;
+  const stats = { ...(plan?.stats || {}), top: count('top'), worth: count('worth'), low: count('low'), excluded: count('excluded'), costUsd: Number((((plan?.stats || {}).costUsd || 0) + cost).toFixed(5)) };
+  await run('UPDATE daily_plans SET stats = $2 WHERE id = $1', [planId, JSON.stringify(stats)]);
+  return { removed, rescored, cost: Number(cost.toFixed(5)), stats };
 }
 
 // ── The evening email ───────────────────────────────────────────────────────

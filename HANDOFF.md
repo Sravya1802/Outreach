@@ -124,6 +124,12 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-15 — Evening list: more roles scored; minimum of 10; LinkedIn → company board; ASCII headers fix
+- **Bug fix (974f866):** the rename put the curly apostrophe of "Scout’n’Jobs" into `User-Agent` headers, and fetch throws on non-ASCII header values, so posting fetch, GitHub sync, SpeedyApply and pay lookups failed for ~45 min (23:24–00:08 UTC). No scheduled job ran in that window. Headers now say `ScoutnJobs`; `tests/ascii-headers.test.mjs` guards it.
+- **boardResolver.js:** before applying, a LinkedIn/unknown-site role is looked up on the company's own Greenhouse/Lever/Ashby board (public APIs, 1-day cache) and applied there if the title matches. Measured ~9% of LinkedIn-only US roles (49 of 528).
+- **Daily plan (e10e06c):** scores up to 150 roles a night (`DAILY_PLAN_MAX_SCORED`, was 40), 3 at a time, most title-relevant to the resume first. New setting `minPerDay` (default 10): when fewer reach the bar, the best 8.0+ roles fill the list, marked "Close match · ". Rebuilds add to the same plan and re-tier it as a whole.
+- **User's list rebuilt:** 744 considered, 145 scored ($0.04, 14 min), **18 top** (all 9.2), 91 worth, 48 excluded (visa). Watch: the scorer clusters at 9.2, and several top roles are staffing agencies (TalentHop, Employia, Divine Talent, Aavalar). Consider a staffing-agency filter and a scoring prompt that spreads scores more.
+
 ### 2026-10-15 — WhatsApp templates reformatted (snj_*)
 - The user wanted a friendlier format. Each template now has a bold **header** (one variable), a body starting "Hello," and ending "Good luck! ;)", a footer "Scout’n’Jobs", and a **URL button** to the site instead of a long link. `templateDefinition(kind)` builds Meta's component list; `sendTemplate` sends header + body params (`{ header, body: [] }`). The in-window free-text versions use the same shape with WhatsApp bold/italics.
 - Submitted via the API as `snj_daily_list`, `snj_reply_alert`, `snj_needs_you`, `snj_morning_summary` (en_US, UTILITY); all PENDING. The old `oos_*` ones were deleted. `WHATSAPP_TEMPLATE_NEEDS` override removed from the VM .env.

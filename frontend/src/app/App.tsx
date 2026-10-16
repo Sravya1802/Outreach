@@ -14,6 +14,7 @@ const DetailsPage = lazyWithRetry(() => import('@/features/profile/DetailsPage')
 const AnswersPage = lazyWithRetry(() => import('@/features/profile/AnswersPage'), 'AnswersPage')
 const GithubPage = lazyWithRetry(() => import('@/features/profile/GithubPage'), 'GithubPage')
 const ResumePage = lazyWithRetry(() => import('@/features/profile/ResumePage'), 'ResumePage')
+const IntegrationsPage = lazyWithRetry(() => import('@/features/integrations/IntegrationsPage'), 'IntegrationsPage')
 const GmailPage = lazyWithRetry(() => import('@/features/integrations/GmailPage'), 'GmailPage')
 const LinkedInPage = lazyWithRetry(() => import('@/features/integrations/LinkedInPage'), 'LinkedInPage')
 const WhatsAppPage = lazyWithRetry(() => import('@/features/integrations/WhatsAppPage'), 'WhatsAppPage')
@@ -87,7 +88,7 @@ function SignedInRoutes() {
         <Route path="/profile/resume" element={<ResumePage />} />
         <Route path="/profile/answers" element={<AnswersPage />} />
         <Route path="/profile/github" element={<Navigate to="/integrations/github" replace />} />
-        <Route path="/integrations" element={<Navigate to="/integrations/gmail" replace />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/integrations/gmail" element={<GmailPage />} />
         <Route path="/integrations/github" element={<GithubPage />} />
         <Route path="/integrations/linkedin" element={<LinkedInPage />} />

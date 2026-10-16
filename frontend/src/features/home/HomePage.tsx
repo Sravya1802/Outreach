@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Check, ChevronDown } from 'lucide-react'
@@ -15,6 +15,7 @@ import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
 import { Button, ButtonLink, ErrorState, Page, Skeleton, Spinner, useToast } from '@/ui'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
 import { needsYouCount, todayItems, type TodayTone } from './today'
+import { Walkthrough } from './Walkthrough'
 
 function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -25,7 +26,7 @@ function SectionTitle({ children, action }: { children: ReactNode; action?: Reac
   )
 }
 
-function SetupChecklist() {
+function SetupChecklist({ onComplete }: { onComplete: (done: boolean) => void }) {
   const resume = useHasResume()
   const profile = useProfile()
   const plan = useDailyPlan()
@@ -45,8 +46,13 @@ function SetupChecklist() {
   const anyError = [resume, profile, plan, answers, github, gmail].some(q => q.isError)
   const loading = steps.some(s => s.done === undefined) && !anyError
   const doneCount = steps.filter(s => s.done).length
-  const [open, setOpen] = useState(false)
-  if (!loading && doneCount === steps.length) return null
+  const [toggled, setToggled] = useState<boolean | null>(null)
+  const complete = !loading && doneCount === steps.length
+  useEffect(() => { onComplete(complete) }, [complete, onComplete])
+  if (complete) return null
+  // Nothing done yet: show every step so a new user sees what's ahead.
+  const open = toggled ?? (!loading && doneCount === 0)
+  const setOpen = (f: (v: boolean) => boolean) => setToggled(f(open))
   const next = steps.find(s => s.done === false)
   const pct = Math.round((doneCount / steps.length) * 100)
 
@@ -246,6 +252,8 @@ export default function HomePage() {
   const newToday = (daily.data?.intern.today ?? 0) + (daily.data?.newGrad.today ?? 0)
   const waiting = needsYouCount(todayList.items)
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  const [setupDone, setSetupDone] = useState(false)
+  const onSetup = useCallback((done: boolean) => setSetupDone(done), [])
 
   return (
     <Page wide>
@@ -271,7 +279,8 @@ export default function HomePage() {
       </header>
 
       <div className="space-y-10">
-        <SetupChecklist />
+        <Walkthrough hidden={setupDone} />
+        <SetupChecklist onComplete={onSetup} />
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-10">
             <Today />

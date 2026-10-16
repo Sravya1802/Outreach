@@ -57,6 +57,7 @@ export const SECTIONS: NavSection[] = [
   {
     id: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations',
     tabs: [
+      { label: 'Overview', to: '/integrations', keywords: 'connect accounts what does it do explained' },
       { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies' },
       { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in' },
       { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv' },

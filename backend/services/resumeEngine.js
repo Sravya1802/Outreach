@@ -6,7 +6,6 @@
  *   2. JD analysis on Groq (a different model, so the writer never grades its
  *      own work): exact title, the 5 things the role hires for, ATS keywords
  *   3. Opus maps every keyword truth-first, reframes experience and projects,
- *      and lists the gaps it can't honestly claim
  *   4. resumeGuard rebuilds the draft from the real material and drops
  *      anything it can't back up; resumeRules applies the formatting rules
  *      (dashes, verbs, equal bullets, section order, skills, certifications)
@@ -56,7 +55,6 @@ export const DRAFT_SCHEMA = obj({
   experience: { type: 'array', items: obj({ id: S, bullets: SA }) },
   projects: { type: 'array', items: obj({ source: { type: 'string', enum: ['resume', 'github', 'planned'] }, ref: S, name: S, tech: SA, bullets: SA, why: S }) },
   skills: { type: 'array', items: obj({ category: S, items: SA }) },
-  gaps: { type: 'array', items: obj({ term: S, why: S }) },
   proposed_project: obj({ needed: { type: 'boolean' }, reuse_id: S, name: S, tech: SA, bullets: SA, covers: SA, why: S, plan: SA }),
   changes: { type: 'array', items: obj({ section: S, before: S, after: S, why: S }) },
   notes: S,
@@ -79,7 +77,7 @@ const TAILOR_RULES = `You are a senior technical recruiter and ATS expert with 2
 
 Truth
 1. Use only facts in CANDIDATE MATERIAL. Never change dates, titles, companies, degrees or contact details. Never add a skill, tool, metric, employer or outcome that isn't there. Never add a relocation line.
-2. Keyword mapping, for every ATS keyword: already there → say it in the job's words and move it higher; there but weak → strengthen it with the tools, scale and results the material shows; missing but the material shows equivalent work → write a truthful line from that work; missing with no basis → leave it out and list it in gaps. Use the job's exact spelling of tools so the ATS matches.
+2. Keyword mapping, for every ATS keyword: already there → say it in the job's words and move it higher; there but weak → strengthen it with the tools, scale and results the material shows; missing but the material shows equivalent work → write a truthful line from that work; missing with no basis → leave it out. Use the job's exact spelling of tools so the ATS matches.
 3. Numbers only as the material states them. Latency and throughput numbers (like 83ns or 36K orders per second) only when ROLE TYPE says quant/HFT/C++. For any other role, project bullets carry no numbers at all (experience bullets keep their real metrics).
 
 Reframing
@@ -102,8 +100,7 @@ Scores
 14. The ATS match must end up above 90% (aim for 95%): every required skill the candidate truly has appears at least once, in the job's spelling. Never inflate or invent to get there.
 
 Report
-15. gaps: every job requirement the candidate can't honestly claim, with one line on why.
-16. changes: every change you made, with before (the original text, or "" if new), after, and why (which job requirement). No silent edits. notes: one or two sentences on the overall angle.`;
+15. changes: every change you made, with before (the original text, or "" if new), after, and why (which job requirement). No silent edits. notes: one or two sentences on the overall angle.`;
 
 const JUDGE_SYSTEM = `You are a senior technical recruiter with 25 years of hiring SWE, ML, AI and quant engineers. You screen applications for one job. Be honest and calibrated; never inflate.
 Callback % = the chance a recruiter screening this application shortlists it for an interview, from the resume alone (no referral).
@@ -385,7 +382,7 @@ function revisionNotes(pass, judged, sourceText) {
   const { inSource, notInSource } = splitMissing(pass.score.missing, sourceText);
   if (inSource.length) notes.push(`These job keywords are in the candidate's material but not on the page; work them into bullets truthfully: ${inSource.map(k => k.term).join(', ')}.`);
   const hard = notInSource.filter(k => k.kind !== 'soft');
-  if (hard.length && !atsPasses(pass.score.score)) notes.push(`These job keywords aren't written anywhere in the material: ${hard.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. For each, decide whether the candidate's real work shows it in substance (e.g. "system design" for designing a microservices architecture, "NoSQL" for MongoDB, "REST APIs" for a FastAPI service). If it does, write a truthful line using the job's exact phrase. If it doesn't, leave it in gaps; if several required ones are missing, that's when a project to build fits (rule 13).`);
+  if (hard.length && !atsPasses(pass.score.score)) notes.push(`These job keywords aren't written anywhere in the material: ${hard.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. For each, decide whether the candidate's real work shows it in substance (e.g. "system design" for designing a microservices architecture, "NoSQL" for MongoDB, "REST APIs" for a FastAPI service). If it does, write a truthful line using the job's exact phrase. If it doesn't, leave it out; if several required ones are missing, that's when a project to build fits (rule 13).`);
   if (!atsPasses(pass.score.score)) notes.push(`ATS match is ${pass.score.score}%; the rule is above ${ATS_TARGET}% (aim for 95%). Improve keyword placement, reframing and project choice, or add a project to build (rule 13); never claim what the material doesn't show.`);
   if (judged && judged.callbackAfter < CALLBACK_TARGET && notes.length) notes.push(`A recruiter check puts the callback chance at ${judged.callbackAfter}% (target ${CALLBACK_TARGET}%): ${judged.callbackWhy} Suggested: ${judged.nextChange}`);
   if (pass.removed.length) notes.push(`The fact check removed: ${pass.removed.slice(0, 8).map(r => `“${r.what}” (${r.why})`).join('; ')}. Don't repeat those.`);
@@ -552,7 +549,6 @@ ${ev.job_description.slice(0, 7000)}`;
   const fields = rowFields(ctx, pass, judged, {
     notes: str(draft.notes),
     changes: list(draft.changes).filter(c => str(c.after) && !removedText.has(str(c.after))),
-    gaps: list(draft.gaps).filter(g => str(g.term)),
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: str(list(draft.projects).find(d => str(d.ref) === p.ref)?.why) })),
     proposedProject,
     revised,
@@ -797,7 +793,6 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   }, {
     notes: keep.notes,
     changes: [...list(keep.changes), change],
-    gaps: mode === 'built' ? list(keep.gaps).filter(g => !list(project.covers).some(c => hasTerm(c, { term: g.term }))) : list(keep.gaps),
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: p.source === 'planned' ? 'The project you built for this role' : str(list(keep.projects).find(d => d.name === p.name)?.why) })),
     proposedProject: keep.proposedProject ? { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined } : null,
     revised: keep.revised,

@@ -77,4 +77,14 @@ test('referral targets: emails and LinkedIn notes go to different people, best f
   // No Gmail: nobody is emailed, so the best LinkedIn profiles get notes.
   assert.deepEqual(pickTargets(pool, { canEmail: false }).note.map(p => p.name), ['Friend', 'Rec']);
   assert.deepEqual(pickTargets([]), { email: [], note: [] });
+  // The CEO, founders and people who left aren't asked, unless the user knows them.
+  const top = [
+    { name: 'Ceo', title: 'Co-Founder / CEO', email: 'ceo@x.com', linkedin: li('ceo') },
+    { name: 'Ex', title: 'Founder | ex-Plaid engineer', email: null, linkedin: li('ex') },
+    { name: 'Pal', title: 'CTO', email: null, linkedin: li('pal'), knows: true },
+    { name: 'Swe', title: 'Senior Software Engineer', email: null, linkedin: li('swe') },
+  ];
+  const t2 = pickTargets(top);
+  assert.deepEqual(t2.email.map(p => p.name), []);
+  assert.deepEqual(t2.note.map(p => p.name), ['Pal', 'Swe']);
 });

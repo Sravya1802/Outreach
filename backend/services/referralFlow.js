@@ -175,6 +175,21 @@ export async function findLinkedInPeopleAt(userId, jobId) {
   return added;
 }
 
+/** Look up one person's work email (Apollo by LinkedIn profile, then Hunter, Prospeo, the website) and save it. */
+async function findEmailFor(userId, jobId, person) {
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  if (!job || !person.contactId) return null;
+  const { findPersonEmail } = await import('./contactFinder.js');
+  const r = await findPersonEmail({ name: person.name, linkedin_url: isProfile(person.linkedin) ? person.linkedin : null }, job, { userId });
+  const email = r.best?.email ? String(r.best.email).toLowerCase() : null;
+  await run(
+    `UPDATE job_contacts SET email = COALESCE($3, email), email_status = CASE WHEN $3::text IS NULL THEN email_status ELSE $4 END,
+            email_lookup_at = NOW(), email_lookup_note = $5 WHERE id = $1 AND user_id = $2`,
+    [person.contactId, userId, email, r.best?.status || 'unverified', email ? null : (r.reasons?.[0]?.message || 'No email found').slice(0, 200)],
+  );
+  return email;
+}
+
 /** Who works at an approved role's company: emails (when Gmail can send them) and LinkedIn profiles. */
 export async function findPeopleFor(userId, item) {
   const jobId = await companyRow(userId, item.company_name, item.location);
@@ -227,9 +242,21 @@ function askRank(p) {
   return 3;
 }
 
+// Not asked for a referral unless the user knows them: the top of the company, and people who've left.
+const NOT_ASKED = /\b(ceo|chief|co-?founder|founder|president|owner|chairman)\b|\bex[- ]|\bformer(ly)?\b|\bprevious(ly)?\b/i;
+
+/** People worth asking, best first. */
+export function rankForAsk(pool) {
+  return pool
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p.knows || !NOT_ASKED.test(String(p.title || '')))
+    .sort((a, b) => askRank(a.p) - askRank(b.p) || a.i - b.i)
+    .map(x => x.p);
+}
+
 /** Who gets an email and who gets a LinkedIn note (different people), best first. */
 export function pickTargets(pool, { canEmail = true, maxEmails = MAX_EMAILS_PER_ROLE, maxNotes = MAX_NOTES_PER_ROLE } = {}) {
-  const ranked = pool.map((p, i) => ({ p, i })).sort((a, b) => askRank(a.p) - askRank(b.p) || a.i - b.i).map(x => x.p);
+  const ranked = rankForAsk(pool);
   const email = canEmail ? ranked.filter(p => p.email).slice(0, maxEmails) : [];
   const note = ranked.filter(p => !email.includes(p) && isProfile(p.linkedin)).slice(0, maxNotes);
   return { email, note };
@@ -303,7 +330,19 @@ export async function askForReferral(userId, item, settings) {
     if (pool.some(p => String(p.contactId) === String(c.id))) continue;
     pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, contactId: c.id, connectionId: null, knows: false });
   }
-  const targets = pickTargets(pool, { canEmail: Boolean(gmail) });
+  let targets = pickTargets(pool, { canEmail: Boolean(gmail) });
+  // Fewer than 2 recruiters/engineers (or people the user knows) have an email: look up theirs, at most 2 lookups.
+  if (gmail) {
+    const best = rankForAsk(pool).filter(p => askRank(p) <= 2);
+    let tries = 0;
+    for (const p of best) {
+      if (tries >= 2 || best.filter(x => x.email).length >= MAX_EMAILS_PER_ROLE) break;
+      if (p.email || !p.contactId) continue;
+      tries += 1;
+      p.email = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });
+    }
+    targets = pickTargets(pool, { canEmail: true });
+  }
   const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
 
   const base = { me: who.name, school: who.school, title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId) };

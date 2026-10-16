@@ -1191,3 +1191,8 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **What:** User asked for "Good evening and all" to move a little left so there's space by the floating Help button. Top bar, section tabs and `Page` now share one `.app-frame` class ([app.css](frontend/src/styles/app.css)) instead of `mx-auto max-w-7xl`. From 1024px up it sits up to 4rem left of center, so the wordmark and page content stay aligned. Page content also gets `.app-frame-page` (`max-width: min(80rem, 100% - 7rem)`), so on 1024–1376px screens, where there's no spare margin, the content stops short of Help. The top bar keeps its full width so its links don't wrap.
 - **Measured on prod (e2e user, Home):** at 1470px the content moved 64px left with a 79px gap to Help. At 1280px and 1024px the gap is 32px; before the change Help covered about 80px of the right column. On phones Help still floats over content; `pb-24` lets you scroll past it. Roles, Dashboard and People → Messages checked at 1280px: no horizontal scroll, no errors.
 - **Status:** `e707547` + `428a291` live. `npm run check` green (90 tests).
+
+### 2026-10-15 — Frame shift halved (user: "too left, keep it a little right")
+- **What:** `--frame-shift` is now 2rem instead of 4rem ([app.css](frontend/src/styles/app.css)). `.app-frame-page` max-width now subtracts the actual left margin too, so the content never runs into Help at in-between widths. The user wants it kept this way.
+- **Measured on prod (Home):** at 1470px the content starts 95px from the left (it was 127px before any shift, 63px at 4rem) with a 47px gap to Help. At 1400, 1280 and 1024px the gap is 32px. No horizontal scroll.
+- **Status:** `978bce8` live. `npm run check` green (90 tests).

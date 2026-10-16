@@ -59,3 +59,22 @@ test('message template: referral when there is a role, a short chat otherwise', 
   assert.match(noRole.note, /how you got into Stripe/);
   assert.equal(noRole.subject, 'Quick question about Stripe');
 });
+
+test('referral targets: emails and LinkedIn notes go to different people, best first', async () => {
+  const { pickTargets } = await import('../services/referralFlow.js');
+  const li = (n) => `https://www.linkedin.com/in/${n}`;
+  const pool = [
+    { name: 'VP', title: 'VP Engineering', email: 'vp@x.com', linkedin: li('vp') },
+    { name: 'Eng', title: 'Software Engineer', email: null, linkedin: li('eng') },
+    { name: 'Rec', title: 'Technical Recruiter', email: 'rec@x.com', linkedin: li('rec') },
+    { name: 'Friend', title: 'Product Manager', email: null, linkedin: li('friend'), knows: true },
+    { name: 'NoLink', title: 'Software Engineer', email: null, linkedin: null },
+    { name: 'Eng2', title: 'Backend Developer', email: 'eng2@x.com', linkedin: 'https://www.linkedin.com/search/results/people/?keywords=x' },
+  ];
+  const t = pickTargets(pool);
+  assert.deepEqual(t.email.map(p => p.name), ['Rec', 'Eng2']);
+  assert.deepEqual(t.note.map(p => p.name), ['Friend', 'Eng']);
+  // No Gmail: nobody is emailed, so the best LinkedIn profiles get notes.
+  assert.deepEqual(pickTargets(pool, { canEmail: false }).note.map(p => p.name), ['Friend', 'Rec']);
+  assert.deepEqual(pickTargets([]), { email: [], note: [] });
+});

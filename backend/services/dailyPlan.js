@@ -574,9 +574,8 @@ export async function tick(now = new Date()) {
             await sendPlanList(u.user_id).catch(err => console.warn('[daily-plan] whatsapp list:', err.message));
           }
         }
-        // People for the newest list's best roles, one company per tick.
-        const latest = await one("SELECT id FROM daily_plans WHERE user_id = $1 AND status = 'ready' AND created_at > NOW() - INTERVAL '36 hours' ORDER BY plan_date DESC LIMIT 1", [u.user_id]);
-        if (latest) await prepareContacts(u.user_id, latest.id).catch(err => console.warn('[daily-plan] contacts:', err.message));
+        // People at the companies of roles just approved (runs in the background).
+        await prepareContacts(u.user_id).catch(err => console.warn('[daily-plan] contacts:', err.message));
         await advanceUser(u.user_id);
         await advanceReferrals(u.user_id, s);
         await notifyNeedsYou(u.user_id).catch(err => console.warn('[daily-plan] whatsapp needs:', err.message));
@@ -615,19 +614,21 @@ export async function overview(userId) {
     'SELECT company_key, COUNT(*)::int AS n FROM linkedin_connections WHERE user_id = $1 AND company_key = ANY($2) GROUP BY company_key', [userId, keys],
   ) : [];
   const knownBy = Object.fromEntries(known.map(k => [k.company_key, k.n]));
-  // People found at each company (saved contacts with a usable email).
+  // People found at each company (with a usable email or a LinkedIn profile).
   const names = [...new Set([...items, ...active].map(i => String(i.company_name).toLowerCase()))];
   const found = names.length ? await all(
-    `SELECT lower(j.name) AS name, MIN(j.id) AS company_id, COUNT(*)::int AS n
+    `SELECT lower(j.name) AS name, MIN(j.id) AS company_id, COUNT(*)::int AS n,
+            COUNT(*) FILTER (WHERE c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid')::int AS with_email
        FROM job_contacts c JOIN jobs j ON j.id = c.job_id
-      WHERE c.user_id = $1 AND lower(j.name) = ANY($2) AND c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid'
+      WHERE c.user_id = $1 AND lower(j.name) = ANY($2)
+        AND ((c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') OR c.linkedin_url ILIKE '%linkedin.com/in/%')
       GROUP BY 1`,
     [userId, names],
   ) : [];
   const foundBy = Object.fromEntries(found.map(f => [f.name, f]));
   const withKnown = (i) => {
     const f = foundBy[String(i.company_name).toLowerCase()];
-    return { ...i, connections: knownBy[companyKey(i.company_name)] || 0, people: f?.n || 0, company_id: f ? Number(f.company_id) : null };
+    return { ...i, connections: knownBy[companyKey(i.company_name)] || 0, people: f?.n || 0, people_email: f?.with_email || 0, company_id: f ? Number(f.company_id) : null };
   };
   const asks = await asksFor(userId, active.map(a => a.id));
   return {

@@ -431,8 +431,9 @@ export interface PlanItem {
   stage_note: string | null
   /** LinkedIn connections the user has at this company */
   connections: number
-  /** People found there with an email address (People → Contacts) */
+  /** People found there, with an email or a LinkedIn profile (People → Contacts) */
   people?: number
+  people_email?: number
   /** The company page holding them */
   company_id?: number | null
 }
@@ -480,6 +481,7 @@ export interface ActivePlanItem {
   company_tz: string | null
   connections: number
   people?: number
+  people_email?: number
   company_id?: number | null
   asks: ReferralAsk[]
 }

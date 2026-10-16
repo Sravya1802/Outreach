@@ -2,15 +2,17 @@
  * referralFlow.js — what happens to an approved role after its resume is
  * ready (dailyPlan.advanceUser hands it over at stage `asking_referral`):
  *
+ *   0. As soon as a role is approved, people at the company are found
+ *      (prepareContacts → findPeopleFor): work emails (contactFinder) and
+ *      LinkedIn profiles beyond the user's own connections (Apollo, Apify,
+ *      Google), within the monthly lookup allowance. They land in People.
  *   1. Ask for a referral. Who: people the user knows there (LinkedIn
- *      connections export), else contacts saved for the company; when none of
- *      them has an email address, the company's emails are looked up first
- *      (contactFinder, within the monthly lookup allowance).
- *      With an address: an email draft with the tailored resume attached,
- *      waiting for the user's OK (People → Outbox, also in Gmail Drafts); once
+ *      connections export) first, then recruiters, then engineers.
+ *      Up to 2 get an email draft with the tailored resume attached, waiting
+ *      for the user's OK (People → Outbox, also in Gmail Drafts); once
  *      approved it goes at the recipient's next 8–11 AM weekday slot.
- *      Otherwise a drafted LinkedIn note the user sends themselves. Nobody
- *      known → a LinkedIn search link + a note.
+ *      Up to 2 others get a drafted LinkedIn note the user sends themselves
+ *      (copy + open profile). Nobody found → a LinkedIn search link + a note.
  *   2. Wait `referralWaitDays` business days. The user reports what happened:
  *      a link or code / "they submitted me" / "they said no". Email replies
  *      are flagged automatically (replyWatcher).
@@ -28,11 +30,12 @@ import { businessDaysLater, nextSendSlot, partsIn } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { notify as whatsappNotify } from './whatsapp.js';
 import { detectPlatform } from './resumeRegistry.js';
+import { isRecruiterTitle } from './contactRules.js';
 
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
-const MAX_ASKS_PER_ROLE = 2;
-// Companies looked up ahead of time per evening list (each lookup spends the user's monthly allowance).
-const CONTACTS_PER_LIST = Number(process.env.DAILY_PLAN_CONTACTS_PER_LIST || 5);
+const MAX_EMAILS_PER_ROLE = 2;
+const MAX_NOTES_PER_ROLE = 2;
+const isProfile = (url) => /linkedin\.com\/in\//i.test(String(url || ''));
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
 const str = (v) => String(v ?? '').trim();
@@ -141,32 +144,95 @@ async function liveAsks(itemId) {
   );
 }
 
-/**
- * People ready before the user decides: for the list's best top roles, look up
- * who works there (engineers, recruiters, with email) and save them, so People
- * → Contacts shows them and an approved role's referral ask can go at once.
- * One company per call (the 5-minute tick); at most CONTACTS_PER_LIST lookups
- * per list. Companies that already have people are marked without a lookup.
- */
-export async function prepareContacts(userId, planId) {
-  const used = Number((await one('SELECT COUNT(*)::int AS n FROM plan_items WHERE plan_id = $1 AND contacts_lookup', [planId]))?.n || 0);
-  if (used >= CONTACTS_PER_LIST) return null;
-  for (let i = 0; i < 10; i += 1) {
-    const item = await one(
-      `SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND tier = 'top' AND decision IN ('pending', 'approved') AND contacts_at IS NULL
-        ORDER BY score DESC NULLS LAST, id LIMIT 1`,
-      [planId, userId],
-    );
-    if (!item) return null;
-    // Claimed first, so a failing company isn't retried every tick.
-    await run('UPDATE plan_items SET contacts_at = NOW() WHERE id = $1', [item.id]);
-    if (await hasEmailContact(userId, item.company_name)) continue;
-    await run('UPDATE plan_items SET contacts_lookup = true WHERE id = $1', [item.id]);
-    const jobId = await companyRow(userId, item.company_name, item.location);
-    const added = await findEmailsAt(userId, jobId, item).catch(err => { console.warn('[referrals] contact lookup failed', item.company_name, err.message); return 0; });
-    return { company: item.company_name, added };
+async function linkedinPeopleAt(userId, companyName) {
+  return Number((await one(
+    `SELECT COUNT(*)::int AS n FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+      WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND c.linkedin_url ILIKE '%linkedin.com/in/%'`,
+    [userId, companyName],
+  ))?.n || 0);
+}
+
+/** People at the company on LinkedIn (not just the user's connections), saved as contacts. */
+export async function findLinkedInPeopleAt(userId, jobId) {
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  if (!job) return 0;
+  const { findPeopleAtLinkedInCompany } = await import('./apify.js');
+  const { resolveCompanyDomain } = await import('./companyDomain.js');
+  const { upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+  // Only a domain we're sure of (no guessing) narrows the search.
+  const trusted = await resolveCompanyDomain(job, { verify: async () => false }).catch(() => null);
+  const found = await findPeopleAtLinkedInCompany(job.name, job.linkedin_company_url || null, trusted?.domain || null, null, { userId });
+  let added = 0;
+  for (const p of found.slice(0, 10)) {
+    if (!p.name || p.name.toLowerCase() === 'unknown') continue;
+    const r = await upsertContact({ all, run }, {
+      userId, jobId, seniorityScore: seniorityScore(p.title),
+      contact: { name: p.name, title: p.title, linkedin_url: p.linkedin_url || null, email: p.email || null, status: p.email ? 'unverified' : undefined, source: p.source || 'linkedin' },
+    });
+    if (r === 'inserted') added += 1;
   }
-  return null;
+  return added;
+}
+
+/** Who works at an approved role's company: emails (when Gmail can send them) and LinkedIn profiles. */
+export async function findPeopleFor(userId, item) {
+  const jobId = await companyRow(userId, item.company_name, item.location);
+  const out = { emails: 0, linkedin: 0 };
+  try {
+    if (await connectionFor(userId) && !(await hasEmailContact(userId, item.company_name))) {
+      out.emails = await findEmailsAt(userId, jobId, item).catch(err => { console.warn('[referrals] email lookup failed', item.company_name, err.message); return 0; });
+    }
+    if (await linkedinPeopleAt(userId, item.company_name) < 3) {
+      out.linkedin = await findLinkedInPeopleAt(userId, jobId).catch(err => { console.warn('[referrals] LinkedIn search failed', item.company_name, err.message); return 0; });
+    }
+  } finally {
+    await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
+  }
+  return out;
+}
+
+// Approved roles whose people search is running now (it can take a minute or two).
+const peopleRunning = new Set();
+
+/**
+ * Find people for roles the user approved, right after they approve: one
+ * company per call (the 5-minute tick), in the background, so the tick isn't
+ * held up. The referral step waits for it. Lookups spend the user's monthly
+ * allowance, so only approved roles get them.
+ */
+export async function prepareContacts(userId) {
+  const item = await one(
+    `SELECT * FROM plan_items
+      WHERE user_id = $1 AND decision = 'approved' AND contacts_at IS NULL AND decided_at > NOW() - INTERVAL '3 days'
+        AND stage IN ('tailoring', 'needs_you', 'asking_referral') AND id::text <> ALL($2::text[])
+      ORDER BY decided_at LIMIT 1`,
+    [userId, [...peopleRunning]],
+  );
+  if (!item) return null;
+  peopleRunning.add(String(item.id));
+  findPeopleFor(userId, item)
+    .catch(err => console.warn('[referrals] people search failed', item.company_name, err.message))
+    .finally(() => peopleRunning.delete(String(item.id)));
+  return item.company_name;
+}
+
+/** Sort for asking: people the user knows, then recruiters, then engineers, then the rest (leaders last: they rarely refer). */
+function askRank(p) {
+  const t = String(p.title || '');
+  if (p.knows) return 0;
+  if (isRecruiterTitle(t)) return 1;
+  if (/\b(vp|vice president|director|head of|chief|cto|ceo|founder|co-founder|president)\b/i.test(t)) return 3;
+  if (/\b(engineer|engineering|developer|software|scientist|swe|sde)\b/i.test(t)) return 2;
+  return 3;
+}
+
+/** Who gets an email and who gets a LinkedIn note (different people), best first. */
+export function pickTargets(pool, { canEmail = true, maxEmails = MAX_EMAILS_PER_ROLE, maxNotes = MAX_NOTES_PER_ROLE } = {}) {
+  const ranked = pool.map((p, i) => ({ p, i })).sort((a, b) => askRank(a.p) - askRank(b.p) || a.i - b.i).map(x => x.p);
+  const email = canEmail ? ranked.filter(p => p.email).slice(0, maxEmails) : [];
+  const note = ranked.filter(p => !email.includes(p) && isProfile(p.linkedin)).slice(0, maxNotes);
+  return { email, note };
 }
 
 /**
@@ -206,6 +272,11 @@ export async function askForReferral(userId, item, settings) {
       [item.id, at, referralNote(await liveAsks(item.id), describeDay(at, tz0))]);
     return;
   }
+  // People first: wait for a search that's running, or run it now.
+  if (!item.contacts_at) {
+    if (peopleRunning.has(String(item.id))) return;
+    await findPeopleFor(userId, item);
+  }
   const who = await me(userId);
   const jobId = await companyRow(userId, item.company_name, item.location);
   const latest = await one("SELECT report, file_id FROM resume_tailorings WHERE id = $1", [item.tailoring_id]);
@@ -216,29 +287,24 @@ export async function askForReferral(userId, item, settings) {
     || null;
   const gmail = await connectionFor(userId);
 
-  // People: connections first, then contacts already saved for this company.
-  const people = [];
-  for (const c of (await connectionsAt(userId, item.company_name)).slice(0, MAX_ASKS_PER_ROLE)) {
+  // Everyone known at the company: connections, then contacts found there.
+  const pool = [];
+  for (const c of (await connectionsAt(userId, item.company_name)).slice(0, 6)) {
     const contact = await contactFor(userId, jobId, c);
-    people.push({ name: c.full_name, title: c.position, linkedin: c.profile_url, email: contact.email || c.email, contactId: contact.id, connectionId: c.id, knows: true });
+    pool.push({ name: c.full_name, title: c.position, linkedin: c.profile_url, email: contact.email || c.email, contactId: contact.id, connectionId: c.id, knows: true });
   }
-  // Nobody with an email address yet: look the company's up (only worth it when Gmail can send).
-  if (gmail && people.length < MAX_ASKS_PER_ROLE && !people.some(p => p.email) && !(await hasEmailContact(userId, item.company_name))) {
-    await findEmailsAt(userId, jobId, item).catch(err => console.warn('[referrals] email lookup failed', item.company_name, err.message));
+  const saved = await all(
+    `SELECT c.* FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+      WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')
+      ORDER BY (c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') DESC, c.seniority_score DESC NULLS LAST LIMIT 20`,
+    [userId, item.company_name],
+  );
+  for (const c of saved) {
+    if (pool.some(p => String(p.contactId) === String(c.id))) continue;
+    pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, contactId: c.id, connectionId: null, knows: false });
   }
-  if (people.length < MAX_ASKS_PER_ROLE) {
-    const saved = await all(
-      `SELECT c.* FROM job_contacts c JOIN jobs j ON j.id = c.job_id
-        WHERE c.user_id = $1 AND (lower(j.name) = lower($2)) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')
-        ORDER BY (c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') DESC, c.seniority_score DESC NULLS LAST LIMIT 6`,
-      [userId, item.company_name],
-    );
-    for (const c of saved) {
-      if (people.length >= MAX_ASKS_PER_ROLE) break;
-      if (people.some(p => p.contactId === Number(c.id) || p.contactId === c.id)) continue;
-      people.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, contactId: c.id, connectionId: null, knows: false });
-    }
-  }
+  const targets = pickTargets(pool, { canEmail: Boolean(gmail) });
+  const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
 
   const base = { me: who.name, school: who.school, title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId) };
   if (!people.length) {
@@ -253,7 +319,7 @@ export async function askForReferral(userId, item, settings) {
     let outboxId = null;
     let status = 'to_send';
     let channel = 'linkedin';
-    if (p.email) {
+    if (p.via === 'email') {
       try {
         // A draft: nothing goes out until the user approves it.
         const o = await scheduleEmail(userId, { contactId: p.contactId, subject: d.subject, body: d.body, purpose: 'referral', draft: true, attachmentFileId });

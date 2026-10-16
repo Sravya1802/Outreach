@@ -65,7 +65,7 @@ export function flowSteps(i: FlowInput): FlowStep[] {
       count: writing, countLabel: `${writing} being written`, state: writing ? 'busy' : 'idle' },
     { id: 'referral', title: 'Ask for a referral', to: '/applications/auto-apply',
       explain: s.referralFirst
-        ? `Someone you know there (from your LinkedIn connections) or a contact at the company is asked to refer you. If nobody has an email address yet, the company’s emails are looked up. The email is written with your tailored resume attached and waits for your OK in People → Outbox (a copy is in your Gmail Drafts); once you approve, it goes at their next morning. Without an address, it’s a LinkedIn note you send. Report a link or code, “they submitted me” or “they said no”. With no referral ${s.referralWaitDays} business day${s.referralWaitDays === 1 ? '' : 's'} after the email goes, it applies anyway.`
+        ? `When you approve a role, people at the company are found: work emails, and LinkedIn profiles beyond your connections. People you know come first, then recruiters, then engineers. Up to 2 get an email written with your tailored resume attached; it waits for your OK in People → Outbox (a copy is in your Gmail Drafts) and goes at their next morning once you approve. Up to 2 others get a LinkedIn note you send. Report a link or code, “they submitted me” or “they said no”. With no referral ${s.referralWaitDays} business day${s.referralWaitDays === 1 ? '' : 's'} after the email goes, it applies anyway.`
         : 'Referral asks are turned off, so approved roles go straight to applying the next morning.',
       count: referral, countLabel: s.referralFirst ? `${referral} waiting` : 'off', state: referral ? 'busy' : 'idle' },
     { id: 'apply', title: 'Apply', to: '/applications/auto-apply',
@@ -123,7 +123,7 @@ export function emailSteps(i: EmailFlowInput): FlowStep[] {
       explain: 'Upload the connections file LinkedIn lets you export. People you already know at a company are asked first, since they refer far more often.',
       count: conns, countLabel: conns ? `${conns} connections` : 'not imported', state: conns ? 'busy' : 'you' },
     { id: 'people', title: 'Find people', to: '/people/contacts',
-      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found. Each night the companies behind your list’s 5 best roles are looked up on their own, and so is any role you approve.',
+      explain: 'Open a company and press Find people. Engineers, recruiters and alumni there get added with their work email when one can be found. For every role you approve, people there are found on their own: work emails, and LinkedIn profiles beyond your connections.',
       count: i.contactsWithEmail, countLabel: `${i.contactsWithEmail} with email`, state: i.contactsWithEmail ? 'busy' : 'idle' },
     { id: 'write', title: 'Write the messages', to: '/people/messages',
       explain: 'People → Messages writes a LinkedIn note and an email for each person, for the role that fits you at their company. You read and edit them.',

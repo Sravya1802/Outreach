@@ -86,7 +86,7 @@ export default function ContactsPage() {
         <div className="border-t border-rule">
           <EmptyState
             title={all.length ? 'No contacts match' : 'No contacts yet'}
-            description={all.length ? 'Try a different search or filter.' : 'Each night, people at the companies behind the best roles on your evening list are found and show up here with their emails. You can also open a company from Jobs → Companies and press Find people.'}
+            description={all.length ? 'Try a different search or filter.' : 'When you approve a role, people at that company are found for you (work emails, and LinkedIn profiles beyond your connections) and show up here. You can also open a company from Jobs → Companies and press Find people.'}
             action={!all.length ? <ButtonLink to="/jobs/companies" size="sm" variant="primary">Go to companies</ButtonLink> : undefined}
           />
         </div>

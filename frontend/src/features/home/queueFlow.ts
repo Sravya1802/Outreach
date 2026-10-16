@@ -61,7 +61,7 @@ export function flowSteps(i: FlowInput): FlowStep[] {
       explain: `At ${listTime}, the best roles scoring ${minScore} or higher (up to ${s.maxPerDay}) are emailed to you. Nothing is sent until you approve it.`,
       count: pending, countLabel: pending ? `${pending} need your OK` : 'nothing waiting', state: pending ? 'you' : 'idle' },
     { id: 'tailor', title: 'Tailor your resume', to: '/applications/auto-apply',
-      explain: 'For each role you approve, a resume is written for that job and checked against its keywords. It never adds skills you don’t have. If it scores under 90%, it waits for you.',
+      explain: 'For each role you approve, a resume is written for that job and checked against its keywords. It follows your resume rules and never adds skills you don’t have. If it scores under 95% or a recruiter check says skip, it waits for you.',
       count: writing, countLabel: `${writing} being written`, state: writing ? 'busy' : 'idle' },
     { id: 'referral', title: 'Ask for a referral', to: '/applications/auto-apply',
       explain: s.referralFirst
@@ -164,7 +164,7 @@ export function whatsappSteps(w?: WhatsAppStatus): FlowStep[] {
     { id: 'wa-replies', title: 'Reply alerts', to: '/integrations/whatsapp', ...pref('replies'),
       explain: 'When someone answers your outreach, you get who replied, from which company, and the first line of what they said.' },
     { id: 'wa-needs', title: 'When something needs you', to: '/integrations/whatsapp', ...pref('needs'),
-      explain: 'An approved role that’s stuck (a resume under 90%, a referral code to enter, a form question) is sent to you so it doesn’t sit.' },
+      explain: 'An approved role that’s stuck (a resume under 95%, a referral code to enter, a form question) is sent to you so it doesn’t sit.' },
     { id: 'wa-summary', title: 'Morning summary', to: '/integrations/whatsapp', ...pref('summary'),
       explain: 'Once a day: how many applied, how many need you, and how many LinkedIn notes are waiting to be sent.' },
     { id: 'wa-cmds', title: 'Pause any time', to: '/integrations/whatsapp',

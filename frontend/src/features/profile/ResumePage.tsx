@@ -9,6 +9,7 @@ import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { KIND_LABEL, countryLabel, countryOf, formatBytes } from './resumeFiles'
+import { ResumeTemplate } from './ResumeTemplate'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
@@ -106,6 +107,8 @@ export default function ResumePage() {
           </label>
 
           <UsedFor history={history} onDownload={get} />
+
+          <ResumeTemplate />
 
           {earlier.length > 0 && (
             <section aria-labelledby="earlier-h">

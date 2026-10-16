@@ -72,7 +72,7 @@ const nonEmpty = (xs) => (Array.isArray(xs) ? xs : []).map(x => (typeof x === 's
 export function dateRange(start, end) {
   const a = String(start || '').trim();
   const b = String(end || '').trim();
-  if (a && b) return `${a} -- ${b}`;
+  if (a && b) return a.toLowerCase() === b.toLowerCase() ? a : `${a} -- ${b}`;
   return a || b;
 }
 
@@ -111,59 +111,221 @@ ${bits.join(' \\textbar{} ')}
 `;
 }
 
-const bullets = (items) => {
+/** Like escapeTex but keeps the edges' spaces (for pieces of one sentence). */
+function escapePiece(s) {
+  const lead = /^\s/.test(s) ? ' ' : '';
+  const trail = /\s$/.test(s) && s.trim() ? ' ' : '';
+  return `${lead}${escapeTex(s)}${trail}`;
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * One bullet with its metrics and the job's tools in bold. Spans are found
+ * on the plain text and each piece is escaped on its own, so bolding can't
+ * open a way for text to become a command.
+ */
+export function richText(s, { terms = [], metrics = true, metricSpans = () => [], maxTools = 2 } = {}) {
+  const text = String(s ?? '').replace(/\s+/g, ' ').trim();
+  const spans = metrics ? metricSpans(text).map(m => ({ start: m.start, end: m.end })) : [];
+  let tools = 0;
+  for (const t of [...new Set(terms)].sort((a, b) => b.length - a.length)) {
+    if (tools >= maxTools) break;
+    const re = new RegExp(`(?<![A-Za-z0-9+#])${escapeRe(t)}(?![A-Za-z0-9+#])`, 'i');
+    const m = re.exec(text);
+    if (!m) continue;
+    const span = { start: m.index, end: m.index + m[0].length };
+    if (spans.some(x => span.start < x.end && x.start < span.end)) continue;
+    spans.push(span);
+    tools += 1;
+  }
+  spans.sort((a, b) => a.start - b.start);
+  let out = '';
+  let at = 0;
+  for (const sp of spans) {
+    if (sp.start < at) continue;
+    out += escapePiece(text.slice(at, sp.start));
+    out += `\\textbf{${escapeTex(text.slice(sp.start, sp.end))}}`;
+    at = sp.end;
+  }
+  return (out + escapePiece(text.slice(at))).replace(/ {2,}/g, ' ').trim();
+}
+
+// The resume template: the user's own layout (10pt, 0.4in sides, uppercase
+// ruled headings, compact lists). A user can replace the preamble with their
+// own .tex; the body below only uses commands every preamble has.
+export const RESUME_PREAMBLE = String.raw`\documentclass[10pt, letterpaper]{article}
+\usepackage[top=0.25in, bottom=0.1in, left=0.4in, right=0.4in]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage[hidelinks]{hyperref}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{tabularx}
+\usepackage[expansion=false]{microtype}
+\DisableLigatures[f]{encoding = *, family = *}
+\input{glyphtounicode}
+\pdfgentounicode=1
+
+\setlength{\parskip}{0ex}
+\setlist[itemize]{noitemsep, topsep=0pt, partopsep=0pt, parsep=0pt, leftmargin=1.2em}
+\titlespacing*{\section}{0pt}{1.0pt}{0.3pt}
+\titleformat{\section}{\bfseries\uppercase}{\thesection}{1em}{}[\titlerule]
+
+\pagenumbering{gobble}
+`;
+
+// Commands a custom preamble may not use: file and shell access, catcode tricks.
+const FORBIDDEN = /\\(write18|immediate|openout|openin|read\b|readline|include\b|includeonly|directlua|latelua|catcode|scantokens|special|newwrite|newread|ShellEscape|pdfprimitive|primitive|outer|everyjob|endlinechar)/;
+
+/**
+ * Pull the preamble out of a user's .tex (everything before \begin{document})
+ * and check it's safe to compile. { ok, preamble } or { ok: false, error }.
+ */
+export function checkPreamble(tex) {
+  const s = String(tex ?? '').replace(/\r\n?/g, '\n');
+  if (s.length > 100_000) return { ok: false, error: 'That file is too large for a resume template.' };
+  const i = s.indexOf('\\begin{document}');
+  const pre = (i >= 0 ? s.slice(0, i) : s).trim();
+  if (!/\\documentclass/.test(pre)) return { ok: false, error: 'No \\documentclass line found. Paste the whole .tex file, from \\documentclass down.' };
+  const code = pre.split('\n').map(l => l.replace(/(?<!\\)%.*$/, '')).join('\n');
+  const bad = code.match(FORBIDDEN);
+  if (bad) return { ok: false, error: `The template uses \\${bad[1]}, which isn’t allowed here.` };
+  for (const m of code.matchAll(/\\input\s*\{([^}]*)\}/g)) {
+    if (m[1].trim() !== 'glyphtounicode') return { ok: false, error: `The template inputs another file (${m[1]}), which isn’t allowed here.` };
+  }
+  if (/\\input(?!\s*\{)/.test(code)) return { ok: false, error: 'The template uses \\input without braces, which isn’t allowed here.' };
+  let preamble = pre;
+  if (!/\{hyperref\}/.test(code)) preamble += '\n\\usepackage[hidelinks]{hyperref}';
+  return { ok: true, preamble: `${preamble}\n` };
+}
+
+function linkLabel(url) {
+  const u = String(url || '');
+  const last = displayUrl(u).split('/').filter(Boolean).pop() || '';
+  if (/linkedin\.com/i.test(u)) return `LinkedIn/${last}`;
+  if (/github\.com/i.test(u)) return `GitHub/${last}`;
+  return displayUrl(u);
+}
+
+const SEP = ' \\; $|$ \\; ';
+
+function resumeHeader(doc) {
+  const c = doc.contact || {};
+  const bits = [];
+  if (c.location) bits.push(escapeTex(c.location));
+  if (c.email) bits.push(`\\href{${safeUrl(`mailto:${c.email}`)}}{${escapeTex(c.email)}}`);
+  if (c.phone) bits.push(escapeTex(c.phone));
+  for (const l of nonEmpty(c.links)) {
+    const href = safeUrl(l.url);
+    if (href) bits.push(`\\href{${href}}{${escapeTex(linkLabel(l.url))}}`);
+  }
+  return `\\begin{center}
+    {\\large \\textbf{${escapeTex(doc.name || 'Your Name')}}} \\\\
+    \\vspace{1.5pt}
+    {\\small ${bits.join(SEP)}}
+\\end{center}
+`;
+}
+
+const heading = (title, before = '3pt', after = '2.5pt') => `\n\\vspace{${before}}\n\\section*{${escapeTex(String(title).toUpperCase())}}\n\\vspace{${after}}\n`;
+
+function itemize(items, fmt) {
   const xs = nonEmpty(items);
-  return xs.length ? `\\begin{rbullets}\n${xs.map(b => `  \\item ${escapeTex(b)}`).join('\n')}\n\\end{rbullets}\n` : '';
-};
+  return xs.length ? `\\begin{itemize}\n${xs.map(b => `    \\item ${fmt(b)}`).join('\n')}\n\\end{itemize}\n` : '';
+}
 
-function education(list) {
+function resumeEducation(list) {
   const xs = nonEmpty(list);
   if (!xs.length) return '';
-  return `\\rsection{Education}\n${xs.map(e => {
-    const degree = [e.degree, e.field].filter(Boolean).join(', ');
-    const gpa = e.gpa ? `GPA: ${e.gpa}` : '';
-    const lines = [`\\entry{${escapeTex(e.school)}}{${escapeTex(e.location)}}{${escapeTex(degree)}}{${escapeTex(dateRange(e.start, e.end))}}`];
-    const details = [gpa, ...nonEmpty(e.details)].filter(Boolean);
-    if (details.length) lines.push(`{\\small ${details.map(escapeTex).join(' \\textbar{} ')}}\\par`);
+  return heading('Education', '5pt') + '\n' + xs.map(e => {
+    const field = String(e.field || '').trim();
+    const degree = String(e.degree || '').trim();
+    const name = field && !degree.toLowerCase().includes(field.toLowerCase()) ? `${degree}${degree ? ' in ' : ''}${field}` : degree || field;
+    const gpa = e.gpa ? ` \\textbar{} GPA ${escapeTex(String(e.gpa).replace(/^gpa:?\s*/i, ''))}` : '';
+    const lines = [
+      `\\textbf{${escapeTex(e.school)}} \\hfill {${escapeTex(dateRange(e.start, e.end))}} \\\\`,
+      `\\textit{${escapeTex(name)}}${gpa} \\hfill ${escapeTex(e.location)}${nonEmpty(e.details).length ? ' \\\\' : ''}`,
+      ...nonEmpty(e.details).map((d, i, a) => `${escapeTex(d)}${i < a.length - 1 ? ' \\\\' : ''}`),
+    ];
     return lines.join('\n');
-  }).join('\n\\vspace{3pt}\n')}\n`;
+  }).join('\n\\vspace{1pt}\n\n') + '\n';
 }
 
-function experience(list) {
-  const xs = nonEmpty(list);
-  if (!xs.length) return '';
-  return `\\rsection{Experience}\n${xs.map(e =>
-    `\\entry{${escapeTex(e.title)}}{${escapeTex(dateRange(e.start, e.end))}}{${escapeTex(e.company)}}{${escapeTex(e.location)}}\n${bullets(e.bullets)}`,
-  ).join('\\vspace{2pt}\n')}`;
+/** Experience grouped under the master's own headings, in doc order. */
+function resumeExperience(list, fmt) {
+  const groups = [];
+  for (const e of nonEmpty(list)) {
+    const h = String(e.section || 'Experience').trim();
+    let g = groups.find(x => x.h.toLowerCase() === h.toLowerCase());
+    if (!g) groups.push(g = { h, entries: [] });
+    g.entries.push(e);
+  }
+  return groups.map(g => heading(g.h) + '\n' + g.entries.map(e =>
+    `\\textbf{${escapeTex(e.company)}} \\hfill {${escapeTex(e.location)}} \\\\
+\\textit{${escapeTex(e.title)}} \\hfill {${escapeTex(dateRange(e.start, e.end))}}
+${itemize(e.bullets, fmt)}`).join('\n\\vspace{2pt}\n')).join('');
 }
 
-function projects(list) {
+function resumeProjects(list, fmt) {
   const xs = nonEmpty(list);
   if (!xs.length) return '';
-  return `\\rsection{Projects}\n${xs.map(p => {
-    const tech = nonEmpty(p.tech).join(', ');
+  return heading('Projects', '2pt', '2pt') + xs.map(p => {
     const href = safeUrl(p.link);
-    const right = href ? `\\href{${href}}{${escapeTex(displayUrl(p.link))}}` : escapeTex(dateRange(p.start, p.end));
-    return `\\textbf{${escapeTex(p.name)}}${tech ? ` \\textbar{} \\textit{${escapeTex(tech)}}` : ''}\\hfill ${right}\\par\n${bullets(p.bullets)}`;
-  }).join('\\vspace{2pt}\n')}`;
+    const name = `\\textbf{${escapeTex(p.name)}}`;
+    return `${href ? `\\href{${href}}{${name}}` : name} \\hfill ${escapeTex(dateRange(p.start, p.end))}
+${itemize(p.bullets, fmt)}`;
+  }).join('\\vspace{1pt}\n');
 }
 
-function skills(list) {
-  const xs = nonEmpty(list).filter(s => nonEmpty(s.items).length);
-  if (!xs.length) return '';
-  return `\\rsection{Skills}\n${xs.map(s => `\\textbf{${escapeTex(s.category)}:} ${nonEmpty(s.items).map(escapeTex).join(', ')}`).join('\\\\\n')}\\par\n`;
+function resumeSkills(skills, certs) {
+  const xs = nonEmpty(skills).filter(s => nonEmpty(s.items).length);
+  const cert = nonEmpty(certs?.items);
+  if (!xs.length && !cert.length) return '';
+  const lines = [];
+  if (xs.length) lines.push(xs.map(s => `\\textbf{${escapeTex(s.category)}} -- ${nonEmpty(s.items).map(escapeTex).join(', ')}`).join(' \\textbar{} '));
+  if (cert.length) lines.push(`\\textbf{${escapeTex(certs.heading || 'Certifications')}} -- ${cert.map(escapeTex).join(' \\textbar{} ')}`);
+  return heading('Technical Skills', '2pt', '1.5pt') + lines.join(' \\\\\n') + '\n';
 }
 
-function extras(list) {
-  return nonEmpty(list).filter(x => nonEmpty(x.items).length).map(x =>
-    `\\rsection{${escapeTex(x.heading)}}\n${bullets(x.items)}`).join('');
+function resumeExtras(list) {
+  return nonEmpty(list).filter(x => nonEmpty(x.items).length).map(x => {
+    const items = nonEmpty(x.items);
+    const pub = /publication/i.test(x.heading);
+    const fmtItem = (it) => {
+      const m = pub ? /^(.*\S)\s+in\s+(\S.*)$/.exec(it) : null;
+      return m ? `\\textit{${escapeTex(m[1])}} in ${escapeTex(m[2])}` : escapeTex(it);
+    };
+    const body = items.every(it => it.length <= 90)
+      ? `${items.map(fmtItem).join(' \\textbar{} ')}\n`
+      : itemize(items, escapeTex);
+    return heading(x.heading, '2pt', '1.5pt') + body;
+  }).join('');
 }
 
-/** A resume document (the engine's shape) → a complete .tex file. */
-export function resumeTex(doc) {
+/**
+ * A resume document (the engine's shape) → a complete .tex file, in the
+ * user's template. Order: header, summary, education, experience sections
+ * (as ordered in the doc), projects, technical skills with certifications,
+ * then the remaining sections.
+ *
+ * opts.preamble     the user's own preamble (checked by checkPreamble)
+ * opts.boldTerms    the job's tools, bolded where a bullet uses them
+ * opts.metricSpans  finds metrics to bold (resumeRules.metricSpans)
+ * opts.projectMetrics  bold metrics in project bullets (quant roles)
+ */
+export function resumeTex(doc, { preamble = RESUME_PREAMBLE, boldTerms = [], metricSpans, projectMetrics = true } = {}) {
+  const fmt = (b) => richText(b, { terms: boldTerms, metrics: Boolean(metricSpans), metricSpans });
+  const fmtProject = (b) => richText(b, { terms: boldTerms, metrics: Boolean(metricSpans) && projectMetrics, metricSpans });
   const summary = String(doc.summary || '').trim();
-  return `${PREAMBLE}\\begin{document}
-${header(doc)}${summary ? `\\rsection{Summary}\n${escapeTex(summary)}\\par\n` : ''}${education(doc.education)}${experience(doc.experience)}${projects(doc.projects)}${skills(doc.skills)}${extras(doc.extras)}\\end{document}
+  const extras = nonEmpty(doc.extras);
+  const certs = extras.find(x => /certif/i.test(x.heading || ''));
+  return `${preamble}
+\\begin{document}
+
+${resumeHeader(doc)}${summary ? `${heading('Summary', '3pt', '1.5pt')}${escapeTex(summary)}\n` : ''}${resumeEducation(doc.education)}${resumeExperience(doc.experience, fmt)}${resumeProjects(doc.projects, fmtProject)}${resumeSkills(doc.skills, certs)}${resumeExtras(extras.filter(x => x !== certs))}
+\\end{document}
 `;
 }
 

@@ -3,7 +3,10 @@
 import { Router } from 'express';
 import { one } from '../db.js';
 import { parseId } from '../services/safePaths.js';
-import { approve, coverLetterRequested, latest, parsedMaster, start } from '../services/resumeEngine.js';
+import {
+  approve, coverLetterRequested, latest, parsedMaster, start,
+  templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
+} from '../services/resumeEngine.js';
 
 const router = Router();
 
@@ -66,6 +69,43 @@ router.post('/tailorings/:id/approve', async (req, res) => {
     const row = await approve(req.user.id, id);
     if (!row) return res.status(404).json({ error: 'Nothing to approve' });
     res.json({ ok: true, ...row });
+  } catch (err) { fail(res, err); }
+});
+
+// The LaTeX template resumes are built in: the user's own preamble or the default.
+router.get('/template', async (req, res) => {
+  try { res.json(await templateInfo(req.user.id)); } catch (err) { fail(res, err); }
+});
+
+router.put('/template', async (req, res) => {
+  const tex = typeof req.body?.tex === 'string' ? req.body.tex : '';
+  if (!tex.trim()) return res.status(400).json({ error: 'Paste your .tex file' });
+  try { res.json(await saveTemplate(req.user.id, tex)); } catch (err) { fail(res, err); }
+});
+
+router.delete('/template', async (req, res) => {
+  try { res.json(await resetTemplate(req.user.id)); } catch (err) { fail(res, err); }
+});
+
+// Projects the engine suggested for weak fits: build, push, mark built.
+router.get('/projects', async (req, res) => {
+  try { res.json({ projects: await listProjects(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/projects/:id/built', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  const { repo_url: repoUrl, start: from, end: to } = req.body || {};
+  try { res.json(await markProjectBuilt(req.user.id, id, { repoUrl, start: from, end: to })); } catch (err) { fail(res, err); }
+});
+
+router.post('/projects/:id/dismiss', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try {
+    const p = await dismissProject(req.user.id, id);
+    if (!p) return res.status(404).json({ error: 'Nothing to dismiss' });
+    res.json({ project: p });
   } catch (err) { fail(res, err); }
 });
 

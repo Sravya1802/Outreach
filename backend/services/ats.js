@@ -21,11 +21,18 @@ export function normalizeText(s) {
     .replace(/\s+/g, ' ');
 }
 
-/** Spellings of one term an ATS treats as the same: "Node.js" ≈ "nodejs" ≈ "node js". */
+// Words an ATS (and a recruiter) reads as the same thing.
+const EQUIVALENT = [
+  [/\brestful\b/g, 'rest'], [/\bci\/cd\b/g, 'ci cd'], [/\bpostgres\b/g, 'postgresql'], [/\bk8s\b/g, 'kubernetes'],
+  [/\bgcp\b/g, 'google cloud'], [/\bllms\b/g, 'llm'], [/\bapis\b/g, 'api'],
+];
+
+/** Spellings of one term an ATS treats as the same: "Node.js" ≈ "nodejs" ≈ "node js", "RESTful API" ≈ "REST APIs". */
 export function variants(term) {
-  const t = normalizeText(term).trim();
-  if (!t) return [];
-  const out = new Set([t, t.replace(/-/g, ' '), t.replace(/[-\s]+/g, ''), t.replace(/\.(?=[a-z])/g, ''), t.replace(/\.(?=[a-z])/g, ' ')]);
+  const t0 = normalizeText(term).trim();
+  if (!t0) return [];
+  const t = EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), t0);
+  const out = new Set([t0, t, t.replace(/-/g, ' '), t.replace(/[-\s]+/g, ''), t.replace(/\.(?=[a-z])/g, ''), t.replace(/\.(?=[a-z])/g, ' ')]);
   return [...out].map(v => v.replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 
@@ -37,7 +44,7 @@ function termRegex(v) {
 
 /** Does the text contain this keyword (or one of its aliases)? */
 export function hasTerm(text, keyword) {
-  const hay = normalizeText(text);
+  const hay = EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), normalizeText(text));
   const hayLoose = hay.replace(/-/g, ' ').replace(/\.(?=[a-z])/g, '');
   const terms = [keyword.term, ...(keyword.aliases || [])];
   return terms.some(t => variants(t).some(v => {
@@ -64,6 +71,8 @@ export function normalizeKeywords(list) {
       aliases: (Array.isArray(k.aliases) ? k.aliases : []).map(a => String(a).trim()).filter(a => a && a.length <= 60).slice(0, 5),
       importance: k.importance === 'required' ? 'required' : 'preferred',
       kind: k.kind === 'soft' ? 'soft' : 'hard',
+      // A named tool/language/framework/platform (bolded where a bullet uses it).
+      tool: k.kind !== 'soft' && k.tool !== false,
     });
     if (out.length >= 30) break;
   }
@@ -95,7 +104,8 @@ export function formatChecks(doc, { pages, pdfText }) {
     { id: 'one_page', label: 'Fits on one page', ok: pages === 1 },
     { id: 'parseable', label: 'Text reads back cleanly from the PDF', ok: Boolean(doc.name) && text.includes(normalizeText(doc.name)) && text.length > 400 },
     { id: 'dates', label: 'Every role has dates', ok: (doc.experience || []).every(e => e.start || e.end) },
-    { id: 'bullets', label: 'Bullets are one or two lines', ok: allBullets.length > 0 && allBullets.every(b => String(b).length <= 230) },
+    // ~121 characters a line on the template; a 3rd line only when it's 80% full.
+    { id: 'bullets', label: 'Bullets are one or two lines', ok: allBullets.length > 0 && allBullets.every(b => { const n = String(b).length; return n <= 242 || (n >= 339 && n <= 363); }) },
   ];
 }
 
@@ -119,4 +129,18 @@ export function splitMissing(missing, sourceText) {
   return { inSource, notInSource };
 }
 
+// The user's rule: a resume goes out only when its ATS match is above 90%.
 export const ATS_TARGET = 90;
+export const atsPasses = (score) => Number(score) > ATS_TARGET;
+export const CALLBACK_TARGET = 20;
+
+/**
+ * Put a project to build on the page? Yes when Opus asked for it and the page
+ * with it still passes the ATS rule, or scores at least as well as without it.
+ * A project that pushes other keywords off the page and drops a passing resume
+ * under the bar stays a suggestion beside it.
+ */
+export function keepProjectOnPage(withoutScore, withScore) {
+  if (withScore == null) return false;
+  return atsPasses(withScore) || withScore >= withoutScore;
+}

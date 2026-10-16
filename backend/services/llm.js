@@ -28,7 +28,8 @@ export const ROUTES = {
   email: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   categorize: [{ provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'high' }],
+  // Medium effort: high thought for ~12K output tokens a draft (~$0.30); medium is about half.
+  resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'medium' }],
   resume_parse: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],
   cover_letter: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium' }],
 };

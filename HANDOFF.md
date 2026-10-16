@@ -124,6 +124,32 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-16 — Resume engine follows the user's resume rules; own LaTeX template; suggested projects
+- **Why:** the user pasted the prompt they always use for resumes (truth-first keyword mapping, bullet rules, section order, ATS 95% / callback 20% targets, verdict apply / referral / skip) and asked that the AI suggest a project when needed, which they build and push.
+- **Rules in code** ([resumeRules.js](backend/services/resumeRules.js)): no em dashes / "responsible for" / "helped"; 1–2 line bullets, with a 3rd line only when 80% full (121 chars a line, measured on the template); no repeated verb; equal bullets per section (a 1-bullet entry drops out); project metrics only for quant/HFT/C++ roles (`roleKind`); Research before Industry, Industry first for quant; projects newest first; ≤6 skill groups of 8, most relevant first; Bloomberg first for finance roles, last otherwise; bold metrics + the job's tools (`metricSpans` skips versions like C++17, GPT-4, Llama 3.3 70B).
+- **Header never gets a relocation line.** The user's prompt contradicted itself; they confirmed "never add it in header".
+- **Template:** the body is rendered in the user's layout ([latex.js](backend/services/latex.js) `resumeTex`). Profile → Resume → "Resume template" stores a user's own preamble (`meta.resume_tex_preamble`), checked by `checkPreamble` (no \write18/\input of files/catcode etc.) and test-built before saving. The user's own preamble is saved. fontawesome was installed on the VM into /usr/local/share/texmf, with its map enabled.
+- **Pipeline** ([resumeEngine.js](backend/services/resumeEngine.js)):
+  - Groq JD analysis (title, top 5, keywords with a `tool` flag).
+  - Opus draft (new TAILOR_RULES, gaps, `proposed_project`), then guard, then rules, then one-page render and ATS.
+  - **Groq recruiter check** (`judge`): callback % before/after, top 3 changes, next change, blockers, verdict.
+  - **One revision pass** if ATS < 95, callback < 20, rules are broken or keywords you have are missing.
+  - Status: ready = ATS ≥ 95 and verdict ≠ skip. `reviewReason` explains a skip. Master parse v2 adds `section` (re-read once per user).
+- **Suggested projects** (migration **030** `planned_projects`, applied):
+  - Only when the fit is weak (ATS < 95 with job keywords not in your material that the project covers). Comes with a build plan and the projected ATS.
+  - Never on a PDF until built. `POST /api/resume-engine/projects/:id/built` (public GitHub repo checked via the API, plus dates) re-renders that resume with it and re-checks it. Built projects become material (source `planned`); dismissed ones are never suggested again.
+- **UI:** [TailoredResume.tsx](frontend/src/features/applications/TailoredResume.tsx) (before/after ATS and callback, verdict, top 5, keyword table, gaps, rule issues, project card with repo/date form), [ResumeTemplate.tsx](frontend/src/features/profile/ResumeTemplate.tsx).
+- **User follow-up (same day):** "ATS more than 90% is the rule" and "if the AI feels we need a fabricated project, let's do it".
+  - `atsPasses` = score > 90 (90 itself fails); the prompt aims for 95.
+  - Opus decides when a project is needed, and it goes on the page right away. `keepProjectOnPage`: only if the page still passes, or scores at least as well. Otherwise it's shown beside the resume.
+  - A resume carrying an unbuilt project is never sent: the gate and `reviewReason` say so, and "Send anyway" refuses with a 409. "Take it off the resume" (dismiss) re-renders without it. Marking it built re-renders every resume that lists it.
+- **Cost:** Opus drafting moved to medium effort (`RESUME_EFFORT`). Measured on CoreWeave: high effort cost $0.54 (12K + 10K output tokens); medium cost $0.35 with one revision, in 138s. The revision runs only when ATS ≤ 90, a rule is broken, or keywords you have are missing.
+- **Measured (CoreWeave "Software and AI Engineer"):**
+  - ATS 72 → 93 without a project, with no rule issues. Callback 5 → 28 (stricter rubric: base rate × fit, capped at 35). Verdict apply.
+  - Opus proposed "OpsPilot | LangGraph Agent…" (7-step plan). With it, ATS fell to 89 because it pushed keywords off the page, which is what led to `keepProjectOnPage`.
+- **Also found:** 9 of tonight's 20 top roles have JDs under 600 chars (the posting couldn't be read), so their 9.4–9.8 scores rest mostly on the title. Not fixed yet; raised with the user.
+- **Status:** committed from a worktree. Backend 179 and frontend 95 tests pass.
+
 ### 2026-10-16 — People found when you approve a role (emails + LinkedIn beyond connections)
 - **Why:** the user asked "why can't I see the scraped list in People". Their account had 0 approved roles, so 0 contacts. They want people found for every role or company they approve: emails, plus LinkedIn beyond their own connections. Saved in memory (feedback_ai_email_approval).
 - **What** (`8ff05c8`, `a7770c5`, `bab11a3`; migration 031 adds `plan_items.contacts_at` and `contacts_lookup`):

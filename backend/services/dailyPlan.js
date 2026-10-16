@@ -19,7 +19,7 @@ import { classifySponsorship } from './sponsorship.js';
 import { looksLikeAgency } from './staffing.js';
 import { partsIn, timezoneFor, isValidTz, nextSendSlot } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
-import { start as startTailoring } from './resumeEngine.js';
+import { start as startTailoring, reviewReason } from './resumeEngine.js';
 import { advanceReferrals, asksFor, maybeSendSummary, prepareContacts } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
 import { notify as whatsappNotify, sendPlanList } from './whatsapp.js';
@@ -484,7 +484,9 @@ const MAX_TAILORING_AT_ONCE = 2;
 export async function advanceUser(userId) {
   const settings = await getSettings(userId);
   const items = await all(
-    `SELECT pi.*, t.status AS t_status, t.ats_score AS t_score, t.approved_at AS t_approved, t.error AS t_error
+    `SELECT pi.*, t.status AS t_status, t.ats_score AS t_score, t.approved_at AS t_approved, t.error AS t_error,
+            t.report->>'verdict' AS t_verdict, t.report->>'verdictWhy' AS t_verdict_why,
+            t.report->'proposedProject'->>'name' AS t_project, t.report->'proposedProject'->>'status' AS t_project_status
        FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
       WHERE pi.user_id = $1 AND pi.decision = 'approved'
         AND (pi.stage = 'tailoring' OR (pi.stage = 'needs_you' AND pi.needs_reason = 'resume'))
@@ -516,7 +518,7 @@ export async function advanceUser(userId) {
       }
     } else if (i.t_status === 'needs_review' && i.stage !== 'needs_you') {
       await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1",
-        [i.id, `Tailored resume scored ${i.t_score}% on the ATS check (target 90%). Open it to send anyway or skip the role.`]);
+        [i.id, reviewReason({ ats_score: i.t_score, verdict: i.t_verdict, verdict_why: i.t_verdict_why, project_name: i.t_project, project_status: i.t_project_status })]);
     } else if (i.t_status === 'failed' && i.stage !== 'needs_you') {
       await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1", [i.id, `Resume writing failed: ${i.t_error || 'unknown error'}. Open the role to try again.`]);
     }

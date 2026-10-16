@@ -555,7 +555,7 @@ export interface ReplyItem {
 
 // ── Resume engine (tailored resume + cover letter per role) ─────────────────
 
-export interface AtsKeyword { term: string; aliases: string[]; importance: 'required' | 'preferred'; kind: 'hard' | 'soft' }
+export interface AtsKeyword { term: string; aliases: string[]; importance: 'required' | 'preferred'; kind: 'hard' | 'soft'; tool?: boolean }
 export interface TailoringAts {
   score: number
   target: number
@@ -569,14 +569,55 @@ export interface TailoringAts {
   missingYouDont: { term: string; importance: 'required' | 'preferred' }[]
   checks: { id: string; label: string; ok: boolean }[]
   pages: number | null
+  /** The untailored master, scored the same way. */
+  before?: number
+  /** The keywords table: each keyword and the sections it appears in ([] = missing). */
+  places?: { term: string; importance: 'required' | 'preferred'; where: string[] }[]
+}
+export type ResumeVerdict = 'apply' | 'apply_with_referral' | 'skip'
+export interface ProposedProject {
+  id: number
+  name: string
+  tech: string[]
+  bullets: string[]
+  /** Job keywords it adds. */
+  covers: string[]
+  why: string
+  plan: string[]
+  status: 'suggested' | 'built' | 'dismissed'
+  /** The ATS score with the project on the page, and without it. */
+  projectedAts: number | null
+  withoutAts?: number | null
+  /** On the resume (it isn't sent until built). */
+  onPage?: boolean
+  addedAt?: string
 }
 export interface TailoringReport {
   notes?: string
   changes?: { section: string; before: string; after: string; why: string }[]
-  projects?: { name: string; source: 'resume' | 'github'; why: string }[]
+  projects?: { name: string; source: 'resume' | 'github' | 'planned'; why: string }[]
   removed?: { where: string; what: string; why: string }[]
   addedSkills?: string[]
   shortenedSteps?: number
+  /** JD analysis */
+  title?: string
+  focus?: string[]
+  roleKind?: { quant: boolean; finance: boolean }
+  /** Recruiter check (a different model from the writer) */
+  callback?: { before: number; after: number; target: number; why: string } | null
+  atsWhy?: string
+  topChanges?: string[]
+  nextChange?: string
+  blockers?: string[]
+  verdict?: ResumeVerdict | null
+  verdictWhy?: string
+  gaps?: { term: string; why: string }[]
+  ruleIssues?: { where: string; bullet: string; code: string; why: string }[]
+  fixed?: { what: string; now: string; why: string }[]
+  proposedProject?: ProposedProject | null
+  revised?: boolean
+  /** The tailored resume's LaTeX source. */
+  tex?: string
   /** Cover letters */
   paragraphs?: string[]
   greeting?: string
@@ -597,6 +638,8 @@ export interface Tailoring {
   filename: string | null
 }
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
+/** The LaTeX preamble resumes are built in. */
+export interface ResumeTemplate { custom: boolean; preamble: string; updatedAt: string | null }
 
 export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null; file?: ResumeFile | null; inCloud?: boolean }
 
@@ -784,6 +827,12 @@ export const api = {
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
   startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
+  resumeTemplate: (): Promise<ResumeTemplate> => legacy.career.resumeTemplate(),
+  saveResumeTemplate: (tex: string): Promise<ResumeTemplate> => legacy.career.saveResumeTemplate(tex),
+  resetResumeTemplate: (): Promise<ResumeTemplate> => legacy.career.resetResumeTemplate(),
+  /** You built a suggested project and pushed it; it's added to the resume it was suggested for. */
+  markProjectBuilt: (id: number, body: { repo_url: string; start: string; end: string }): Promise<{ project: unknown; tailoring: Tailoring | null }> => legacy.career.markProjectBuilt(id, body),
+  dismissProject: (id: number): Promise<{ project: unknown }> => legacy.career.dismissProject(id),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   /** An earlier master version; the server refuses the current one and any an application uses. */
   deleteResumeFile: (id: number): Promise<{ ok: boolean }> => legacy.career.deleteResumeFile(id),

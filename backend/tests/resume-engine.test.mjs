@@ -61,7 +61,7 @@ const REPOS = [{ name: 'rag-search', full_name: 'ana/rag-search', description: '
 
 test('guard rebuilds from the master and drops invented facts', () => {
   const draft = {
-    summary: 'Seasoned engineer',
+    summary: 'Seasoned engineer with 9 years of Python',
     experience: [{ id: 'e2', bullets: ['Mentored 120 students in labs'] }, { id: 'e1', bullets: ['Built Python ETL moving 2M rows daily', 'Scaled ETL to 5M rows daily'] }, { id: 'zzz', bullets: ['Fake job'] }],
     projects: [
       { source: 'github', ref: 'ana/rag-search', name: 'RAG Search', tech: ['Python', 'FastAPI', 'Kubernetes'], bullets: ['Retrieval over 10k docs via FastAPI', 'Served 1M queries'] },
@@ -81,7 +81,7 @@ test('guard rebuilds from the master and drops invented facts', () => {
   assert.equal(doc.projects[0].link, 'https://github.com/ana/rag-search');
   assert.deepEqual(doc.skills[0].items, ['Python', 'TypeScript']);
   const why = removed.map(r => r.what);
-  for (const x of ['Seasoned engineer', 'Scaled ETL to 5M rows daily', 'Kubernetes', 'Served 1M queries', 'Ghost', 'Rust']) assert.ok(why.includes(x), `removed ${x}`);
+  for (const x of ['Seasoned engineer with 9 years of Python', 'Scaled ETL to 5M rows daily', 'Kubernetes', 'Served 1M queries', 'Ghost', 'Rust']) assert.ok(why.includes(x), `removed ${x}`);
 });
 
 test('addMissingSkills only adds what it is given, once', () => {
@@ -115,7 +115,7 @@ test('LaTeX escaping cannot inject commands', () => {
   assert.equal(safeUrl('github.com/ana'), 'https://github.com/ana');
   assert.equal(safeUrl('https://x.com/a%20b#c'), 'https://x.com/a\\%20b\\#c');
   const tex = resumeTex(MASTER);
-  assert.ok(tex.includes('\\rsection{Experience}') && tex.includes('SWE Intern'));
+  assert.ok(tex.includes('\\section*{EXPERIENCE}') && tex.includes('SWE Intern'));
 });
 
 test('master text includes dates and GPA, so they count as real', async () => {

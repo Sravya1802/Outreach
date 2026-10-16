@@ -40,6 +40,7 @@ export const qk = {
   resume: ['resume-status'] as const,
   resumeHistory: ['resume-history'] as const,
   tailoring: (evalId: number) => ['tailoring', evalId] as const,
+  resumeTemplate: ['resume-template'] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
   connections: ['linkedin-connections'] as const,

@@ -286,6 +286,7 @@ function ScoreBlock({ label, before, after, rule, tone, why, empty }: { label: s
 
 /** A project the engine suggests building when the fit is weak; it goes on the resume once it's pushed. */
 function ProposedProjectCard({ p }: { p: ProposedProject }) {
+  const onPage = p.onPage !== false
   const qc = useQueryClient()
   const toast = useToast()
   const [repo, setRepo] = useState('')
@@ -312,7 +313,7 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
             ? <> It isn’t on the resume yet: adding it now would push other keywords off the page (ATS {p.withoutAts}% → {p.projectedAts}%). Once it’s built, it goes on with its link and dates.</>
             : <> With it on the page, the ATS match would be <span className="text-fg">{p.projectedAts}%</span>.</>)}
       </p>
-      <p className="mt-3 text-[12px] tracking-wide text-subtle uppercase">On your resume it reads</p>
+      <p className="mt-3 text-[12px] tracking-wide text-subtle uppercase">{onPage || p.status === 'built' ? 'On your resume it reads' : 'On your resume it would read'}</p>
       <ul className="mt-1 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-fg">{p.bullets.map(b => <li key={b}>{b}</li>)}</ul>
       {p.plan.length > 0 && (
         <details className="mt-3">
@@ -322,7 +323,10 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
       )}
       {p.status === 'suggested' ? (
         <form className="mt-4 space-y-3" onSubmit={e => { e.preventDefault(); built.mutate() }}>
-          <p className="text-[13px] text-muted">Build it from the plan and push it to a public GitHub repo, then add the link and the dates to show. Until then this resume waits for you; it’s never sent with a project you haven’t built.</p>
+          <p className="text-[13px] text-muted">
+            Build it from the plan and push it to a public GitHub repo, then add the link and the dates to show.
+            {onPage ? ' Until then this resume waits for you; it’s never sent with a project you haven’t built.' : ' This resume can go out without it meanwhile.'}
+          </p>
           <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
             <Field label="GitHub repo">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" required />}</Field>
             <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
@@ -330,11 +334,11 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" loading={built.isPending}>I built it, add it</Button>
-            <Button type="button" variant="ghost" loading={dismiss.isPending} onClick={() => dismiss.mutate()}>Take it off the resume</Button>
+            <Button type="button" variant="ghost" loading={dismiss.isPending} onClick={() => dismiss.mutate()}>{onPage ? 'Take it off the resume' : 'Not for me'}</Button>
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-[14px] text-muted">{p.status === 'built' ? `Built, with its link and dates on this resume${p.addedAt ? ` (${timeAgo(p.addedAt)})` : ''}.` : 'Taken off the resume. It won’t be suggested again.'}</p>
+        <p className="mt-4 text-[14px] text-muted">{p.status === 'built' ? `Built, with its link and dates on this resume${p.addedAt ? ` (${timeAgo(p.addedAt)})` : ''}.` : 'You passed on it. It won’t be suggested again.'}</p>
       )}
     </section>
   )

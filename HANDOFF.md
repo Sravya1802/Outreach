@@ -124,6 +124,20 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-16 — Applications → Tracker: the user's sheet, in the app
+- **Why:** the user keeps a Google Sheet ("2027 New Grad Roles Application": Companies, Roles, Link, Submitted, Application Status, Refferal Status, about 66 rows) and wants "something like that sheet so I can keep monitoring". They chose a one-time CSV upload, not a Google connection.
+- **What** (`b04d57b`, `a5d70b0`; migration **033** adds `evaluations.referral_status`, applied):
+  - [TrackerPage.tsx](frontend/src/features/applications/TrackerPage.tsx) at `/applications/tracker`. One row per evaluation, with editable cells: company and role wrap and edit on click; the link; Submitted, Application Status and Referral as colored dropdowns like the sheet. Counts on top, search, filters, Add a row, Import CSV, Download CSV. "by the app" marks daily-plan rows.
+  - [routes/tracker.js](backend/routes/tracker.js) (`/api/tracker`): GET, POST, PATCH /:id, POST /import, GET /export.csv.
+  - [trackerSheet.js](backend/services/trackerSheet.js): CSV parsing, a header row found under the title banner, sheet words ↔ statuses (Waiting to hear back = submitted, In Progress = responded, plus Interview, Offer and Rejected), and referral words (Yes/No/Not Required/Asked). The plan item's referral progress shows when none is set.
+  - Re-importing matches on the link without tracking bits, or on company + role, and updates instead of doubling.
+- **Note:** imported "Submitted" rows get the import time as `applied_at`, since the sheet has no dates. So the evening list's 30-day company cooldown and exact-link skip apply to them.
+- **Not done:** Gmail replies don't change `apply_status` (`replyWatcher` doesn't touch evaluations). Statuses change by hand, or when the app applies.
+- **Verified on prod** as the e2e user:
+  - API: import 5 → 5 added, same file again → 5 unchanged; PATCH works; a bad link gets a 400; the CSV round-trips.
+  - Browser at 1400 and 390px: a dropdown change and an inline edit both save, no page errors, no horizontal page scroll.
+  - QA rows deleted.
+
 ### 2026-10-16 — Nightly resumes through Anthropic's batch API (half price)
 - **What** (`9610b1c` on main, `5a40322` on the VM; migration **032** adds `resume_tailorings.batch`, applied):
   - Roles approved from the evening list start their resume with `start(..., { batch: true })`. The row waits in `batch.phase`: queued → drafting → revise_queued → revising → done.

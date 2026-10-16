@@ -133,7 +133,7 @@ async function scrapeAiJobs(roleType /* 'intern' | 'new_grad' */) {
     : 'https://ai-jobs.net/?reg=4&cat=18&type=1';  // category=full-time
   try {
     const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!r.ok) return [];
@@ -268,7 +268,7 @@ async function scrapeInternshipDaily(roleType) {
     : 'https://internshipdaily.com/new-grad-jobs/';
   try {
     const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 Scout’n’Jobs/1.0' },
+      headers: { 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
     if (!r.ok) return [];

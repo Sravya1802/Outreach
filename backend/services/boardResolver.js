@@ -45,7 +45,7 @@ export function sameTitle(a, b) {
 
 async function getJson(url, fetchImpl) {
   try {
-    const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'Scout’n’Jobs job catalog' }, signal: AbortSignal.timeout(8000) });
+    const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'ScoutnJobs job catalog' }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }

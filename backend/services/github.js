@@ -56,7 +56,7 @@ export function tokenColumns(t, now = Date.now()) {
 
 async function gh(path, token, { accept = 'application/vnd.github+json', fetchImpl = fetch } = {}) {
   const res = await fetchImpl(`${API}${path}`, {
-    headers: { Accept: accept, Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'Scout’n’Jobs' },
+    headers: { Accept: accept, Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ScoutnJobs' },
     signal: AbortSignal.timeout(15_000),
   });
   if (res.status === 404) return null;
@@ -202,7 +202,7 @@ export async function disconnect(userId) {
       const basic = Buffer.from(`${process.env.GITHUB_CLIENT_ID}:${process.env.GITHUB_CLIENT_SECRET}`).toString('base64');
       await fetch(`${API}/applications/${process.env.GITHUB_CLIENT_ID}/grant`, {
         method: 'DELETE',
-        headers: { Authorization: `Basic ${basic}`, Accept: 'application/vnd.github+json', 'User-Agent': 'Scout’n’Jobs', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Basic ${basic}`, Accept: 'application/vnd.github+json', 'User-Agent': 'ScoutnJobs', 'Content-Type': 'application/json' },
         body: JSON.stringify({ access_token: open(c.access_token) }),
         signal: AbortSignal.timeout(10_000),
       });

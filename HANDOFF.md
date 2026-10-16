@@ -124,6 +124,20 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-16 — Nightly resumes through Anthropic's batch API (half price)
+- **What** (`9610b1c` on main, `5a40322` on the VM; migration **032** adds `resume_tailorings.batch`, applied):
+  - Roles approved from the evening list start their resume with `start(..., { batch: true })`. The row waits in `batch.phase`: queued → drafting → revise_queued → revising → done.
+  - `pumpBatches()` runs on a new 5-minute cron in server.js. It collects finished batches first, then submits what's queued, one batch per user and step.
+  - Between steps it stores the JD analysis (keywords, focus, title), the draft and the revision notes. The page is re-rendered when the batch comes back.
+  - A request that errors or expires is sent once more; then the row fails, or for a revision the first draft stands. A row is stale after 26h.
+  - `RESUME_BATCH=off` goes back to running straight through, two at a time. The "Tailor my resume" button always runs straight through at full price.
+  - tailor() is split into `draftPrompt` / `checkDraft` / `takeRevision` / `finishTailoring`, shared by both paths.
+  - [claude.js](backend/services/claude.js): `claudeBatchSubmit` / `claudeBatchStatus` / `claudeBatchResults`. No server-side fallbacks in batches.
+  - [llm.js](backend/services/llm.js): `submitBatch` (checks the budget at half price) and `collectBatch`, which records usage as `resume_batch` at 50% per user.
+  - UI: "In tonight's resume batch (half price)…", polling every 60s.
+- **Measured** (real CoreWeave run, outside the server, then cleaned up): draft back in 4 min, revision in another 4.5 min. **$0.148 total, vs $0.35 straight through.** It ended at ATS 83 (needs review) with a project to build; an earlier straight-through run of the same role reached 93. Opus drafts vary from run to run.
+- **Status:** live, VM 183/183, a manual `pumpBatches()` runs clean.
+
 ### 2026-10-16 — Evening list reads the real posting; junk text isn't scored
 - **Why:** 9 of the 20 top roles on the 10-15 list scored 9.4–9.8 on text that wasn't a job description: LinkedIn's pay-range box (Whatnot, AmEx, WD, Switchboard, U Michigan, Valon), an iCIMS frame (i3 Corps), a careers-page shell (Instacart) and a "no open positions" page (VAST Data). With no requirements in the text, the scorer had nothing to mark down.
 - **What** (`24d4152`):

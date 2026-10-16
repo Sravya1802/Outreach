@@ -219,12 +219,15 @@ async function scoreOne({ userId, summary, profile, role, jd }) {
   return { score: blendScore(parsed), why: String(parsed.why || '').slice(0, 200), cost: r.costUsd };
 }
 
+/** The posting's job description: the listing's own if it is one, else read from the page. { text, closed } */
 async function jobText(role) {
-  if (String(role.description || '').length > 300) return role.description;
-  const { fetchJobFromUrl } = await import('./jobEvaluator.js');
-  const r = await fetchJobFromUrl(role.apply_url).catch(() => null);
-  return String(r?.text || '').slice(0, 20000);
+  const { fetchJobFromUrl, looksLikeJobDescription } = await import('./jobEvaluator.js');
+  if (looksLikeJobDescription(role.description)) return { text: role.description, closed: false };
+  const r = await fetchJobFromUrl(role.apply_url, { company: role.company_name }).catch(() => null);
+  return { text: looksLikeJobDescription(r?.text) ? String(r.text).slice(0, 20000) : '', closed: Boolean(r?.closed) };
 }
+
+const unreadable = (closed) => (closed ? 'The posting looks closed' : 'Couldn’t read the posting');
 
 /**
  * Build tonight's plan for one user (idempotent per local date). Returns the plan row.
@@ -287,7 +290,8 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
     }
     let budgetErr = null;
     const scoreRole = async (base) => {
-      const jd = await jobText(base.role);
+      const got = await jobText(base.role);
+      const jd = got.text;
       if (sponsor && jd) {
         const s = classifySponsorship(jd);
         if (['citizens_only', 'no_sponsorship'].includes(s.status)) {
@@ -295,7 +299,7 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
           return;
         }
       }
-      if (jd.length < 200) { rows.push({ ...base, tier: 'low', reason: 'Couldn’t read the posting', score: null }); return; }
+      if (!jd) { rows.push({ ...base, tier: 'low', reason: unreadable(got.closed), score: null }); return; }
       const byText = looksLikeAgency(base.role.company_name, jd);
       if (byText.agency) { rows.push({ ...base, jd, tier: 'excluded', reason: byText.why }); return; }
       scoredCount += 1;
@@ -348,21 +352,30 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
 /**
  * Re-check a plan already built: drop agencies and re-score the roles still
  * waiting for a decision with the current scoring, then re-tier. Uses the
- * posting text saved on each item, so no page is fetched again.
+ * posting text saved on each item; a saved text that isn't a real job
+ * description (a pay box, page shell) is read again from the posting.
  */
 export async function refreshPlan(userId, planId) {
   const settings = await getSettings(userId);
   const profile = await profileFor(userId);
   const summary = await candidateSummary(userId);
   const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND decision = 'pending' AND tier IN ('top','worth')", [planId, userId]);
-  let removed = 0, rescored = 0, cost = 0;
+  let removed = 0, rescored = 0, reread = 0, cost = 0;
   for (let i = 0; i < items.length; i += SCORE_CONCURRENCY) {
     await Promise.all(items.slice(i, i + SCORE_CONCURRENCY).map(async (it) => {
       const a = looksLikeAgency(it.company_name, it.job_description || '');
       if (a.agency) { await run("UPDATE plan_items SET tier = 'excluded', reason = $2 WHERE id = $1", [it.id, a.why]); removed += 1; return; }
-      if (String(it.job_description || '').length < 200) return;
+      const { looksLikeJobDescription } = await import('./jobEvaluator.js');
+      let jd = it.job_description || '';
+      if (!looksLikeJobDescription(jd)) {
+        const got = await jobText({ description: '', apply_url: it.apply_url, company_name: it.company_name });
+        if (!got.text) { await run("UPDATE plan_items SET tier = 'low', score = NULL, reason = $2 WHERE id = $1", [it.id, unreadable(got.closed)]); reread += 1; return; }
+        jd = got.text;
+        await run('UPDATE plan_items SET job_description = $2 WHERE id = $1', [it.id, jd]);
+        reread += 1;
+      }
       try {
-        const s = await scoreOne({ userId, summary, profile, role: { title: it.title, company_name: it.company_name, location: it.location }, jd: it.job_description });
+        const s = await scoreOne({ userId, summary, profile, role: { title: it.title, company_name: it.company_name, location: it.location }, jd });
         cost += s.cost; rescored += 1;
         await run('UPDATE plan_items SET score = $2, reason = $3 WHERE id = $1', [it.id, s.score, s.why]);
       } catch (err) { if (err.status === 402) throw err; }
@@ -379,7 +392,7 @@ export async function refreshPlan(userId, planId) {
   const count = (t) => tiered.filter(r => r.tier === t).length;
   const stats = { ...(plan?.stats || {}), top: count('top'), worth: count('worth'), low: count('low'), excluded: count('excluded'), costUsd: Number((((plan?.stats || {}).costUsd || 0) + cost).toFixed(5)) };
   await run('UPDATE daily_plans SET stats = $2 WHERE id = $1', [planId, JSON.stringify(stats)]);
-  return { removed, rescored, cost: Number(cost.toFixed(5)), stats };
+  return { removed, rescored, reread, cost: Number(cost.toFixed(5)), stats };
 }
 
 // ── The evening email ───────────────────────────────────────────────────────

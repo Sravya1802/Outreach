@@ -246,7 +246,79 @@ async function fetchLeverJD(jobUrl) {
   } catch { return null; }
 }
 
-export async function fetchJobFromUrl(url) {
+// Is the fetched text a job description, or a pay box / page shell / error page?
+import { looksLikeJobDescription, looksClosed, linkedInJobId } from './postingText.js';
+export { looksLikeJobDescription, looksClosed, linkedInJobId };
+
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const tidy = (s) => String(s || '').replace(/&nbsp;/g, ' ').replace(/[ \t]+/g, ' ').replace(/\s{3,}/g, '\n\n').trim().slice(0, 8000);
+
+// LinkedIn: the public (logged-out) job page has the full description.
+async function fetchLinkedInJD(jobUrl) {
+  const id = linkedInJobId(jobUrl);
+  if (!id) return null;
+  // LinkedIn throttles bursts (429, or a page without the description): back off and retry twice.
+  const { load } = await import('cheerio');
+  for (const wait of [0, 3000, 8000]) {
+    if (wait) await new Promise(r => setTimeout(r, wait));
+    try {
+      const res = await fetch(`https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${id}`, { headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html' }, signal: AbortSignal.timeout(10000) });
+      if (res.status === 404 || res.status === 410) return null;
+      if (!res.ok) continue;
+      const $ = load(await res.text());
+      const title = $('.top-card-layout__title, .topcard__title').first().text().trim();
+      const body = $('.show-more-less-html__markup').first().text() || $('.description__text').first().text();
+      const text = tidy([title, body].filter(Boolean).join('\n\n'));
+      if (text.length > 300) return text;
+    } catch { /* retry */ }
+  }
+  return null;
+}
+
+// iCIMS: the page is a frame; the content is at the same URL with in_iframe=1.
+async function fetchIcimsJD(jobUrl) {
+  try {
+    const u = new URL(jobUrl);
+    if (!/\.icims\.com$/i.test(u.hostname) || !/\/jobs\/\d+/.test(u.pathname)) return null;
+    u.searchParams.set('in_iframe', '1');
+    const res = await fetch(u.href, { headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html' }, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const { load } = await import('cheerio');
+    const $ = load(await res.text());
+    $('script, style, nav, footer, header').remove();
+    const text = tidy($('.iCIMS_JobContent').first().text() || $('.iCIMS_MainWrapper').first().text() || $('body').text());
+    return text.length > 300 ? text : null;
+  } catch { return null; }
+}
+
+// A company careers page with ?gh_jid=<id> is a Greenhouse job behind the
+// company's own domain: ask Greenhouse's API under the likely board names.
+async function fetchGhJidJD(jobUrl, company) {
+  try {
+    const u = new URL(jobUrl);
+    const id = u.searchParams.get('gh_jid');
+    if (!/^\d+$/.test(id || '')) return null;
+    const host = u.hostname.replace(/^(www|careers|jobs)\./i, '').split('.')[0].toLowerCase();
+    const { slugsFor } = await import('./boardResolver.js');
+    for (const board of [...new Set([host, ...(company ? slugsFor(company) : [])])].slice(0, 5)) {
+      const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${id}?content=true`, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' }, signal: AbortSignal.timeout(10000) });
+      if (res.status === 404) {
+        const body = await res.json().catch(() => ({}));
+        if (/job not found/i.test(body?.error || '')) return { closed: true };
+        continue;
+      }
+      if (!res.ok) continue;
+      const data = await res.json();
+      const { load } = await import('cheerio');
+      const $ = load(`<div>${data?.content || ''}</div>`);
+      const text = tidy([data?.title, data?.location?.name, $('div').text()].filter(Boolean).join('\n\n'));
+      if (text.length > 300) return { text };
+    }
+    return null;
+  } catch { return null; }
+}
+
+export async function fetchJobFromUrl(url, { company } = {}) {
   // Try host-specific JSON APIs first — saves us from wasted plain-HTML
   // fetches against React/SPA boards that only return an empty shell.
   if (/myworkdayjobs\.com/i.test(url)) {
@@ -267,6 +339,19 @@ export async function fetchJobFromUrl(url) {
   if (/jobs\.lever\.co/i.test(url)) {
     const t = await fetchLeverJD(url);
     if (t) return { text: t, url, source: 'lever-api' };
+  }
+  if (linkedInJobId(url)) {
+    const t = await fetchLinkedInJD(url);
+    if (t) return { text: t, url, source: 'linkedin-guest' };
+  }
+  if (/\.icims\.com/i.test(url)) {
+    const t = await fetchIcimsJD(url);
+    if (t) return { text: t, url, source: 'icims-frame' };
+  }
+  if (/[?&]gh_jid=\d+/.test(url)) {
+    const g = await fetchGhJidJD(url, company);
+    if (g?.closed) return { text: null, url, closed: true, error: 'The posting looks closed (Greenhouse says the job isn’t found).' };
+    if (g?.text) return { text: g.text, url, source: 'greenhouse-api' };
   }
 
   try {
@@ -319,6 +404,12 @@ export async function fetchJobFromUrl(url) {
         url,
         error: `Page returned only ${text.length} chars of text — likely a JavaScript-rendered SPA. Use the Paste JD tab instead.`,
       };
+    }
+    // A login wall, pay box, page shell or error page isn't a job description.
+    if (!looksLikeJobDescription(text)) {
+      return looksClosed(text)
+        ? { text: null, url, closed: true, error: 'The posting looks closed.' }
+        : { text: null, url, error: 'The page didn’t show the job description (a login wall or an empty page). Use the Paste JD tab instead.' };
     }
     return { text, url };
   } catch (err) {

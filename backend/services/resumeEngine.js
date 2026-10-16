@@ -287,18 +287,16 @@ async function loadEvaluation(userId, evalId) {
   const ev = await one('SELECT id, job_title, company_name, job_description, job_url FROM evaluations WHERE id = $1 AND user_id = $2', [evalId, userId]);
   if (!ev) throw Object.assign(new Error('Evaluation not found'), { status: 404 });
   // Roles tracked from Jobs have no description yet: use the listing's, or read the posting.
-  if (str(ev.job_description).length < 200 && ev.job_url) {
+  const { fetchJobFromUrl, looksLikeJobDescription } = await import('./jobEvaluator.js');
+  if (!looksLikeJobDescription(ev.job_description) && ev.job_url) {
     let jd = (await one('SELECT description FROM scraped_roles WHERE apply_url = $1', [ev.job_url]))?.description || '';
-    if (str(jd).length < 200) {
-      const { fetchJobFromUrl } = await import('./jobEvaluator.js');
-      jd = (await fetchJobFromUrl(ev.job_url).catch(() => null))?.text || '';
-    }
-    if (str(jd).length >= 200) {
+    if (!looksLikeJobDescription(jd)) jd = (await fetchJobFromUrl(ev.job_url, { company: ev.company_name }).catch(() => null))?.text || '';
+    if (looksLikeJobDescription(jd)) {
       ev.job_description = str(jd).slice(0, 20000);
       await run('UPDATE evaluations SET job_description = $1 WHERE id = $2 AND user_id = $3', [ev.job_description, ev.id, userId]);
     }
   }
-  if (str(ev.job_description).length < 200) {
+  if (!looksLikeJobDescription(ev.job_description)) {
     throw Object.assign(new Error('This role has no job description saved. Evaluate it from the posting URL or paste the description first.'), { status: 400 });
   }
   return ev;

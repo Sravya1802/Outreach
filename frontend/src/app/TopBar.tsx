@@ -18,7 +18,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
   return (
-    <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-8 xl:gap-x-8">
+    <div className="app-frame flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 px-4 sm:px-8 xl:gap-x-8">
       <Link to="/home" className="font-display text-[22px] font-semibold tracking-tight text-fg">Scout’n’Jobs</Link>
 
       <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-0.5 xl:gap-1">

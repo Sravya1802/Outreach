@@ -5,6 +5,16 @@
 @import "tailwindcss";
 @import "./legacy.css" layer(legacy);
 
+/* The shared page width for the top bar, the section tabs and every page.
+   Centered, but once the window is wider than it, the frame sits up to 4rem
+   left of center so the floating Help button (bottom right) has its own room. */
+@layer components {
+  .app-frame { width: 100%; max-width: 80rem; margin-inline: auto; }
+  @media (min-width: 80rem) {
+    .app-frame { margin-left: max(0px, calc((100% - 80rem) / 2 - 4rem)); margin-right: auto; }
+  }
+}
+
 /* ── Design tokens ────────────────────────────────────────────────────────────
    Raw values live on --ui-*; Tailwind colours point at them so one
    data-theme switch re-themes every utility. Dark is the default. */

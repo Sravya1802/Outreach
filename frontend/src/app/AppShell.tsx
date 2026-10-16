@@ -33,7 +33,7 @@ function SectionTabs() {
     .find(t => pathname === t.to || pathname.startsWith(`${t.to}/`))
   return (
     <div className="border-b border-line">
-      <div className="mx-auto flex w-full max-w-7xl gap-6 overflow-x-auto px-4 sm:px-8">
+      <div className="app-frame flex gap-6 overflow-x-auto px-4 sm:px-8">
         {section.tabs.map(t => {
           const isActive = current?.to === t.to
           return (

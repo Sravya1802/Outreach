@@ -62,7 +62,7 @@ export default function TrackerPage() {
   const c = trackerCounts(all)
 
   return (
-    <Page>
+    <Page wide>
       <PageHeader
         title="Tracker"
         description="Every application in one sheet. Change a status as you hear back; roles the app applies to for you show up here on their own."
@@ -82,7 +82,7 @@ export default function TrackerPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search company or role" aria-label="Search company or role" className="w-full sm:w-64" />
-            <Segmented value={filter} onChange={setFilter} options={FILTERS} label="Show" />
+            <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={FILTERS} label="Show" /></div>
             <div className="ml-auto flex flex-wrap gap-2">
               <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add a row</Button>
               <Button variant="ghost" icon={<Upload className="size-4" />} loading={imported.isPending} onClick={() => file.current?.click()}>Import CSV</Button>
@@ -97,7 +97,7 @@ export default function TrackerPage() {
             <EmptyState title="No applications yet" description="Import your spreadsheet (File → Download → CSV in Google Sheets), or add a row. Roles you approve from the evening list appear here on their own." />
           ) : (
             <div className="overflow-x-auto rounded-[4px] border border-line">
-              <table className="w-full min-w-[980px] border-collapse text-left text-[14px]">
+              <table className="w-full min-w-[1040px] border-collapse text-left text-[14px]">
                 <thead className="bg-raised text-[12px] tracking-wide text-subtle uppercase">
                   <tr>
                     <th className="px-3 py-2 font-normal">Company</th>
@@ -195,20 +195,30 @@ function Pill({ value, options, tone, label, onChange }: { value: string; option
   )
 }
 
-/** Text you can edit in place; saves when you leave the cell or press Enter. */
+/** Text that wraps like a sheet cell; click it to edit, and it saves when you leave the cell or press Enter. */
 function CellText({ value, label, wide, onSave }: { value: string; label: string; wide?: boolean; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
-  const [was, setWas] = useState(value)
-  if (value !== was) { setWas(value); setDraft(value) }
-  const commit = () => { const v = draft.trim(); if (v && v !== value) onSave(v); else setDraft(value) }
+  const width = wide ? 'min-w-[16rem]' : 'min-w-[8rem] max-w-[12rem]'
+  if (!editing) {
+    return (
+      <button type="button" aria-label={`Edit ${label}`} onClick={() => { setDraft(value); setEditing(true) }}
+        className={cn('block w-full rounded-[3px] border border-transparent px-2 py-1.5 text-left leading-snug text-fg hover:border-line', width)}>
+        {value}
+      </button>
+    )
+  }
+  const commit = () => { setEditing(false); const v = draft.trim(); if (v && v !== value) onSave(v) }
   return (
-    <input
+    <textarea
+      autoFocus
       aria-label={label}
       value={draft}
+      rows={2}
       onChange={e => setDraft(e.target.value)}
       onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setDraft(value); e.currentTarget.blur() } }}
-      className={cn('h-8 w-full rounded-[3px] border border-transparent bg-transparent px-2 text-fg hover:border-line focus:border-accent focus:outline-none', wide ? 'min-w-[18rem]' : 'min-w-[9rem]')}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
+      className={cn('block w-full resize-none rounded-[3px] border border-accent bg-transparent px-2 py-1.5 leading-snug text-fg focus:outline-none', width)}
     />
   )
 }

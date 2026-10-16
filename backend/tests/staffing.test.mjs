@@ -8,7 +8,7 @@ test('agencies by name', () => {
 });
 
 test('real employers are kept, even with tricky words', () => {
-  for (const c of ['Salesforce', 'CoreWeave', 'Instacart', 'NIKE', 'VAST Data', 'Analog Devices', 'Hasbro', 'Talend', 'Hiretech Robotics', 'Eide Bailly', 'Accenture', 'Deloitte'])
+  for (const c of ['Salesforce', 'CoreWeave', 'Instacart', 'NIKE', 'VAST Data', 'Analog Devices', 'Hasbro', 'Talend', 'Hiretech Robotics', 'Eide Bailly', 'Accenture', 'Deloitte', 'BAE Systems, Inc.', 'Apple Inc', 'Cisco Systems', 'Oracle Consulting Services', 'Palantir Technologies'])
     assert.ok(!looksLikeAgency(c).agency, c);
 });
 

@@ -18,7 +18,7 @@ const KNOWN = [
 ];
 
 // Words that make a company name look like an agency.
-const NAME_PATTERN = /\b(staffing|recruit(ing|ment|ers)?|talent (solutions|group|partners|acquisition)|headhunt\w*|placement(s)?|manpower|workforce solutions|it solutions|consult(ing|ancy) (services|group|inc)|technolog(y|ies) solutions|infotech|systems inc|hiring)\b/i;
+const NAME_PATTERN = /\b(staffing|recruit(ing|ment|ers)?|talent (solutions|group|partners|acquisition)|headhunt\w*|placement(s)?|manpower|workforce solutions|it staffing|infotech solutions|hiring solutions)\b/i;
 const NAME_WORDS = /\b(talent|staff|recruit|hire|jobs?)\b/i;
 
 // Phrases agencies use in postings.

@@ -14,14 +14,14 @@ export function PageHeader({ title, description, actions }: { title: ReactNode; 
 
 /** Standard centred, max-width page body with consistent gutters. */
 export function Page({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
-  // The outer box matches the top bar's width so page content lines up with the
-  // wordmark; narrow pages cap their own width but stay left-aligned.
+  // The outer box matches the top bar's width; narrow pages cap their own width
+  // and sit in the middle of it, so every page reads as centered.
   // `relative` keeps absolutely positioned children (sr-only labels) inside the
   // scroller instead of stretching the document and scrolling the whole shell.
   return (
     <div className="relative flex-1 overflow-y-auto">
       <div className="app-frame px-4 pt-6 pb-24 sm:px-8 sm:pt-9">
-        <div className={wide ? '' : 'max-w-5xl'}>{children}</div>
+        <div className={wide ? '' : 'mx-auto max-w-5xl'}>{children}</div>
       </div>
     </div>
   )

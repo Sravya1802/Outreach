@@ -290,7 +290,7 @@ export default function HomePage() {
 
   return (
     <Page wide>
-      <header className="mb-8 max-w-4xl">
+      <header className="mx-auto mb-10 max-w-3xl text-center">
         <p className="text-[14px] text-subtle">{today}</p>
         <h1 className="mt-1 font-display text-[36px] leading-tight font-normal tracking-tight text-fg sm:text-[44px]">
           {greeting()}, {name}.
@@ -305,7 +305,7 @@ export default function HomePage() {
             </>
           )}
         </p>
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           <ButtonLink to="/jobs/roles/intern" variant="primary">Browse roles</ButtonLink>
           <ButtonLink to="/applications/evaluate">Evaluate a job</ButtonLink>
           {!setupDone && (

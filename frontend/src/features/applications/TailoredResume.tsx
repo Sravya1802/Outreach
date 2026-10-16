@@ -19,6 +19,7 @@ export function TailoredResume({ evalId, company, hasResume }: { evalId: number;
     queryFn: () => api.tailoring(evalId),
     refetchInterval: q => {
       const d = q.state.data as TailoringState | undefined
+      if (d?.resume?.status === 'running' && d.resume.batch) return 60_000
       return d?.resume?.status === 'running' || d?.cover_letter?.status === 'running' ? 4000 : false
     },
   })
@@ -68,7 +69,11 @@ export function TailoredResume({ evalId, company, hasResume }: { evalId: number;
           <span className="text-[13px] text-subtle">A few minutes · roughly $0.10–0.25 of your AI budget</span>
         </div>
       ) : running ? (
-        <p className="mt-5 flex items-center gap-2 text-[14px] text-muted" role="status"><Spinner /> Writing your resume for {company}… a few minutes, with a revision if a rule or target is missed.</p>
+        <p className="mt-5 flex items-center gap-2 text-[14px] text-muted" role="status"><Spinner />
+          {r.batch
+            ? `In tonight’s resume batch (half price). ${r.batch.phase.startsWith('revis') ? 'Revising it to meet your rules' : 'Writing it'}; usually ready within an hour.`
+            : `Writing your resume for ${company}… a few minutes, with a revision if a rule or target is missed.`}
+        </p>
       ) : r.status === 'failed' ? (
         <div className="mt-5 space-y-3">
           <p className="text-[14px] text-danger">{r.error || 'Something went wrong.'}</p>

@@ -37,6 +37,7 @@ import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
+import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
@@ -524,6 +525,13 @@ cron.schedule('*/5 * * * *', async () => {
     const r = await dailyPlanTick();
     if (r.built || r.emailed) console.log(`[daily-plan] built ${r.built}, emailed ${r.emailed}`);
   } catch (err) { console.error('[daily-plan] tick failed:', err.message); }
+}, CRON_OPTS);
+// Nightly resumes: send queued ones to Anthropic's batch API, pick up the finished ones.
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const r = await pumpResumeBatches();
+    if (r.collected || r.submitted) console.log(`[resume-batch] collected ${r.collected}, submitted ${r.submitted}`);
+  } catch (err) { console.error('[resume-batch] pass failed:', err.message); }
 }, CRON_OPTS);
 cron.schedule('*/10 * * * *', async () => {
   try {

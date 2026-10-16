@@ -23,7 +23,7 @@
  */
 
 import { all, one, run } from '../db.js';
-import { complete } from './llm.js';
+import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
@@ -423,9 +423,11 @@ function withProject(doc, p) {
   return { ...doc, projects: equalizeBullets(projects, 'Projects').entries };
 }
 
-async function context(userId, ev) {
+/** Everything a tailoring works from. `jd` reuses an analysis already made (a batch picking up where it left off). */
+async function context(userId, ev, jd = null) {
   const { master, parsed, cost: parseCost } = await parsedMaster(userId);
-  const jd = await extractKeywords({ title: ev.job_title, company: ev.company_name, description: ev.job_description, userId });
+  if (!jd) jd = await extractKeywords({ title: ev.job_title, company: ev.company_name, description: ev.job_description, userId });
+  else jd = { ...jd, cost: 0 };
   const [repos, planned, raw, preamble] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId)]);
   const kind = roleKind({ title: ev.job_title, company: ev.company_name, description: ev.job_description });
   const built = planned.filter(p => p.status === 'built');
@@ -484,49 +486,49 @@ function rowFields(ctx, final, judged, extra) {
   };
 }
 
-/** The tailoring itself. Returns the fields stored on the row. */
-export async function tailor(userId, ev, tailoringId = null) {
-  const ctx = await context(userId, ev);
-  let cost = ctx.cost;
-  const system = `${TAILOR_RULES}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned)}`;
-  const userMsg = `JOB: ${ctx.title} at ${ev.company_name}
+// ── The tailoring, as steps (run straight through, or paused between Opus calls in a batch) ──
+
+const DRAFT_MAX_TOKENS = 16000;
+
+function draftPrompt(ctx) {
+  const { ev } = ctx;
+  return {
+    system: `${TAILOR_RULES}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned)}`,
+    user: `JOB: ${ctx.title} at ${ev.company_name}
 ROLE TYPE: ${ctx.kind.quant ? 'quant/HFT/C++ (latency numbers allowed; Industry Experience may go above Research)' : 'not quant (no numbers in project bullets)'}${ctx.kind.finance ? '; finance' : ''}
 WHAT THIS ROLE IS REALLY HIRING FOR: ${ctx.focus.join('; ') || 'n/a'}
 ATS KEYWORDS (from the posting): ${ctx.keywords.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}
 
 JOB DESCRIPTION:
-${ev.job_description.slice(0, 7000)}`;
-
-  const draftCall = async (extra = '') => {
-    const r = await complete({ task: 'resume', system, user: userMsg + extra, schema: DRAFT_SCHEMA, maxTokens: 16000, timeoutMs: 300_000, userId });
-    cost += r.costUsd;
-    return { draft: parseJson(r.text), model: r.model };
+${ev.job_description.slice(0, 7000)}`,
   };
+}
 
-  // Pass 1, the recruiter check, and one revision if a target or rule is missed.
-  let { draft, model } = await draftCall();
-  let pass = await build(draft, ctx);
-  const beforeText = ctx.raw || masterText(ctx.parsed);
-  const atsBefore = beforeScore(ctx).score;
-  let judged = await judge(ctx, { beforeText, afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(err => { console.warn('[resumeEngine] judge failed:', err.message); return null; });
-  if (judged) cost += judged.cost;
-  const notes = revisionNotes(pass, judged, ctx.sourceText);
-  let revised = false;
-  if (notes.length) {
-    const second = await draftCall(`\n\nYOUR PREVIOUS DRAFT (JSON):\n${JSON.stringify(draft)}\n\nTHE CHECKERS FOUND:\n${notes.map(n => `- ${n}`).join('\n')}\n\nRevise the draft to fix these, keeping what already works, and return the full draft. Never invent facts to hit a target; if a target can't be reached honestly, leave it.`).catch(err => { console.warn('[resumeEngine] revision failed:', err.message); return null; });
-    if (second) {
-      const pass2 = await build(second.draft, ctx);
-      if (better(pass, pass2) === pass2) {
-        pass = pass2;
-        draft = second.draft;
-        model = second.model;
-        revised = true;
-        const j2 = await judge(ctx, { beforeText, afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null);
-        if (j2) { judged = j2; cost += j2.cost; }
-      }
-    }
-  }
+const revisionSuffix = (draft, notes) => `\n\nYOUR PREVIOUS DRAFT (JSON):\n${JSON.stringify(draft)}\n\nTHE CHECKERS FOUND:\n${notes.map(n => `- ${n}`).join('\n')}\n\nRevise the draft to fix these, keeping what already works, and return the full draft. Never invent facts to hit a target; if a target can't be reached honestly, leave it.`;
 
+async function recruiterCheck(ctx, pass, userId) {
+  return judge(ctx, { beforeText: ctx.raw || masterText(ctx.parsed), afterText: pass.text, atsBefore: beforeScore(ctx).score, atsAfter: pass.score.score, userId })
+    .catch(err => { console.warn('[resumeEngine] judge failed:', err.message); return null; });
+}
+
+/** A first draft → page, scores, recruiter check, and what a revision should fix ([] = none needed). */
+async function checkDraft(userId, ctx, draft) {
+  const pass = await build(draft, ctx);
+  const judged = await recruiterCheck(ctx, pass, userId);
+  return { pass, judged, notes: revisionNotes(pass, judged, ctx.sourceText), cost: judged?.cost || 0 };
+}
+
+/** Keep the revision only if it's better; re-check it if so. */
+async function takeRevision(userId, ctx, first, secondDraft) {
+  const pass2 = await build(secondDraft, ctx);
+  if (better(first.pass, pass2) !== pass2) return { revised: false, cost: 0 };
+  const judged = await recruiterCheck(ctx, pass2, userId);
+  return { draft: secondDraft, pass: pass2, judged: judged || first.judged, revised: true, cost: judged?.cost || 0 };
+}
+
+/** The project to build (if any), the PDF, and the row's fields. */
+async function finishTailoring(userId, ctx, { draft, pass, judged, model, revised, cost, tailoringId }) {
+  const { ev } = ctx;
   // A project Opus says the fit needs goes on this resume, waiting to be built.
   const proposal = await handleProposal(userId, draft, ctx, pass, tailoringId).catch(err => { console.warn('[resumeEngine] proposal failed:', err.message); return null; });
   let proposedProject = null;
@@ -536,7 +538,7 @@ ${ev.job_description.slice(0, 7000)}`;
       onPage: Boolean(withIt?.doc.projects.some(x => x.source === 'planned' && x.ref === String(proposal.id))) && keepProjectOnPage(pass.score.score, withIt?.score.score) };
     if (withIt && proposedProject.onPage) {
       pass = withIt;
-      const j3 = await judge(ctx, { beforeText, afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null);
+      const j3 = await recruiterCheck(ctx, pass, userId);
       if (j3) { judged = j3; cost += j3.cost; }
     }
   }
@@ -552,6 +554,166 @@ ${ev.job_description.slice(0, 7000)}`;
     judgeModel: judged?.model || null,
   });
   return { ...fields, master_file_id: ctx.master.id, file_id: file.id, cost_usd: Number(cost.toFixed(5)) };
+}
+
+/** The tailoring, straight through (the "Tailor my resume" button). Returns the fields stored on the row. */
+export async function tailor(userId, ev, tailoringId = null) {
+  const ctx = await context(userId, ev);
+  let cost = ctx.cost;
+  const prompt = draftPrompt(ctx);
+  const draftCall = async (extra = '') => {
+    const r = await complete({ task: 'resume', system: prompt.system, user: prompt.user + extra, schema: DRAFT_SCHEMA, maxTokens: DRAFT_MAX_TOKENS, timeoutMs: 300_000, userId });
+    cost += r.costUsd;
+    return { draft: parseJson(r.text), model: r.model };
+  };
+
+  // Pass 1, the recruiter check, and one revision if a target or rule is missed.
+  const first = await draftCall();
+  const checked = await checkDraft(userId, ctx, first.draft);
+  cost += checked.cost;
+  let state = { draft: first.draft, pass: checked.pass, judged: checked.judged, model: first.model, revised: false };
+  if (checked.notes.length) {
+    const second = await draftCall(revisionSuffix(first.draft, checked.notes)).catch(err => { console.warn('[resumeEngine] revision failed:', err.message); return null; });
+    if (second) {
+      const r = await takeRevision(userId, ctx, state, second.draft);
+      cost += r.cost;
+      if (r.revised) state = { ...state, ...r, model: second.model };
+    }
+  }
+  return finishTailoring(userId, ctx, { ...state, cost, tailoringId });
+}
+
+// ── Batches: the nightly resumes at half price ──────────────────────────────
+//
+// A row started with { batch: true } waits in resume_tailorings.batch:
+//   queued → drafting (Opus batch) → revise_queued → revising (Opus batch) → done
+// pumpBatches() (every 5 minutes) submits what's queued and picks up what's
+// back. Most batches end within an hour. A request that errors or expires is
+// sent once more; then the row fails (or, for a revision, keeps the first draft).
+
+const BATCH_STALE_HOURS = 26;
+
+async function setBatch(id, batch) {
+  await run('UPDATE resume_tailorings SET batch = $2 WHERE id = $1', [id, JSON.stringify(batch)]);
+}
+
+async function failRow(id, message) {
+  await finish(id, { status: 'failed', error: String(message).slice(0, 500), batch: null });
+}
+
+/** Submit every queued draft and revision, one batch per user and step. */
+async function submitQueued() {
+  const rows = await all("SELECT * FROM resume_tailorings WHERE status = 'running' AND batch->>'phase' IN ('queued', 'revise_queued') ORDER BY id LIMIT 200");
+  const groups = new Map();
+  for (const r of rows) {
+    const key = `${r.user_id}:${r.batch.phase}`;
+    groups.set(key, [...(groups.get(key) || []), r]);
+  }
+  let submitted = 0;
+  for (const rowsOf of groups.values()) {
+    const userId = rowsOf[0].user_id;
+    const items = [];
+    const ready = [];
+    for (const r of rowsOf) {
+      try {
+        const ev = await loadEvaluation(userId, r.evaluation_id);
+        const ctx = await context(userId, ev, r.batch.jd || null);
+        const prompt = draftPrompt(ctx);
+        const revising = r.batch.phase === 'revise_queued';
+        const id = `t${r.id}-${revising ? 'r' : 'd'}${r.batch.tries || 0}`;
+        items.push({ id, system: prompt.system, user: prompt.user + (revising ? revisionSuffix(r.batch.draft, r.batch.notes) : ''), schema: DRAFT_SCHEMA, maxTokens: DRAFT_MAX_TOKENS });
+        ready.push({ r, id, jd: { keywords: ctx.keywords, focus: ctx.focus, title: ctx.title }, cost: ctx.cost });
+      } catch (err) {
+        await failRow(r.id, err.message);
+      }
+    }
+    if (!items.length) continue;
+    try {
+      const { batchId } = await submitBatch({ task: 'resume', items, userId });
+      for (const x of ready) {
+        await setBatch(x.r.id, { ...x.r.batch, phase: x.r.batch.phase === 'queued' ? 'drafting' : 'revising', batchId, customId: x.id, jd: x.jd, cost: Number(x.r.batch.cost || 0) + x.cost, submittedAt: new Date().toISOString() });
+      }
+      submitted += items.length;
+    } catch (err) {
+      for (const x of ready) await failRow(x.r.id, err.message);
+    }
+  }
+  return submitted;
+}
+
+/** Pick up finished batches and move each row on. */
+async function collectFinished() {
+  const rows = await all("SELECT * FROM resume_tailorings WHERE status = 'running' AND batch->>'phase' IN ('drafting', 'revising') ORDER BY id LIMIT 200");
+  let done = 0;
+  for (const batchId of [...new Set(rows.map(r => r.batch.batchId))]) {
+    const mine = rows.filter(r => r.batch.batchId === batchId);
+    let results;
+    try {
+      results = await collectBatch({
+        task: 'resume',
+        batchId,
+        owners: Object.fromEntries(mine.map(r => [r.batch.customId, r.user_id])),
+        maxTokens: Object.fromEntries(mine.map(r => [r.batch.customId, DRAFT_MAX_TOKENS])),
+      });
+    } catch (err) {
+      console.warn(`[resumeEngine] batch ${batchId}:`, err.message);
+      continue;
+    }
+    if (!results) {
+      for (const r of mine) {
+        if (Date.now() - new Date(r.batch.submittedAt).getTime() > BATCH_STALE_HOURS * 3600_000) await failRow(r.id, 'The resume batch never finished. Try again.');
+      }
+      continue;
+    }
+    for (const r of mine) {
+      await moveOn(r, results.get(r.batch.customId)).catch(async (err) => {
+        console.error(`[resumeEngine] batch row #${r.id}:`, err.message);
+        await failRow(r.id, err.message);
+      });
+      done += 1;
+    }
+  }
+  return done;
+}
+
+/** One row's batch result → the next step (a revision) or the finished resume. */
+async function moveOn(r, res) {
+  const b = r.batch;
+  const cost = Number(b.cost || 0) + Number(res?.costUsd || 0);
+  const revising = b.phase === 'revising';
+  if (!res?.ok) {
+    if (res?.retry && (b.tries || 0) < 1) { await setBatch(r.id, { ...b, phase: revising ? 'revise_queued' : 'queued', tries: (b.tries || 0) + 1, cost }); return; }
+    if (!revising) { await failRow(r.id, res?.error || 'The resume batch returned nothing for this role.'); return; }
+  }
+  const ev = await loadEvaluation(r.user_id, r.evaluation_id);
+  const ctx = await context(r.user_id, ev, b.jd);
+  if (!revising) {
+    const draft = parseJson(res.text);
+    const checked = await checkDraft(r.user_id, ctx, draft);
+    if (checked.notes.length) {
+      await setBatch(r.id, { ...b, phase: 'revise_queued', tries: 0, draft, notes: checked.notes, model: res.model, cost: cost + checked.cost });
+      return;
+    }
+    await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { draft, pass: checked.pass, judged: checked.judged, model: res.model, revised: false, cost: cost + checked.cost, tailoringId: r.id })), batch: null });
+    return;
+  }
+  // The revision is back (or failed for good, in which case the first draft stands).
+  const first = await checkDraft(r.user_id, ctx, b.draft);
+  let state = { draft: b.draft, pass: first.pass, judged: first.judged, model: b.model, revised: false };
+  let extra = first.cost;
+  if (res?.ok) {
+    const t = await takeRevision(r.user_id, ctx, state, parseJson(res.text));
+    extra += t.cost;
+    if (t.revised) state = { ...state, ...t, model: res.model };
+  }
+  await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { ...state, cost: cost + extra, tailoringId: r.id })), batch: null });
+}
+
+/** Every 5 minutes: pick up finished resume batches, then send what's queued. */
+export async function pumpBatches() {
+  const collected = await collectFinished();
+  const submitted = await submitQueued();
+  return { collected, submitted };
 }
 
 export async function writeCoverLetter(userId, ev) {
@@ -600,15 +762,23 @@ const running = new Set();
  * Start a tailoring or cover letter in the background. Returns the new row,
  * or the one already running for this role.
  */
-export async function start(userId, evalId, kind = 'resume') {
+export async function start(userId, evalId, kind = 'resume', { batch = false } = {}) {
   const ev = await loadEvaluation(userId, evalId);
   const busy = await one(
     `SELECT * FROM resume_tailorings WHERE user_id = $1 AND evaluation_id = $2 AND kind = $3 AND status = 'running'
-       AND created_at > NOW() - INTERVAL '${STALE_MINUTES} minutes' ORDER BY id DESC LIMIT 1`,
+       AND (created_at > NOW() - INTERVAL '${STALE_MINUTES} minutes' OR (batch IS NOT NULL AND created_at > NOW() - INTERVAL '${BATCH_STALE_HOURS} hours'))
+      ORDER BY id DESC LIMIT 1`,
     [userId, ev.id, kind],
   );
   if (busy) return busy;
   if (kind === 'resume') await currentMaster(userId).then(m => { if (!m) throw Object.assign(new Error('Upload your master resume on Profile → Resume first.'), { status: 400 }); });
+  if (batch && kind === 'resume') {
+    // Half price: waits for pumpBatches() to send it with the rest of tonight's resumes.
+    return (await run(
+      "INSERT INTO resume_tailorings (user_id, evaluation_id, kind, batch) VALUES ($1, $2, 'resume', $3) RETURNING *",
+      [userId, ev.id, JSON.stringify({ phase: 'queued', queuedAt: new Date().toISOString() })],
+    )).rows[0];
+  }
   const row = (await run(
     'INSERT INTO resume_tailorings (user_id, evaluation_id, kind) VALUES ($1, $2, $3) RETURNING *',
     [userId, ev.id, kind],
@@ -635,7 +805,8 @@ export async function latest(userId, evalId) {
   );
   const out = { resume: null, cover_letter: null };
   for (const r of rows) {
-    if (r.status === 'running' && !running.has(Number(r.id)) && Date.now() - new Date(r.created_at).getTime() > STALE_MINUTES * 60_000) {
+    const staleAfter = r.batch ? BATCH_STALE_HOURS * 3600_000 : STALE_MINUTES * 60_000;
+    if (r.status === 'running' && !running.has(Number(r.id)) && Date.now() - new Date(r.created_at).getTime() > staleAfter) {
       r.status = 'failed';
       r.error = 'The server restarted while this was running. Try again.';
     }

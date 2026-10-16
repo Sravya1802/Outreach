@@ -9,7 +9,7 @@
 //                                        quality is never quietly downgraded.
 import OpenAI from 'openai';
 import { all, one, run } from '../db.js';
-import { claudeMessage, hasClaudeKey } from './claude.js';
+import { claudeMessage, hasClaudeKey, claudeBatchSubmit, claudeBatchStatus, claudeBatchResults } from './claude.js';
 import { currentUserId } from './requestContext.js';
 
 // USD per 1M tokens: [input, cached input, output]. Rounded up where sources
@@ -175,4 +175,52 @@ export async function usageSummary(userId) {
     ),
   ]);
   return { since, caps: caps(), spent: s, byTask };
+}
+
+// ── Batches (Claude only, 50% off) ──────────────────────────────────────────
+// For work that can wait up to an hour or so (the nightly resumes). The same
+// budget caps apply, checked up front on the worst case at the batch price.
+
+export const BATCH_DISCOUNT = 0.5;
+
+/**
+ * Submit [{ id, system, user, schema, maxTokens }] for one Claude task as a
+ * batch. Returns { batchId, model }. Throws BudgetExceededError like complete().
+ */
+export async function submitBatch({ task, items, userId }) {
+  const step = (ROUTES[task] || []).find(s => s.provider === 'anthropic');
+  if (!step) throw new Error(`Task ${task} has no Claude route to batch`);
+  if (!hasClaudeKey()) throw Object.assign(new Error('Resume writing needs the Claude API key, which isn’t set on the server.'), { status: 503 });
+  const key = `${step.provider}:${step.model}`;
+  const estimate = items.reduce((sum, it) => sum + estimateCost(key, { system: it.system, user: it.user, maxTokens: it.maxTokens || 4000 }), 0) * BATCH_DISCOUNT;
+  await assertBudget(userId, estimate);
+  const r = await claudeBatchSubmit(items.map(it => ({
+    customId: it.id, system: it.system, user: it.user, schema: it.schema, maxTokens: it.maxTokens, effort: step.effort,
+    cacheSystem: Boolean(it.system && it.system.length > 4000),
+  })));
+  return { batchId: r.id, model: step.model };
+}
+
+/**
+ * Results of a batch once it has ended (null while it's still running):
+ * Map(id → { ok, text, costUsd, model } | { ok: false, error, retry }).
+ * Usage is recorded per item at the batch price, under each item's user.
+ */
+export async function collectBatch({ task, batchId, owners = {}, maxTokens = {} }) {
+  if ((await claudeBatchStatus(batchId)) !== 'ended') return null;
+  const out = new Map();
+  for (const r of await claudeBatchResults(batchId, maxTokens)) {
+    const model = r.model || (ROUTES[task] || []).find(s => s.provider === 'anthropic')?.model;
+    let costUsd = 0;
+    if (r.usage) {
+      costUsd = costOf(`anthropic:${model}`, r.usage) * BATCH_DISCOUNT;
+      await run(
+        `INSERT INTO ai_usage (user_id, task, provider, model, input_tokens, cached_input_tokens, output_tokens, cost_usd, ok, error)
+              VALUES ($1, $2, 'anthropic', $3, $4, $5, $6, $7, $8, $9)`,
+        [owners[r.customId] || null, `${task}_batch`, model, r.usage.input || 0, r.usage.cachedInput || 0, r.usage.output || 0, costUsd, r.ok, r.ok ? null : String(r.error).slice(0, 300)],
+      ).catch(err => console.warn('[llm] batch usage not recorded:', err.message));
+    }
+    out.set(r.customId, { ...r, costUsd });
+  }
+  return out;
 }

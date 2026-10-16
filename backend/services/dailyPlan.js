@@ -491,7 +491,11 @@ export async function approveAllTop(userId, planId) {
 
 // ── Moving approved roles along (cron) ──────────────────────────────────────
 
+// Resumes for approved roles go through Anthropic's batch API (half price,
+// usually back within an hour), so they don't hold the server and need no cap.
+// RESUME_BATCH=off runs them straight through, two at a time.
 const MAX_TAILORING_AT_ONCE = 2;
+const batched = () => process.env.RESUME_BATCH !== 'off';
 
 /** Start resumes for approved roles and act on finished ones. */
 export async function advanceUser(userId) {
@@ -509,9 +513,9 @@ export async function advanceUser(userId) {
   let runningNow = items.filter(i => i.tailoring_id && i.t_status === 'running').length;
   for (const i of items) {
     if (i.stage === 'tailoring' && !i.tailoring_id) {
-      if (runningNow >= MAX_TAILORING_AT_ONCE) continue;
+      if (!batched() && runningNow >= MAX_TAILORING_AT_ONCE) continue;
       try {
-        const t = await startTailoring(userId, i.evaluation_id, 'resume');
+        const t = await startTailoring(userId, i.evaluation_id, 'resume', { batch: batched() });
         await run('UPDATE plan_items SET tailoring_id = $2 WHERE id = $1', [i.id, t.id]);
         runningNow += 1;
       } catch (err) {

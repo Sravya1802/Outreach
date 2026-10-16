@@ -636,6 +636,8 @@ export interface Tailoring {
   finished_at: string | null
   file_id: number | null
   filename: string | null
+  /** Set while a nightly resume waits in Anthropic's batch (half price). */
+  batch?: { phase: 'queued' | 'drafting' | 'revise_queued' | 'revising'; submittedAt?: string } | null
 }
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
 /** The LaTeX preamble resumes are built in. */

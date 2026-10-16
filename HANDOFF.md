@@ -124,6 +124,19 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-16 — Evening list reads the real posting; junk text isn't scored
+- **Why:** 9 of the 20 top roles on the 10-15 list scored 9.4–9.8 on text that wasn't a job description: LinkedIn's pay-range box (Whatnot, AmEx, WD, Switchboard, U Michigan, Valon), an iCIMS frame (i3 Corps), a careers-page shell (Instacart) and a "no open positions" page (VAST Data). With no requirements in the text, the scorer had nothing to mark down.
+- **What** (`24d4152`):
+  - [postingText.js](backend/services/postingText.js) `looksLikeJobDescription`: at least 500 chars, not a known shell, and at least 2 kinds of JD language. `looksClosed` spots closed postings.
+  - New fetchers in `fetchJobFromUrl`, which now takes `{ company }`:
+    - LinkedIn's public job page (`/jobs-guest/jobs/api/jobPosting/<id>`), retried with backoff because LinkedIn throttles bursts
+    - the iCIMS `in_iframe=1` frame
+    - the Greenhouse API for `?gh_jid=` links on company domains ("Job not found" = closed)
+  - The generic HTML path now rejects non-JD text.
+  - `dailyPlan.jobText` returns `{ text, closed }`. Unreadable roles go to tier low as "Couldn’t read the posting" or "The posting looks closed", unscored. `refreshPlan` re-reads saved junk text before rescoring. The resume engine's `loadEvaluation` uses the same check.
+- **Measured on the 9:** 7 now read (5 via LinkedIn, i3 via iCIMS, plus a retry for 2 LinkedIn ones that were throttled the first time). Instacart and VAST Data are closed.
+- **Status:** live, VM 183/183.
+
 ### 2026-10-16 — Resume engine follows the user's resume rules; own LaTeX template; suggested projects
 - **Why:** the user pasted the prompt they always use for resumes (truth-first keyword mapping, bullet rules, section order, ATS 95% / callback 20% targets, verdict apply / referral / skip) and asked that the AI suggest a project when needed, which they build and push.
 - **Rules in code** ([resumeRules.js](backend/services/resumeRules.js)): no em dashes / "responsible for" / "helped"; 1–2 line bullets, with a 3rd line only when 80% full (121 chars a line, measured on the template); no repeated verb; equal bullets per section (a 1-bullet entry drops out); project metrics only for quant/HFT/C++ roles (`roleKind`); Research before Industry, Industry first for quant; projects newest first; ≤6 skill groups of 8, most relevant first; Bloomberg first for finance roles, last otherwise; bold metrics + the job's tools (`metricSpans` skips versions like C++17, GPT-4, Llama 3.3 70B).

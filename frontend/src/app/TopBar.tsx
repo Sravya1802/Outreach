@@ -3,6 +3,7 @@ import { Moon, Search, Sun } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Kbd, StatusDot, type Tone } from '@/ui'
 import { AccountMenu } from './AccountMenu'
+import { HelpButton } from './tour/HelpButton'
 import { PRIMARY_SECTIONS, sectionFor } from './nav'
 import { useServiceHealth } from './queries'
 import { useTheme } from './theme'
@@ -27,7 +28,7 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           return (
             // Plain Link: the active section comes from sectionFor() (detail pages
             // belong to Jobs), and NavLink would override aria-current.
-            <Link key={s.id} to={s.to} aria-current={isActive ? 'page' : undefined}
+            <Link key={s.id} to={s.to} data-tour={`nav-${s.id}`} aria-current={isActive ? 'page' : undefined}
               className={cn('border-b-2 px-2 py-2 text-[14px] whitespace-nowrap transition-colors xl:px-3',
                 isActive ? 'border-accent font-semibold text-fg' : 'border-transparent text-muted hover:text-fg')}>
               {s.label}
@@ -46,7 +47,8 @@ export function TopBar({ onOpenPalette }: { onOpenPalette: () => void }) {
             <Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd><Kbd>K</Kbd>
           </span>
         </button>
-        <Link to="/usage" title={isLoading ? 'Checking services…' : overall.label}
+        <HelpButton showLabel />
+        <Link to="/usage" data-tour="status" title={isLoading ? 'Checking services…' : overall.label}
           aria-label={`Service status: ${isLoading ? 'checking' : overall.label}`}
           className="grid size-8 place-items-center rounded-[4px] hover:bg-hover">
           <StatusDot tone={isLoading ? 'neutral' : healthTone[overall.state] ?? 'neutral'} />

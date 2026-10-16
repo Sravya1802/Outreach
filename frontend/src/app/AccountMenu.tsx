@@ -27,7 +27,7 @@ export function AccountMenu() {
 
   return (
     <div ref={root} className="relative">
-      <button ref={button} type="button" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
+      <button ref={button} type="button" data-tour="account" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
         aria-label={`Account menu for ${email}`} title={email}
         className={cn('grid size-8 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent ring-offset-2 ring-offset-canvas transition',
           (open || inMenu) && 'ring-2 ring-accent')}>

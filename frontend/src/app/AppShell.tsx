@@ -12,6 +12,8 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { HelpButton } from './tour/HelpButton'
+import { TourProvider } from './tour/Tour'
 
 function IntegrationDot({ id }: { id: NonNullable<NavTab['integration']> }) {
   const { cards } = useIntegrations()
@@ -69,6 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [])
 
   return (
+    <TourProvider>
     <div className="flex h-full flex-col overflow-hidden bg-canvas text-fg">
       <header className="shrink-0">
         <div className="hidden border-b border-line lg:block">
@@ -79,7 +82,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="rounded-[4px] p-1.5 text-muted hover:bg-hover hover:text-fg">
             <Menu className="size-5" />
           </button>
-          <span className="font-display text-[18px] font-semibold">Scout’n’Jobs</span>
+          <span className="flex-1 font-display text-[18px] font-semibold">Scout’n’Jobs</span>
+          <HelpButton />
         </div>
         <SectionTabs />
       </header>
@@ -105,5 +109,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {paletteOpen && <CommandPalette onClose={closePalette} />}
     </div>
+    </TourProvider>
   )
 }

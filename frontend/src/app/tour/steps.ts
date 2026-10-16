@@ -35,7 +35,7 @@ export function tourSteps(): TourStep[] {
     { id: 'status', anchor: 'status', title: 'Service status',
       body: 'Green means everything the app relies on is working. Amber or red means something is down; click it to see what on Usage.' },
     { id: 'help', anchor: 'help', title: 'Help is always here',
-      body: 'Help sits in the bottom-right corner on every page. Open it to replay this tour or look up what any tab does.' },
+      body: 'The ? button in the bottom-right corner is on every page. Click it to replay this tour or look up what any tab does.' },
   ]
 }
 

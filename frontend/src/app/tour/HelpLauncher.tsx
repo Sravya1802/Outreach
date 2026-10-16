@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, ChevronRight, CircleHelp, X } from 'lucide-react'
+import { ArrowRight, ChevronRight, X } from 'lucide-react'
 import { GUIDE } from '@/features/howitworks/walkthrough'
 import { cn } from '@/lib/cn'
 import { Button } from '@/ui'
@@ -79,11 +79,10 @@ export function HelpLauncher() {
           </footer>
         </section>
       )}
-      <button ref={button} type="button" data-tour="help" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="Help"
-        className={cn('flex h-11 items-center gap-2 rounded-full border border-line bg-surface pr-4 pl-3 text-[14px] font-medium text-fg shadow-pop transition-colors hover:border-line-strong',
-          open && 'border-accent text-accent')}>
-        <CircleHelp className="size-5 text-accent" aria-hidden="true" />
-        Help
+      <button ref={button} type="button" data-tour="help" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="Help" title="Help"
+        className={cn('grid size-11 place-items-center rounded-full bg-accent text-on-accent shadow-pop transition-colors hover:bg-accent-hover',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent')}>
+        {open ? <X className="size-5" aria-hidden="true" /> : <span aria-hidden="true" className="text-[22px] leading-none font-semibold">?</span>}
       </button>
     </div>
   )

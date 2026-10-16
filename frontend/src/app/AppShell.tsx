@@ -13,6 +13,7 @@ import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { HelpLauncher } from './tour/HelpLauncher'
+import { NewVersionBar } from './NewVersion'
 import { TourProvider } from './tour/Tour'
 
 function IntegrationDot({ id }: { id: NonNullable<NavTab['integration']> }) {
@@ -74,6 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <TourProvider>
     <div className="flex h-full flex-col overflow-hidden bg-canvas text-fg">
       <header className="shrink-0">
+        <NewVersionBar />
         <div className="hidden border-b border-line lg:block">
           <TopBar onOpenPalette={openPalette} />
         </div>

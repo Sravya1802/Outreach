@@ -70,7 +70,10 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: 'how', label: 'How it works', icon: CircleHelp, to: '/how-it-works',
-    tabs: [{ label: 'How it works', to: '/how-it-works', keywords: 'queue pipeline steps evening list referral apply emails outreach follow up explained help' }],
+    tabs: [
+      { label: 'Walkthrough', to: '/how-it-works', keywords: 'tour guide help what does each tab do explained new start here' },
+      { label: 'Your queue, live', to: '/how-it-works/flow', keywords: 'queue pipeline steps evening list referral apply emails outreach follow up explained' },
+    ],
   },
   {
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',

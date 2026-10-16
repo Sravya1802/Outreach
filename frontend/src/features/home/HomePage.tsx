@@ -15,7 +15,6 @@ import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
 import { Button, ButtonLink, ErrorState, Page, Skeleton, Spinner, useToast } from '@/ui'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
 import { needsYouCount, todayItems, type TodayTone } from './today'
-import { Walkthrough } from './Walkthrough'
 
 function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -275,11 +274,15 @@ export default function HomePage() {
         <div className="mt-5 flex flex-wrap gap-2">
           <ButtonLink to="/jobs/roles/intern" variant="primary">Browse roles</ButtonLink>
           <ButtonLink to="/applications/evaluate">Evaluate a job</ButtonLink>
+          {!setupDone && (
+            <Link to="/how-it-works" className="inline-flex items-center gap-1.5 px-2 text-[14px] font-medium text-accent hover:underline">
+              New here? See what each tab does <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+          )}
         </div>
       </header>
 
       <div className="space-y-10">
-        <Walkthrough hidden={setupDone} />
         <SetupChecklist onComplete={onSetup} />
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-10">

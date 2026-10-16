@@ -21,6 +21,7 @@ const WhatsAppPage = lazyWithRetry(() => import('@/features/integrations/WhatsAp
 const UsagePage = lazyWithRetry(() => import('@/features/usage/UsagePage'), 'UsagePage')
 const DashboardPage = lazyWithRetry(() => import('@/features/dashboard/DashboardPage'), 'DashboardPage')
 const HowItWorksPage = lazyWithRetry(() => import('@/features/howitworks/HowItWorksPage'), 'HowItWorksPage')
+const WalkthroughPage = lazyWithRetry(() => import('@/features/howitworks/WalkthroughPage'), 'WalkthroughPage')
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
@@ -95,7 +96,8 @@ function SignedInRoutes() {
         <Route path="/integrations/whatsapp" element={<WhatsAppPage />} />
         <Route path="/integrations/services" element={<Navigate to="/usage" replace />} />
         <Route path="/usage" element={<UsagePage />} />
-        <Route path="/how-it-works" element={<HowItWorksPage />} />
+        <Route path="/how-it-works" element={<WalkthroughPage />} />
+        <Route path="/how-it-works/flow" element={<HowItWorksPage />} />
 
         <Route path="/settings/*" element={<SettingsPage />} />
 

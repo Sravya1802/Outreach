@@ -1196,3 +1196,8 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **What:** `--frame-shift` is now 2rem instead of 4rem ([app.css](frontend/src/styles/app.css)). `.app-frame-page` max-width now subtracts the actual left margin too, so the content never runs into Help at in-between widths. The user wants it kept this way.
 - **Measured on prod (Home):** at 1470px the content starts 95px from the left (it was 127px before any shift, 63px at 4rem) with a 47px gap to Help. At 1400, 1280 and 1024px the gap is 32px. No horizontal scroll.
 - **Status:** `978bce8` live. `npm run check` green (90 tests).
+
+### 2026-10-15 — Help is a round ? button; frame shift 1rem
+- **What:** User asked for the page to go "even more right" and for a question-mark button instead of the "Help" pill. The launcher is now a 44px accent circle with "?" (it shows × while the panel is open), `aria-label="Help"`. `--frame-shift` went from 2rem to 1rem. `.app-frame-page` now reserves 4.5rem for the smaller button instead of 7rem. The tour's last step text mentions the ? button.
+- **Measured on prod (Home):** at 1470px the content starts 111px from the left (it was 127px before any shift) with a 75px gap to the ? button. At 1400px the gap is 40px; at 1280px and 1024px it is 36px. The tour and Help panel test passed again: 12 steps, flag saved, panel, Escape, no page errors.
+- **Status:** `c9610a8` live. `npm run check` green (91 tests).

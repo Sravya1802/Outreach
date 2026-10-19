@@ -36,7 +36,7 @@ export default function ProjectsPage() {
       {state.error ? <ErrorState error={state.error} onRetry={() => void state.refetch()} /> : state.isLoading ? <Skeleton className="h-60" /> : (
         <div className="space-y-8">
           <p className="text-[13px] text-subtle">
-            {busy ? 'Reading the roles on your last two weeks of lists and what they ask for. This takes a minute or two.'
+            {busy ? 'Reading the roles on your last two weeks of lists and what they ask for. This takes a few minutes.'
               : d?.lastRunAt ? `Last checked ${timeAgo(d.lastRunAt)}. Refreshed every Sunday morning.` : 'Refreshed every Sunday morning, or press the button.'}
             {!busy && d?.note && <span className="block text-muted">{d.note}.</span>}
           </p>

@@ -74,6 +74,9 @@ test('gaps across roles: counted once per role, skills you show left out, most a
   ];
   const gaps = gapsAcross(roles, 'Python, Docker, AWS');
   assert.deepEqual(gaps.map(g => [g.term, g.roles, g.required]), [['LangGraph', 3, 2], ['Go', 2, 1], ['Kubernetes', 1, 1]]);
+  // Generic words aren't gaps; CI/CD and Continuous Integration are one skill.
+  const g2 = gapsAcross([[k('Software Engineering'), k('Debugging'), k('CI/CD')], [k('Continuous Integration'), k('Object-Oriented Programming')]], 'Python');
+  assert.deepEqual(g2.map(g => [g.term, g.roles]), [['CI/CD', 2]]);
 });
 
 test('dashes and filler are caught; dashes become commas', () => {

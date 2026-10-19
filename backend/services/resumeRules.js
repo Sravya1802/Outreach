@@ -19,7 +19,7 @@
  * characters (measured on the 10pt template with 0.4in margins).
  */
 
-import { hasTerm, weightOf } from './ats.js';
+import { hasTerm, weightOf, canonicalTerm } from './ats.js';
 
 export const CHARS_PER_LINE = 121;
 export const MAX_SKILL_GROUPS = 6;
@@ -416,12 +416,15 @@ export function diffChanges(master, doc, keywords = [], projectWhy = {}) {
  * Hard skills the roles ask for that the candidate doesn't show, most asked first:
  * [{ term, roles, required }]. `keywordsPerRole` is one keyword list per role.
  */
+// Words every engineering posting uses; a resume shows them through its work, not as a phrase.
+const GENERIC = /^(software (development|engineering|design)( lifecycle| life cycle)?|sdlc|object[- ]oriented (programming|design)|oop|debugging|testing|agile|scrum|problem[- ]solving|programming|coding|computer science|data structures( (and|&) algorithms)?|algorithms|engineering|development|software|communication|collaboration|teamwork|documentation|code review|best practices)$/i;
+
 export function gapsAcross(keywordsPerRole, sourceText) {
   const byTerm = new Map();
   keywordsPerRole.forEach((keywords, i) => {
     for (const k of list(keywords)) {
-      if (k.kind === 'soft' || hasTerm(sourceText, k)) continue;
-      const key = str(k.term).toLowerCase();
+      if (k.kind === 'soft' || GENERIC.test(str(k.term)) || hasTerm(sourceText, k)) continue;
+      const key = canonicalTerm(k.term);
       const g = byTerm.get(key) || { term: k.term, aliases: k.aliases || [], roles: new Set(), required: 0 };
       if (!g.roles.has(i)) { g.roles.add(i); if (k.importance === 'required') g.required += 1; }
       byTerm.set(key, g);

@@ -25,7 +25,13 @@ export function normalizeText(s) {
 const EQUIVALENT = [
   [/\brestful\b/g, 'rest'], [/\bci\/cd\b/g, 'ci cd'], [/\bpostgres\b/g, 'postgresql'], [/\bk8s\b/g, 'kubernetes'],
   [/\bgcp\b/g, 'google cloud'], [/\bllms\b/g, 'llm'], [/\bapis\b/g, 'api'],
+  [/\bcontinuous integration( (and|&|\/) continuous (delivery|deployment))?\b/g, 'ci cd'],
 ];
+
+/** One spelling per skill, for counting the same skill once ("CI/CD" = "Continuous Integration"). */
+export function canonicalTerm(term) {
+  return EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), normalizeText(term).trim()).replace(/[^a-z0-9+#]+/g, ' ').trim();
+}
 
 /** Spellings of one term an ATS treats as the same: "Node.js" ≈ "nodejs" ≈ "node js", "RESTful API" ≈ "REST APIs". */
 export function variants(term) {

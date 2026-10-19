@@ -43,20 +43,6 @@
   --ui-shadow:        0 8px 30px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
   --ui-ring:          rgb(139 156 255 / 0.5);
 
-  /* Applications → Tracker, drawn like the user's Google Sheet. */
-  --sheet-grid:       #343b48;
-  --sheet-edge:       #4a5263;
-  --sheet-banner:     #22361f;
-  --sheet-banner-fg:  #cfe8bf;
-  --sheet-head:       #3b321a;
-  --sheet-head-fg:    #f2dc9a;
-  --sheet-rownum:     #1b1f27;
-  --chip-green:       rgb(127 209 174 / 0.18);  --chip-green-fg:  #93e0bb;
-  --chip-red:         rgb(255 128 128 / 0.18);  --chip-red-fg:    #ffa3a3;
-  --chip-yellow:      rgb(240 200 90 / 0.18);   --chip-yellow-fg: #f2d077;
-  --chip-blue:        rgb(139 184 255 / 0.18);  --chip-blue-fg:   #abc9ff;
-  --chip-purple:      rgb(190 160 255 / 0.18);  --chip-purple-fg: #c9b3ff;
-  --chip-grey:        rgb(255 255 255 / 0.07);  --chip-grey-fg:   #9aa3b2;
 }
 
 :root[data-theme="light"] {
@@ -87,19 +73,6 @@
   --ui-shadow:        0 8px 30px rgb(15 34 54 / 0.08), 0 0 0 1px rgb(15 34 54 / 0.05);
   --ui-ring:          rgb(11 107 203 / 0.35);
 
-  --sheet-grid:       #dadce0;
-  --sheet-edge:       #9aa0a6;
-  --sheet-banner:     #c9e7b5;
-  --sheet-banner-fg:  #1f2a1a;
-  --sheet-head:       #fbe5a3;
-  --sheet-head-fg:    #2b2410;
-  --sheet-rownum:     #f8f9fa;
-  --chip-green:       #d4edbc;  --chip-green-fg:  #11734b;
-  --chip-red:         #ffcfc9;  --chip-red-fg:    #b10202;
-  --chip-yellow:      #ffe5a0;  --chip-yellow-fg: #6b4e00;
-  --chip-blue:        #c6dbf7;  --chip-blue-fg:   #0a53a8;
-  --chip-purple:      #e6cff2;  --chip-purple-fg: #5a3286;
-  --chip-grey:        #e8eaed;  --chip-grey-fg:   #5f6368;
 }
 
 @theme inline {

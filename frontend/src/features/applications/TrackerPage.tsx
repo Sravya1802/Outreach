@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Pencil, Trash2, Upload } from 'lucide-react'
 import { api, type TrackerReferral, type TrackerRow, type TrackerStatus } from '@/lib/api'
@@ -10,15 +10,12 @@ import {
 } from './trackerSheet'
 
 const MAX_CSV_BYTES = 3 * 1024 * 1024
-/** Blank rows under the last entry, so it reads like a sheet. */
-const FILLER_ROWS = 3
 
-// Drawn like the user's Google Sheet: gridlines, a green title banner, a
-// yellow header row, row numbers, centered serif text and colored chips.
-const SHEET_FONT: CSSProperties = { fontFamily: '"Times New Roman", Times, serif' }
-const cell = 'border border-[var(--sheet-grid)] px-2 py-1.5 text-center align-middle'
-const head = 'border border-[var(--sheet-edge)] bg-[var(--sheet-head)] px-2 py-1.5 text-center text-[14px] font-normal text-[var(--sheet-head-fg)]'
-const rownum = 'border border-[var(--sheet-grid)] bg-[var(--sheet-rownum)] px-1 text-center font-sans text-[11px] text-subtle'
+// A plain grid, laid out like the user's spreadsheet: numbered rows, one
+// column per field, every cell bordered.
+const cell = 'border border-line px-3 py-2 align-middle'
+const head = 'border border-line bg-raised px-3 py-2 text-left text-[12px] font-medium tracking-wide text-subtle uppercase'
+const rownum = 'border border-line bg-raised px-2 text-center font-mono text-[11px] text-subtle'
 
 /** Applications → Tracker: every application, in a sheet that looks like your own. */
 export default function TrackerPage() {
@@ -96,28 +93,22 @@ export default function TrackerPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto bg-surface" style={SHEET_FONT}>
-            <table className="w-full min-w-[1080px] border-collapse text-[14px] text-fg">
+          <div className="mb-2"><Banner title={data.data?.title ?? ''} onSave={t => retitle.mutate(t)} /></div>
+          <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
+            <table className="w-full min-w-[1080px] border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
               <colgroup>
                 <col className="w-10" /><col className="w-[15%]" /><col className="w-[25%]" /><col className="w-[24%]" /><col className="w-[9%]" /><col className="w-[14%]" /><col className="w-[12%]" /><col className="w-9" />
               </colgroup>
               <thead>
                 <tr>
-                  <th className={rownum} aria-hidden="true" />
-                  <th colSpan={6} className="h-20 border border-[var(--sheet-edge)] bg-[var(--sheet-banner)] px-3 text-center text-[15px] font-normal tracking-wide text-[var(--sheet-banner-fg)]">
-                    <Banner title={data.data?.title ?? ''} onSave={t => retitle.mutate(t)} />
-                  </th>
-                  <th className="border-0" aria-hidden="true" />
-                </tr>
-                <tr>
-                  <th className={rownum} aria-hidden="true" />
+                  <th className={rownum}><span className="sr-only">Row</span>#</th>
                   <th className={head}>Companies</th>
                   <th className={head}>Roles</th>
                   <th className={head}>Link</th>
                   <th className={head}>Submitted</th>
                   <th className={head}>Application Status</th>
                   <th className={head}>Referral Status</th>
-                  <th className="border-0"><span className="sr-only">Remove</span></th>
+                  <th className={cn(head, 'px-1')}><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -143,7 +134,7 @@ export default function TrackerPage() {
                       <Chip label={`Referral for ${r.company_name}`} tone={referralTone(r.referral)} value={r.referral ?? ''} options={REFERRAL_OPTIONS}
                         onChange={v => update.mutate({ id: r.id, body: { referral: (v || null) as TrackerReferral | null } })} />
                     </td>
-                    <td className="border-0 px-1 text-center">
+                    <td className={cn(cell, 'px-1 text-center')}>
                       <button type="button" aria-label={`Remove ${r.company_name} · ${r.job_title}`} onClick={() => setRemoving(r)}
                         className="rounded p-1 text-subtle opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100">
                         <Trash2 className="size-3.5" />
@@ -152,13 +143,6 @@ export default function TrackerPage() {
                   </tr>
                 ))}
                 <NewRow n={shown.length + 1} onAdded={refresh} />
-                {Array.from({ length: FILLER_ROWS }, (_, i) => (
-                  <tr key={`filler-${i}`} aria-hidden="true">
-                    <td className={rownum}>{shown.length + 2 + i}</td>
-                    {Array.from({ length: 6 }, (__, j) => <td key={j} className={cn(cell, 'h-9')} />)}
-                    <td className="border-0" />
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>
@@ -185,15 +169,15 @@ export default function TrackerPage() {
   )
 }
 
-/** A dropdown chip like the sheet's: full cell width, colored, with a little arrow. */
+/** A dropdown chip: full cell width, colored by status, with a little arrow. */
 function Chip({ value, options, tone, label, onChange }: { value: string; options: { value: string; label: string }[]; tone: PillTone; label: string; onChange: (v: string) => void }) {
   return (
     <select
       aria-label={label}
       value={value}
       onChange={e => onChange(e.target.value)}
-      className={cn('h-6 w-full cursor-pointer appearance-none rounded-full border-0 pr-6 pl-3 text-center text-[13px] focus-visible:outline-2 focus-visible:outline-accent', PILL[tone])}
-      style={{ ...SHEET_FONT, backgroundImage: 'linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)', backgroundPosition: 'calc(100% - 13px) 55%, calc(100% - 9px) 55%', backgroundSize: '4px 4px', backgroundRepeat: 'no-repeat' }}
+      className={cn('h-7 w-full cursor-pointer appearance-none rounded-full border-0 pr-6 pl-3 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-accent', PILL[tone])}
+      style={{ backgroundImage: 'linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)', backgroundPosition: 'calc(100% - 13px) 55%, calc(100% - 9px) 55%', backgroundSize: '4px 4px', backgroundRepeat: 'no-repeat' }}
     >
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -206,14 +190,14 @@ const onKeys = (cancel: () => void) => (e: KeyboardEvent<HTMLElement>) => {
   if (e.key === 'Escape') cancel()
 }
 
-/** Centered text that wraps like a sheet cell; click to edit, Enter or leaving the cell saves. */
+/** Text that wraps in its cell; click to edit, Enter or leaving the cell saves. */
 function CellText({ value, label, onSave }: { value: string; label: string; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
   if (!editing) {
     return (
       <button type="button" aria-label={`Edit ${label}`} onClick={() => { setDraft(value); setEditing(true) }}
-        className="w-full rounded-[2px] px-1 py-0.5 text-center leading-snug hover:outline hover:outline-1 hover:outline-[var(--sheet-edge)]">
+        className="-mx-1 w-[calc(100%+0.5rem)] rounded-[3px] px-1 py-0.5 text-left leading-snug hover:bg-hover">
         {value}
       </button>
     )
@@ -222,12 +206,11 @@ function CellText({ value, label, onSave }: { value: string; label: string; onSa
   return (
     <textarea autoFocus aria-label={label} value={draft} rows={2} onChange={e => setDraft(e.target.value)} onBlur={save}
       onKeyDown={onKeys(() => { setDraft(value); setEditing(false) })}
-      style={SHEET_FONT}
-      className="block w-full resize-none rounded-[2px] border border-accent bg-surface px-1 py-0.5 text-center leading-snug focus:outline-none" />
+      className="block w-full resize-none rounded-[3px] border border-accent bg-surface px-1 py-0.5 leading-snug focus:outline-none" />
   )
 }
 
-/** The full link, blue and underlined like the sheet's; the pencil edits it. */
+/** The link on one line (full address on hover); the pencil edits it. */
 function CellLink({ row, onSave }: { row: TrackerRow; onSave: (v: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(row.job_url ?? '')
@@ -236,12 +219,12 @@ function CellLink({ row, onSave }: { row: TrackerRow; onSave: (v: string) => voi
     return (
       <input autoFocus aria-label={`Link for ${row.company_name}`} value={draft} placeholder="https://" onChange={e => setDraft(e.target.value)} onBlur={save}
         onKeyDown={onKeys(() => { setDraft(row.job_url ?? ''); setEditing(false) })}
-        className="h-7 w-full rounded-[2px] border border-accent bg-surface px-1 text-[13px] focus:outline-none" />
+        className="h-7 w-full rounded-[3px] border border-accent bg-surface px-1 text-[13px] focus:outline-none" />
     )
   }
   return (
-    <div className="flex items-start justify-center gap-1">
-      {row.job_url && <a href={row.job_url} target="_blank" rel="noreferrer" className="min-w-0 text-[13px] leading-snug break-all text-accent underline">{row.job_url}</a>}
+    <div className="flex items-center gap-1">
+      {row.job_url && <a href={row.job_url} title={row.job_url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-[13px] text-accent hover:underline">{row.job_url.replace(/^https?:\/\/(www\.)?/, '')}</a>}
       <button type="button" aria-label={`${row.job_url ? 'Edit' : 'Add'} the link for ${row.company_name}`} onClick={() => { setDraft(row.job_url ?? ''); setEditing(true) }}
         className="shrink-0 rounded p-0.5 text-subtle opacity-0 group-hover:opacity-100 hover:text-fg focus-visible:opacity-100">
         <Pencil className="size-3" />
@@ -250,19 +233,18 @@ function CellLink({ row, onSave }: { row: TrackerRow; onSave: (v: string) => voi
   )
 }
 
-/** The sheet's title banner; click to rename it. */
+/** The sheet's own title ("2027 New Grad Roles Application"); click to rename it. */
 function Banner({ title, onSave }: { title: string; onSave: (t: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
   if (!editing) {
-    return <button type="button" aria-label="Rename the sheet" onClick={() => { setDraft(title); setEditing(true) }} className="w-full py-1 uppercase hover:underline">{title}</button>
+    return <button type="button" aria-label="Rename the sheet" onClick={() => { setDraft(title); setEditing(true) }} className="rounded-[3px] px-1 text-[15px] font-medium text-fg hover:bg-hover">{title}</button>
   }
   const save = () => { setEditing(false); const t = draft.trim(); if (t && t !== title) onSave(t) }
   return (
     <input autoFocus aria-label="Sheet title" value={draft} onChange={e => setDraft(e.target.value)} onBlur={save}
       onKeyDown={onKeys(() => setEditing(false))}
-      style={SHEET_FONT}
-      className="mx-auto block w-full max-w-xl rounded-[2px] border border-[var(--sheet-edge)] bg-transparent px-2 py-1 text-center uppercase focus:outline-none" />
+      className="block w-full max-w-xl rounded-[3px] border border-accent bg-transparent px-1 text-[15px] font-medium focus:outline-none" />
   )
 }
 
@@ -280,13 +262,13 @@ function NewRow({ n, onAdded }: { n: number; onAdded: () => void }) {
   })
   const submit = () => { if (company.trim() && role.trim() && !add.isPending) add.mutate() }
   const keys = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }
-  const input = 'h-7 w-full rounded-[2px] border border-transparent bg-transparent px-1 text-center text-[14px] placeholder:text-subtle hover:border-[var(--sheet-grid)] focus:border-accent focus:outline-none'
+  const input = 'h-7 w-full rounded-[3px] border border-transparent bg-transparent px-1 text-[14px] placeholder:text-subtle hover:border-line focus:border-accent focus:outline-none'
   return (
     <tr>
       <td className={rownum}>{n}</td>
-      <td className={cell}><input aria-label="New row: company" placeholder="+ Company" value={company} onChange={e => setCompany(e.target.value)} onKeyDown={keys} style={SHEET_FONT} className={input} /></td>
-      <td className={cell}><input aria-label="New row: role" placeholder="Role" value={role} onChange={e => setRole(e.target.value)} onKeyDown={keys} style={SHEET_FONT} className={input} /></td>
-      <td className={cell}><input aria-label="New row: link" placeholder="Link" value={link} onChange={e => setLink(e.target.value)} onKeyDown={keys} inputMode="url" style={SHEET_FONT} className={input} /></td>
+      <td className={cell}><input aria-label="New row: company" placeholder="+ Company" value={company} onChange={e => setCompany(e.target.value)} onKeyDown={keys} className={input} /></td>
+      <td className={cell}><input aria-label="New row: role" placeholder="Role" value={role} onChange={e => setRole(e.target.value)} onKeyDown={keys} className={input} /></td>
+      <td className={cell}><input aria-label="New row: link" placeholder="Link" value={link} onChange={e => setLink(e.target.value)} onKeyDown={keys} inputMode="url" className={input} /></td>
       <td className={cell} />
       <td className={cell}>
         {(company || role) && <Chip label="New row: application status" tone={statusTone(status)} value={status} options={STATUS_OPTIONS} onChange={v => setStatus(v as TrackerStatus)} />}
@@ -296,7 +278,7 @@ function NewRow({ n, onAdded }: { n: number; onAdded: () => void }) {
           <button type="button" onClick={submit} disabled={add.isPending} className="font-sans text-[13px] text-accent hover:underline">{add.isPending ? 'Adding…' : 'Add row ↵'}</button>
         )}
       </td>
-      <td className="border-0" />
+      <td className={cell} />
     </tr>
   )
 }

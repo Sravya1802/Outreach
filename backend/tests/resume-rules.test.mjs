@@ -65,6 +65,17 @@ test('the change report is computed: before/after per bullet, why = keywords add
   ]);
 });
 
+test('gaps across roles: counted once per role, skills you show left out, most asked first', async () => {
+  const { gapsAcross } = await import('../services/resumeRules.js');
+  const roles = [
+    [k('LangGraph'), k('Python'), k('Go', { importance: 'preferred' })],
+    [k('LangGraph'), k('LangGraph'), k('Kubernetes')],
+    [k('Go'), k('LangGraph', { importance: 'preferred' }), k('teamwork', { kind: 'soft' })],
+  ];
+  const gaps = gapsAcross(roles, 'Python, Docker, AWS');
+  assert.deepEqual(gaps.map(g => [g.term, g.roles, g.required]), [['LangGraph', 3, 2], ['Go', 2, 1], ['Kubernetes', 1, 1]]);
+});
+
 test('dashes and filler are caught; dashes become commas', () => {
   assert.equal(fixDashes('Built a tool — fast and simple'), 'Built a tool, fast and simple');
   assert.equal(fixDashes('Built a tool---fast'), 'Built a tool, fast');

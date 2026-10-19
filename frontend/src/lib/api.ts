@@ -592,6 +592,26 @@ export interface ProposedProject {
   onPage?: boolean
   addedAt?: string
 }
+/** A project to build: suggested for one role's resume, or weekly from the roles on your lists. */
+export interface PlannedProject {
+  id: number
+  name: string
+  tech: string[]
+  bullets: string[]
+  covers: string[]
+  why: string | null
+  plan: string[]
+  status: 'suggested' | 'built' | 'dismissed'
+  origin: 'role' | 'weekly'
+  /** Weekly ones: how many listed roles ask for what it adds. */
+  demand: { roles: number; of: number; keywords: { term: string; roles: number }[]; examples: string[] } | null
+  repo_url: string | null
+  start_date: string | null
+  end_date: string | null
+  created_at: string
+}
+export interface ProjectsState { projects: PlannedProject[]; suggesting: boolean; lastRunAt: string | null; note: string | null }
+
 export interface TailoringReport {
   notes?: string
   changes?: { section: string; before: string; after: string; why: string }[]
@@ -859,6 +879,8 @@ export const api = {
   /** You built a suggested project and pushed it; it's added to the resume it was suggested for. */
   markProjectBuilt: (id: number, body: { repo_url: string; start: string; end: string }): Promise<{ project: unknown; tailoring: Tailoring | null }> => legacy.career.markProjectBuilt(id, body),
   dismissProject: (id: number): Promise<{ project: unknown }> => legacy.career.dismissProject(id),
+  plannedProjects: (): Promise<ProjectsState> => legacy.career.plannedProjects(),
+  suggestProjects: (): Promise<{ suggesting: boolean }> => legacy.career.suggestProjects(),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   /** An earlier master version; the server refuses the current one and any an application uses. */
   deleteResumeFile: (id: number): Promise<{ ok: boolean }> => legacy.career.deleteResumeFile(id),

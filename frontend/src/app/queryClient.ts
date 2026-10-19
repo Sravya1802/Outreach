@@ -42,6 +42,7 @@ export const qk = {
   tailoring: (evalId: number) => ['tailoring', evalId] as const,
   resumeTemplate: ['resume-template'] as const,
   tracker: ['tracker'] as const,
+  projects: ['planned-projects'] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
   connections: ['linkedin-connections'] as const,

@@ -409,3 +409,26 @@ export function diffChanges(master, doc, keywords = [], projectWhy = {}) {
   }
   return changes;
 }
+
+// ── Gaps across many roles (for project suggestions) ───────────────────────
+
+/**
+ * Hard skills the roles ask for that the candidate doesn't show, most asked first:
+ * [{ term, roles, required }]. `keywordsPerRole` is one keyword list per role.
+ */
+export function gapsAcross(keywordsPerRole, sourceText) {
+  const byTerm = new Map();
+  keywordsPerRole.forEach((keywords, i) => {
+    for (const k of list(keywords)) {
+      if (k.kind === 'soft' || hasTerm(sourceText, k)) continue;
+      const key = str(k.term).toLowerCase();
+      const g = byTerm.get(key) || { term: k.term, aliases: k.aliases || [], roles: new Set(), required: 0 };
+      if (!g.roles.has(i)) { g.roles.add(i); if (k.importance === 'required') g.required += 1; }
+      byTerm.set(key, g);
+    }
+  });
+  return [...byTerm.values()]
+    .map(g => ({ term: g.term, roles: g.roles.size, required: g.required, aliases: g.aliases }))
+    .sort((a, b) => b.roles - a.roles || b.required - a.required || a.term.localeCompare(b.term));
+}
+

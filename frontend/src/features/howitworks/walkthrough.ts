@@ -87,6 +87,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     tabs: {
       '/profile/details': 'Contact, work authorization and education, filled into every application. Can be filled in from your resume.',
       '/profile/resume': 'Your master resume. Every score and every tailored resume starts from it.',
+      '/profile/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, push it to GitHub, mark it built, and your resumes can use it.',
       '/profile/answers': 'Answer common form questions once, like “Why us?” and start date. Every form that asks gets the same answer.',
     },
   },

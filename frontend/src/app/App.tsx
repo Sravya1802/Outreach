@@ -25,6 +25,7 @@ const WalkthroughPage = lazyWithRetry(() => import('@/features/howitworks/Walkth
 const AutoApplyPage = lazyWithRetry(() => import('@/features/applications/AutoApplyPage'), 'AutoApplyPage')
 const EvaluatePage = lazyWithRetry(() => import('@/features/applications/EvaluatePage'), 'EvaluatePage')
 const TrackerPage = lazyWithRetry(() => import('@/features/applications/TrackerPage'), 'TrackerPage')
+const ProjectsPage = lazyWithRetry(() => import('@/features/profile/ProjectsPage'), 'ProjectsPage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
@@ -75,6 +76,7 @@ function SignedInRoutes() {
         <Route path="/applications/auto-apply" element={<AutoApplyPage />} />
         <Route path="/applications/evaluate" element={<EvaluatePage />} />
         <Route path="/applications/tracker" element={<TrackerPage />} />
+        <Route path="/profile/projects" element={<ProjectsPage />} />
         {/* The Pipeline tab became the tracker at the bottom of Auto-apply. */}
         <Route path="/applications/pipeline" element={<Navigate to="/dashboard#tracker" replace />} />
         <Route path="/applications/board" element={<Navigate to="/dashboard?view=board#tracker" replace />} />

@@ -39,6 +39,7 @@ import messagesRouter from './routes/messages.js';
 import trackerRouter from './routes/tracker.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
+import { suggestProjectsForAll } from './services/projectIdeas.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
@@ -534,6 +535,13 @@ cron.schedule('*/5 * * * *', async () => {
     const r = await pumpResumeBatches();
     if (r.collected || r.submitted) console.log(`[resume-batch] collected ${r.collected}, submitted ${r.submitted}`);
   } catch (err) { console.error('[resume-batch] pass failed:', err.message); }
+}, CRON_OPTS);
+// Projects to build, from the roles on each user's recent lists: Sundays, 9 AM Central.
+cron.schedule('0 14 * * 0', async () => {
+  try {
+    const r = await suggestProjectsForAll();
+    console.log(`[project-ideas] weekly: ${r.created} suggestions for ${r.users} users`);
+  } catch (err) { console.error('[project-ideas] weekly failed:', err.message); }
 }, CRON_OPTS);
 cron.schedule('*/10 * * * *', async () => {
   try {

@@ -472,6 +472,7 @@ export const api = {
     saveResumeTemplate: (tex) => apiCall('/resume-engine/template', { method: 'PUT', body: { tex } }),
     resetResumeTemplate: () => apiCall('/resume-engine/template', { method: 'DELETE' }),
     plannedProjects: () => apiCall('/resume-engine/projects'),
+    suggestProjects: () => apiCall('/resume-engine/projects/suggest', { method: 'POST' }),
     markProjectBuilt: (id, body) => apiCall(`/resume-engine/projects/${id}/built`, { method: 'POST', body }),
     dismissProject: (id) => apiCall(`/resume-engine/projects/${id}/dismiss`, { method: 'POST' }),
     deleteResumeFile: (id) => apiCall(`/career/resume/files/${id}`, { method: 'DELETE' }),

@@ -1,12 +1,13 @@
 // Resume engine: tailored resume + cover letter per evaluation, and the
 // master resume as read into sections. Long runs start here and are polled.
 import { Router } from 'express';
-import { one } from '../db.js';
+import { one, run } from '../db.js';
 import { parseId } from '../services/safePaths.js';
 import {
   approve, coverLetterRequested, latest, parsedMaster, start,
   templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
 } from '../services/resumeEngine.js';
+import { suggestProjects, isSuggesting } from '../services/projectIdeas.js';
 
 const router = Router();
 
@@ -89,7 +90,25 @@ router.delete('/template', async (req, res) => {
 
 // Projects the engine suggested for weak fits: build, push, mark built.
 router.get('/projects', async (req, res) => {
-  try { res.json({ projects: await listProjects(req.user.id) }); } catch (err) { fail(res, err); }
+  try {
+    const last = await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'project_ideas_at'", [req.user.id]);
+    const note = await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'project_ideas_note'", [req.user.id]);
+    res.json({ projects: await listProjects(req.user.id), suggesting: isSuggesting(req.user.id), lastRunAt: last?.value || null, note: note?.value || null });
+  } catch (err) { fail(res, err); }
+});
+
+// Suggest projects from the roles on recent evening lists, now (runs in the background; poll GET /projects).
+router.post('/projects/suggest', async (req, res) => {
+  const userId = req.user.id;
+  if (isSuggesting(userId)) return res.status(202).json({ suggesting: true });
+  suggestProjects(userId, { force: true })
+    .then(async (r) => {
+      const note = r.skipped ? `skipped: ${r.skipped}` : `${r.created} new from ${r.roles} roles, $${r.cost}`;
+      console.log(`[project-ideas] ${userId}: ${note}`);
+      await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'project_ideas_note', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, r.skipped || '']).catch(() => {});
+    })
+    .catch(err => console.error('[project-ideas]', err.message));
+  res.status(202).json({ suggesting: true });
 });
 
 router.post('/projects/:id/built', async (req, res) => {

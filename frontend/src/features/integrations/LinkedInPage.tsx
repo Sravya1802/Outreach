@@ -40,7 +40,7 @@ export default function LinkedInPage() {
               <>
                 <ol className="space-y-2 text-[14px] leading-relaxed text-muted">
                   <li><b className="font-medium text-fg">1.</b> Open <a href={EXPORT_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">LinkedIn → Get a copy of your data <ExternalLink className="size-3" /></a>.</li>
-                  <li><b className="font-medium text-fg">2.</b> Choose <b className="font-medium text-fg">Connections</b> only and request the archive. LinkedIn emails you a link, usually within 10 minutes.</li>
+                  <li><b className="font-medium text-fg">2.</b> Under “Want something in particular?”, tick <b className="font-medium text-fg">Connections</b> and request the archive. If Connections isn’t in that list, choose the first option instead (the larger archive, which includes connections). LinkedIn emails you a link, within 10 minutes for Connections alone and up to a day for the larger archive.</li>
                   <li><b className="font-medium text-fg">3.</b> Unzip it and upload <code className="font-mono text-[13px]">Connections.csv</code> here. Upload it again any time to refresh.</li>
                 </ol>
                 <div className="flex flex-wrap gap-2">

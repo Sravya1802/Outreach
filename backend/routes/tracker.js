@@ -11,6 +11,15 @@ const router = Router();
 const STATUSES = ['not_started', 'submitted', 'responded', 'interview', 'offer', 'rejected'];
 const REFERRALS = ['yes', 'no', 'not_required', 'asked'];
 const MAX_IMPORT_ROWS = 2000;
+const TITLE_KEY = 'tracker_title';
+const DEFAULT_TITLE = 'MY APPLICATIONS';
+
+async function titleFor(userId) {
+  return (await one('SELECT value FROM meta WHERE user_id = $1 AND key = $2', [userId, TITLE_KEY]))?.value || DEFAULT_TITLE;
+}
+async function setTitle(userId, title) {
+  await run('INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value', [userId, TITLE_KEY, title]);
+}
 
 const str = (v, max = 300) => String(v ?? '').trim().slice(0, max);
 const fail = (res, err) => {
@@ -54,7 +63,17 @@ async function rowsFor(userId) {
 }
 
 router.get('/', async (req, res) => {
-  try { res.json({ rows: await rowsFor(req.user.id) }); } catch (err) { fail(res, err); }
+  try { res.json({ rows: await rowsFor(req.user.id), title: await titleFor(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+// The banner above the sheet ("2027 NEW GRAD ROLES APPLICATION").
+router.put('/title', async (req, res) => {
+  try {
+    const title = str(req.body?.title, 120);
+    if (!title) throw bad('Give the sheet a title');
+    await setTitle(req.user.id, title);
+    res.json({ title });
+  } catch (err) { fail(res, err); }
 });
 
 // A row added by hand (an application made outside the app).
@@ -112,57 +131,60 @@ router.patch('/:id', async (req, res) => {
 
 // Import a CSV export of the user's own sheet. Rows already here (same link,
 // or same company and role) take the sheet's status and referral; new ones are added.
+export async function importSheet(userId, csv) {
+  if (!String(csv || '').trim()) throw bad('Choose the CSV you downloaded from your sheet');
+  if (csv.length > 3_000_000) throw bad('That file is too large');
+  const { rows, title, error } = sheetRows(csv);
+  if (error) throw bad(error);
+  if (rows.length > MAX_IMPORT_ROWS) throw bad(`That sheet has ${rows.length} rows; the most an import takes is ${MAX_IMPORT_ROWS}.`);
+  // Take the sheet's own title banner, unless one was already set here.
+  if (title && (await titleFor(userId)) === DEFAULT_TITLE) await setTitle(userId, title);
+  const existing = await all('SELECT id, company_name, job_title, job_url, apply_status, referral_status FROM evaluations WHERE user_id = $1', [userId]);
+  const byKey = new Map();
+  for (const e of existing) {
+    byKey.set(matchKey({ company: e.company_name, role: e.job_title, link: e.job_url }), e);
+    byKey.set(matchKey({ company: e.company_name, role: e.job_title }), e);
+  }
+  let added = 0, updated = 0, unchanged = 0;
+  const skipped = [];
+  for (const r of rows) {
+    if (!r.company || !r.role) { skipped.push(`${r.company || r.role}: needs both a company and a role`); continue; }
+    const status = toApplyStatus(r.submitted, r.status);
+    const referral = toReferral(r.referral);
+    let link = null;
+    try { link = r.link ? cleanLink(r.link) : null; } catch { link = null; }
+    const hit = byKey.get(matchKey({ ...r, link })) || byKey.get(matchKey({ company: r.company, role: r.role }));
+    if (hit) {
+      const nextStatus = status === 'not_started' && isSent(hit.apply_status) ? hit.apply_status : status;
+      const nextReferral = referral ?? hit.referral_status;
+      if (nextStatus === hit.apply_status && nextReferral === hit.referral_status) { unchanged += 1; continue; }
+      await run(
+        `UPDATE evaluations SET apply_status = $3, referral_status = $4,
+                stage_changed_at = CASE WHEN apply_status <> $3 THEN NOW() ELSE stage_changed_at END,
+                applied_at = CASE WHEN $5 THEN COALESCE(applied_at, NOW()::text) ELSE applied_at END,
+                job_url = COALESCE(job_url, $6)
+          WHERE id = $1 AND user_id = $2`,
+        [hit.id, userId, nextStatus, nextReferral, isSent(nextStatus), link],
+      );
+      Object.assign(hit, { apply_status: nextStatus, referral_status: nextReferral });
+      updated += 1;
+      continue;
+    }
+    const ins = (await run(
+      `INSERT INTO evaluations (user_id, company_name, job_title, job_url, apply_mode, apply_status, applied_at, stage_changed_at, referral_status, source)
+       VALUES ($1, $2, $3, $4, 'manual', $5, CASE WHEN $6 THEN NOW()::text END, NOW(), $7, 'sheet_import') RETURNING id`,
+      [userId, str(r.company, 200), str(r.role, 300), link, status, isSent(status), referral],
+    )).rows[0];
+    const row = { id: ins.id, company_name: r.company, job_title: r.role, job_url: link, apply_status: status, referral_status: referral };
+    byKey.set(matchKey({ ...r, link }), row);
+    byKey.set(matchKey({ company: r.company, role: r.role }), row);
+    added += 1;
+  }
+  return { total: rows.length, added, updated, unchanged, skipped };
+}
+
 router.post('/import', async (req, res) => {
-  try {
-    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
-    if (!csv.trim()) throw bad('Choose the CSV you downloaded from your sheet');
-    if (csv.length > 3_000_000) throw bad('That file is too large');
-    const { rows, error } = sheetRows(csv);
-    if (error) throw bad(error);
-    if (rows.length > MAX_IMPORT_ROWS) throw bad(`That sheet has ${rows.length} rows; the most an import takes is ${MAX_IMPORT_ROWS}.`);
-    const existing = await all('SELECT id, company_name, job_title, job_url, apply_status, referral_status FROM evaluations WHERE user_id = $1', [req.user.id]);
-    const byKey = new Map();
-    for (const e of existing) {
-      byKey.set(matchKey({ company: e.company_name, role: e.job_title, link: e.job_url }), e);
-      byKey.set(matchKey({ company: e.company_name, role: e.job_title }), e);
-    }
-    let added = 0, updated = 0, unchanged = 0;
-    const skipped = [];
-    for (const r of rows) {
-      if (!r.company || !r.role) { skipped.push(`${r.company || r.role}: needs both a company and a role`); continue; }
-      const status = toApplyStatus(r.submitted, r.status);
-      const referral = toReferral(r.referral);
-      let link = null;
-      try { link = r.link ? cleanLink(r.link) : null; } catch { link = null; }
-      const hit = byKey.get(matchKey({ ...r, link })) || byKey.get(matchKey({ company: r.company, role: r.role }));
-      if (hit) {
-        const nextStatus = status === 'not_started' && isSent(hit.apply_status) ? hit.apply_status : status;
-        const nextReferral = referral ?? hit.referral_status;
-        if (nextStatus === hit.apply_status && nextReferral === hit.referral_status) { unchanged += 1; continue; }
-        await run(
-          `UPDATE evaluations SET apply_status = $3, referral_status = $4,
-                  stage_changed_at = CASE WHEN apply_status <> $3 THEN NOW() ELSE stage_changed_at END,
-                  applied_at = CASE WHEN $5 THEN COALESCE(applied_at, NOW()::text) ELSE applied_at END,
-                  job_url = COALESCE(job_url, $6)
-            WHERE id = $1 AND user_id = $2`,
-          [hit.id, req.user.id, nextStatus, nextReferral, isSent(nextStatus), link],
-        );
-        Object.assign(hit, { apply_status: nextStatus, referral_status: nextReferral });
-        updated += 1;
-        continue;
-      }
-      const ins = (await run(
-        `INSERT INTO evaluations (user_id, company_name, job_title, job_url, apply_mode, apply_status, applied_at, stage_changed_at, referral_status, source)
-         VALUES ($1, $2, $3, $4, 'manual', $5, CASE WHEN $6 THEN NOW()::text END, NOW(), $7, 'sheet_import') RETURNING id`,
-        [req.user.id, str(r.company, 200), str(r.role, 300), link, status, isSent(status), referral],
-      )).rows[0];
-      const row = { id: ins.id, company_name: r.company, job_title: r.role, job_url: link, apply_status: status, referral_status: referral };
-      byKey.set(matchKey({ ...r, link }), row);
-      byKey.set(matchKey({ company: r.company, role: r.role }), row);
-      added += 1;
-    }
-    res.json({ total: rows.length, added, updated, unchanged, skipped });
-  } catch (err) { fail(res, err); }
+  try { res.json(await importSheet(req.user.id, typeof req.body?.csv === 'string' ? req.body.csv : '')); } catch (err) { fail(res, err); }
 });
 
 // The tracker as a CSV in the sheet's columns (File → Import in Google Sheets).

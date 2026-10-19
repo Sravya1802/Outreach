@@ -50,8 +50,11 @@ const HEADERS = {
 export function sheetRows(csvText) {
   const rows = parseCsv(csvText);
   const at = rows.findIndex(r => r.some(c => HEADERS.company.test(str(c))) && r.some(c => HEADERS.role.test(str(c))));
-  if (at < 0) return { rows: [], error: 'No header row with “Companies” and “Roles” found. Export the tab that holds your applications.' };
+  if (at < 0) return { rows: [], title: null, error: 'No header row with “Companies” and “Roles” found. Export the tab that holds your applications.' };
   const head = rows[at].map(str);
+  // The sheet's title banner ("2027 NEW GRAD ROLES APPLICATION"): the last row above the header with a single filled cell.
+  const banner = rows.slice(0, at).map(r => r.map(str).filter(Boolean)).filter(c => c.length === 1).pop();
+  const title = banner ? banner[0].slice(0, 120) : null;
   const col = {};
   for (const [key, re] of Object.entries(HEADERS)) {
     const i = head.findIndex(h => re.test(h));
@@ -66,7 +69,7 @@ export function sheetRows(csvText) {
     const link = /^https?:\/\//i.test(get('link')) ? get('link') : '';
     out.push({ company, role, link, submitted: get('submitted'), status: get('status'), referral: get('referral') });
   }
-  return { rows: out, error: null };
+  return { rows: out, title, error: null };
 }
 
 const SENT = ['submitted', 'responded', 'interview', 'offer', 'rejected'];

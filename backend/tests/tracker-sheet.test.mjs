@@ -26,6 +26,7 @@ test('the user’s sheet: header found under the banner, rows read, junk links d
   const { rows, error } = sheetRows(SHEET);
   assert.equal(error, null);
   assert.equal(rows.length, 7);
+  assert.equal(sheetRows(SHEET).title, '2027 NEW GRAD ROLES APPLICATION');
   assert.deepEqual(rows[0], { company: 'Optiver', role: 'Graduate Software Engineer - 2027 Start', link: 'https://www.optiver.com/join-us/jobs/8401042002/?gh_jid=8401042002', submitted: 'Yes', status: 'Rejected', referral: 'Yes' });
   assert.equal(rows[6].role, 'July 2027 - Leap Software Engineer, "TX"');
   assert.equal(rows[6].link, ''); // "f" isn't a link

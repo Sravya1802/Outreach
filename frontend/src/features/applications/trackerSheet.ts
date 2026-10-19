@@ -2,7 +2,7 @@ import type { TrackerReferral, TrackerRow, TrackerStatus } from '@/lib/api'
 
 /** The sheet's words and colors (green yes, yellow waiting, blue in progress, red rejected). */
 export const STATUS_OPTIONS: { value: TrackerStatus; label: string; tone: PillTone }[] = [
-  { value: 'not_started', label: 'Not applied', tone: 'none' },
+  { value: 'not_started', label: '—', tone: 'none' },
   { value: 'submitted', label: 'Waiting to hear back', tone: 'warning' },
   { value: 'responded', label: 'In Progress', tone: 'info' },
   { value: 'interview', label: 'Interview', tone: 'accent' },
@@ -20,13 +20,14 @@ export const REFERRAL_OPTIONS: { value: TrackerReferral | ''; label: string; ton
 
 export type PillTone = 'none' | 'success' | 'warning' | 'info' | 'accent' | 'danger'
 
+/** Chip colors from the sheet's own palette (see --chip-* in styles/app.css). */
 export const PILL: Record<PillTone, string> = {
-  none: 'bg-hover text-muted',
-  success: 'bg-success-soft text-success',
-  warning: 'bg-warning-soft text-warning',
-  info: 'bg-info-soft text-info',
-  accent: 'bg-accent-soft text-accent',
-  danger: 'bg-danger-soft text-danger',
+  none: 'bg-[var(--chip-grey)] text-[var(--chip-grey-fg)]',
+  success: 'bg-[var(--chip-green)] text-[var(--chip-green-fg)]',
+  warning: 'bg-[var(--chip-yellow)] text-[var(--chip-yellow-fg)]',
+  info: 'bg-[var(--chip-blue)] text-[var(--chip-blue-fg)]',
+  accent: 'bg-[var(--chip-purple)] text-[var(--chip-purple-fg)]',
+  danger: 'bg-[var(--chip-red)] text-[var(--chip-red-fg)]',
 }
 
 export const statusTone = (s: TrackerStatus) => STATUS_OPTIONS.find(o => o.value === s)?.tone ?? 'none'

@@ -124,6 +124,20 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-19 — Profile → Projects: projects to build, from the roles on your lists
+- **Why:** the user asked what happened to project recommendations. They only ran inside a tailored resume, which needs an approved role, and the user had approved none (494 pending, 249 expired). They also showed nowhere except that resume's panel.
+- **What** (`0a10ded`, `52eafd5`, plus the hyphen fix; migration **034** adds `planned_projects.origin` ('role'|'weekly') and `demand`, applied):
+  - [projectIdeas.js](backend/services/projectIdeas.js) `suggestProjects(userId)`:
+    - takes the last 14 days of top and worth plan items with a real JD (up to 30)
+    - runs Groq keyword extraction for each, concurrency 3
+    - `resumeRules.gapsAcross` keeps the hard skills not in the master, repos or built projects, counted per role. Generic words (software engineering, debugging, OOP, agile…) are dropped, and duplicates merge via `ats.canonicalTerm` (CI/CD = Continuous Integration).
+    - one Opus call (task `resume`, structured) asks for 2–3 projects with name, tech, bullets (no numbers), covers, why and plan
+    - rows are saved with `demand` (roles helped, keywords with role counts, example roles), at most 3 open weekly ones.
+  - Weekly cron Sundays 14:00 UTC (`suggestProjectsForAll`), and `POST /api/resume-engine/projects/suggest`, which runs in the background; `GET /projects` returns `suggesting`, `lastRunAt` and `note`.
+  - [ProjectsPage.tsx](frontend/src/features/profile/ProjectsPage.tsx) at `/profile/projects`: cards with demand, keyword chips, bullets and build plan, an "I built it" form (public repo checked via the GitHub API, plus dates) and "Not for me"; a Built list.
+- **Measured for the user:** 30 roles, 15 gaps, $0.10, about 4.5 min. The top gap is **CI/CD (15 of 30 roles)**. Suggested: TrialMatch API (C#/.NET), FAERS Signal Pipeline (AWS serverless and big data), PacketSentry (C and security).
+- **Verified on prod** (e2e, seeded project, cleaned up): page renders, the empty form is blocked, and a fake repo is rejected with "isn't public on GitHub yet".
+
 ### 2026-10-16 — Applications → Tracker: the user's sheet, in the app
 - **Why:** the user keeps a Google Sheet ("2027 New Grad Roles Application": Companies, Roles, Link, Submitted, Application Status, Refferal Status, about 66 rows) and wants "something like that sheet so I can keep monitoring". They chose a one-time CSV upload, not a Google connection.
 - **What** (`b04d57b`, `a5d70b0`; migration **033** adds `evaluations.referral_status`, applied):

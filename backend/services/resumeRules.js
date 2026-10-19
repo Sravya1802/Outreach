@@ -423,7 +423,7 @@ export function gapsAcross(keywordsPerRole, sourceText) {
   const byTerm = new Map();
   keywordsPerRole.forEach((keywords, i) => {
     for (const k of list(keywords)) {
-      if (k.kind === 'soft' || GENERIC.test(str(k.term)) || hasTerm(sourceText, k)) continue;
+      if (k.kind === 'soft' || GENERIC.test(str(k.term).replace(/[\u2010-\u2015]/g, '-')) || hasTerm(sourceText, k)) continue;
       const key = canonicalTerm(k.term);
       const g = byTerm.get(key) || { term: k.term, aliases: k.aliases || [], roles: new Set(), required: 0 };
       if (!g.roles.has(i)) { g.roles.add(i); if (k.importance === 'required') g.required += 1; }

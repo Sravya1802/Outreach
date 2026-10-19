@@ -98,7 +98,7 @@ export default function TrackerPage() {
             <table className="w-full min-w-[1100px] table-fixed border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
               <colgroup>
                 {/* Roles takes what's left; the chips get room for their longest words ("Waiting to hear back", "Not Required"). */}
-                <col className="w-11" /><col className="w-[12rem]" /><col /><col className="w-[17rem]" /><col className="w-[7rem]" /><col className="w-[13rem]" /><col className="w-[10rem]" /><col className="w-10" />
+                <col className="w-11" /><col className="w-[11rem]" /><col /><col className="w-[14rem]" /><col className="w-[6.5rem]" /><col className="w-[13rem]" /><col className="w-[9.5rem]" /><col className="w-10" />
               </colgroup>
               <thead>
                 <tr>

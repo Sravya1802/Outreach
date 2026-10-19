@@ -95,9 +95,10 @@ export default function TrackerPage() {
 
           <div className="mb-2"><Banner title={data.data?.title ?? ''} onSave={t => retitle.mutate(t)} /></div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
-            <table className="w-full min-w-[1080px] border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
+            <table className="w-full min-w-[1100px] table-fixed border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
               <colgroup>
-                <col className="w-10" /><col className="w-[15%]" /><col className="w-[25%]" /><col className="w-[24%]" /><col className="w-[9%]" /><col className="w-[14%]" /><col className="w-[12%]" /><col className="w-9" />
+                {/* Roles takes what's left; the chips get room for their longest words ("Waiting to hear back", "Not Required"). */}
+                <col className="w-11" /><col className="w-[12rem]" /><col /><col className="w-[17rem]" /><col className="w-[7rem]" /><col className="w-[13rem]" /><col className="w-[10rem]" /><col className="w-10" />
               </colgroup>
               <thead>
                 <tr>

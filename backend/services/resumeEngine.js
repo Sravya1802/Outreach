@@ -442,6 +442,8 @@ function revisionNotes(pass, judged, sourceText) {
   const { inSource, notInSource } = splitMissing(pass.score.missing, sourceText);
   if (inSource.length) notes.push(`These job keywords are in the candidate's material but not on the page; work them into bullets truthfully: ${inSource.map(k => k.term).join(', ')}.`);
   const hard = notInSource.filter(k => k.kind !== 'soft');
+  const soft = pass.score.missing.filter(k => k.kind === 'soft');
+  if (soft.length && !atsPasses(pass.score.score)) notes.push(`These soft skills from the job aren't on the page: ${soft.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. Show each through real work in a bullet, using the job's word where it's true (e.g. "collaborated with clinicians", "communicated findings to stakeholders", "solved…"). Don't list them under skills.`);
   if (hard.length && !atsPasses(pass.score.score)) notes.push(`These job keywords aren't written anywhere in the material: ${hard.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. For each, decide whether the candidate's real work shows it in substance (e.g. "system design" for designing a microservices architecture, "NoSQL" for MongoDB, "REST APIs" for a FastAPI service). If it does, write a truthful line using the job's exact phrase. If it doesn't, leave it out; if several required ones are missing, that's when a project to build fits (rule 13).`);
   if (!atsPasses(pass.score.score)) notes.push(`ATS match is ${pass.score.score}%; the rule is above ${ATS_TARGET}% (aim for 95%). Improve keyword placement, reframing and project choice, or add a project to build (rule 13); never claim what the material doesn't show.`);
   if (judged && judged.callbackAfter < CALLBACK_TARGET && notes.length) notes.push(`A recruiter check puts the callback chance at ${judged.callbackAfter}% (target ${CALLBACK_TARGET}%): ${judged.callbackWhy} Suggested: ${judged.nextChange}`);
@@ -480,7 +482,10 @@ async function handleProposal(userId, draft, ctx, final, tailoringId) {
 }
 
 /** The project as a resume entry (pinned so the one-page shrink keeps it). */
-const projectEntry = (p) => ({ name: p.name, link: p.repo_url || '', start: p.start_date || '', end: p.end_date || '', tech: list(p.tech), bullets: list(p.bullets), source: 'planned', ref: String(p.id), keep: true });
+// Only a built project is pinned against the one-page shrink; an unbuilt
+// suggestion must never push the candidate's real projects off the page.
+const projectEntry = (p) => ({ name: p.name, link: p.repo_url || '', start: p.start_date || '', end: p.end_date || '', tech: list(p.tech), bullets: list(p.bullets), source: 'planned', ref: String(p.id), keep: p.status === 'built' });
+const realProjects = (doc) => list(doc?.projects).filter(x => x.source !== 'planned').length;
 
 /** The doc with one more project, newest first, with equal bullet counts. */
 function withProject(doc, p) {
@@ -600,7 +605,9 @@ async function finishTailoring(userId, ctx, { draft, pass, judged, model, revise
   if (proposal) {
     const withIt = await renderScored(applyRules(withProject(pass.doc, proposal), { keywords: ctx.keywords, kind: ctx.kind }).doc, ctx, { removed: pass.removed, fixed: pass.fixed }).catch(err => { console.warn('[resumeEngine] project render failed:', err.message); return null; });
     proposedProject = { id: Number(proposal.id), name: proposal.name, tech: proposal.tech, bullets: proposal.bullets, covers: proposal.covers, why: proposal.why, plan: proposal.plan, status: proposal.status, withoutAts: pass.score.score, projectedAts: withIt?.score.score ?? null,
-      onPage: Boolean(withIt?.doc.projects.some(x => x.source === 'planned' && x.ref === String(proposal.id))) && keepProjectOnPage(pass.score.score, withIt?.score.score) };
+      onPage: Boolean(withIt?.doc.projects.some(x => x.source === 'planned' && x.ref === String(proposal.id)))
+        && keepProjectOnPage(pass.score.score, withIt?.score.score)
+        && realProjects(withIt?.doc) >= Math.min(2, realProjects(pass.doc)) };
     if (withIt && proposedProject.onPage) {
       pass = withIt;
       const j3 = await recruiterCheck(ctx, pass, userId);

@@ -27,7 +27,7 @@ import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
-import { applyRules, diffChanges, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
+import { applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
 import { resumeTex, coverLetterTex, compileTex, checkPreamble, RESUME_PREAMBLE } from './latex.js';
 
 const STALE_MINUTES = 20;
@@ -252,14 +252,77 @@ export async function renderOnePage(doc, opts = {}) {
   return { doc: current, pdf: out.pdf, pages: out.pages, shrunk, tex: tex(current) };
 }
 
-function candidateMaterial(parsed, repos, planned) {
+// ── Skills the user confirmed they know ────────────────────────────────────
+// After a tailoring, JD skills nothing they've shared shows are asked about
+// (on the resume page and on WhatsApp). The ones they approve are kept here
+// and count as their own skills in every tailoring after.
+
+const SKILLS_KEY = 'confirmed_skills';
+
+export async function confirmedSkills(userId) {
+  const v = (await one('SELECT value FROM meta WHERE user_id = $1 AND key = $2', [userId, SKILLS_KEY]))?.value;
+  try { return list(JSON.parse(v || '[]')).map(str).filter(Boolean); } catch { return []; }
+}
+
+export async function addConfirmedSkills(userId, terms) {
+  const cur = await confirmedSkills(userId);
+  const next = [...cur];
+  for (const t of terms.map(str).filter(Boolean)) if (!next.some(x => x.toLowerCase() === t.toLowerCase())) next.push(t.slice(0, 60));
+  await run('INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value', [userId, SKILLS_KEY, JSON.stringify(next.slice(0, 200))]);
+  return next;
+}
+
+export async function removeConfirmedSkill(userId, term) {
+  const next = (await confirmedSkills(userId)).filter(x => x.toLowerCase() !== str(term).toLowerCase());
+  await run('INSERT INTO meta (user_id, key, value) VALUES ($1, $2, $3) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value', [userId, SKILLS_KEY, JSON.stringify(next)]);
+  return next;
+}
+
+const confirmedLine = (confirmed) => (confirmed?.length ? `Skills the candidate confirmed they have: ${confirmed.join(', ')}` : '');
+
+/**
+ * After a resume finishes: if JD skills are missing, remember what was asked
+ * (for a WhatsApp "ADD 1 3" reply) and send the question.
+ */
+export async function askAboutSkills(userId, tailoringId) {
+  const t = await one(
+    `SELECT t.id, t.ats, e.company_name, e.job_title FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id
+      WHERE t.id = $1 AND t.user_id = $2 AND t.kind = 'resume' AND t.status IN ('ready', 'needs_review')`,
+    [tailoringId, userId],
+  );
+  if (!t) return null;
+  const terms = skillsToAsk(t);
+  if (!terms.length) return null;
+  const ask = { tailoringId: Number(t.id), terms, company: t.company_name, title: t.job_title, at: new Date().toISOString() };
+  await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'skills_ask', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, JSON.stringify(ask)]);
+  const { notify, skillsMessage } = await import('./whatsapp.js');
+  return notify(userId, 'skills', skillsMessage(ask)).catch(() => null);
+}
+
+/** The last skills question sent on WhatsApp, for an ADD reply. */
+export async function lastSkillsAsk(userId) {
+  const v = (await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'skills_ask'", [userId]))?.value;
+  try { return v ? JSON.parse(v) : null; } catch { return null; }
+}
+
+/** The user knows these JD skills: remember them and put them on this resume. */
+export async function approveSkills(userId, tailoringId, terms) {
+  const clean = list(terms).map(str).filter(Boolean).slice(0, 20);
+  if (!clean.length) throw Object.assign(new Error('Pick at least one skill'), { status: 400 });
+  await addConfirmedSkills(userId, clean);
+  return rerenderWithProject(userId, tailoringId, { terms: clean }, 'skills');
+}
+
+function candidateMaterial(parsed, repos, planned, confirmed = []) {
   const repoBlock = repos.map(r => `- ${r.full_name}${r.description ? `: ${r.description}` : ''}\n  languages: ${Object.keys(r.languages || {}).join(', ') || r.language || 'n/a'}; topics: ${(r.topics || []).join(', ') || 'none'}\n  README: ${str(r.readme).replace(/\s+/g, ' ').slice(0, 1200) || '(none)'}`).join('\n');
   const built = planned.filter(p => p.status === 'built');
   const suggested = planned.filter(p => p.status === 'suggested');
   const dismissed = planned.filter(p => p.status === 'dismissed');
   const fmt = (p) => `- id ${p.id}: ${p.name} | tech: ${list(p.tech).join(', ')} | covers: ${list(p.covers).join(', ')}${p.status === 'built' ? `\n  bullets: ${list(p.bullets).join(' / ')}\n  dates: ${p.start_date || ''} – ${p.end_date || ''}; repo: ${p.repo_url || ''}` : ''}`;
   return `CANDIDATE MATERIAL
-Master resume (JSON):
+${confirmed.length ? `Skills the candidate confirmed they have (use them like any skill on the resume): ${confirmed.join(', ')}
+
+` : ''}Master resume (JSON):
 ${JSON.stringify(parsed)}
 
 GitHub repos the candidate chose to include:
@@ -309,7 +372,7 @@ async function loadEvaluation(userId, evalId) {
  */
 async function build(draft, ctx) {
   const { parsed, repos, planned, raw, keywords, kind, preamble, sourceText } = ctx;
-  const guarded = guardDraft(draft, parsed, repos, raw, planned.filter(p => p.status === 'built'));
+  const guarded = guardDraft(draft, parsed, repos, `${raw}\n${confirmedLine(ctx.confirmed)}`, planned.filter(p => p.status === 'built'));
   const ruled = applyRules(guarded.doc, { keywords, kind });
   return renderScored(ruled.doc, ctx, { removed: [...guarded.removed, ...ruled.removed], fixed: ruled.fixed });
 }
@@ -430,11 +493,11 @@ async function context(userId, ev, jd = null) {
   const { master, parsed, cost: parseCost } = await parsedMaster(userId);
   if (!jd) jd = await extractKeywords({ title: ev.job_title, company: ev.company_name, description: ev.job_description, userId });
   else jd = { ...jd, cost: 0 };
-  const [repos, planned, raw, preamble] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId)]);
+  const [repos, planned, raw, preamble, confirmed] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId), confirmedSkills(userId)]);
   const kind = roleKind({ title: ev.job_title, company: ev.company_name, description: ev.job_description });
   const built = planned.filter(p => p.status === 'built');
-  const sourceText = `${masterText(parsed)}\n${raw}\n${repos.map(repoText).join('\n')}\n${built.map(plannedText).join('\n')}`;
-  return { ev, master, parsed, repos, planned, raw, preamble, kind, keywords: jd.keywords, focus: jd.focus, title: jd.title, sourceText, cost: parseCost + jd.cost };
+  const sourceText = `${masterText(parsed)}\n${raw}\n${repos.map(repoText).join('\n')}\n${built.map(plannedText).join('\n')}\n${confirmedLine(confirmed)}`;
+  return { ev, master, parsed, repos, planned, raw, preamble, confirmed, kind, keywords: jd.keywords, focus: jd.focus, title: jd.title, sourceText, cost: parseCost + jd.cost };
 }
 
 /** The ATS score of the untailored master, from the text an ATS reads in its PDF. */
@@ -495,7 +558,7 @@ const DRAFT_MAX_TOKENS = 16000;
 function draftPrompt(ctx) {
   const { ev } = ctx;
   return {
-    system: `${TAILOR_RULES}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned)}`,
+    system: `${TAILOR_RULES}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned, ctx.confirmed)}`,
     user: `JOB: ${ctx.title} at ${ev.company_name}
 ROLE TYPE: ${ctx.kind.quant ? 'quant/HFT/C++ (latency numbers allowed; Industry Experience may go above Research)' : 'not quant (no numbers in project bullets)'}${ctx.kind.finance ? '; finance' : ''}
 WHAT THIS ROLE IS REALLY HIRING FOR: ${ctx.focus.join('; ') || 'n/a'}
@@ -697,6 +760,7 @@ async function moveOn(r, res) {
       return;
     }
     await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { draft, pass: checked.pass, judged: checked.judged, model: res.model, revised: false, cost: cost + checked.cost, tailoringId: r.id })), batch: null });
+    await askAboutSkills(r.user_id, r.id).catch(() => null);
     return;
   }
   // The revision is back (or failed for good, in which case the first draft stands).
@@ -709,6 +773,7 @@ async function moveOn(r, res) {
     if (t.revised) state = { ...state, ...t, model: res.model };
   }
   await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { ...state, cost: cost + extra, tailoringId: r.id })), batch: null });
+  await askAboutSkills(r.user_id, r.id).catch(() => null);
 }
 
 /** Every 5 minutes: pick up finished resume batches, then send what's queued. */
@@ -788,6 +853,7 @@ export async function start(userId, evalId, kind = 'resume', { batch = false } =
   running.add(row.id);
   const job = kind === 'resume' ? tailor(userId, ev, row.id) : writeCoverLetter(userId, ev);
   job.then(fields => finish(row.id, fields))
+    .then(() => (kind === 'resume' ? askAboutSkills(userId, row.id).catch(() => null) : null))
     .catch(async (err) => {
       console.error(`[resumeEngine] ${kind} #${row.id} failed:`, err.message);
       await finish(row.id, { status: 'failed', error: String(err.message).slice(0, 500) }).catch(() => {});
@@ -938,14 +1004,15 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   if (!t?.report?.doc) return null;
   const ev = await loadEvaluation(userId, t.evaluation_id);
   const { master, parsed } = await parsedMaster(userId);
-  const [repos, planned, raw, preamble] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId)]);
+  const [repos, planned, raw, preamble, confirmed] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId), confirmedSkills(userId)]);
   const kind = t.report.roleKind || roleKind({ title: ev.job_title, company: ev.company_name, description: ev.job_description });
   const built = planned.filter(p => p.status === 'built');
-  const sourceText = `${masterText(parsed)}\n${raw}\n${repos.map(repoText).join('\n')}\n${built.map(plannedText).join('\n')}`;
-  const ctx = { ev, master, parsed, repos, planned, raw, preamble, kind, keywords: t.ats?.keywords || [], focus: t.report.focus || [], title: t.report.title || ev.job_title, sourceText };
+  const sourceText = `${masterText(parsed)}\n${raw}\n${repos.map(repoText).join('\n')}\n${built.map(plannedText).join('\n')}\n${confirmedLine(confirmed)}`;
+  const ctx = { ev, master, parsed, repos, planned, raw, preamble, confirmed, kind, keywords: t.ats?.keywords || [], focus: t.report.focus || [], title: t.report.title || ev.job_title, sourceText };
   const ref = String(project.id);
-  const doc = mode === 'built'
-    ? withProject(t.report.doc, project)
+  const skillKeywords = mode === 'skills' ? project.terms.map(term => ctx.keywords.find(k => k.term.toLowerCase() === term.toLowerCase()) || { term, aliases: [], importance: 'preferred', kind: 'hard' }) : [];
+  const doc = mode === 'built' ? withProject(t.report.doc, project)
+    : mode === 'skills' ? addMissingSkills(t.report.doc, skillKeywords, ctx.keywords).doc
     : { ...t.report.doc, projects: t.report.doc.projects.filter(x => !(x.source === 'planned' && x.ref === ref)) };
   const ruled = applyRules(doc, { keywords: ctx.keywords, kind });
   const pass = await renderScored(ruled.doc, ctx, { removed: [...list(t.report.removed), ...ruled.removed], fixed: list(t.report.fixed) });
@@ -955,7 +1022,9 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   const keep = t.report;
   const change = mode === 'built'
     ? { section: 'Projects', before: '', after: project.name, why: `You built it (${project.repo_url}); it adds ${list(project.covers).join(', ') || 'the missing skills'}.` }
-    : { section: 'Projects', before: project.name, after: '', why: 'You chose not to build it, so it came off.' };
+    : mode === 'skills'
+      ? { section: 'Technical Skills', before: '', after: project.terms.join(', '), why: 'You confirmed you know them.' }
+      : { section: 'Projects', before: project.name, after: '', why: 'You chose not to build it, so it came off.' };
   const fields = rowFields(ctx, pass, judged || {
     callbackBefore: keep.callback?.before, callbackAfter: keep.callback?.after, callbackWhy: keep.callback?.why, atsWhy: keep.atsWhy,
     topChanges: keep.topChanges, nextChange: keep.nextChange, blockers: keep.blockers, verdict: keep.verdict, verdictWhy: keep.verdictWhy,
@@ -963,7 +1032,8 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
     notes: keep.notes,
     changes: [...list(keep.changes), change],
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: p.source === 'planned' ? 'The project you built for this role' : str(list(keep.projects).find(d => d.name === p.name)?.why) })),
-    proposedProject: keep.proposedProject ? { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined } : null,
+    proposedProject: !keep.proposedProject || mode === 'skills' ? keep.proposedProject || null
+      : { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined },
     revised: keep.revised,
     model: keep.model,
     judgeModel: judged?.model || keep.judgeModel || null,

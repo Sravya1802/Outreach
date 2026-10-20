@@ -468,6 +468,7 @@ export const api = {
     startTailoring: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/tailor`, { method: 'POST' }),
     startCoverLetter: (evalId) => apiCall(`/resume-engine/evaluations/${evalId}/cover-letter`, { method: 'POST' }),
     approveTailoring: (id) => apiCall(`/resume-engine/tailorings/${id}/approve`, { method: 'POST' }),
+    approveSkills: (id, skills) => apiCall(`/resume-engine/tailorings/${id}/skills`, { method: 'POST', body: { skills } }),
     resumeTemplate: () => apiCall('/resume-engine/template'),
     saveResumeTemplate: (tex) => apiCall('/resume-engine/template', { method: 'PUT', body: { tex } }),
     resetResumeTemplate: () => apiCall('/resume-engine/template', { method: 'DELETE' }),

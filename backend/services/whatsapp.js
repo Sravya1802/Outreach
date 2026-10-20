@@ -81,7 +81,26 @@ export const WHATSAPP_TEMPLATES = {
     footer: APP,
     button: { text: 'See the projects', path: '/profile/projects' },
   },
+  skills: {
+    name: 'snj_missing_skills',
+    header: { text: 'Skills to check · {{1}}', example: 'Stripe' },
+    body: {
+      text: 'Hello,\nThe {{1}} job asks for skills your resume doesn’t show:\n{{2}}\n\nIf you know any of them, reply ADD with their numbers (like ADD 1 3), or ADD ALL. They go on this resume and the next ones.\n\nGood luck! ;)',
+      example: ['Stripe · Software Engineer, New Grad', '1) Kafka  2) Go  3) Kubernetes'],
+    },
+    footer: APP,
+    button: { text: 'Open my roles', path: '/applications/auto-apply' },
+  },
 };
+
+/** The "which of these do you know?" question after a resume is tailored. */
+export function skillsMessage({ company, title, terms }) {
+  const numbered = terms.map((t, i) => `${i + 1}) ${t}`);
+  return {
+    params: { header: company, body: [`${company} · ${title}`, numbered.join('  ')] },
+    text: `*Skills to check · ${company}*\n\nThe ${company} · ${title} job asks for skills your resume doesn’t show:\n\n${numbered.join('\n')}\n\nIf you know any of them, reply *ADD* with their numbers (like ADD 1 3), or *ADD ALL*. They go on this resume and the next ones. Only add what you could talk about in an interview.`,
+  };
+}
 
 /**
  * New projects to build → { params, text } for notify(). Each project:
@@ -112,7 +131,7 @@ export function templateDefinition(kind) {
   return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: true, components };
 }
 
-const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects' };
+const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };
 
 const cfg = () => ({
   token: process.env.WHATSAPP_TOKEN,
@@ -149,6 +168,12 @@ export function parseCommand(text) {
     const nums = [...m[2].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 100);
     const cmd = /^(skip|no)$/i.test(m[1]) ? 'skip' : 'yes';
     return { cmd, picks: nums.length ? [...new Set(nums)] : 'all' };
+  }
+  m = /^add\s+(all|[\d\s,and&]+)$/i.exec(t);
+  if (m) {
+    if (/^all$/i.test(m[1].trim())) return { cmd: 'add', picks: 'all' };
+    const nums = [...m[1].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 100);
+    if (nums.length) return { cmd: 'add', picks: [...new Set(nums)] };
   }
   if (/^(list|today|tonight)\b/i.test(t)) return { cmd: 'list' };
   if (/^(stop|unsubscribe|pause)\b/i.test(t)) return { cmd: 'stop' };
@@ -243,7 +268,7 @@ export async function whatsappStatus(userId) {
     linked: Boolean(l?.verified_at),
     phone: l?.verified_at ? l.phone : null,
     enabled: l?.enabled ?? true,
-    prefs: { list: true, replies: true, needs: true, summary: true, projects: true, ...(l?.prefs || {}) },
+    prefs: { list: true, replies: true, needs: true, summary: true, projects: true, skills: true, ...(l?.prefs || {}) },
     verifiedAt: l?.verified_at || null,
     pending: l?.join_code && new Date(l.join_code_expires) > new Date() ? { code: l.join_code, expires: l.join_code_expires } : null,
   };
@@ -348,6 +373,7 @@ export const HELP = [
   '*YES 1 3*  approve only those numbers',
   '*SKIP 2*  skip one',
   '*LIST*  see tonight’s list again',
+  '*ADD 1 3* / *ADD ALL*  you know those skills; they go on your resume',
   '*STOP* / *START*  pause or resume these messages',
   '*HELP*  show this again',
 ].join('\n');
@@ -403,6 +429,7 @@ export async function handleInbound(from, text) {
   if (c.cmd === 'help') return reply(userId, phone, HELP);
   if (c.cmd === 'stop') { await run('UPDATE whatsapp_links SET enabled = false WHERE user_id = $1', [userId]); return reply(userId, phone, 'Paused. Send START to turn WhatsApp messages back on.'); }
   if (c.cmd === 'start') { await run('UPDATE whatsapp_links SET enabled = true WHERE user_id = $1', [userId]); return reply(userId, phone, 'WhatsApp messages are on again.'); }
+  if (c.cmd === 'add') return reply(userId, phone, await addSkillsReply(userId, c.picks));
   const { plan, items } = await numberedTop(userId);
   if (c.cmd === 'list') {
     if (!plan || !items.length) return reply(userId, phone, 'No list right now. It arrives in the evening.');
@@ -424,6 +451,24 @@ export async function handleInbound(from, text) {
   const verb = c.cmd === 'yes' ? 'Approved' : 'Skipped';
   const lines = done.map(i => `• ${i.company_name} · ${i.title}`);
   return reply(userId, phone, `${done.length ? `${verb}:\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on tonight’s list.` : ''}${c.cmd === 'yes' && done.length ? '\n\nTailored resumes are being written now.' : ''}`);
+}
+
+/** ADD 1 3: the user knows those skills from the last question; add them to that resume. */
+async function addSkillsReply(userId, picks) {
+  const { lastSkillsAsk, approveSkills } = await import('./resumeEngine.js');
+  const ask = await lastSkillsAsk(userId);
+  if (!ask?.terms?.length) return 'There’s no skills question waiting. It comes after a resume is tailored.';
+  const nums = picks === 'all' ? ask.terms.map((_, i) => i + 1) : picks;
+  const bad = nums.filter(n => n > ask.terms.length);
+  const terms = nums.filter(n => n <= ask.terms.length).map(n => ask.terms[n - 1]);
+  if (!terms.length) return `There are only ${ask.terms.length} skills on that list. Reply ADD with their numbers, like ADD 1 3.`;
+  try {
+    const t = await approveSkills(userId, ask.tailoringId, terms);
+    const score = t?.ats_score != null ? ` The resume now scores ${t.ats_score}% on the ATS check${t.status === 'ready' ? ' and is ready to send' : ''}.` : '';
+    return `Added ${terms.join(', ')} to your ${ask.company} resume, and they’ll be used on your next ones.${score}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on that list.` : ''}`;
+  } catch (err) {
+    return `Couldn’t add them: ${err.message}`;
+  }
 }
 
 /** Webhook handshake (GET). Returns the challenge or null. */

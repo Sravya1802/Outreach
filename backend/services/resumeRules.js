@@ -435,3 +435,12 @@ export function gapsAcross(keywordsPerRole, sourceText) {
     .sort((a, b) => b.roles - a.roles || b.required - a.required || a.term.localeCompare(b.term));
 }
 
+
+// ── Skills to ask the user about ───────────────────────────────────────────
+
+/** JD skills a finished resume still doesn't show and nothing the user shared does (hard skills only). */
+export function skillsToAsk(t) {
+  const kinds = new Map(list(t.ats?.keywords).map(k => [String(k.term ?? '').trim().toLowerCase(), k.kind]));
+  return list(t.ats?.missingYouDont).map(m => m.term).filter(term => kinds.get(String(term ?? '').trim().toLowerCase()) !== 'soft').slice(0, 12);
+}
+

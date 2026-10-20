@@ -6,6 +6,7 @@ import { parseId } from '../services/safePaths.js';
 import {
   approve, coverLetterRequested, latest, parsedMaster, start,
   templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
+  approveSkills, confirmedSkills, removeConfirmedSkill,
 } from '../services/resumeEngine.js';
 import { suggestProjects, isSuggesting } from '../services/projectIdeas.js';
 
@@ -60,6 +61,26 @@ router.post('/evaluations/:id/cover-letter', async (req, res) => {
   try {
     res.status(202).json({ tailoring: await start(req.user.id, id, 'cover_letter') });
   } catch (err) { fail(res, err); }
+});
+
+// The user knows these JD skills: add them to this resume and remember them.
+router.post('/tailorings/:id/skills', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  const skills = Array.isArray(req.body?.skills) ? req.body.skills.filter(x => typeof x === 'string') : [];
+  try {
+    const t = await approveSkills(req.user.id, id, skills);
+    if (!t) return res.status(404).json({ error: 'That resume isn’t finished' });
+    res.json({ tailoring: t });
+  } catch (err) { fail(res, err); }
+});
+
+// Skills the user confirmed they know (used by every tailoring).
+router.get('/skills', async (req, res) => {
+  try { res.json({ skills: await confirmedSkills(req.user.id) }); } catch (err) { fail(res, err); }
+});
+router.delete('/skills/:term', async (req, res) => {
+  try { res.json({ skills: await removeConfirmedSkill(req.user.id, req.params.term) }); } catch (err) { fail(res, err); }
 });
 
 // "Send anyway" for a resume under the ATS target.

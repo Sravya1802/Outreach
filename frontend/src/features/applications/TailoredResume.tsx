@@ -194,15 +194,7 @@ function ResumeResult({ t, onDownload, onApprove, approving }: { t: Tailoring; o
         </div>
       )}
 
-      {gaps.length > 0 && (
-        <div>
-          <h4 className="mb-2 font-medium text-fg">Gaps you can’t honestly claim</h4>
-          <p className="mb-3 text-[13px] text-muted">Not added, because nothing you’ve shared shows them. If you do have one, add it to your master resume and tailor again.</p>
-          <ul className="space-y-2 text-[14px] leading-relaxed">
-            {gaps.map(g => <li key={g.term}><span className="text-fg">{g.term}</span> <span className="block text-[13px] text-subtle">{g.why}</span></li>)}
-          </ul>
-        </div>
-      )}
+      {gaps.length > 0 && <MissingSkills t={t} gaps={gaps} />}
 
       {(rep.ruleIssues?.length ?? 0) > 0 && (
         <div>
@@ -257,6 +249,53 @@ function ResumeResult({ t, onDownload, onApprove, approving }: { t: Tailoring; o
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * JD skills nothing you've shared shows. Tick the ones you know: they go on
+ * this resume (re-rendered and re-scored, no AI rewrite) and count as yours
+ * on every resume after.
+ */
+function MissingSkills({ t, gaps }: { t: Tailoring; gaps: { term: string; why: string }[] }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [picked, setPicked] = useState<string[]>([])
+  const soft = new Set((t.ats?.keywords ?? []).filter(k => k.kind === 'soft').map(k => k.term.toLowerCase()))
+  const askable = gaps.filter(g => !soft.has(g.term.toLowerCase()))
+  const add = useMutation({
+    mutationFn: () => api.approveSkills(t.id, picked),
+    onSuccess: (r) => {
+      toast.success(`Added ${picked.join(', ')}. ${r.tailoring?.ats_score != null ? `ATS now ${r.tailoring.ats_score}%.` : ''}`)
+      setPicked([])
+      void qc.invalidateQueries({ queryKey: ['tailoring'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const toggle = (term: string) => setPicked(p => (p.includes(term) ? p.filter(x => x !== term) : [...p, term]))
+  return (
+    <div>
+      <h4 className="mb-2 font-medium text-fg">Skills the job asks for that your resume doesn’t show</h4>
+      <p className="mb-3 text-[13px] text-muted">Tick the ones you know and could talk about in an interview. They’re added to this resume and used on your next ones too.</p>
+      <ul className="space-y-2 text-[14px] leading-relaxed">
+        {askable.map(g => (
+          <li key={g.term}>
+            <label className="flex cursor-pointer items-start gap-2">
+              <input type="checkbox" className="mt-1 size-4 accent-[var(--ui-accent)]" checked={picked.includes(g.term)} onChange={() => toggle(g.term)} />
+              <span><span className="text-fg">{g.term}</span> <span className="block text-[13px] text-subtle">{g.why}</span></span>
+            </label>
+          </li>
+        ))}
+        {gaps.filter(g => soft.has(g.term.toLowerCase())).map(g => (
+          <li key={g.term} className="pl-6"><span className="text-muted">{g.term}</span> <span className="block text-[13px] text-subtle">A soft skill: show it in your bullets rather than listing it.</span></li>
+        ))}
+      </ul>
+      {askable.length > 0 && (
+        <Button className="mt-3" disabled={!picked.length} loading={add.isPending} onClick={() => add.mutate()}>
+          {picked.length ? `Add ${picked.length} I know` : 'Tick the ones you know'}
+        </Button>
+      )}
     </div>
   )
 }

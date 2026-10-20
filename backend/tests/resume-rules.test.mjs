@@ -79,6 +79,12 @@ test('gaps across roles: counted once per role, skills you show left out, most a
   assert.deepEqual(g2.map(g => [g.term, g.roles]), [['CI/CD', 2]]);
 });
 
+test('skills to ask about: hard skills nothing you shared shows, not soft ones', async () => {
+  const { skillsToAsk } = await import('../services/resumeRules.js');
+  const t = { ats: { keywords: [k('Kafka'), k('teamwork', { kind: 'soft' }), k('Go')], missingYouDont: [{ term: 'Kafka' }, { term: 'teamwork' }, { term: 'Go' }] } };
+  assert.deepEqual(skillsToAsk(t), ['Kafka', 'Go']);
+});
+
 test('dashes and filler are caught; dashes become commas', () => {
   assert.equal(fixDashes('Built a tool — fast and simple'), 'Built a tool, fast and simple');
   assert.equal(fixDashes('Built a tool---fast'), 'Built a tool, fast');

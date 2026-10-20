@@ -363,7 +363,7 @@ export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFile
 
 // ── WhatsApp ─────────────────────────────────────────────────────────────────
 
-export type WhatsAppKind = 'list' | 'replies' | 'needs' | 'summary' | 'projects'
+export type WhatsAppKind = 'list' | 'replies' | 'needs' | 'summary' | 'projects' | 'skills'
 export interface WhatsAppStatus {
   configured: boolean
   businessNumber: string | null
@@ -867,6 +867,8 @@ export const api = {
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
   startCoverLetter: async (evalId: number): Promise<Tailoring> => (await legacy.career.startCoverLetter(evalId)).tailoring,
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
+  /** You know these JD skills: added to this resume and remembered for the next ones. */
+  approveSkills: (id: number, skills: string[]): Promise<{ tailoring: Tailoring | null }> => legacy.career.approveSkills(id, skills),
   trackerRows: async (): Promise<{ rows: TrackerRow[]; title: string }> => { const r = await legacy.career.trackerRows(); return { rows: r.rows ?? [], title: r.title || 'MY APPLICATIONS' } },
   trackerTitle: (title: string): Promise<{ title: string }> => legacy.career.trackerTitle(title),
   trackerAdd: (body: { company: string; role: string; link?: string; status?: TrackerStatus; referral?: TrackerReferral | null }): Promise<{ id: number }> => legacy.career.trackerAdd(body),

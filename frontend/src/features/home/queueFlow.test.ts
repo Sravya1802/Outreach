@@ -82,7 +82,7 @@ describe('emailSteps', () => {
 })
 
 describe('whatsappSteps', () => {
-  const base: WhatsAppStatus = { configured: true, businessNumber: '+15550100', linked: false, phone: null, enabled: true, prefs: { list: true, replies: true, needs: true, summary: false, projects: true }, verifiedAt: null, pending: null }
+  const base: WhatsAppStatus = { configured: true, businessNumber: '+15550100', linked: false, phone: null, enabled: true, prefs: { list: true, replies: true, needs: true, summary: false, projects: true, skills: true }, verifiedAt: null, pending: null }
   it('asks to link the phone first', () => {
     const steps = whatsappSteps(base)
     expect(steps[0]?.state).toBe('you')

@@ -83,3 +83,15 @@ test('projects message: short line for the template, full text inside the window
   assert.match(m.text, /\*1\) TrialMatch API \| Clinical Trial Eligibility Service\*\nAdds: C#, \.NET, CI\/CD\nHelps: 19 of 30 roles/);
   assert.match(m.text, /\/profile\/projects/);
 });
+
+test('ADD replies and the skills question', async () => {
+  const { parseCommand, skillsMessage } = await import('../services/whatsapp.js');
+  assert.deepEqual(parseCommand('ADD 1 3'), { cmd: 'add', picks: [1, 3] });
+  assert.deepEqual(parseCommand('add 2, 4 and 5'), { cmd: 'add', picks: [2, 4, 5] });
+  assert.deepEqual(parseCommand('ADD ALL'), { cmd: 'add', picks: 'all' });
+  assert.equal(parseCommand('add me to the list'), null);
+  const m = skillsMessage({ company: 'Stripe', title: 'SWE, New Grad', terms: ['Kafka', 'Go'] });
+  assert.equal(m.params.header, 'Stripe');
+  assert.deepEqual(m.params.body, ['Stripe · SWE, New Grad', '1) Kafka  2) Go']);
+  assert.match(m.text, /1\) Kafka\n2\) Go/);
+});

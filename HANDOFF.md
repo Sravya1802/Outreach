@@ -124,6 +124,18 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-20 — Missing-skills question, scores in the after-apply report, sample tailoring (IBM)
+- **Skills you know** (`139ae14`): after a resume finishes, `askAboutSkills` stores `meta.skills_ask` (the hard JD skills nothing you've shared shows, via `resumeRules.skillsToAsk`) and sends WhatsApp **`snj_missing_skills`** (PENDING). The user replies **ADD 1 3 / ADD ALL**. On the resume page, missing skills have tick boxes. `approveSkills` adds them to `meta.confirmed_skills`, which counts as source in every tailoring (`confirmedLine`), and re-renders that resume. `GET/DELETE /api/resume-engine/skills`. Pref key `skills`.
+- **After applying** (`449089f`): the morning summary lists each applied role with "ATS N% · interview chance N%". Tracker rows, columns and the CSV gain ATS and Interview, taken from the latest finished tailoring.
+- **Fixes from the IBM sample** (`f62003b`, plus the plural and unbuilt fixes):
+  - an unbuilt suggestion is no longer pinned against the shrink, and must leave ≥ min(2, n) real projects on the page
+  - the revision now asks for missing soft skills shown through real work
+  - `variants()` adds the singular of a plural JD term
+  - `rescoreTailoring(userId, id)` re-renders and re-scores as is
+  - a suggestion kept off the page no longer holds the resume in review
+- **Sample:** IBM "Associate Data Engineer - AI & Analytics - 2027" (plan item 814; evaluation 122, source `sample`, shows in the user's Tracker as not applied). Tailoring #10: ATS 89 (master) → 93, callback 6 → 11, verdict apply_with_referral, ready, $0.26. Opus suggested "TrialFlow ETL | Java Data Pipeline" (kept off the page: 87 → 84 with it). Tailoring #9 (before the fixes) stays in history.
+- **Watch:** extras (Certifications, Publications) get cut first by `SHRINK_STEPS` on full pages. Projects can go down to 1 when Experience is long.
+
 ### 2026-10-20 — WhatsApp message for new projects to build
 - **What** (`6d4d75d`):
   - New kind `projects`: template **`snj_project_ideas`**, header "Projects to build · {{1}}", one body line, button to /profile/projects. `projectsMessage(projects)` builds the template params and the in-window text (name, what it adds, how many listed roles it helps).

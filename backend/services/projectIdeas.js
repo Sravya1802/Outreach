@@ -23,6 +23,7 @@ import { looksLikeJobDescription } from './postingText.js';
 import { extractKeywords, includedRepos, parsedMaster, plannedProjects } from './resumeEngine.js';
 import { masterText, plannedText, repoText } from './resumeGuard.js';
 import { gapsAcross } from './resumeRules.js';
+import { notify as whatsappNotify, projectsMessage } from './whatsapp.js';
 
 const LOOKBACK_DAYS = 14;
 const MAX_ROLES = 30;
@@ -131,6 +132,7 @@ ${planned.filter(p => p.status === 'dismissed').map(fmt).join('\n') || '(none)'}
     cost += r.costUsd;
     const ideas = list(JSON.parse(r.text).projects).slice(0, 3);
     let created = 0;
+    const fresh = [];
     for (const p of ideas) {
       const name = str(p.name).slice(0, 120);
       if (!name || !list(p.bullets).length) continue;
@@ -155,7 +157,9 @@ ${planned.filter(p => p.status === 'dismissed').map(fmt).join('\n') || '(none)'}
           JSON.stringify(list(p.plan).map(str).filter(Boolean).slice(0, 10)), JSON.stringify(demand)],
       );
       created += 1;
+      fresh.push({ name, covers: hit.length ? hit.map(g => g.term) : covers, demand });
     }
+    if (fresh.length) await whatsappNotify(userId, 'projects', projectsMessage(fresh)).catch(err => console.warn('[project-ideas] whatsapp:', err.message));
     await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'project_ideas_at', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, new Date().toISOString()]);
     return { created, open: open.length + created, gaps: gaps.length, roles: roles.length, cost: Number(cost.toFixed(5)) };
   } finally {

@@ -71,7 +71,35 @@ export const WHATSAPP_TEMPLATES = {
     footer: APP,
     button: { text: 'See the details', path: '/applications/auto-apply' },
   },
+  projects: {
+    name: 'snj_project_ideas',
+    header: { text: 'Projects to build · {{1}}', example: '3 new' },
+    body: {
+      text: 'Hello,\nYour listed roles keep asking for skills your resume doesn’t show yet. These projects would cover them:\n{{1}}\n\nOpen Scout’n’Jobs for each build plan.\n\nGood luck! ;)',
+      example: ['1) TrialMatch API · C#, .NET, CI/CD · 19 of 30 roles  2) PacketSentry · C, cybersecurity · 19 of 30 roles'],
+    },
+    footer: APP,
+    button: { text: 'See the projects', path: '/profile/projects' },
+  },
 };
+
+/**
+ * New projects to build → { params, text } for notify(). Each project:
+ * { name, covers, demand: { roles, of } | null }.
+ */
+export function projectsMessage(projects) {
+  const line = (p, i) => {
+    const adds = (p.covers || []).slice(0, 4).join(', ');
+    const who = p.demand ? `${p.demand.roles} of ${p.demand.of} roles` : 'for one role';
+    return { short: `${i + 1}) ${String(p.name).split('|')[0].trim()} · ${adds} · ${who}`, long: `*${i + 1}) ${p.name}*\nAdds: ${adds || 'skills the role asks for'}\nHelps: ${who}` };
+  };
+  const lines = projects.map(line);
+  const n = projects.length;
+  return {
+    params: { header: `${n} new`, body: [lines.map(l => l.short).join('  ')] },
+    text: `*Projects to build · ${n} new*\n\nYour listed roles keep asking for skills your resume doesn’t show yet. These would cover them:\n\n${lines.map(l => l.long).join('\n\n')}\n\nBuild plans: ${SITE}/profile/projects\nWhen one's built, push it and mark it built there so your resumes can use it.`,
+  };
+}
 
 /** The components Meta's API expects when creating a template. */
 export function templateDefinition(kind) {
@@ -84,7 +112,7 @@ export function templateDefinition(kind) {
   return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: true, components };
 }
 
-const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary' };
+const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects' };
 
 const cfg = () => ({
   token: process.env.WHATSAPP_TOKEN,
@@ -215,7 +243,7 @@ export async function whatsappStatus(userId) {
     linked: Boolean(l?.verified_at),
     phone: l?.verified_at ? l.phone : null,
     enabled: l?.enabled ?? true,
-    prefs: l?.prefs || { list: true, replies: true, needs: true, summary: true },
+    prefs: { list: true, replies: true, needs: true, summary: true, projects: true, ...(l?.prefs || {}) },
     verifiedAt: l?.verified_at || null,
     pending: l?.join_code && new Date(l.join_code_expires) > new Date() ? { code: l.join_code, expires: l.join_code_expires } : null,
   };

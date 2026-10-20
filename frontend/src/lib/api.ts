@@ -363,7 +363,7 @@ export interface ResumeHistory { masters: ResumeFile[]; applications: ResumeFile
 
 // ── WhatsApp ─────────────────────────────────────────────────────────────────
 
-export type WhatsAppKind = 'list' | 'replies' | 'needs' | 'summary'
+export type WhatsAppKind = 'list' | 'replies' | 'needs' | 'summary' | 'projects'
 export interface WhatsAppStatus {
   configured: boolean
   businessNumber: string | null

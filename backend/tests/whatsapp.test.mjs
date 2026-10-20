@@ -71,3 +71,15 @@ test('every template has as many example values as placeholders, and a valid sha
     assert.match(d.components[3].buttons[0].url, /^https:\/\//);
   }
 });
+
+test('projects message: short line for the template, full text inside the window', async () => {
+  const { projectsMessage } = await import('../services/whatsapp.js');
+  const m = projectsMessage([
+    { name: 'TrialMatch API | Clinical Trial Eligibility Service', covers: ['C#', '.NET', 'CI/CD'], demand: { roles: 19, of: 30 } },
+    { name: 'OpsAgent | LangGraph Agent', covers: ['LangGraph'], demand: null },
+  ]);
+  assert.equal(m.params.header, '2 new');
+  assert.equal(m.params.body[0], '1) TrialMatch API · C#, .NET, CI/CD · 19 of 30 roles  2) OpsAgent · LangGraph · for one role');
+  assert.match(m.text, /\*1\) TrialMatch API \| Clinical Trial Eligibility Service\*\nAdds: C#, \.NET, CI\/CD\nHelps: 19 of 30 roles/);
+  assert.match(m.text, /\/profile\/projects/);
+});

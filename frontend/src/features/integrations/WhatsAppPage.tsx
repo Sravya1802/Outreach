@@ -12,6 +12,7 @@ const KINDS: { key: WhatsAppKind; label: string; hint: string }[] = [
   { key: 'replies', label: 'Replies to your outreach', hint: 'Someone answered your email or messaged you on LinkedIn.' },
   { key: 'needs', label: 'Roles that need you', hint: 'A low ATS score, a referral code to enter, or one to apply to yourself.' },
   { key: 'summary', label: 'Morning summary', hint: 'What was applied and what’s waiting, around 11 AM.' },
+  { key: 'projects', label: 'New projects to build', hint: 'Whenever new project ideas come in from your listed roles (weekly), or for one role’s resume.' },
 ]
 
 const COMMANDS = [

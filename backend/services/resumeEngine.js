@@ -411,6 +411,8 @@ async function handleProposal(userId, draft, ctx, final, tailoringId) {
     [userId, ctx.ev.id, tailoringId, str(p.name).slice(0, 120), JSON.stringify(list(p.tech).map(str).filter(Boolean).slice(0, 8)), JSON.stringify(bullets),
       JSON.stringify(adds.slice(0, 10)), str(p.why).slice(0, 500), JSON.stringify(list(p.plan).map(str).filter(Boolean).slice(0, 10))],
   )).rows[0];
+  const { notify, projectsMessage } = await import('./whatsapp.js');
+  await notify(userId, 'projects', projectsMessage([{ name: row.name, covers: row.covers, demand: null }])).catch(() => {});
   return row;
 }
 

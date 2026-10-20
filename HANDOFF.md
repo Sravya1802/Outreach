@@ -124,6 +124,14 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-20 — WhatsApp message for new projects to build
+- **What** (`6d4d75d`):
+  - New kind `projects`: template **`snj_project_ideas`**, header "Projects to build · {{1}}", one body line, button to /profile/projects. `projectsMessage(projects)` builds the template params and the in-window text (name, what it adds, how many listed roles it helps).
+  - Sent when `suggestProjects` creates any (weekly cron or the button), and when tailoring creates a role project (`handleProposal`).
+  - Pref key `projects`, on by default; switch on Integrations → WhatsApp.
+- **Template:** submitted 2026-10-20 (id 4659722647649993), PENDING. Until it's approved, a send outside the user's 24-hour window fails with #132001. A one-off watcher (`backend/_wa_wait.mjs` on the VM, which deletes itself, log /tmp/wa-wait.log) sends the user's 3 current suggestions once it's approved.
+- **Note:** Meta re-categorized snj_daily_list, snj_needs_you and snj_morning_summary as MARKETING (all APPROVED); snj_reply_alert is UTILITY.
+
 ### 2026-10-19 — Profile → Projects: projects to build, from the roles on your lists
 - **Why:** the user asked what happened to project recommendations. They only ran inside a tailored resume, which needs an approved role, and the user had approved none (494 pending, 249 expired). They also showed nowhere except that resume's panel.
 - **What** (`0a10ded`, `52eafd5`, plus the hyphen fix; migration **034** adds `planned_projects.origin` ('role'|'weekly') and `demand`, applied):

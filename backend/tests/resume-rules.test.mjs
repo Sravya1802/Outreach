@@ -30,6 +30,8 @@ test('ATS equivalents: RESTful ≈ REST, CI/CD, LLMs; no false hits', async () =
   assert.ok(hasTerm('Shipped with CI/CD on GitHub Actions', k('CI/CD')));
   assert.ok(hasTerm('Built LLMs tooling', k('LLM')));
   assert.ok(!hasTerm('cloud and C++', k('C')));
+  assert.ok(hasTerm('moving data to the Azure modern data platform', k('Modern Data Platforms')));
+  assert.ok(hasTerm('relational database design', k('Relational Databases')));
 });
 
 test('a project to build stays on the page only if the ATS rule still holds', async () => {

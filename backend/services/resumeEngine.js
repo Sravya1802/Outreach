@@ -305,6 +305,11 @@ export async function lastSkillsAsk(userId) {
   try { return v ? JSON.parse(v) : null; } catch { return null; }
 }
 
+/** Re-render and re-score a finished resume as it is (after a scoring fix, or new confirmed skills). */
+export async function rescoreTailoring(userId, tailoringId) {
+  return rerenderWithProject(userId, tailoringId, { id: 0 }, 'rescore');
+}
+
 /** The user knows these JD skills: remember them and put them on this resume. */
 export async function approveSkills(userId, tailoringId, terms) {
   const clean = list(terms).map(str).filter(Boolean).slice(0, 20);
@@ -1019,6 +1024,7 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   const ref = String(project.id);
   const skillKeywords = mode === 'skills' ? project.terms.map(term => ctx.keywords.find(k => k.term.toLowerCase() === term.toLowerCase()) || { term, aliases: [], importance: 'preferred', kind: 'hard' }) : [];
   const doc = mode === 'built' ? withProject(t.report.doc, project)
+    : mode === 'rescore' ? t.report.doc
     : mode === 'skills' ? addMissingSkills(t.report.doc, skillKeywords, ctx.keywords).doc
     : { ...t.report.doc, projects: t.report.doc.projects.filter(x => !(x.source === 'planned' && x.ref === ref)) };
   const ruled = applyRules(doc, { keywords: ctx.keywords, kind });
@@ -1037,9 +1043,9 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
     topChanges: keep.topChanges, nextChange: keep.nextChange, blockers: keep.blockers, verdict: keep.verdict, verdictWhy: keep.verdictWhy,
   }, {
     notes: keep.notes,
-    changes: [...list(keep.changes), change],
+    changes: mode === 'rescore' ? list(keep.changes) : [...list(keep.changes), change],
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: p.source === 'planned' ? 'The project you built for this role' : str(list(keep.projects).find(d => d.name === p.name)?.why) })),
-    proposedProject: !keep.proposedProject || mode === 'skills' ? keep.proposedProject || null
+    proposedProject: !keep.proposedProject || mode === 'skills' || mode === 'rescore' ? keep.proposedProject || null
       : { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined },
     revised: keep.revised,
     model: keep.model,

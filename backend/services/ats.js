@@ -38,7 +38,9 @@ export function variants(term) {
   const t0 = normalizeText(term).trim();
   if (!t0) return [];
   const t = EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), t0);
-  const out = new Set([t0, t, t.replace(/-/g, ' '), t.replace(/[-\s]+/g, ''), t.replace(/\.(?=[a-z])/g, ''), t.replace(/\.(?=[a-z])/g, ' ')]);
+  // A plural in the job matches the singular on the resume ("Modern Data Platforms" ≈ "modern data platform").
+  const singular = /[a-z]{3}s$/.test(t) && !/(ss|us|is)$/.test(t) ? t.replace(/s$/, '') : null;
+  const out = new Set([t0, t, ...(singular ? [singular] : []), t.replace(/-/g, ' '), t.replace(/[-\s]+/g, ''), t.replace(/\.(?=[a-z])/g, ''), t.replace(/\.(?=[a-z])/g, ' ')]);
   return [...out].map(v => v.replace(/\s+/g, ' ').trim()).filter(Boolean);
 }
 

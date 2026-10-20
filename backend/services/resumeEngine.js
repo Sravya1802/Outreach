@@ -520,7 +520,8 @@ function rowFields(ctx, final, judged, extra) {
   const { keywords, sourceText, kind } = ctx;
   const split = splitMissing(final.score.missing, sourceText);
   const before = beforeScore(ctx);
-  const unbuilt = extra.proposedProject?.status === 'suggested';
+  // Waiting on a project only if it's on the page; one kept beside the resume doesn't hold it.
+  const unbuilt = extra.proposedProject?.status === 'suggested' && extra.proposedProject.onPage !== false;
   const ready = atsPasses(final.score.score) && judged?.verdict !== 'skip' && !unbuilt;
   return {
     status: ready ? 'ready' : 'needs_review',

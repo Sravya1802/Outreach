@@ -547,7 +547,14 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
   const key = 'daily_plan_summary_date';
   if ((await one('SELECT value FROM meta WHERE user_id = $1 AND key = $2', [userId, key]))?.value === date) return { skipped: 'sent' };
   const since = (await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'daily_plan_summary_at'", [userId]))?.value || new Date(Date.now() - 86400_000).toISOString();
-  const applied = await all("SELECT company_name, title FROM plan_items WHERE user_id = $1 AND applied_at > $2", [userId, since]);
+  // Each application with the scores of the resume that went with it.
+  const applied = await all(
+    `SELECT pi.company_name, pi.title, t.ats_score AS ats, (t.report->'callback'->>'after')::int AS callback
+       FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.user_id = $1 AND pi.applied_at > $2`,
+    [userId, since],
+  );
+  const scores = (a) => [a.ats != null ? `ATS ${a.ats}%` : null, a.callback != null ? `interview chance ${a.callback}%` : null].filter(Boolean).join(' · ');
   const needsYou = await all("SELECT company_name, title, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'needs_you'", [userId]);
   const waiting = await all("SELECT company_name, title, apply_after FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'waiting_referral'", [userId]);
   const toSend = await all("SELECT a.person_name, pi.company_name FROM referral_asks a JOIN plan_items pi ON pi.id = a.plan_item_id WHERE a.user_id = $1 AND a.status = 'to_send' AND pi.stage = 'waiting_referral'", [userId]);
@@ -558,7 +565,7 @@ export async function maybeSendSummary(userId, settings, now = new Date()) {
   };
   if (!applied.length && !needsYou.length && !toSend.length && !drafts.length) { await mark(); return { skipped: 'nothing' }; }
   const lines = [];
-  if (applied.length) lines.push(`Applied (${applied.length}):\n${applied.map(a => `  • ${a.company_name} · ${a.title}`).join('\n')}`);
+  if (applied.length) lines.push(`Applied (${applied.length}):\n${applied.map(a => `  • ${a.company_name} · ${a.title}${scores(a) ? `\n    ${scores(a)}` : ''}`).join('\n')}`);
   if (needsYou.length) lines.push(`Needs you (${needsYou.length}):\n${needsYou.map(a => `  • ${a.company_name} · ${a.title}: ${a.stage_note || ''}`).join('\n')}`);
   if (drafts.length) lines.push(`Emails waiting for your OK (${drafts.length}), in People → Outbox or your Gmail Drafts:\n${drafts.map(a => `  • ${a.to_name || 'Someone'}${a.company_name ? ` at ${a.company_name}` : ''}`).join('\n')}`);
   if (toSend.length) lines.push(`LinkedIn notes to send (${toSend.length}):\n${toSend.map(a => `  • ${a.person_name || 'Find someone'} at ${a.company_name}`).join('\n')}`);

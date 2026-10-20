@@ -39,8 +39,15 @@ async function rowsFor(userId) {
   const rows = await all(
     `SELECT e.id, e.company_name, e.job_title, e.job_url, e.apply_status, e.apply_mode, e.applied_at, e.referral_status, e.source,
             e.created_at, e.stage_changed_at,
-            (SELECT pi.referral_status FROM plan_items pi WHERE pi.evaluation_id = e.id AND pi.user_id = e.user_id ORDER BY pi.id DESC LIMIT 1) AS plan_referral
-       FROM evaluations e WHERE e.user_id = $1
+            (SELECT pi.referral_status FROM plan_items pi WHERE pi.evaluation_id = e.id AND pi.user_id = e.user_id ORDER BY pi.id DESC LIMIT 1) AS plan_referral,
+            t.ats_score AS ats, (t.report->'callback'->>'after')::int AS callback
+       FROM evaluations e
+       LEFT JOIN LATERAL (
+         SELECT ats_score, report FROM resume_tailorings rt
+          WHERE rt.evaluation_id = e.id AND rt.user_id = e.user_id AND rt.kind = 'resume' AND rt.status IN ('ready', 'needs_review')
+          ORDER BY rt.id DESC LIMIT 1
+       ) t ON true
+      WHERE e.user_id = $1
       ORDER BY COALESCE(e.stage_changed_at, e.created_at) DESC, e.id DESC`,
     [userId],
   );
@@ -59,6 +66,8 @@ async function rowsFor(userId) {
     source: r.source,
     applied_at: r.applied_at,
     updated_at: r.stage_changed_at || r.created_at,
+    ats: r.ats == null ? null : Number(r.ats),
+    callback: r.callback == null ? null : Number(r.callback),
   }));
 }
 

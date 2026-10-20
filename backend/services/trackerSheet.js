@@ -119,9 +119,9 @@ const csvCell = (v) => {
 
 /** Tracker rows → a CSV with the sheet's own columns, ready for File → Import in Google Sheets. */
 export function toCsv(rows) {
-  const lines = [['Companies', 'Roles', 'Link', 'Submitted', 'Application Status', 'Referral Status']];
+  const lines = [['Companies', 'Roles', 'Link', 'Submitted', 'Application Status', 'Referral Status', 'ATS %', 'Interview %']];
   for (const r of rows) {
-    lines.push([r.company_name, r.job_title, r.job_url || '', isSent(r.apply_status) ? 'Yes' : '', STATUS_LABEL[r.apply_status] ?? '', REFERRAL_LABEL[r.referral] || '']);
+    lines.push([r.company_name, r.job_title, r.job_url || '', isSent(r.apply_status) ? 'Yes' : '', STATUS_LABEL[r.apply_status] ?? '', REFERRAL_LABEL[r.referral] || '', r.ats ?? '', r.callback ?? '']);
   }
   return lines.map(l => l.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

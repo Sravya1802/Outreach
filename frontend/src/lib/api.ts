@@ -674,6 +674,9 @@ export interface TrackerRow {
   by_app: boolean
   applied_at: string | null
   updated_at: string
+  /** The tailored resume's ATS match and the recruiter check's interview chance (%). */
+  ats: number | null
+  callback: number | null
 }
 export interface TrackerImport { total: number; added: number; updated: number; unchanged: number; skipped: string[] }
 

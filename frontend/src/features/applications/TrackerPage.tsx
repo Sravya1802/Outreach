@@ -95,10 +95,10 @@ export default function TrackerPage() {
 
           <div className="mb-2"><Banner title={data.data?.title ?? ''} onSave={t => retitle.mutate(t)} /></div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
-            <table className="w-full min-w-[1100px] table-fixed border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
+            <table className="w-full min-w-[1260px] table-fixed border-collapse text-[14px] text-fg [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0 [&_thead_tr:first-child>*]:border-t-0">
               <colgroup>
                 {/* Roles takes what's left; the chips get room for their longest words ("Waiting to hear back", "Not Required"). */}
-                <col className="w-11" /><col className="w-[11rem]" /><col /><col className="w-[14rem]" /><col className="w-[6.5rem]" /><col className="w-[13rem]" /><col className="w-[9.5rem]" /><col className="w-10" />
+                <col className="w-11" /><col className="w-[11rem]" /><col /><col className="w-[14rem]" /><col className="w-[6.5rem]" /><col className="w-[13rem]" /><col className="w-[9.5rem]" /><col className="w-[5rem]" /><col className="w-[6rem]" /><col className="w-10" />
               </colgroup>
               <thead>
                 <tr>
@@ -109,6 +109,8 @@ export default function TrackerPage() {
                   <th className={head}>Submitted</th>
                   <th className={head}>Application Status</th>
                   <th className={head}>Referral Status</th>
+                  <th className={head} title="ATS match of the tailored resume">ATS</th>
+                  <th className={head} title="Interview chance from the recruiter check">Interview</th>
                   <th className={cn(head, 'px-1')}><span className="sr-only">Remove</span></th>
                 </tr>
               </thead>
@@ -135,6 +137,8 @@ export default function TrackerPage() {
                       <Chip label={`Referral for ${r.company_name}`} tone={referralTone(r.referral)} value={r.referral ?? ''} options={REFERRAL_OPTIONS}
                         onChange={v => update.mutate({ id: r.id, body: { referral: (v || null) as TrackerReferral | null } })} />
                     </td>
+                    <td className={cn(cell, 'font-mono text-[13px]', r.ats == null ? 'text-subtle' : r.ats > 90 ? 'text-success' : 'text-warning')}>{r.ats == null ? '—' : `${r.ats}%`}</td>
+                    <td className={cn(cell, 'font-mono text-[13px]', r.callback == null ? 'text-subtle' : r.callback >= 20 ? 'text-success' : 'text-muted')}>{r.callback == null ? '—' : `${r.callback}%`}</td>
                     <td className={cn(cell, 'px-1 text-center')}>
                       <button type="button" aria-label={`Remove ${r.company_name} · ${r.job_title}`} onClick={() => setRemoving(r)}
                         className="rounded p-1 text-subtle opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100">
@@ -279,6 +283,8 @@ function NewRow({ n, onAdded }: { n: number; onAdded: () => void }) {
           <button type="button" onClick={submit} disabled={add.isPending} className="font-sans text-[13px] text-accent hover:underline">{add.isPending ? 'Adding…' : 'Add row ↵'}</button>
         )}
       </td>
+      <td className={cell} />
+      <td className={cell} />
       <td className={cell} />
     </tr>
   )

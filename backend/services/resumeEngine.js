@@ -391,12 +391,17 @@ async function renderScored(doc, ctx, { removed = [], fixed = [] } = {}) {
   let addedSkills = [];
   const { inSource } = splitMissing(score.missing, sourceText);
   if (inSource.length) {
-    const r = addMissingSkills(rendered.doc, inSource, keywords);
-    addedSkills = r.added;
-    if (addedSkills.length) {
-      rendered = await renderOnePage(r.doc, opts);
+    // Add the candidate's own missing skills, but only as many as keep it on one page.
+    for (let n = inSource.length; n > 0; n -= 1) {
+      const r = addMissingSkills(rendered.doc, inSource.slice(0, n), keywords);
+      if (!r.added.length) break;
+      const tried = await renderOnePage(r.doc, opts);
+      if (tried.pages !== 1 && rendered.pages === 1) continue;
+      rendered = tried;
+      addedSkills = r.added;
       text = await pdfText(rendered.pdf);
       score = atsScore({ keywords, pdfText: text, doc: rendered.doc, pages: rendered.pages });
+      break;
     }
   }
   return { doc: rendered.doc, pdf: rendered.pdf, tex: rendered.tex, pages: rendered.pages, shrunk: rendered.shrunk, text, score, addedSkills, removed, fixed, lint: lintDoc(rendered.doc, { kind }) };
@@ -522,7 +527,8 @@ function rowFields(ctx, final, judged, extra) {
   const before = beforeScore(ctx);
   // Waiting on a project only if it's on the page; one kept beside the resume doesn't hold it.
   const unbuilt = extra.proposedProject?.status === 'suggested' && extra.proposedProject.onPage !== false;
-  const ready = atsPasses(final.score.score) && judged?.verdict !== 'skip' && !unbuilt;
+  // Your rule: strictly one page. A longer one never goes out on its own.
+  const ready = atsPasses(final.score.score) && judged?.verdict !== 'skip' && !unbuilt && final.pages === 1;
   return {
     status: ready ? 'ready' : 'needs_review',
     ats_score: final.score.score,

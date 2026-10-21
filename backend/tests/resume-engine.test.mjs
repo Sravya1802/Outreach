@@ -96,7 +96,7 @@ test('shrink steps always make progress and end', () => {
   for (const step of SHRINK_STEPS) { const n = step(d); if (n) { d = n; steps++; } }
   assert.ok(steps >= 6);
   assert.equal(d.projects.length, 1);
-  assert.equal(d.experience[0].bullets.length, 3);
+  assert.equal(d.experience[0].bullets.length, 2);
 });
 
 test('ATS score is 85% keywords + 15% format', () => {

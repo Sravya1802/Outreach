@@ -230,6 +230,14 @@ export const SHRINK_STEPS = [
   (d) => (d.education.some(e => (e.details || []).length > 1) ? { ...d, education: d.education.map(e => ({ ...e, details: (e.details || []).slice(0, 1) })) } : null),
   (d) => (d.extras.length > 1 ? { ...d, extras: d.extras.slice(0, 1) } : null),
   (d) => (d.projects.length > 1 ? { ...d, projects: dropProject(d.projects) } : null),
+  // Still over: lighter Skills, two bullets per entry, no summary, and so on.
+  (d) => (d.skills.some(g => g.items.length > 6) ? { ...d, skills: d.skills.map(g => ({ ...g, items: g.items.slice(0, 6) })) } : null),
+  (d) => (d.skills.length > 5 ? { ...d, skills: d.skills.slice(0, 5) } : null),
+  (d) => (d.experience.some(e => e.bullets.length > 2) ? { ...d, experience: d.experience.map(e => ({ ...e, bullets: e.bullets.slice(0, 2) })) } : null),
+  (d) => (d.summary ? { ...d, summary: '' } : null),
+  (d) => (d.skills.length > 4 ? { ...d, skills: d.skills.slice(0, 4) } : null),
+  (d) => (d.education.some(e => (e.details || []).length) ? { ...d, education: d.education.map(e => ({ ...e, details: [] })) } : null),
+  (d) => (d.extras.length ? { ...d, extras: [] } : null),
 ];
 
 /** Drop the last project that isn't pinned (a project the user built for this role stays). */

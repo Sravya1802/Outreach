@@ -224,7 +224,7 @@ export function Tracker() {
                   <tr key={r.id} className="border-t border-line">
                     <td className={cn('py-3 pr-3 font-mono text-[15px]', TONE_TEXT[scoreTone(s)])}>{s ?? '—'}</td>
                     <td className="px-3 py-3">
-                      <Link to={`/applications/evaluate?id=${r.id}`} className="hover:text-accent">
+                      <Link to={`/applications/job/${r.id}`} className="hover:text-accent">
                         <b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span>
                       </Link>
                       {quiet != null && (

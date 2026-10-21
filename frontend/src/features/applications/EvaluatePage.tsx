@@ -6,7 +6,7 @@ import { api, type EvaluationDetail, type EvaluationReport } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ErrorState, Page, PageHeader, Skeleton, Spinner, Textarea, useToast } from '@/ui'
+import { Button, ButtonLink, ErrorState, Page, PageHeader, Skeleton, Spinner, Textarea, useToast } from '@/ui'
 import { globalOutOf10, looksLikeUrl, scoreOutOf10, scoreTone, stageFor } from './score'
 import { TailoredResume } from './TailoredResume'
 
@@ -19,7 +19,7 @@ const BREAKDOWN: { key: keyof NonNullable<EvaluationReport['scoreBreakdown']>; l
   { key: 'redFlags', label: 'Few red flags' },
 ]
 
-function Report({ detail, hasResume }: { detail: EvaluationDetail; hasResume: boolean }) {
+export function Report({ detail, hasResume, onJobPage = false }: { detail: EvaluationDetail; hasResume: boolean; onJobPage?: boolean }) {
   const qc = useQueryClient()
   const toast = useToast()
   const e = detail.evaluation ?? {}
@@ -64,6 +64,7 @@ function Report({ detail, hasResume }: { detail: EvaluationDetail; hasResume: bo
             {stage === 'evaluated'
               ? <Button onClick={() => markApplied.mutate()} loading={markApplied.isPending}>I applied</Button>
               : <span className="px-2 text-[14px] text-success">In your pipeline as {stage === 'applied' ? 'applied' : stage}</span>}
+            {!onJobPage && <ButtonLink variant="ghost" to={`/applications/job/${detail.id}`}>Description and resume</ButtonLink>}
             <Button variant="ghost" onClick={() => void api.openReport(detail.id)}>Full report</Button>
           </div>
         </div>

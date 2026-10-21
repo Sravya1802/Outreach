@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { Cloud, Download, FileText, Trash2, Upload } from 'lucide-react'
+import { Cloud, Download, Eye, FileText, Trash2, Upload } from 'lucide-react'
 import { api, type ResumeFile, type ResumeHistory } from '@/lib/api'
 import type { Market } from '@/lib/markets'
 import { qk } from '@/app/queryClient'
@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { KIND_LABEL, countryLabel, countryOf, formatBytes } from './resumeFiles'
 import { ResumeTemplate } from './ResumeTemplate'
+import { PdfDialog } from './PdfViewer'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
@@ -37,6 +38,9 @@ export default function ResumePage() {
     onError: (e: Error) => toast.error(e.message),
   })
   const get = (f: { id: number; filename: string }) => download.mutate({ id: f.id, filename: f.filename })
+  // Read a PDF right here, on any device (iPad Safari blocks the download).
+  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const view = (f: { id: number; filename: string }) => setViewing({ id: f.id, filename: f.filename })
 
   const [confirmDelete, setConfirmDelete] = useState<ResumeFile | null>(null)
   const remove = useMutation({
@@ -88,6 +92,7 @@ export default function ResumePage() {
                 </p>
               </div>
               <div className="flex gap-2 max-sm:w-full max-sm:justify-end">
+                {r.file && <Button variant="ghost" icon={<Eye className="size-4" />} onClick={() => r.file && view(r.file)}>View</Button>}
                 {r.file && <Button variant="ghost" icon={<Download className="size-4" />} onClick={() => r.file && get(r.file)}>Download</Button>}
                 <Button onClick={() => input.current?.click()} loading={upload.isPending} icon={<Upload className="size-4" />}>Replace</Button>
               </div>
@@ -106,7 +111,7 @@ export default function ResumePage() {
             <input ref={input} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={e => { pick(e.target.files?.[0]); e.target.value = '' }} />
           </label>
 
-          <UsedFor history={history} onDownload={get} />
+          <UsedFor history={history} onDownload={get} onView={view} />
 
           <ResumeTemplate />
 
@@ -118,6 +123,7 @@ export default function ResumePage() {
                   <li key={m.id} className="flex items-center gap-3 border-b border-line py-2.5 text-[14px]">
                     <span className="min-w-0 flex-1 truncate text-fg">{m.filename}</span>
                     <span className="text-[13px] text-subtle">{timeAgo(m.created_at)} · {formatBytes(m.size_bytes)}</span>
+                    <Button size="sm" variant="ghost" aria-label={`View ${m.filename}`} icon={<Eye className="size-3.5" />} onClick={() => view(m)} />
                     <Button size="sm" variant="ghost" aria-label={`Download ${m.filename}`} icon={<Download className="size-3.5" />} onClick={() => get(m)} />
                     {m.in_use
                       ? <span className="w-8 text-center text-subtle" title="An application uses this version, so it’s kept"><span className="sr-only">Kept: an application uses this version</span>·</span>
@@ -127,6 +133,8 @@ export default function ResumePage() {
               </ul>
             </section>
           )}
+
+          <PdfDialog file={viewing} onClose={() => setViewing(null)} />
 
           <ConfirmDialog
             open={confirmDelete != null}
@@ -155,9 +163,10 @@ export default function ResumePage() {
 type CountryFilter = Market | 'all'
 
 /** Every application with the exact resume that went (or will go) with it. */
-function UsedFor({ history, onDownload }: {
+function UsedFor({ history, onDownload, onView }: {
   history: UseQueryResult<ResumeHistory>
   onDownload: (f: { id: number; filename: string }) => void
+  onView: (f: { id: number; filename: string }) => void
 }) {
   const [country, setCountry] = useState<CountryFilter>('all')
   const all = history.data?.applications ?? []
@@ -194,14 +203,14 @@ function UsedFor({ history, onDownload }: {
                 <th className="py-3 pr-3 font-medium">Company and role</th>
                 <th className="px-3 py-3 font-medium">Where</th>
                 <th className="px-3 py-3 font-medium">Resume</th>
-                <th className="py-3 pl-3"><span className="sr-only">Download</span></th>
+                <th className="py-3 pl-3"><span className="sr-only">View or download</span></th>
               </tr>
             </thead>
             <tbody>
               {rows.map(a => (
                 <tr key={`${a.evaluation_id}-${a.id}`} className="border-t border-line align-top">
                   <td className="py-3 pr-3">
-                    <Link to={`/applications/evaluate?id=${a.evaluation_id}`} className="hover:text-accent">
+                    <Link to={`/applications/job/${a.evaluation_id}`} className="hover:text-accent">
                       <b className="font-medium text-fg">{a.company_name}</b> <span className="text-muted">· {a.job_title}</span>
                     </Link>
                   </td>
@@ -215,7 +224,8 @@ function UsedFor({ history, onDownload }: {
                       {a.sent ? <Badge tone="success">Sent {a.applied_at ? timeAgo(a.applied_at) : ''}</Badge> : <Badge tone="neutral">Ready to send</Badge>}
                     </p>
                   </td>
-                  <td className="py-3 pl-3 text-right">
+                  <td className="py-3 pl-3 text-right whitespace-nowrap">
+                    <Button size="sm" icon={<Eye className="size-3.5" />} aria-label={`View the resume for ${a.company_name}`} onClick={() => onView(a)}>View</Button>
                     <Button size="sm" variant="ghost" aria-label={`Download the resume for ${a.company_name}`} icon={<Download className="size-3.5" />} onClick={() => onDownload(a)} />
                   </td>
                 </tr>

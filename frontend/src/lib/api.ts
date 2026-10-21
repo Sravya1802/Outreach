@@ -739,7 +739,34 @@ export interface EvaluationReport {
   atsKeywords?: string[]
 }
 
-export interface EvaluationDetail extends EvaluationSummary { evaluation: EvaluationReport | null }
+/** A stored PDF for one application. */
+export interface EvaluationFile {
+  id: number | string
+  kind: ResumeFile['kind'] | 'cover_letter'
+  filename: string
+  size_bytes: number | null
+  created_at: string
+  /** Went out with the application. */
+  sent: boolean
+  /** The one the application uses (sent, or ready to send). */
+  primary_file: boolean
+}
+/** The catalog listing an evaluated role came from, when there is one. */
+export interface EvaluationRole {
+  location: string | null
+  region: string | null
+  salary_range: string | null
+  posted_at: string | null
+  source: string | null
+  description: string | null
+  role_type: string | null
+}
+export interface EvaluationDetail extends EvaluationSummary {
+  evaluation: EvaluationReport | null
+  job_description?: string | null
+  role?: EvaluationRole | null
+  files?: EvaluationFile[]
+}
 
 export type PipelineColumn = 'evaluated' | 'applied' | 'responded' | 'interview' | 'offer' | 'rejected'
 export interface Pipeline { columns: Record<PipelineColumn, { label: string; hint: string; items: EvaluationSummary[] }>; totals: Record<PipelineColumn, number>; total: number }
@@ -887,6 +914,10 @@ export const api = {
   plannedProjects: (): Promise<ProjectsState> => legacy.career.plannedProjects(),
   suggestProjects: (): Promise<{ suggesting: boolean }> => legacy.career.suggestProjects(),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
+  /** The PDF's bytes, for the in-site viewer. */
+  resumeFileBlob: (id: number | string): Promise<Blob> => legacy.career.resumeFileBlob(id),
+  /** A 10-minute link that opens the PDF in a browser tab. */
+  resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),
   /** An earlier master version; the server refuses the current one and any an application uses. */
   deleteResumeFile: (id: number): Promise<{ ok: boolean }> => legacy.career.deleteResumeFile(id),
   uploadResume: async (file: File): Promise<ResumeStatus> => {

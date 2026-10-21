@@ -25,7 +25,7 @@ function Card({ r, now, choices, onMove, onEdit }: {
     <li draggable onDragStart={e => { e.dataTransfer.setData(DRAG_TYPE, String(r.id)); e.dataTransfer.effectAllowed = 'move' }}
       className="cursor-grab rounded-[4px] border border-line bg-surface p-3 text-[13px] active:cursor-grabbing">
       <div className="flex items-start justify-between gap-2">
-        <Link to={`/applications/evaluate?id=${r.id}`} className="min-w-0 hover:text-accent">
+        <Link to={`/applications/job/${r.id}`} className="min-w-0 hover:text-accent">
           <p className="truncate text-[14px] font-medium text-fg">{r.company_name}</p>
           <p className="line-clamp-2 text-muted">{r.job_title}</p>
         </Link>

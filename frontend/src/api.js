@@ -109,7 +109,7 @@ export async function rawApiFetch(url, options = {}) {
   return fetch(apiUrl(url), { ...options, headers })
 }
 
-async function fetchAuthenticatedBlob(path) {
+export async function fetchAuthenticatedBlob(path) {
   const res = await rawApiFetch(path)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -478,6 +478,8 @@ export const api = {
     dismissProject: (id) => apiCall(`/resume-engine/projects/${id}/dismiss`, { method: 'POST' }),
     deleteResumeFile: (id) => apiCall(`/career/resume/files/${id}`, { method: 'DELETE' }),
     downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
+    resumeFileBlob: (id) => fetchAuthenticatedBlob(`/career/resume/files/${id}/download`),
+    resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
     // Upload a custom resume PDF for a specific evaluation. Backend writes
     // evaluations.pdf_path, which autoApplier honors over library matching.

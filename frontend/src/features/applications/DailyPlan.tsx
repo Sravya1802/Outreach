@@ -239,7 +239,7 @@ export function InProgress({ data }: { data: DailyPlanOverview }) {
                 </p>
               </div>
               <Badge tone={a.stage === 'needs_you' ? 'danger' : a.stage === 'applied' || a.stage === 'referred' ? 'success' : 'accent'}>{STAGE_LABEL[a.stage]}</Badge>
-              {a.evaluation_id && <ButtonLink to={`/applications/evaluate?id=${a.evaluation_id}`} size="sm" variant="ghost">{a.ats_score != null ? `Resume · ATS ${a.ats_score}%` : 'Open'}</ButtonLink>}
+              {a.evaluation_id && <ButtonLink to={`/applications/job/${a.evaluation_id}`} size="sm" variant="ghost">{a.ats_score != null ? `Resume · ATS ${a.ats_score}%` : 'Open'}</ButtonLink>}
             </div>
             {['waiting_referral', 'needs_you', 'ready_to_apply'].includes(a.stage) && <ReferralPanel item={a} />}
           </li>

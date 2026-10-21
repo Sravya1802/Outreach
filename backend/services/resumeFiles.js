@@ -11,7 +11,7 @@
 
 import crypto from 'crypto';
 import { all, one, query, run, tx } from '../db.js';
-import { BUCKETS, putObject, getObject, objectToTemp, deleteObject } from './resumeStorage.js';
+import { BUCKETS, putObject, getObject, objectToTemp, deleteObject, signedObjectUrl } from './resumeStorage.js';
 import { marketFor } from './markets.js';
 
 const COLUMNS = 'id, kind, filename, size_bytes, market, evaluation_id, is_current, created_at';
@@ -131,6 +131,20 @@ export async function deleteMasterVersion(userId, id) {
 }
 
 export const fileBytes  = (file) => getObject(file.bucket, file.object_path);
+export const fileLink   = (file) => signedObjectUrl(file.bucket, file.object_path);
+
+/** Every PDF stored for one application (tailored resumes, cover letters, and the one it was sent with), newest first. */
+export async function filesForEvaluation(userId, evalId) {
+  return all(
+    `SELECT f.id, f.kind, f.filename, f.size_bytes, f.created_at,
+            COALESCE(f.id = e.applied_resume_file_id, false) AS sent,
+            COALESCE(f.id = COALESCE(e.applied_resume_file_id, e.resume_file_id), false) AS primary_file
+       FROM evaluations e
+       JOIN resume_files f ON f.user_id = e.user_id
+        AND (f.evaluation_id = e.id OR f.id IN (e.applied_resume_file_id, e.resume_file_id))
+      WHERE e.id = $1 AND e.user_id = $2
+      ORDER BY primary_file DESC, f.created_at DESC`, [evalId, userId]);
+}
 export const fileToTemp = (file) => objectToTemp(file.bucket, file.object_path);
 
 /**

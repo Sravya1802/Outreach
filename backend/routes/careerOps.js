@@ -26,7 +26,7 @@ import { parseNotesPatch } from '../services/pipelineNotes.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
-import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, resumeHistory, deleteMasterVersion } from '../services/resumeFiles.js';
+import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, fileLink, filesForEvaluation, resumeHistory, deleteMasterVersion } from '../services/resumeFiles.js';
 import { parsedMaster } from '../services/resumeEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,6 +154,20 @@ router.get('/resume/files/:id/download', async (req, res) => {
   }
 });
 
+// ── GET /api/career/resume/files/:id/link — a 10-minute link to open the PDF ──
+// For "Open in new tab": browsers (iPad Safari especially) open a real URL
+// where a blob download started after a fetch would be blocked.
+router.get('/resume/files/:id/link', async (req, res) => {
+  try {
+    const file = await fileForUser(req.user.id, req.params.id);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    res.json({ url: await fileLink(file), filename: file.filename, expiresIn: 600 });
+  } catch (err) {
+    console.error('[careerOps] resume file link error:', err.message);
+    res.status(502).json({ error: 'Couldn’t get a link to that file' });
+  }
+});
+
 // ── POST /api/career/parse-resume — parse a PDF without saving anything ─────
 // Used by the Evaluate tab when the user picks "Upload PDF" so they can
 // evaluate against an ad-hoc resume without overwriting their saved default.
@@ -271,7 +285,13 @@ router.get('/evaluations/:id', async (req, res) => {
   try {
     const row = await one('SELECT * FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json({ ...row, evaluation: row.report_json ? JSON.parse(row.report_json) : null });
+    // The catalog listing it came from (location, pay, posted date, its own description), when there is one.
+    const role = row.job_url
+      ? await one(`SELECT location, region, salary_range, posted_at, source, description, role_type
+                     FROM scraped_roles WHERE apply_url = $1 LIMIT 1`, [row.job_url]).catch(() => null)
+      : null;
+    const files = await filesForEvaluation(req.user.id, row.id).catch(() => []);
+    res.json({ ...row, evaluation: row.report_json ? JSON.parse(row.report_json) : null, role: role || null, files });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

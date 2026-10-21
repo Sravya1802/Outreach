@@ -190,6 +190,26 @@ export async function downloadTailoredPdf(userId, evalId, filename) {
   return downloadToTemp(BUCKETS.tailored, objectPath);
 }
 
+/**
+ * A short-lived link to one stored object, so a browser can open the PDF
+ * directly (iPad Safari blocks downloads that start after a network wait).
+ */
+export async function signedObjectUrl(bucket, objectPath, expiresIn = 600) {
+  assertConfigured();
+  const res = await fetch(`${supabaseUrl()}/storage/v1/object/sign/${bucket}/${encodeURI(objectPath)}`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`storage sign failed (${res.status}): ${text || res.statusText}`);
+  }
+  const { signedURL } = await res.json();
+  if (!signedURL) throw new Error('storage sign failed: no URL returned');
+  return `${supabaseUrl()}/storage/v1${signedURL}`;
+}
+
 export function isStorageConfigured() {
   return Boolean(supabaseUrl() && serviceKey());
 }

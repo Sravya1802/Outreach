@@ -124,6 +124,14 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-21 — WhatsApp messages wait for template approval instead of being lost
+- **Why:** `snj_project_ideas` and `snj_missing_skills` were still PENDING after ~6h, and a one-off 4h watcher timed out. Sends outside the 24h window failed with #132001 and were dropped.
+- **What** (`aa62b0b`; migration **035** adds `whatsapp_messages.payload`, applied):
+  - `notify()` stores a 132001 failure as `status='waiting_template'` with `{params, text}`.
+  - `retryWaiting()` runs on a `*/30` cron in server.js. It sends as text if the user's window is open, else as the template; marks the row `sent_late`, `failed` on other errors, or `expired` after 3 days or once the user opts out.
+- **Queued:** the user's 3 weekly project ideas (waiting). The IBM skills question had nothing to ask (only soft skills missing), which is correct.
+- **Ops:** SSH to the VM intermittently refused new connections after many logins today. Use one shared connection: `ssh -o ControlMaster=auto -o ControlPath=~/.ssh/cm/%r@%h -o ControlPersist=30m -fN ubuntu@140.245.15.56`, then pass `-o ControlPath=…` to each call.
+
 ### 2026-10-20 — Missing-skills question, scores in the after-apply report, sample tailoring (IBM)
 - **Skills you know** (`139ae14`): after a resume finishes, `askAboutSkills` stores `meta.skills_ask` (the hard JD skills nothing you've shared shows, via `resumeRules.skillsToAsk`) and sends WhatsApp **`snj_missing_skills`** (PENDING). The user replies **ADD 1 3 / ADD ALL**. On the resume page, missing skills have tick boxes. `approveSkills` adds them to `meta.confirmed_skills`, which counts as source in every tailoring (`confirmedLine`), and re-renders that resume. `GET/DELETE /api/resume-engine/skills`. Pref key `skills`.
 - **After applying** (`449089f`): the morning summary lists each applied role with "ATS N% · interview chance N%". Tracker rows, columns and the CSV gain ATS and Interview, taken from the latest finished tailoring.

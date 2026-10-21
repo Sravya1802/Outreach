@@ -452,17 +452,21 @@ export function chatReply(text) {
  * tonight's list, projects to build, recent resumes and applications.
  */
 async function assistantData(userId) {
-  const [sent, plan, projects, resumes, applied] = await Promise.all([
+  const [sent, plan, projects, resumes, applied, tracked] = await Promise.all([
     all("SELECT created_at::text AS at, kind, left(body, 900) AS body FROM whatsapp_messages WHERE user_id = $1 AND direction = 'out' AND status NOT IN ('failed', 'waiting_template') ORDER BY created_at DESC LIMIT 6", [userId]),
     numberedTop(userId),
     all("SELECT name, covers, demand, status FROM planned_projects WHERE user_id = $1 AND status IN ('suggested', 'built') ORDER BY created_at DESC LIMIT 6", [userId]),
-    all(`SELECT e.company_name, e.job_title, t.status, t.ats_score, t.report->'callback'->>'after' AS callback, t.report->>'verdict' AS verdict
+    all(`SELECT DISTINCT ON (t.evaluation_id) e.company_name, e.job_title, t.status, t.ats_score, t.report->'callback'->>'after' AS interview_chance, t.report->>'verdict' AS verdict
            FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id
-          WHERE t.user_id = $1 AND t.kind = 'resume' AND t.status IN ('ready', 'needs_review') ORDER BY t.id DESC LIMIT 8`, [userId]),
+          WHERE t.user_id = $1 AND t.kind = 'resume' AND t.status IN ('ready', 'needs_review') ORDER BY t.evaluation_id, t.id DESC LIMIT 8`, [userId]),
     all("SELECT company_name, title, stage, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' ORDER BY decided_at DESC NULLS LAST LIMIT 10", [userId]),
+    all(`SELECT company_name, job_title, apply_status FROM evaluations
+          WHERE user_id = $1 AND apply_status IN ('submitted', 'responded', 'interview', 'offer', 'rejected')
+          ORDER BY COALESCE(stage_changed_at, created_at) DESC LIMIT 60`, [userId]),
   ]);
   return {
-    messages_you_sent_them_recently: sent.reverse(),
+    messages_you_sent_them_recently: sent.reverse().map(m => ({ ...m, body: String(m.body).replace(/^\[snj_[a-z_]+\]\s*/, '') })),
+    applications_in_tracker: { count: tracked.length, by_status: tracked.reduce((a, r) => ({ ...a, [r.apply_status]: (a[r.apply_status] || 0) + 1 }), {}), recent: tracked.slice(0, 30).map(r => `${r.company_name} · ${r.job_title} · ${STATUS_WORD[r.apply_status] || r.apply_status}`) },
     tonights_list: plan.plan ? { date: plan.plan.plan_date, roles: plan.items.map((it, i) => ({ n: i + 1, company: it.company_name, title: it.title, score: it.score, decision: it.decision })) } : null,
     projects_to_build: projects.map(p => ({ name: p.name, status: p.status, adds: p.covers, roles_it_helps: p.demand ? `${p.demand.roles} of ${p.demand.of} listed roles` : 'one role', example_roles: p.demand?.examples || [], keyword_counts: p.demand?.keywords || [] })),
     tailored_resumes: resumes,
@@ -471,9 +475,11 @@ async function assistantData(userId) {
   };
 }
 
+const STATUS_WORD = { submitted: 'waiting to hear back', responded: 'in progress', interview: 'interview', offer: 'offer', rejected: 'rejected' };
+
 const ASSISTANT = `You are Scout’n’Jobs answering the user on WhatsApp about their own job search.
 Answer only from DATA. If DATA doesn't have it, say so in one line and point to the right page link.
-Keep it short: 1–8 lines, WhatsApp formatting (*bold*, • bullets). Name specific companies and roles when the question is about them.
+Keep it short: 1–8 lines. WhatsApp formatting only: *bold* with ONE asterisk, _italic_, • bullets. Never use ** or markdown headings, and never mention internal names like template ids. Name specific companies and roles when the question is about them.
 You can't take actions from a question; for those, tell them the command (YES 1 3, SKIP 2, LIST, ADD 1 3, STOP, HELP) or the page.`;
 
 /** A question or remark that isn't a command: a short answer from their own data (Groq). */
@@ -483,7 +489,7 @@ export async function answer(userId, text) {
   try {
     const { complete } = await import('./llm.js');
     const r = await complete({ task: 'email', maxTokens: 700, userId, system: ASSISTANT, user: `DATA:\n${JSON.stringify(await assistantData(userId))}\n\nTHEIR MESSAGE: ${String(text).slice(0, 500)}` });
-    const out = String(r.text || '').trim();
+    const out = String(r.text || '').trim().replace(/\*\*(.+?)\*\*/g, '*$1*').replace(/^#+\s*/gm, '').replace(/\[?snj_[a-z_]+\]?/g, '');
     return out ? `${out.slice(0, 1500)}\n\n_Reply HELP for commands._` : canned;
   } catch (err) {
     console.warn('[whatsapp] answer failed:', err.message);

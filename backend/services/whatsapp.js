@@ -253,8 +253,49 @@ export async function notify(userId, kind, { params, text }) {
     return inWindow(link) ? await sendText(userId, link.phone, text, kind) : await sendTemplate(userId, link.phone, kind, params);
   } catch (err) {
     console.warn(`[whatsapp] ${kind} to ${String(userId).slice(0, 8)} failed: ${err.message}`);
+    // Template not approved yet: keep the message and retry it (retryWaiting).
+    if (templatePending(err)) {
+      await run(
+        "INSERT INTO whatsapp_messages (user_id, direction, kind, body, status, error, payload) VALUES ($1, 'out', $2, $3, 'waiting_template', $4, $5)",
+        [userId, kind, String(text ?? '').slice(0, 4000), String(err.message).slice(0, 300), JSON.stringify({ params, text })],
+      ).catch(() => {});
+      return { ok: false, waiting: true, error: err.message };
+    }
     return { ok: false, error: err.message };
   }
+}
+
+// Meta: 132001 = the template doesn't exist in this language, which is what an
+// unapproved (pending) template returns.
+const templatePending = (err) => Number(err?.code) === 132001 || /132001|does not exist in the translation/i.test(String(err?.message));
+const WAITING_DAYS = 3;
+
+/**
+ * Every 30 minutes: send messages that were waiting on a template's approval.
+ * Inside the user's 24-hour window they go as text; otherwise as the template
+ * once Meta has approved it. After 3 days they're dropped.
+ */
+export async function retryWaiting() {
+  if (!whatsappConfigured()) return { sent: 0 };
+  await run(`UPDATE whatsapp_messages SET status = 'expired' WHERE status = 'waiting_template' AND created_at < NOW() - make_interval(days => $1)`, [WAITING_DAYS]);
+  const rows = await all("SELECT id, user_id, kind, payload FROM whatsapp_messages WHERE status = 'waiting_template' ORDER BY created_at LIMIT 50");
+  let sent = 0;
+  for (const r of rows) {
+    const link = await linkFor(r.user_id);
+    if (!link?.verified_at || !link.phone || !link.enabled || link.prefs?.[PREF_FOR[r.kind]] === false) {
+      await run("UPDATE whatsapp_messages SET status = 'expired' WHERE id = $1", [r.id]);
+      continue;
+    }
+    try {
+      if (inWindow(link)) await sendText(r.user_id, link.phone, r.payload?.text, r.kind);
+      else await sendTemplate(r.user_id, link.phone, r.kind, r.payload?.params || {});
+      await run("UPDATE whatsapp_messages SET status = 'sent_late' WHERE id = $1", [r.id]);
+      sent += 1;
+    } catch (err) {
+      if (!templatePending(err)) await run("UPDATE whatsapp_messages SET status = 'failed', error = $2 WHERE id = $1", [r.id, String(err.message).slice(0, 300)]);
+    }
+  }
+  return { sent, waiting: rows.length - sent };
 }
 
 // ── Linking ─────────────────────────────────────────────────────────────────

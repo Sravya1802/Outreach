@@ -40,6 +40,7 @@ import trackerRouter from './routes/tracker.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
+import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
@@ -542,6 +543,13 @@ cron.schedule('0 14 * * 0', async () => {
     const r = await suggestProjectsForAll();
     console.log(`[project-ideas] weekly: ${r.created} suggestions for ${r.users} users`);
   } catch (err) { console.error('[project-ideas] weekly failed:', err.message); }
+}, CRON_OPTS);
+// WhatsApp messages waiting on a template's approval: retried every 30 minutes for 3 days.
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    const r = await retryWhatsapp();
+    if (r.sent) console.log(`[whatsapp] sent ${r.sent} waiting message(s)`);
+  } catch (err) { console.error('[whatsapp] retry failed:', err.message); }
 }, CRON_OPTS);
 cron.schedule('*/10 * * * *', async () => {
   try {

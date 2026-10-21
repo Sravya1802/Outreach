@@ -102,7 +102,7 @@ export function PdfDialog({ file, onClose }: { file: { id: number | string; file
   const [zoom, setZoom] = useState(1)
   if (!file) return null
   return (
-    <Dialog open onClose={onClose} label={file.filename} className="flex h-[92vh] max-w-5xl flex-col overflow-hidden">
+    <Dialog open onClose={onClose} label={file.filename} className="flex h-[92vh] max-w-5xl! flex-col overflow-hidden">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <p className="min-w-0 truncate text-[14px] font-medium text-fg" title={file.filename}>{file.filename}</p>
         <div className="flex items-center gap-1">

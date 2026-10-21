@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn'
 import { Badge, EmptyState, ErrorState, Page, PageHeader, Skeleton } from '@/ui'
 import { PdfPages, PdfToolbar } from '@/features/profile/PdfViewer'
 import { Report } from './EvaluatePage'
-import { JOB_TABS, descriptionOf, fileKindLabel, firstFile, jobTab, type JobTab } from './job'
+import { JOB_TABS, descriptionOf, fileKindLabel, firstFile, jobTab, readableDescription, type JobTab } from './job'
 import { globalOutOf10, scoreOutOf10, stageFor } from './score'
 
 const STAGE_LABEL = { evaluated: 'Not applied yet', applied: 'Applied', responded: 'Heard back', interview: 'Interviewing', offer: 'Offer', rejected: 'Not moving forward' } as const
@@ -40,7 +40,7 @@ function Facts({ d }: { d: EvaluationDetail }) {
 function Description({ d }: { d: EvaluationDetail }) {
   const e = d.evaluation ?? {}
   const reqs = e.blockB_cvMatch?.requirements ?? []
-  const text = descriptionOf(d)
+  const text = readableDescription(descriptionOf(d))
   const MARK = { match: { sym: '✓', cls: 'text-success', label: 'You have this' }, partial: { sym: '~', cls: 'text-warning', label: 'Partly' }, gap: { sym: '✗', cls: 'text-danger', label: 'Missing' } } as const
   return (
     <div className="space-y-9">

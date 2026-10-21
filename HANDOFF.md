@@ -124,6 +124,17 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-21 — WhatsApp answers any question
+- **Why:** the projects message reached the user, but it didn't name roles. They asked "For which jobs is this?" and got "Sorry, I only understand a few words"; they want WhatsApp to answer any query.
+- **What** (`995dcbd`…`d9a3ddd`):
+  - A message that isn't a command goes to `answer(userId, text)`: Groq (task `email`), with `assistantData()`. That includes recent outbound messages (template ids stripped), tonight's list, projects to build with example roles, the latest resume per role (ATS, interview chance, verdict), approved roles, tracker applications by status, settings, this month's AI spend, Gmail status and page links.
+  - Facts about the user come from DATA only; general advice is allowed; one item's details aren't attached to another. Output is post-processed to WhatsApp bold (`**x**` → `*x*`) and template names are removed.
+  - Project messages now include example roles.
+  - `demandFor()` ranks example roles by what each idea adds beyond the gap shared by all ideas (CI/CD). `refreshDemand(userId)` recomputed the user's 3 ideas.
+  - Retries send templates with `quiet` (no failed row every 30 min); 36 noise rows deleted.
+- **Sent to the user:** the answer, and a corrected roles-per-project message.
+- **Note:** a backgrounded ssh deploy silently didn't apply; always check `git log -1` on the VM after a deploy.
+
 ### 2026-10-21 — WhatsApp messages wait for template approval instead of being lost
 - **Why:** `snj_project_ideas` and `snj_missing_skills` were still PENDING after ~6h, and a one-off 4h watcher timed out. Sends outside the 24h window failed with #132001 and were dropped.
 - **What** (`aa62b0b`; migration **035** adds `whatsapp_messages.payload`, applied):

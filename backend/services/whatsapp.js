@@ -452,7 +452,7 @@ export function chatReply(text) {
  * tonight's list, projects to build, recent resumes and applications.
  */
 async function assistantData(userId) {
-  const [sent, plan, projects, resumes, applied, tracked] = await Promise.all([
+  const [sent, plan, projects, resumes, applied, tracked, settings, spend, gmail] = await Promise.all([
     all("SELECT created_at::text AS at, kind, left(body, 900) AS body FROM whatsapp_messages WHERE user_id = $1 AND direction = 'out' AND status NOT IN ('failed', 'waiting_template') ORDER BY created_at DESC LIMIT 6", [userId]),
     numberedTop(userId),
     all("SELECT name, covers, demand, status FROM planned_projects WHERE user_id = $1 AND status IN ('suggested', 'built') ORDER BY created_at DESC LIMIT 6", [userId]),
@@ -463,6 +463,9 @@ async function assistantData(userId) {
     all(`SELECT company_name, job_title, apply_status FROM evaluations
           WHERE user_id = $1 AND apply_status IN ('submitted', 'responded', 'interview', 'offer', 'rejected')
           ORDER BY COALESCE(stage_changed_at, created_at) DESC LIMIT 60`, [userId]),
+    import('./dailyPlan.js').then(m => m.getSettings(userId)).catch(() => null),
+    one("SELECT ROUND(COALESCE(SUM(cost_usd), 0)::numeric, 2) AS usd FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', NOW())", [userId]).catch(() => null),
+    one('SELECT email FROM gmail_connections WHERE user_id = $1', [userId]).catch(() => null),
   ]);
   return {
     messages_you_sent_them_recently: sent.reverse().map(m => ({ ...m, body: String(m.body).replace(/^\[snj_[a-z_]+\]\s*/, '') })),
@@ -471,14 +474,19 @@ async function assistantData(userId) {
     projects_to_build: projects.map(p => ({ name: p.name, status: p.status, adds: p.covers, roles_it_helps: p.demand ? `${p.demand.roles} of ${p.demand.of} listed roles` : 'one role', example_roles: p.demand?.examples || [], keyword_counts: p.demand?.keywords || [] })),
     tailored_resumes: resumes,
     approved_roles: applied,
+    settings: settings ? { list_time_hour: settings.listHour, timezone: settings.timezone, min_score: settings.minScore, max_per_day: settings.maxPerDay, referral_first: settings.referralFirst } : null,
+    ai_spend_this_month_usd: spend?.usd ?? null,
+    gmail_connected: Boolean(gmail?.email),
     links: { list: `${SITE}/applications/auto-apply`, tracker: `${SITE}/applications/tracker`, projects: `${SITE}/profile/projects` },
   };
 }
 
 const STATUS_WORD = { submitted: 'waiting to hear back', responded: 'in progress', interview: 'interview', offer: 'offer', rejected: 'rejected' };
 
-const ASSISTANT = `You are Scout’n’Jobs answering the user on WhatsApp about their own job search.
-Answer only from DATA. If DATA doesn't have it, say so in one line and point to the right page link.
+const ASSISTANT = `You are Scout’n’Jobs, the user's job-search assistant on WhatsApp. Answer whatever they ask.
+- Questions about their own search (roles, lists, resumes, scores, applications, referrals, projects, settings, costs): answer from DATA only, with specific companies and numbers. If DATA doesn't have it, say so in one line and give the page link.
+- General questions (interview prep, resume or career advice, how to build a suggested project, how a feature of the app works): answer helpfully from your own knowledge, tied to their situation in DATA where it fits (an MS CS new grad targeting SWE, ML, AI and quant roles).
+- Never invent facts about their applications, resumes or scores.
 Keep it short: 1–8 lines. WhatsApp formatting only: *bold* with ONE asterisk, _italic_, • bullets. Never use ** or markdown headings, and never mention internal names like template ids. Name specific companies and roles when the question is about them, but only roles DATA ties to that item (a project's example_roles are its roles; tonight's list is a separate thing). Copy company names exactly.
 You can't take actions from a question; for those, tell them the command (YES 1 3, SKIP 2, LIST, ADD 1 3, STOP, HELP) or the page.`;
 
@@ -488,7 +496,7 @@ export async function answer(userId, text) {
   if (!canned.startsWith('Sorry')) return canned;
   try {
     const { complete } = await import('./llm.js');
-    const r = await complete({ task: 'email', maxTokens: 700, userId, system: ASSISTANT, user: `DATA:\n${JSON.stringify(await assistantData(userId))}\n\nTHEIR MESSAGE: ${String(text).slice(0, 500)}` });
+    const r = await complete({ task: 'email', maxTokens: 1200, userId, system: ASSISTANT, user: `DATA:\n${JSON.stringify(await assistantData(userId))}\n\nTHEIR MESSAGE: ${String(text).slice(0, 500)}` });
     const out = String(r.text || '').trim().replace(/\*\*(.+?)\*\*/g, '*$1*').replace(/^#+\s*/gm, '').replace(/\[?snj_[a-z_]+\]?/g, '');
     return out ? `${out.slice(0, 1500)}\n\n_Reply HELP for commands._` : canned;
   } catch (err) {

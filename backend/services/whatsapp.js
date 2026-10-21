@@ -477,7 +477,7 @@ Keep it short: 1–8 lines, WhatsApp formatting (*bold*, • bullets). Name spec
 You can't take actions from a question; for those, tell them the command (YES 1 3, SKIP 2, LIST, ADD 1 3, STOP, HELP) or the page.`;
 
 /** A question or remark that isn't a command: a short answer from their own data (Groq). */
-async function answer(userId, text) {
+export async function answer(userId, text) {
   const canned = chatReply(text);
   if (!canned.startsWith('Sorry')) return canned;
   try {

@@ -444,3 +444,26 @@ export function skillsToAsk(t) {
   return list(t.ats?.missingYouDont).map(m => m.term).filter(term => kinds.get(String(term ?? '').trim().toLowerCase()) !== 'soft').slice(0, 12);
 }
 
+
+/**
+ * Why one project idea is worth building: how many roles ask for what it
+ * adds, and example roles. Examples favour roles asking for what this idea
+ * adds that the other ideas don't (`shared` = terms every idea covers), so
+ * three ideas built around one common gap don't all show the same roles.
+ * `roles` = [{ company_name, title }], `keywordsPerRole` = one list per role.
+ */
+export function demandFor(hitTerms, keywordsPerRole, roles, shared = []) {
+  const key = (t) => canonicalTerm(t);
+  const hits = new Set(hitTerms.map(key));
+  const sharedSet = new Set(shared.map(key));
+  const per = keywordsPerRole.map(ks => new Set(list(ks).map(k => key(k.term)).filter(t => hits.has(t))));
+  const helped = per.map((s, i) => ({ i, all: s.size, own: [...s].filter(t => !sharedSet.has(t)).length })).filter(x => x.all > 0);
+  const ranked = [...helped].sort((a, b) => b.own - a.own || b.all - a.all || a.i - b.i);
+  const pick = ranked.some(x => x.own > 0) ? ranked.filter(x => x.own > 0) : ranked;
+  return {
+    roles: helped.length,
+    of: roles.length,
+    keywords: hitTerms.map(term => ({ term, roles: per.filter(s => s.has(key(term))).length })),
+    examples: pick.slice(0, 5).map(x => `${roles[x.i].company_name} · ${roles[x.i].title}`),
+  };
+}

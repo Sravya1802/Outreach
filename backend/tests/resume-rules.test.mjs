@@ -87,6 +87,16 @@ test('skills to ask about: hard skills nothing you shared shows, not soft ones',
   assert.deepEqual(skillsToAsk(t), ['Kafka', 'Go']);
 });
 
+test('project demand: examples favour roles asking for what this idea adds beyond the shared gap', async () => {
+  const { demandFor } = await import('../services/resumeRules.js');
+  const roles = [{ company_name: 'A', title: 'SWE' }, { company_name: 'B', title: 'SWE' }, { company_name: 'C', title: '.NET Dev' }];
+  const kw = [[k('CI/CD')], [k('CI/CD')], [k('C#'), k('Continuous Integration')]];
+  const d = demandFor(['CI/CD', 'C#'], kw, roles, ['CI/CD']);
+  assert.equal(d.roles, 3);
+  assert.deepEqual(d.examples, ['C · .NET Dev']);
+  assert.deepEqual(d.keywords, [{ term: 'CI/CD', roles: 3 }, { term: 'C#', roles: 1 }]);
+});
+
 test('dashes and filler are caught; dashes become commas', () => {
   assert.equal(fixDashes('Built a tool — fast and simple'), 'Built a tool, fast and simple');
   assert.equal(fixDashes('Built a tool---fast'), 'Built a tool, fast');

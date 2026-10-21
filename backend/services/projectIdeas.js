@@ -22,7 +22,7 @@ import { hasTerm } from './ats.js';
 import { looksLikeJobDescription } from './postingText.js';
 import { extractKeywords, includedRepos, parsedMaster, plannedProjects } from './resumeEngine.js';
 import { masterText, plannedText, repoText } from './resumeGuard.js';
-import { gapsAcross } from './resumeRules.js';
+import { gapsAcross, demandFor } from './resumeRules.js';
 import { notify as whatsappNotify, projectsMessage } from './whatsapp.js';
 
 const LOOKBACK_DAYS = 14;
@@ -131,6 +131,13 @@ ${planned.filter(p => p.status === 'dismissed').map(fmt).join('\n') || '(none)'}
     });
     cost += r.costUsd;
     const ideas = list(JSON.parse(r.text).projects).slice(0, 3);
+    const hitsOf = (p) => {
+      const covers = list(p.covers).map(str).filter(Boolean);
+      return gaps.filter(g => covers.some(c => hasTerm(c, g)) || list(p.tech).some(t => hasTerm(t, g))).map(g => g.term);
+    };
+    // Terms every idea covers (often CI/CD) don't decide which roles each idea is for.
+    const allHits = ideas.map(hitsOf);
+    const shared = allHits.length > 1 ? allHits[0].filter(t => allHits.every(h => h.includes(t))) : [];
     let created = 0;
     const fresh = [];
     for (const p of ideas) {
@@ -139,14 +146,7 @@ ${planned.filter(p => p.status === 'dismissed').map(fmt).join('\n') || '(none)'}
       if (planned.some(x => x.name.toLowerCase() === name.toLowerCase())) continue;
       const covers = list(p.covers).map(str).filter(Boolean);
       const hit = gaps.filter(g => covers.some(c => hasTerm(c, g)) || list(p.tech).some(t => hasTerm(t, g)));
-      const rolesHelped = new Set();
-      keywordsPerRole.forEach((ks, i) => { if (ks.some(k => hit.some(g => g.term.toLowerCase() === str(k.term).toLowerCase()))) rolesHelped.add(i); });
-      const demand = {
-        roles: rolesHelped.size,
-        of: roles.length,
-        keywords: hit.map(g => ({ term: g.term, roles: g.roles })),
-        examples: [...rolesHelped].slice(0, 5).map(i => `${roles[i].company_name} · ${roles[i].title}`),
-      };
+      const demand = demandFor(hit.map(g => g.term), keywordsPerRole, roles, shared);
       const bullets = list(p.bullets).map(str).filter(Boolean).filter(b => !/\d/.test(b.replace(/\b[A-Za-z]+[-.]?\d[\w.]*\b/g, ''))).slice(0, 3);
       if (!bullets.length) continue;
       await run(
@@ -183,4 +183,21 @@ export async function suggestProjectsForAll() {
     created += r?.created || 0;
   }
   return { users: users.length, created };
+}
+
+/**
+ * Recompute who the open weekly ideas are for (no new suggestions, Groq only):
+ * re-reads the listed roles' keywords and re-ranks each idea's example roles.
+ */
+export async function refreshDemand(userId) {
+  const open = (await plannedProjects(userId)).filter(p => p.status === 'suggested' && p.origin === 'weekly');
+  if (!open.length) return { updated: 0 };
+  const roles = await listedRoles(userId);
+  const keywordsPerRole = await mapLimit(roles, CONCURRENCY, async (r) => (await extractKeywords({ title: r.title, company: r.company_name, description: r.job_description, userId }).catch(() => null))?.keywords || []);
+  const covers = open.map(p => list(p.covers));
+  const shared = covers.length > 1 ? covers[0].filter(t => covers.every(c => c.some(x => x.toLowerCase() === t.toLowerCase()))) : [];
+  for (const p of open) {
+    await run('UPDATE planned_projects SET demand = $2, updated_at = NOW() WHERE id = $1', [p.id, JSON.stringify(demandFor(list(p.covers), keywordsPerRole, roles, shared))]);
+  }
+  return { updated: open.length, roles: roles.length };
 }

@@ -110,7 +110,11 @@ export function projectsMessage(projects) {
   const line = (p, i) => {
     const adds = (p.covers || []).slice(0, 4).join(', ');
     const who = p.demand ? `${p.demand.roles} of ${p.demand.of} roles` : 'for one role';
-    return { short: `${i + 1}) ${String(p.name).split('|')[0].trim()} · ${adds} · ${who}`, long: `*${i + 1}) ${p.name}*\nAdds: ${adds || 'skills the role asks for'}\nHelps: ${who}` };
+    const roles = (p.demand?.examples || p.roles || []).slice(0, 4);
+    return {
+      short: `${i + 1}) ${String(p.name).split('|')[0].trim()} · ${adds} · ${who}${roles.length ? ` (e.g. ${roles.slice(0, 2).join('; ')})` : ''}`,
+      long: `*${i + 1}) ${p.name}*\nAdds: ${adds || 'skills the role asks for'}\nHelps: ${who}${roles.length ? `\nFor example:\n${roles.map(r => `  • ${r}`).join('\n')}` : ''}`,
+    };
   };
   const lines = projects.map(line);
   const n = projects.length;
@@ -215,7 +219,7 @@ export async function sendText(userId, phone, text, kind = 'text') {
   }
 }
 
-export async function sendTemplate(userId, phone, kind, params) {
+export async function sendTemplate(userId, phone, kind, params, { quiet = false } = {}) {
   const t = WHATSAPP_TEMPLATES[kind];
   const name = process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name;
   const bodyParams = (params.body || []).map(p => cleanParam(p));
@@ -228,7 +232,7 @@ export async function sendTemplate(userId, phone, kind, params) {
     await logOut(userId, { kind, body: logged, waId });
     return { ok: true, waId };
   } catch (err) {
-    await logOut(userId, { kind, body: logged, error: err.message });
+    if (!quiet) await logOut(userId, { kind, body: logged, error: err.message });
     throw err;
   }
 }
@@ -288,7 +292,7 @@ export async function retryWaiting() {
     }
     try {
       if (inWindow(link)) await sendText(r.user_id, link.phone, r.payload?.text, r.kind);
-      else await sendTemplate(r.user_id, link.phone, r.kind, r.payload?.params || {});
+      else await sendTemplate(r.user_id, link.phone, r.kind, r.payload?.params || {}, { quiet: true });
       await run("UPDATE whatsapp_messages SET status = 'sent_late' WHERE id = $1", [r.id]);
       sent += 1;
     } catch (err) {
@@ -443,6 +447,50 @@ export function chatReply(text) {
   return 'Sorry, I only understand a few words. Reply *HELP* to see them.';
 }
 
+/**
+ * Everything the WhatsApp assistant may answer from: what it sent lately,
+ * tonight's list, projects to build, recent resumes and applications.
+ */
+async function assistantData(userId) {
+  const [sent, plan, projects, resumes, applied] = await Promise.all([
+    all("SELECT created_at::text AS at, kind, left(body, 900) AS body FROM whatsapp_messages WHERE user_id = $1 AND direction = 'out' AND status NOT IN ('failed', 'waiting_template') ORDER BY created_at DESC LIMIT 6", [userId]),
+    numberedTop(userId),
+    all("SELECT name, covers, demand, status FROM planned_projects WHERE user_id = $1 AND status IN ('suggested', 'built') ORDER BY created_at DESC LIMIT 6", [userId]),
+    all(`SELECT e.company_name, e.job_title, t.status, t.ats_score, t.report->'callback'->>'after' AS callback, t.report->>'verdict' AS verdict
+           FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id
+          WHERE t.user_id = $1 AND t.kind = 'resume' AND t.status IN ('ready', 'needs_review') ORDER BY t.id DESC LIMIT 8`, [userId]),
+    all("SELECT company_name, title, stage, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' ORDER BY decided_at DESC NULLS LAST LIMIT 10", [userId]),
+  ]);
+  return {
+    messages_you_sent_them_recently: sent.reverse(),
+    tonights_list: plan.plan ? { date: plan.plan.plan_date, roles: plan.items.map((it, i) => ({ n: i + 1, company: it.company_name, title: it.title, score: it.score, decision: it.decision })) } : null,
+    projects_to_build: projects.map(p => ({ name: p.name, status: p.status, adds: p.covers, roles_it_helps: p.demand ? `${p.demand.roles} of ${p.demand.of} listed roles` : 'one role', example_roles: p.demand?.examples || [], keyword_counts: p.demand?.keywords || [] })),
+    tailored_resumes: resumes,
+    approved_roles: applied,
+    links: { list: `${SITE}/applications/auto-apply`, tracker: `${SITE}/applications/tracker`, projects: `${SITE}/profile/projects` },
+  };
+}
+
+const ASSISTANT = `You are Scout’n’Jobs answering the user on WhatsApp about their own job search.
+Answer only from DATA. If DATA doesn't have it, say so in one line and point to the right page link.
+Keep it short: 1–8 lines, WhatsApp formatting (*bold*, • bullets). Name specific companies and roles when the question is about them.
+You can't take actions from a question; for those, tell them the command (YES 1 3, SKIP 2, LIST, ADD 1 3, STOP, HELP) or the page.`;
+
+/** A question or remark that isn't a command: a short answer from their own data (Groq). */
+async function answer(userId, text) {
+  const canned = chatReply(text);
+  if (!canned.startsWith('Sorry')) return canned;
+  try {
+    const { complete } = await import('./llm.js');
+    const r = await complete({ task: 'email', maxTokens: 700, userId, system: ASSISTANT, user: `DATA:\n${JSON.stringify(await assistantData(userId))}\n\nTHEIR MESSAGE: ${String(text).slice(0, 500)}` });
+    const out = String(r.text || '').trim();
+    return out ? `${out.slice(0, 1500)}\n\n_Reply HELP for commands._` : canned;
+  } catch (err) {
+    console.warn('[whatsapp] answer failed:', err.message);
+    return canned;
+  }
+}
+
 async function reply(userId, phone, text) {
   if (!whatsappConfigured()) return null;
   return sendText(userId, phone, text, 'command').catch(err => console.warn('[whatsapp] reply failed:', err.message));
@@ -466,7 +514,7 @@ export async function handleInbound(from, text) {
   if (!link) return reply(null, phone, `This number isn’t linked to Scout’n’Jobs. Get a code in ${SITE}/integrations/whatsapp and send JOIN <code>.`);
   await run('UPDATE whatsapp_links SET last_inbound_at = NOW() WHERE user_id = $1', [link.user_id]);
   const userId = link.user_id;
-  if (!c) return reply(userId, phone, chatReply(text));
+  if (!c) return reply(userId, phone, await answer(userId, text));
   if (c.cmd === 'help') return reply(userId, phone, HELP);
   if (c.cmd === 'stop') { await run('UPDATE whatsapp_links SET enabled = false WHERE user_id = $1', [userId]); return reply(userId, phone, 'Paused. Send START to turn WhatsApp messages back on.'); }
   if (c.cmd === 'start') { await run('UPDATE whatsapp_links SET enabled = true WHERE user_id = $1', [userId]); return reply(userId, phone, 'WhatsApp messages are on again.'); }

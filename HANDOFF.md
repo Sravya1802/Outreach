@@ -124,6 +124,21 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-22 — Drafts with the 9 PM list, Resumes section, one-page fix, Gmail and Groq fixes
+- **Drafts** (`8e08b85`; user chose drafts for all ~20 top roles): `dailyPlan.draftTopRoles(userId, planId)` runs right after `buildPlan` marks the plan ready and on every tick (idempotent). It creates the evaluation (`evaluationFor`) and a batched tailoring per top role. Lists build **2h before** list time. Approving reuses the draft.
+  - The email and WhatsApp list show "Resume: ATS N% · interview N%" (or "being written") and `/resumes/job/:evalId`.
+  - Per-draft WhatsApp messages (skills question, role project) are held while the item is `pending` (`isPendingDraft`); the skills question goes out on approval.
+  - `DAILY_DRAFTS=off` turns drafting off.
+  - **Caps raised on the VM:** `AI_USER_MONTHLY_CAP_USD=100`, `AI_MONTHLY_CAP_USD=120` (.env backed up first).
+- **Your upload wins:** `saveForEvaluation('tailored')` no longer replaces an uploaded file as `evaluations.resume_file_id`. `resumeGate` passes an uploaded file. `POST /api/resume-engine/evaluations/:id/use-tailored` goes back to the app's resume.
+- **Resumes section:** `/resumes/jobs` (ResumesPage: one row per job, with fit, resume state, ATS before→after, interview, sent with; filters), `/resumes/job/:id` (ResumeJobPage: what gets sent, upload my version, then TailoredResume), `/resumes/master` (was /profile/resume), `/resumes/projects` (was /profile/projects); old paths redirect. API `GET /api/resume-engine/jobs` (`resumesByJob`).
+- **One page** (`fdd2b3a`): added skills only if they still fit, 7 more `SHRINK_STEPS`, and `ready` requires `pages === 1`. The IBM sample had gone to 2 pages after a rescore; now 1 page, ATS 95, ready.
+- **Gmail** (`775d06e`): a transient IMAP error ("Unexpected close" on 10-19) had set `status='error'`, and `checkAllInboxes` only checks `ok`, so replies went unread for 3 days. Now only `isAuthFailure` sets `error`. The user was reset and checked.
+- **Groq 429** (`edd9ea1`): `callStep` waits as long as Groq asks (`rateLimitWait`, ≤60s, 3 tries). `submitQueued` leaves rate-limited rows queued. **OpenAI (the fallback) has no credits**, so the user should add credits or upgrade Groq.
+- **WhatsApp:** needs-you lists numbered roles with apply and resume links; **APPLIED 1 3** marks them applied (`meta.needs_ask` → `referralAction(applied_myself)`).
+- **Reality check:** recent top roles are LinkedIn 71 / Indeed 19 / other 15 / Workday 7 / Greenhouse 3 / Ashby 1. Most need the user to submit; the app has submitted 0 so far. The profile is missing requires_sponsorship, school, degree, state. LinkedIn connections: 0.
+- Drafted the 10-21 list's 17 top roles as a live test (in progress at time of writing).
+
 ### 2026-10-21 — WhatsApp answers any question
 - **Why:** the projects message reached the user, but it didn't name roles. They asked "For which jobs is this?" and got "Sorry, I only understand a few words"; they want WhatsApp to answer any query.
 - **What** (`995dcbd`…`d9a3ddd`):

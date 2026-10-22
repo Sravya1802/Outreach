@@ -582,16 +582,25 @@ export async function advanceUser(userId) {
 /** One WhatsApp message for roles that newly need the user. */
 export async function notifyNeedsYou(userId) {
   const fresh = await all(
-    "SELECT id, company_name, stage_note FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'needs_you' AND whatsapp_needs_at IS NULL ORDER BY decided_at",
+    "SELECT id, company_name, title, stage_note, needs_reason, apply_url, evaluation_id FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'needs_you' AND whatsapp_needs_at IS NULL ORDER BY decided_at",
     [userId],
   );
   if (!fresh.length) return { skipped: 'none' };
   await run('UPDATE plan_items SET whatsapp_needs_at = NOW() WHERE id = ANY($1)', [fresh.map(f => f.id)]);
+  // Remember the numbering, so "APPLIED 1 3" on WhatsApp knows which roles.
+  await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'needs_ask', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, JSON.stringify({ items: fresh.map(f => Number(f.id)), at: new Date().toISOString() })]);
+  const applyNums = fresh.map((f, n) => (f.needs_reason === 'apply' ? n + 1 : null)).filter(Boolean);
+  const lines = fresh.map((f, n) => [
+    `*${n + 1}) ${f.company_name}* · ${f.title}`,
+    `   ${f.stage_note || 'needs you'}`,
+    ...(f.needs_reason === 'apply' && /^https?:\/\//i.test(f.apply_url || '') ? [`   Apply: ${f.apply_url}`] : []),
+    ...(f.evaluation_id ? [`   Resume: ${SITE}/resumes/job/${f.evaluation_id}`] : []),
+  ].join('\n'));
   const short = fresh.map(f => `${f.company_name}: ${String(f.stage_note || 'needs you').split('.')[0]}`).join(' · ');
   const link = `${SITE}/applications/auto-apply`;
   return whatsappNotify(userId, 'needs', {
     params: { header: `${fresh.length} role${fresh.length === 1 ? '' : 's'}`, body: [short] },
-    text: `*Needs you · ${fresh.length} role${fresh.length === 1 ? '' : 's'}*\nHello,\nThese approved roles are waiting on you:\n${fresh.map(f => `• *${f.company_name}*: ${f.stage_note || 'needs you'}`).join('\n')}\n\nOpen Scout’n’Jobs to take care of them: ${link}\n\nGood luck! ;)`,
+    text: `*Needs you · ${fresh.length} role${fresh.length === 1 ? '' : 's'}*\nHello,\nThese approved roles are waiting on you:\n\n${lines.join('\n\n')}\n\n${applyNums.length ? `Applied yourself? Reply *APPLIED ${applyNums.join(' ')}* (or the ones you did) and they're marked applied.\n` : ''}All of them: ${link}\n\nGood luck! ;)`,
   });
 }
 

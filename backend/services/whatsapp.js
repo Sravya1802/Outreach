@@ -173,6 +173,12 @@ export function parseCommand(text) {
     const cmd = /^(skip|no)$/i.test(m[1]) ? 'skip' : 'yes';
     return { cmd, picks: nums.length ? [...new Set(nums)] : 'all' };
   }
+  m = /^applied\s+(all|[\d\s,and&]+)$/i.exec(t);
+  if (m) {
+    if (/^all$/i.test(m[1].trim())) return { cmd: 'applied', picks: 'all' };
+    const nums = [...m[1].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 100);
+    if (nums.length) return { cmd: 'applied', picks: [...new Set(nums)] };
+  }
   m = /^add\s+(all|[\d\s,and&]+)$/i.exec(t);
   if (m) {
     if (/^all$/i.test(m[1].trim())) return { cmd: 'add', picks: 'all' };
@@ -426,6 +432,7 @@ export const HELP = [
   '*SKIP 2*  skip one',
   '*LIST*  see tonight’s list again',
   '*ADD 1 3* / *ADD ALL*  you know those skills; they go on your resume',
+  '*APPLIED 1 3*  you applied to those roles from the “needs you” message',
   '*STOP* / *START*  pause or resume these messages',
   '*HELP*  show this again',
 ].join('\n');
@@ -541,6 +548,7 @@ export async function handleInbound(from, text) {
   if (c.cmd === 'stop') { await run('UPDATE whatsapp_links SET enabled = false WHERE user_id = $1', [userId]); return reply(userId, phone, 'Paused. Send START to turn WhatsApp messages back on.'); }
   if (c.cmd === 'start') { await run('UPDATE whatsapp_links SET enabled = true WHERE user_id = $1', [userId]); return reply(userId, phone, 'WhatsApp messages are on again.'); }
   if (c.cmd === 'add') return reply(userId, phone, await addSkillsReply(userId, c.picks));
+  if (c.cmd === 'applied') return reply(userId, phone, await appliedReply(userId, c.picks));
   const { plan, items } = await numberedTop(userId);
   if (c.cmd === 'list') {
     if (!plan || !items.length) return reply(userId, phone, 'No list right now. It arrives in the evening.');
@@ -562,6 +570,29 @@ export async function handleInbound(from, text) {
   const verb = c.cmd === 'yes' ? 'Approved' : 'Skipped';
   const lines = done.map(i => `• ${i.company_name} · ${i.title}`);
   return reply(userId, phone, `${done.length ? `${verb}:\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on tonight’s list.` : ''}${c.cmd === 'yes' && done.length ? '\n\nTailored resumes are being written now.' : ''}`);
+}
+
+/** APPLIED 1 3: the user applied to those roles from the last "needs you" message. */
+async function appliedReply(userId, picks) {
+  const v = (await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'needs_ask'", [userId]))?.value;
+  let ask = null;
+  try { ask = v ? JSON.parse(v) : null; } catch { ask = null; }
+  if (!ask?.items?.length) return 'There’s no “needs you” list to mark. It comes when an approved role is waiting on you.';
+  const nums = picks === 'all' ? ask.items.map((_, i) => i + 1) : picks;
+  const ids = nums.filter(n => n <= ask.items.length).map(n => ask.items[n - 1]);
+  const { referralAction } = await import('./referralFlow.js');
+  const done = [];
+  const skipped = [];
+  for (const id of ids) {
+    const r = await referralAction(userId, id, { action: 'applied_myself' }).catch(err => ({ error: err.message }));
+    if (r?.error) skipped.push(r.error); else if (r) done.push(`${r.company_name} · ${r.title}`);
+  }
+  const bad = nums.filter(n => n > ask.items.length);
+  return [
+    done.length ? `Marked applied:\n${done.map(d => `• ${d}`).join('\n')}\n\nThey’re in your Tracker as waiting to hear back.` : 'Nothing changed.',
+    skipped.length ? `\n${skipped.length} couldn’t be marked: ${skipped[0]}` : '',
+    bad.length ? `\nThere’s no number ${bad.join(', ')} on that list.` : '',
+  ].join('');
 }
 
 /** ADD 1 3: the user knows those skills from the last question; add them to that resume. */

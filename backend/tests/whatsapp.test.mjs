@@ -95,3 +95,10 @@ test('ADD replies and the skills question', async () => {
   assert.deepEqual(m.params.body, ['Stripe · SWE, New Grad', '1) Kafka  2) Go']);
   assert.match(m.text, /1\) Kafka\n2\) Go/);
 });
+
+test('APPLIED replies', async () => {
+  const { parseCommand } = await import('../services/whatsapp.js');
+  assert.deepEqual(parseCommand('APPLIED 2 4'), { cmd: 'applied', picks: [2, 4] });
+  assert.deepEqual(parseCommand('applied all'), { cmd: 'applied', picks: 'all' });
+  assert.equal(parseCommand('applied to google yesterday'), null);
+});

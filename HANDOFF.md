@@ -137,7 +137,8 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 - **Groq 429** (`edd9ea1`): `callStep` waits as long as Groq asks (`rateLimitWait`, ≤60s, 3 tries). `submitQueued` leaves rate-limited rows queued. **OpenAI (the fallback) has no credits**, so the user should add credits or upgrade Groq.
 - **WhatsApp:** needs-you lists numbered roles with apply and resume links; **APPLIED 1 3** marks them applied (`meta.needs_ask` → `referralAction(applied_myself)`).
 - **Reality check:** recent top roles are LinkedIn 71 / Indeed 19 / other 15 / Workday 7 / Greenhouse 3 / Ashby 1. Most need the user to submit; the app has submitted 0 so far. The profile is missing requires_sponsorship, school, degree, state. LinkedIn connections: 0.
-- Drafted the 10-21 list's 17 top roles as a live test (in progress at time of writing).
+- **Live test, the 10-21 list's 17 top roles:** all one page, $2.28. Ready (ATS >90): AQR 95, University of Florida 92. IBM SWE and Scopely at 90. The rest 39–84 (Garmin embedded 39, verdict skip).
+- **Groq free tier = 200K tokens/day for gpt-oss-120b**, exhausted by ~10:40 UTC. The nightly scoring alone needs more, and OpenAI (the fallback) has no credits. So recruiter checks failed: `fillMissingChecks()` in `pumpBatches` re-scores 3 per pass until `callback` is set (`1160b97`), and `rateLimitWait` doesn't wait on daily limits (`bb4f3bb`). **The user needs Groq Developer tier (pay-as-you-go) or OpenAI credits for reliable nights.**
 
 ### 2026-10-21 — WhatsApp answers any question
 - **Why:** the projects message reached the user, but it didn't name roles. They asked "For which jobs is this?" and got "Sorry, I only understand a few words"; they want WhatsApp to answer any query.

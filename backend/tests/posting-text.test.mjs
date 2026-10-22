@@ -29,3 +29,12 @@ test('LinkedIn job ids from the URL shapes the scrapers save', () => {
   assert.equal(linkedInJobId('https://boards.greenhouse.io/x/jobs/1'), null);
 });
 
+
+test('AI rate limits: wait as long as Groq asks, never for billing errors', async () => {
+  process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z';
+  const { rateLimitWait } = await import('../services/llm.js');
+  assert.equal(rateLimitWait({ status: 429, message: 'Rate limit reached ... Please try again in 12.5s.' }), 13500);
+  assert.equal(rateLimitWait({ status: 429, message: 'Please try again in 1m2.0s' }), 60000);
+  assert.equal(rateLimitWait({ status: 429, message: 'You have no credits remaining' }), null);
+  assert.equal(rateLimitWait({ status: 500, message: 'server error' }), null);
+});

@@ -107,6 +107,15 @@ function openaiCompatible(provider) {
   return clients[id];
 }
 
+/** Milliseconds a 429 asks us to wait, or null if it isn't a rate limit. */
+export function rateLimitWait(err) {
+  if (Number(err?.status) !== 429 && !/rate limit/i.test(String(err?.message))) return null;
+  if (/no credits|quota|billing/i.test(String(err?.message))) return null;
+  const m = /try again in (?:(\d+)m)?([\d.]+)s/i.exec(String(err?.message));
+  const secs = m ? Number(m[1] || 0) * 60 + Number(m[2]) : Number(err?.headers?.get?.('retry-after')) || 20;
+  return Math.min(60, Math.max(1, secs + 1)) * 1000;
+}
+
 function available(step) {
   if (step.provider === 'anthropic') return hasClaudeKey();
   return Boolean(openaiCompatible(step.provider));
@@ -118,13 +127,26 @@ async function callStep(step, { system, user, json, schema, maxTokens, timeoutMs
     return { text: r.text, usage: r.usage };
   }
   const client = openaiCompatible(step.provider);
-  const res = await client.chat.completions.create({
+  const body = {
     model: step.model,
     messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: user }],
     max_completion_tokens: maxTokens,
     ...(json || schema ? { response_format: { type: 'json_object' } } : {}),
     ...(step.reasoning && step.provider === 'groq' ? { reasoning_effort: step.reasoning } : {}),
-  }, timeoutMs ? { timeout: timeoutMs } : undefined);
+  };
+  // Groq's per-minute limits ask for waits the SDK's short retries don't cover:
+  // wait as long as it says ("try again in 12.3s"), up to a minute, three times.
+  let res;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      res = await client.chat.completions.create(body, timeoutMs ? { timeout: timeoutMs } : undefined);
+      break;
+    } catch (err) {
+      const wait = rateLimitWait(err);
+      if (step.provider !== 'groq' || wait == null || attempt >= 2) throw err;
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
   const text = res.choices?.[0]?.message?.content?.trim() || '';
   if (!text) throw new Error(`${step.provider} returned no text (finish_reason: ${res.choices?.[0]?.finish_reason})`);
   const u = res.usage || {};

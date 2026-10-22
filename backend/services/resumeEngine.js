@@ -721,6 +721,8 @@ async function submitQueued() {
         items.push({ id, system: prompt.system, user: prompt.user + (revising ? revisionSuffix(r.batch.draft, r.batch.notes) : ''), schema: DRAFT_SCHEMA, maxTokens: DRAFT_MAX_TOKENS });
         ready.push({ r, id, jd: { keywords: ctx.keywords, focus: ctx.focus, title: ctx.title }, cost: ctx.cost });
       } catch (err) {
+        // Rate-limited (Groq's free tier): leave it queued for the next pass.
+        if (/429|rate limit/i.test(String(err.message)) && !/no credits/i.test(String(err.message).split('|')[0])) continue;
         await failRow(r.id, err.message);
       }
     }

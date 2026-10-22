@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z'; // modules import db.js; these tests make no queries
-const { normalizeAppPassword, isAppPassword, friendlyGmailError, newMessageId, buildMime, draftHash } = await import('../services/gmail.js');
+const { normalizeAppPassword, isAppPassword, friendlyGmailError, newMessageId, buildMime, draftHash, isAuthFailure } = await import('../services/gmail.js');
 const { parseHeaderBlock, messageIdsIn, linkedinEvent, looksAutoReply, isBounceSender, normName, describeEvent } = await import('../services/replyWatcher.js');
 const { followupBody } = await import('../services/outbox.js');
 
@@ -67,4 +67,11 @@ test('drafts: the resume rides along, and only real edits count as edits', async
   // Gmail re-wraps lines and trims; that isn't an edit.
   assert.equal(draftHash('Referral?', 'Hi Ana,\n\nMy resume is attached.'), draftHash(' Referral? ', 'Hi Ana,\r\n\r\nMy resume\nis attached.\n'));
   assert.notEqual(draftHash('Referral?', 'Hi Ana, my resume is attached.'), draftHash('Referral?', 'Hi Ana, my resume is attached. Thanks!'));
+});
+
+test('gmail: only a refused login stops the inbox checks', () => {
+  assert.equal(isAuthFailure({ message: 'Unexpected close' }), false);
+  assert.equal(isAuthFailure({ code: 'ECONNRESET' }), false);
+  assert.equal(isAuthFailure({ authenticationFailed: true }), true);
+  assert.equal(isAuthFailure({ responseCode: 535, message: '535 5.7.8 Username and Password not accepted' }), true);
 });

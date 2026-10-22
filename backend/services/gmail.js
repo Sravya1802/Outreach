@@ -88,8 +88,20 @@ export async function connectionFor(userId) {
   return { ...r, pass: open(r.app_password) };
 }
 
+/** A login Google refused (wrong or revoked app password): retrying would get the account locked. */
+export function isAuthFailure(err) {
+  const m = `${err?.code || ''} ${err?.responseCode || ''} ${err?.message || ''} ${err?.response || ''} ${err?.responseText || ''} ${err?.serverResponseCode || ''}`;
+  return Boolean(err?.authenticationFailed) || /EAUTH|535|AUTHENTICATIONFAILED|Invalid credentials|Username and Password not accepted|authentication failed|Application-specific password required|web login required|534/i.test(m);
+}
+
+/**
+ * Record a Gmail failure. Only a refused login stops the checks (status
+ * 'error' until the user reconnects); a dropped connection or timeout is
+ * noted and retried on the next pass.
+ */
 export async function markError(userId, err) {
-  await run("UPDATE gmail_connections SET status = 'error', last_error = $2 WHERE user_id = $1", [userId, friendlyGmailError(err)]).catch(() => {});
+  const status = isAuthFailure(err) ? 'error' : 'ok';
+  await run('UPDATE gmail_connections SET status = $3, last_error = $2 WHERE user_id = $1', [userId, friendlyGmailError(err), status]).catch(() => {});
 }
 
 const transports = new Map();

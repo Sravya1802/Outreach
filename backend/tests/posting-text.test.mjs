@@ -28,3 +28,4 @@ test('LinkedIn job ids from the URL shapes the scrapers save', () => {
   assert.equal(linkedInJobId('https://www.linkedin.com/jobs/search/?currentJobId=4460205602'), '4460205602');
   assert.equal(linkedInJobId('https://boards.greenhouse.io/x/jobs/1'), null);
 });
+

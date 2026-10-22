@@ -120,7 +120,7 @@ export function projectsMessage(projects) {
   const n = projects.length;
   return {
     params: { header: `${n} new`, body: [lines.map(l => l.short).join('  ')] },
-    text: `*Projects to build · ${n} new*\n\nYour listed roles keep asking for skills your resume doesn’t show yet. These would cover them:\n\n${lines.map(l => l.long).join('\n\n')}\n\nBuild plans: ${SITE}/profile/projects\nWhen one's built, push it and mark it built there so your resumes can use it.`,
+    text: `*Projects to build · ${n} new*\n\nYour listed roles keep asking for skills your resume doesn’t show yet. These would cover them:\n\n${lines.map(l => l.long).join('\n\n')}\n\nBuild plans: ${SITE}/resumes/projects\nWhen one's built, push it and mark it built there so your resumes can use it.`,
   };
 }
 
@@ -372,7 +372,12 @@ export async function sendTest(userId) {
 async function numberedTop(userId) {
   const plan = await one("SELECT * FROM daily_plans WHERE user_id = $1 AND status = 'ready' ORDER BY plan_date DESC LIMIT 1", [userId]);
   if (!plan) return { plan: null, items: [] };
-  const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND tier = 'top' ORDER BY score DESC NULLS LAST, id", [plan.id]);
+  const items = await all(
+    `SELECT pi.*, t.status AS t_status, t.ats_score AS t_ats, (t.report->'callback'->>'after')::int AS t_callback
+       FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.plan_id = $1 AND pi.tier = 'top' ORDER BY pi.score DESC NULLS LAST, pi.id`,
+    [plan.id],
+  );
   return { plan, items };
 }
 
@@ -391,11 +396,13 @@ export function listMessage(items, date) {
       `Score: ${Number(i.score).toFixed(1)}/10`,
       ...(i.location ? [`Where: ${i.location}`] : []),
       ...(i.reason ? [`Why: _${i.reason}_`] : []),
+      ...(i.tailoring_id ? [i.t_status === 'running' ? 'Resume: being written' : i.t_ats != null ? `Resume: ATS ${i.t_ats}%${i.t_callback != null ? ` · interview ${i.t_callback}%` : ''}` : 'Resume: drafted'] : []),
+      ...(i.evaluation_id ? [`See it: ${SITE}/resumes/job/${i.evaluation_id}`] : []),
       '',
     ].join('\n')),
     '',
     'Reply *YES* to approve all, or *YES 1 3* for a couple of them.',
-    `Open Scout’n’Jobs to read each JD: ${SITE}/applications/auto-apply`,
+    `Every draft resume, to read or replace with your own: ${SITE}/resumes`,
     '',
     'Good luck! ;)',
   ].join('\n');
@@ -477,7 +484,7 @@ async function assistantData(userId) {
     settings: settings ? { list_time_hour: settings.listHour, timezone: settings.timezone, min_score: settings.minScore, max_per_day: settings.maxPerDay, referral_first: settings.referralFirst } : null,
     ai_spend_this_month_usd: spend?.usd ?? null,
     gmail_connected: Boolean(gmail?.email),
-    links: { usage: `${SITE}/usage`, list: `${SITE}/applications/auto-apply`, tracker: `${SITE}/applications/tracker`, projects: `${SITE}/profile/projects` },
+    links: { usage: `${SITE}/usage`, list: `${SITE}/applications/auto-apply`, tracker: `${SITE}/applications/tracker`, projects: `${SITE}/resumes/projects`, resumes: `${SITE}/resumes` },
   };
 }
 

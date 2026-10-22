@@ -342,6 +342,7 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
       costUsd: Number(((prev.costUsd || 0) + cost).toFixed(5)), ...(budgetErr ? { stoppedEarly: 'AI budget reached' } : {}),
     };
     await run("UPDATE daily_plans SET status = 'ready', stats = $2, built_at = NOW() WHERE id = $1", [plan.id, JSON.stringify(stats)]);
+    if (drafting()) await draftTopRoles(userId, plan.id).catch(err => console.warn('[daily-plan] drafts:', err.message));
   } catch (err) {
     await run("UPDATE daily_plans SET status = 'failed', error = $2 WHERE id = $1", [plan.id, String(err.message).slice(0, 300)]);
     throw err;
@@ -409,11 +410,14 @@ export function planEmail({ items, stats, settings, date, firstName }) {
     ? `${top.length} role${top.length === 1 ? '' : 's'} to approve tonight · ${day}`
     : `No ${settings.minScore}+ roles tonight · ${worth.length} worth a look · ${day}`;
   const when = settings.referralFirst
-    ? `For each one you approve, I'll write a tailored resume tonight, ask someone at the company for a referral tomorrow morning, and apply ${settings.referralWaitDays} business days later in the company's morning if no referral comes through.`
+    ? `Each one already has a draft resume you can open and change (or upload your own). For each one you approve, I'll ask someone at the company for a referral tomorrow morning, and apply ${settings.referralWaitDays} business days later in the company's morning if no referral comes through.`
     : 'For each one you approve, I’ll write a tailored resume tonight and apply tomorrow between 6 and 10 AM in the company’s time zone.';
   // Only http(s) links go into the email.
   const posting = (i) => (/^https?:\/\//i.test(String(i.apply_url || '')) ? i.apply_url : null);
-  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}${posting(i) ? `\n      ${posting(i)}` : ''}`;
+  const resume = (i) => (!i.tailoring_id ? '' : i.t_status === 'running' ? 'Resume: being written, ready within the hour'
+    : i.t_ats != null ? `Resume: ATS ${i.t_ats}%${i.t_callback != null ? ` · interview chance ${i.t_callback}%` : ''}` : '');
+  const resumeLink = (i) => (i.evaluation_id ? `${SITE}/resumes/job/${i.evaluation_id}` : null);
+  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}${posting(i) ? `\n      ${posting(i)}` : ''}${resume(i) ? `\n      ${resume(i)}${resumeLink(i) ? `: ${resumeLink(i)}` : ''}` : ''}`;
   const text = [
     `Good evening${firstName ? `, ${firstName}` : ''}. ${top.length ? `${top.length} new role${top.length === 1 ? '' : 's'} scored ${settings.minScore} or higher today.` : `Nothing scored ${settings.minScore} or higher today.`}`,
     top.length ? `Approve the ones you want before bed: ${link}\n\n${when}` : '',
@@ -425,7 +429,7 @@ export function planEmail({ items, stats, settings, date, firstName }) {
   const rows = top.map(i => `
     <tr><td style="padding:14px 0;border-bottom:1px solid #dcd7cb;vertical-align:top;width:48px;font-family:monospace;font-size:17px;color:#1e6b52">${esc(i.score?.toFixed(1) ?? '–')}</td>
     <td style="padding:14px 0;border-bottom:1px solid #dcd7cb"><b>${esc(i.company_name)}</b> · ${posting(i) ? `<a href="${esc(posting(i))}" style="color:#1f3bc4">${esc(i.title)}</a>` : esc(i.title)}<br>
-    <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span></td></tr>`).join('');
+    <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span>${resume(i) ? `<br><span style="font-size:13px;color:#1e6b52">${esc(resume(i))}</span>${resumeLink(i) ? ` · <a href="${esc(resumeLink(i))}" style="color:#1f3bc4">see the resume</a>` : ''}` : ''}</td></tr>`).join('');
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:640px;margin:0 auto;padding:24px">
     <p style="font-size:20px;font-weight:600;margin:0 0 16px">Scout’n’Jobs</p>
     <h1 style="font-size:24px;font-weight:500;margin:0 0 10px">${esc(text.split('\n')[0])}</h1>
@@ -442,7 +446,12 @@ export async function emailPlan(userId, planId) {
   const plan = await one('SELECT * FROM daily_plans WHERE id = $1 AND user_id = $2', [planId, userId]);
   if (!plan || plan.status !== 'ready') return { skipped: 'not_ready' };
   if (plan.emailed_at) return { skipped: 'already_sent' };
-  const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND tier IN ('top','worth') ORDER BY score DESC NULLS LAST", [planId]);
+  const items = await all(
+    `SELECT pi.*, t.status AS t_status, t.ats_score AS t_ats, (t.report->'callback'->>'after')::int AS t_callback
+       FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.plan_id = $1 AND pi.tier IN ('top','worth') ORDER BY pi.score DESC NULLS LAST`,
+    [planId],
+  );
   // Nothing to look at: no email (the page still shows the night's numbers).
   if (!items.length) { await run('UPDATE daily_plans SET emailed_at = NOW() WHERE id = $1', [planId]); return { skipped: 'empty' }; }
   if (!(await connectionFor(userId))) return { skipped: 'gmail_not_connected' };
@@ -466,21 +475,49 @@ export async function decide(userId, itemId, decision) {
     throw Object.assign(new Error('This role is already past the resume step.'), { status: 409 });
   }
   if (decision === 'approved' && item.decision !== 'approved') {
-    let evalId = item.evaluation_id;
-    if (!evalId) {
-      evalId = (await run(
-        `INSERT INTO evaluations (user_id, job_url, job_title, company_name, job_description, score, source, apply_mode, apply_status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'daily_plan', 'auto', 'not_started') RETURNING id`,
-        [userId, item.apply_url, item.title, item.company_name, item.job_description, item.score == null ? null : Math.round(Number(item.score) * 10)],
-      )).rows[0].id;
-    }
+    // The draft written with the evening list (if any) is the one that goes ahead.
+    const evalId = item.evaluation_id || await evaluationFor(userId, item);
     await run("UPDATE plan_items SET decision = 'approved', decided_at = NOW(), evaluation_id = $2, stage = 'tailoring', stage_note = 'Writing your tailored resume' WHERE id = $1", [item.id, evalId]);
     // Start the resume now rather than at the next cron pass.
     advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
+    // A draft that's already written: now's the time to ask about missing skills.
+    if (item.tailoring_id) import('./resumeEngine.js').then(m => m.askAboutSkills(userId, item.tailoring_id)).catch(() => {});
   } else if (decision !== 'approved') {
     await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL, needs_reason = NULL WHERE id = $1", [item.id, decision]);
   }
   return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+}
+
+/** The evaluation (application row) a plan item's resume and application hang off. */
+async function evaluationFor(userId, item) {
+  return (await run(
+    `INSERT INTO evaluations (user_id, job_url, job_title, company_name, job_description, score, source, apply_mode, apply_status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'daily_plan', 'auto', 'not_started') RETURNING id`,
+    [userId, item.apply_url, item.title, item.company_name, item.job_description, item.score == null ? null : Math.round(Number(item.score) * 10)],
+  )).rows[0].id;
+}
+
+// Draft a tailored resume for every top role as soon as the list is built, so
+// the user sees the changes (and can upload their own version) before deciding.
+// DAILY_DRAFTS=off goes back to writing them only after approval.
+const drafting = () => process.env.DAILY_DRAFTS !== 'off';
+
+/** Start a (batched) resume draft for each top role on the list that has none. Idempotent. */
+export async function draftTopRoles(userId, planId) {
+  const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND tier = 'top' AND decision IN ('pending', 'approved') AND tailoring_id IS NULL ORDER BY score DESC NULLS LAST", [planId, userId]);
+  let started = 0;
+  for (const it of items) {
+    try {
+      const evalId = it.evaluation_id || await evaluationFor(userId, it);
+      const t = await startTailoring(userId, evalId, 'resume', { batch: batched() });
+      await run('UPDATE plan_items SET evaluation_id = $2, tailoring_id = $3 WHERE id = $1', [it.id, evalId, t.id]);
+      started += 1;
+    } catch (err) {
+      console.warn(`[daily-plan] draft for ${it.company_name}:`, err.message);
+      if (err.status === 402) break; // AI budget reached
+    }
+  }
+  return started;
 }
 
 export async function approveAllTop(userId, planId) {
@@ -583,7 +620,9 @@ export async function tick(now = new Date()) {
           const hour = localHour(s.timezone, now);
           const date = localDate(s.timezone, now);
           let plan = await one('SELECT * FROM daily_plans WHERE user_id = $1 AND plan_date = $2', [u.user_id, date]);
-          if (!plan && hour >= s.listHour - 1) { plan = await buildPlan(u.user_id, { now }); done.built += 1; }
+          // Two hours early: scoring takes ~15 minutes and the resume drafts go through the batch API.
+          if (!plan && hour >= s.listHour - 2) { plan = await buildPlan(u.user_id, { now }); done.built += 1; }
+          if (plan?.status === 'ready' && drafting()) await draftTopRoles(u.user_id, plan.id).catch(err => console.warn('[daily-plan] drafts:', err.message));
           if (plan?.status === 'ready' && !plan.emailed_at && hour >= s.listHour) {
             const r = await emailPlan(u.user_id, plan.id);
             if (r.ok) done.emailed += 1;

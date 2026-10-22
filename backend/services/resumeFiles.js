@@ -76,7 +76,12 @@ export async function saveForEvaluation(userId, evalId, buffer, filename, kind) 
   const market = await marketFor(userId);
   return tx(async (db) => {
     const row = await insertRow(db, { userId, kind, bucket: BUCKETS.tailored, objectPath, filename: name, buffer, evaluationId: Number(evalId), market });
-    await db.query('UPDATE evaluations SET resume_file_id = $1, pdf_path = NULL WHERE id = $2 AND user_id = $3', [row.id, evalId, userId]);
+    // A resume the user uploaded for this role is what goes out; a later tailoring doesn't replace it.
+    await db.query(
+      `UPDATE evaluations SET resume_file_id = $1, pdf_path = NULL WHERE id = $2 AND user_id = $3
+         AND ($4 = 'uploaded' OR NOT EXISTS (SELECT 1 FROM resume_files f WHERE f.id = evaluations.resume_file_id AND f.kind = 'uploaded'))`,
+      [row.id, evalId, userId, kind],
+    );
     return row;
   });
 }

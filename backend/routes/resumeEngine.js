@@ -6,7 +6,7 @@ import { parseId } from '../services/safePaths.js';
 import {
   approve, coverLetterRequested, latest, parsedMaster, start,
   templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
-  approveSkills, confirmedSkills, removeConfirmedSkill,
+  approveSkills, confirmedSkills, removeConfirmedSkill, resumesByJob, useTailored,
 } from '../services/resumeEngine.js';
 import { suggestProjects, isSuggesting } from '../services/projectIdeas.js';
 
@@ -61,6 +61,18 @@ router.post('/evaluations/:id/cover-letter', async (req, res) => {
   try {
     res.status(202).json({ tailoring: await start(req.user.id, id, 'cover_letter') });
   } catch (err) { fail(res, err); }
+});
+
+// Resumes → By job.
+router.get('/jobs', async (req, res) => {
+  try { res.json({ jobs: await resumesByJob(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+// Send the app's tailored resume for this role instead of the one you uploaded.
+router.post('/evaluations/:id/use-tailored', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json(await useTailored(req.user.id, id)); } catch (err) { fail(res, err); }
 });
 
 // The user knows these JD skills: add them to this resume and remember them.

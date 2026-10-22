@@ -26,7 +26,7 @@ export const MIN_ANSWERS = 3
 export function setupSteps(i: SetupInputs): SetupStep[] {
   return [
     { id: 'resume', title: 'Upload your resume', description: 'Every evaluation and tailored resume starts from it.',
-      to: '/profile/resume', cta: 'Upload', done: i.hasResume },
+      to: '/resumes/master', cta: 'Upload', done: i.hasResume },
     { id: 'details', title: 'Fill in your details', description: 'Contact, work authorization and education, filled into every form.',
       to: '/profile/details', cta: 'Open', done: i.profileComplete },
     { id: 'answers', title: 'Answer the common questions', description: `“Why us?”, start date, salary and the like. At least ${MIN_ANSWERS}.`,

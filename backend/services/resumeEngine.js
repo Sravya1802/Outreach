@@ -291,12 +291,23 @@ export async function askAboutSkills(userId, tailoringId) {
     [tailoringId, userId],
   );
   if (!t) return null;
+  // A draft written with the evening list waits: the question comes when the role is approved.
+  if (await isPendingDraft(userId, tailoringId)) return null;
   const terms = skillsToAsk(t);
   if (!terms.length) return null;
   const ask = { tailoringId: Number(t.id), terms, company: t.company_name, title: t.job_title, at: new Date().toISOString() };
   await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'skills_ask', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, JSON.stringify(ask)]);
   const { notify, skillsMessage } = await import('./whatsapp.js');
   return notify(userId, 'skills', skillsMessage(ask)).catch(() => null);
+}
+
+/** A resume drafted for a role on the evening list that hasn't been approved yet. */
+async function isPendingDraft(userId, tailoringId) {
+  return Boolean(await one(
+    `SELECT 1 FROM plan_items pi JOIN resume_tailorings t ON t.evaluation_id = pi.evaluation_id
+      WHERE t.id = $1 AND pi.user_id = $2 AND pi.decision = 'pending'`,
+    [tailoringId, userId],
+  ));
 }
 
 /** The last skills question sent on WhatsApp, for an ADD reply. */
@@ -486,8 +497,10 @@ async function handleProposal(userId, draft, ctx, final, tailoringId) {
     [userId, ctx.ev.id, tailoringId, str(p.name).slice(0, 120), JSON.stringify(list(p.tech).map(str).filter(Boolean).slice(0, 8)), JSON.stringify(bullets),
       JSON.stringify(adds.slice(0, 10)), str(p.why).slice(0, 500), JSON.stringify(list(p.plan).map(str).filter(Boolean).slice(0, 10))],
   )).rows[0];
-  const { notify, projectsMessage } = await import('./whatsapp.js');
-  await notify(userId, 'projects', projectsMessage([{ name: row.name, covers: row.covers, demand: null }])).catch(() => {});
+  if (!tailoringId || !(await isPendingDraft(userId, tailoringId))) {
+    const { notify, projectsMessage } = await import('./whatsapp.js');
+    await notify(userId, 'projects', projectsMessage([{ name: row.name, covers: row.covers, demand: null, roles: [`${ctx.ev.company_name} · ${ctx.ev.job_title}`] }])).catch(() => {});
+  }
   return row;
 }
 
@@ -925,8 +938,55 @@ export function reviewReason(t) {
   return `The tailored resume scored ${t.ats_score}% on the ATS check (target ${ATS_TARGET}%). Review it and choose “Send anyway” or skip the role.`;
 }
 
+/**
+ * Resumes → By job: every role with a resume (drafted, tailored or yours),
+ * newest first, with which version goes out and its scores.
+ */
+export async function resumesByJob(userId) {
+  const rows = await all(
+    `SELECT e.id, e.company_name, e.job_title, e.job_url, e.score AS eval_score, e.apply_status, e.source,
+            e.created_at, f.kind AS sending_kind, f.filename AS sending_filename, f.id AS sending_file_id,
+            t.id AS tailoring_id, t.status, t.ats_score, t.ats->'before' AS ats_before, t.report->'callback'->>'after' AS callback,
+            t.report->>'verdict' AS verdict, t.batch->>'phase' AS batch_phase, t.file_id AS tailored_file_id, t.finished_at, t.approved_at,
+            t.report->'proposedProject'->>'name' AS project, t.report->'proposedProject'->>'status' AS project_status,
+            pi.decision, pi.stage, dp.plan_date::text AS list_date
+       FROM evaluations e
+       LEFT JOIN resume_files f ON f.id = e.resume_file_id
+       LEFT JOIN LATERAL (SELECT * FROM resume_tailorings rt WHERE rt.evaluation_id = e.id AND rt.user_id = e.user_id AND rt.kind = 'resume' ORDER BY rt.id DESC LIMIT 1) t ON true
+       LEFT JOIN LATERAL (SELECT * FROM plan_items p WHERE p.evaluation_id = e.id AND p.user_id = e.user_id ORDER BY p.id DESC LIMIT 1) pi ON true
+       LEFT JOIN daily_plans dp ON dp.id = pi.plan_id
+      WHERE e.user_id = $1 AND (t.id IS NOT NULL OR f.kind = 'uploaded')
+      ORDER BY COALESCE(t.finished_at, t.created_at, e.created_at) DESC
+      LIMIT 300`,
+    [userId],
+  );
+  return rows.map(r => ({
+    id: Number(r.id), company_name: r.company_name, job_title: r.job_title, job_url: r.job_url,
+    eval_score: r.eval_score == null ? null : Number(r.eval_score) / 10,
+    list_date: r.list_date, decision: r.decision || null, stage: r.stage || null, apply_status: r.apply_status,
+    resume: r.tailoring_id ? {
+      tailoring_id: Number(r.tailoring_id), status: r.status, batch_phase: r.batch_phase, ats: r.ats_score == null ? null : Number(r.ats_score),
+      ats_before: r.ats_before == null ? null : Number(r.ats_before), callback: r.callback == null ? null : Number(r.callback),
+      verdict: r.verdict, file_id: r.tailored_file_id == null ? null : Number(r.tailored_file_id), finished_at: r.finished_at,
+      project: r.project, project_status: r.project_status,
+    } : null,
+    sending: r.sending_kind === 'uploaded' ? { kind: 'yours', file_id: Number(r.sending_file_id), filename: r.sending_filename } : r.sending_kind === 'tailored' ? { kind: 'tailored', file_id: Number(r.sending_file_id), filename: r.sending_filename } : null,
+  }));
+}
+
+/** Go back to the app's tailored resume for a role after uploading your own. */
+export async function useTailored(userId, evalId) {
+  const t = await one("SELECT file_id FROM resume_tailorings WHERE user_id = $1 AND evaluation_id = $2 AND kind = 'resume' AND file_id IS NOT NULL ORDER BY id DESC LIMIT 1", [userId, evalId]);
+  if (!t) throw Object.assign(new Error('There’s no tailored resume for this role yet'), { status: 404 });
+  await run('UPDATE evaluations SET resume_file_id = $3, pdf_path = NULL WHERE id = $1 AND user_id = $2', [evalId, userId, t.file_id]);
+  return { ok: true };
+}
+
 /** For auto-apply: may this role's resume go out? */
 export async function resumeGate(userId, evalId) {
+  // The user's own upload for this role goes as-is.
+  const mine = await one("SELECT 1 FROM evaluations e JOIN resume_files f ON f.id = e.resume_file_id WHERE e.id = $1 AND e.user_id = $2 AND f.kind = 'uploaded'", [evalId, userId]);
+  if (mine) return { ok: true, uploaded: true };
   const t = await one(
     `SELECT status, ats_score, approved_at, report->>'verdict' AS verdict, report->>'verdictWhy' AS verdict_why,
             report->'proposedProject'->>'name' AS project_name, report->'proposedProject'->>'status' AS project_status

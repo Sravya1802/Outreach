@@ -45,6 +45,15 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/applications/evaluate': 'Paste a job link or description and get a fit score out of 10 against your resume, with the reasons.',
     },
   },
+  resumes: {
+    what: 'Every resume the app writes, job by job, and the master they start from.',
+    when: 'Open it when your evening list arrives: every top role already has a draft to read, change or replace.',
+    tabs: {
+      '/resumes/jobs': 'One row per job: its fit score, the draft or tailored resume with its ATS match and interview chance, and which version will be sent. Open a job to see every change, download the PDF or LaTeX, or upload your own version, which is then sent as-is.',
+      '/resumes/master': 'Your master resume and the LaTeX template. Every score and every tailored resume starts from it.',
+      '/resumes/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, push it to GitHub, mark it built, and your resumes can use it.',
+    },
+  },
   people: {
     what: 'Everyone you can ask for a referral, and what you’ve sent them.',
     when: 'Open it to reach out, or to check who replied.',
@@ -86,8 +95,6 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     when: 'Fill it in while setting up, and again when your resume changes.',
     tabs: {
       '/profile/details': 'Contact, work authorization and education, filled into every application. Can be filled in from your resume.',
-      '/profile/resume': 'Your master resume. Every score and every tailored resume starts from it.',
-      '/profile/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, push it to GitHub, mark it built, and your resumes can use it.',
       '/profile/answers': 'Answer common form questions once, like “Why us?” and start date. Every form that asks gets the same answer.',
     },
   },
@@ -104,7 +111,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
 
 /** If you're new: the order that gets the app working for you. */
 export const START_HERE = [
-  { title: 'Upload your resume and fill in your details', body: 'Every role is scored against your resume, and every form is filled from your details.', to: '/profile/resume' },
+  { title: 'Upload your resume and fill in your details', body: 'Every role is scored against your resume, and every form is filled from your details.', to: '/resumes/master' },
   { title: 'Connect Gmail and import your LinkedIn connections', body: 'So referral asks go to people you know, from your own address.', to: '/integrations' },
   { title: 'Turn on your evening list', body: 'Each evening the day’s new roles are scored and the best ones land on Home.', to: '/applications/auto-apply' },
   { title: 'Approve the roles you want', body: 'Each one gets a referral ask first, then an application. Replies are tracked for you.', to: '/home' },

@@ -61,7 +61,7 @@ export function TailoredResume({ evalId, company, hasResume }: { evalId: number;
       {state.isLoading ? <div className="mt-5"><Spinner /></div> : !hasResume ? (
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <p className="text-[14px] text-muted">Upload your master resume first.</p>
-          <ButtonLink to="/profile/resume" size="sm">Go to Profile → Resume</ButtonLink>
+          <ButtonLink to="/resumes/master" size="sm">Go to Resumes → Master resume</ButtonLink>
         </div>
       ) : !r ? (
         <div className="mt-5 flex flex-wrap items-center gap-3">

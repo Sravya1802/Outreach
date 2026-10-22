@@ -681,6 +681,36 @@ export interface TrackerRow {
 export interface TrackerImport { total: number; added: number; updated: number; unchanged: number; skipped: string[] }
 
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
+/** One row of Resumes → By job. */
+export interface ResumeJob {
+  id: number
+  company_name: string
+  job_title: string
+  job_url: string | null
+  /** Fit score out of 10. */
+  eval_score: number | null
+  /** The evening list it came from (YYYY-MM-DD), if any. */
+  list_date: string | null
+  decision: 'pending' | 'approved' | 'skipped' | 'expired' | null
+  stage: string | null
+  apply_status: string | null
+  resume: {
+    tailoring_id: number
+    status: 'running' | 'ready' | 'needs_review' | 'failed'
+    batch_phase: string | null
+    ats: number | null
+    ats_before: number | null
+    callback: number | null
+    verdict: ResumeVerdict | null
+    file_id: number | null
+    finished_at: string | null
+    project: string | null
+    project_status: string | null
+  } | null
+  /** Which resume goes out with the application. */
+  sending: { kind: 'yours' | 'tailored'; file_id: number; filename: string } | null
+}
+
 /** The LaTeX preamble resumes are built in. */
 export interface ResumeTemplate { custom: boolean; preamble: string; updatedAt: string | null }
 
@@ -899,6 +929,11 @@ export const api = {
   approveTailoring: (id: number): Promise<{ ok: boolean }> => legacy.career.approveTailoring(id),
   /** You know these JD skills: added to this resume and remembered for the next ones. */
   approveSkills: (id: number, skills: string[]): Promise<{ tailoring: Tailoring | null }> => legacy.career.approveSkills(id, skills),
+  resumeJobs: async (): Promise<ResumeJob[]> => (await legacy.career.resumeJobs()).jobs ?? [],
+  /** Send the app's tailored resume for this role instead of the one you uploaded. */
+  useTailored: (id: number): Promise<{ ok: boolean }> => legacy.career.useTailored(id),
+  /** Upload your own resume for one role; it's sent as-is. */
+  uploadRoleResume: (id: number, file: File): Promise<unknown> => legacy.career.uploadEvalResume(id, file),
   trackerRows: async (): Promise<{ rows: TrackerRow[]; title: string }> => { const r = await legacy.career.trackerRows(); return { rows: r.rows ?? [], title: r.title || 'MY APPLICATIONS' } },
   trackerTitle: (title: string): Promise<{ title: string }> => legacy.career.trackerTitle(title),
   trackerAdd: (body: { company: string; role: string; link?: string; status?: TrackerStatus; referral?: TrackerReferral | null }): Promise<{ id: number }> => legacy.career.trackerAdd(body),

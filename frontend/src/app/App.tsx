@@ -27,6 +27,8 @@ const EvaluatePage = lazyWithRetry(() => import('@/features/applications/Evaluat
 const JobPage = lazyWithRetry(() => import('@/features/applications/JobPage'), 'JobPage')
 const TrackerPage = lazyWithRetry(() => import('@/features/applications/TrackerPage'), 'TrackerPage')
 const ProjectsPage = lazyWithRetry(() => import('@/features/profile/ProjectsPage'), 'ProjectsPage')
+const ResumesPage = lazyWithRetry(() => import('@/features/resumes/ResumesPage'), 'ResumesPage')
+const ResumeJobPage = lazyWithRetry(() => import('@/features/resumes/ResumeJobPage'), 'ResumeJobPage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
 const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
@@ -78,7 +80,11 @@ function SignedInRoutes() {
         <Route path="/applications/evaluate" element={<EvaluatePage />} />
         <Route path="/applications/job/:id" element={<JobPage />} />
         <Route path="/applications/tracker" element={<TrackerPage />} />
-        <Route path="/profile/projects" element={<ProjectsPage />} />
+        <Route path="/resumes" element={<Navigate to="/resumes/jobs" replace />} />
+        <Route path="/resumes/jobs" element={<ResumesPage />} />
+        <Route path="/resumes/job/:id" element={<ResumeJobPage />} />
+        <Route path="/resumes/projects" element={<ProjectsPage />} />
+        <Route path="/profile/projects" element={<Navigate to="/resumes/projects" replace />} />
         {/* The Pipeline tab became the tracker at the bottom of Auto-apply. */}
         <Route path="/applications/pipeline" element={<Navigate to="/dashboard#tracker" replace />} />
         <Route path="/applications/board" element={<Navigate to="/dashboard?view=board#tracker" replace />} />
@@ -92,7 +98,8 @@ function SignedInRoutes() {
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />
-        <Route path="/profile/resume" element={<ResumePage />} />
+        <Route path="/resumes/master" element={<ResumePage />} />
+        <Route path="/profile/resume" element={<Navigate to="/resumes/master" replace />} />
         <Route path="/profile/answers" element={<AnswersPage />} />
         <Route path="/profile/github" element={<Navigate to="/integrations/github" replace />} />
         <Route path="/integrations" element={<IntegrationsPage />} />

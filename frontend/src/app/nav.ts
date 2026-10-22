@@ -1,4 +1,4 @@
-import { Briefcase, ChartColumnBig, CircleHelp, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, CircleHelp, FileText, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -10,7 +10,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'people' | 'integrations' | 'usage' | 'how' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'resumes' | 'people' | 'integrations' | 'usage' | 'how' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -49,6 +49,15 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: 'resumes', label: 'Resumes', icon: FileText, to: '/resumes',
+    owns: ['/resumes/job/'],
+    tabs: [
+      { label: 'By job', to: '/resumes/jobs', keywords: 'tailored resume drafts evaluations ats interview chance cover letter upload my version download pdf' },
+      { label: 'Master resume', to: '/resumes/master', keywords: 'cv upload pdf master template latex' },
+      { label: 'Projects', to: '/resumes/projects', keywords: 'portfolio build github project ideas suggestions gaps skills' },
+    ],
+  },
+  {
     id: 'people', label: 'People', icon: Users, to: '/people',
     tabs: [
       { label: 'Messages', to: '/people/messages', keywords: 'linkedin notes connections personalized email copy send referral' },
@@ -82,8 +91,6 @@ export const SECTIONS: NavSection[] = [
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',
     tabs: [
       { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
-      { label: 'Resume', to: '/profile/resume', keywords: 'cv upload pdf master' },
-      { label: 'Projects', to: '/profile/projects', keywords: 'portfolio build github project ideas suggestions gaps skills' },
       { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
     ],
     inAccountMenu: true,

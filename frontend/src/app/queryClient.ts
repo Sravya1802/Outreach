@@ -43,6 +43,7 @@ export const qk = {
   resumeTemplate: ['resume-template'] as const,
   tracker: ['tracker'] as const,
   projects: ['planned-projects'] as const,
+  resumeJobs: ['resume-jobs'] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
   connections: ['linkedin-connections'] as const,

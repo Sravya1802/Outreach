@@ -113,7 +113,9 @@ export function rateLimitWait(err) {
   if (/no credits|quota|billing/i.test(String(err?.message))) return null;
   const m = /try again in (?:(\d+)m)?([\d.]+)s/i.exec(String(err?.message));
   const secs = m ? Number(m[1] || 0) * 60 + Number(m[2]) : Number(err?.headers?.get?.('retry-after')) || 20;
-  return Math.min(60, Math.max(1, secs + 1)) * 1000;
+  // A daily limit ("try again in 33m") isn't worth waiting for: fail now, the caller retries later.
+  if (secs > 60 || /per day|TPD|RPD/i.test(String(err?.message))) return null;
+  return Math.max(1, secs + 1) * 1000;
 }
 
 function available(step) {

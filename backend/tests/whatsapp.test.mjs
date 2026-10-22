@@ -81,7 +81,7 @@ test('projects message: short line for the template, full text inside the window
   assert.equal(m.params.header, '2 new');
   assert.equal(m.params.body[0], '1) TrialMatch API · C#, .NET, CI/CD · 19 of 30 roles  2) OpsAgent · LangGraph · for one role');
   assert.match(m.text, /\*1\) TrialMatch API \| Clinical Trial Eligibility Service\*\nAdds: C#, \.NET, CI\/CD\nHelps: 19 of 30 roles/);
-  assert.match(m.text, /\/profile\/projects/);
+  assert.match(m.text, /\/resumes\/projects/);
 });
 
 test('ADD replies and the skills question', async () => {

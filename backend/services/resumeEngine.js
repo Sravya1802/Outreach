@@ -810,11 +810,32 @@ async function moveOn(r, res) {
   await askAboutSkills(r.user_id, r.id).catch(() => null);
 }
 
-/** Every 5 minutes: pick up finished resume batches, then send what's queued. */
+/**
+ * Finished resumes whose recruiter check failed (Groq rate limit with no
+ * fallback): re-score a few each pass until every one has its interview chance.
+ */
+async function fillMissingChecks(limit = 3) {
+  const rows = await all(
+    `SELECT id, user_id FROM resume_tailorings
+      WHERE kind = 'resume' AND status IN ('ready', 'needs_review') AND finished_at > NOW() - INTERVAL '3 days'
+        AND (report->'callback' IS NULL OR report->'callback' = 'null'::jsonb)
+      ORDER BY finished_at DESC LIMIT $1`,
+    [limit],
+  );
+  let fixed = 0;
+  for (const r of rows) {
+    const t = await rerenderWithProject(r.user_id, r.id, { id: 0 }, 'rescore').catch(err => { console.warn(`[resumeEngine] recheck #${r.id}:`, err.message); return null; });
+    if (t?.report?.callback) fixed += 1;
+  }
+  return fixed;
+}
+
+/** Every 5 minutes: pick up finished resume batches, send what's queued, fill in failed checks. */
 export async function pumpBatches() {
   const collected = await collectFinished();
   const submitted = await submitQueued();
-  return { collected, submitted };
+  const rechecked = await fillMissingChecks().catch(() => 0);
+  return { collected, submitted, rechecked };
 }
 
 export async function writeCoverLetter(userId, ev) {

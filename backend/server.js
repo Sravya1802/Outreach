@@ -534,7 +534,7 @@ cron.schedule('*/5 * * * *', async () => {
 cron.schedule('*/5 * * * *', async () => {
   try {
     const r = await pumpResumeBatches();
-    if (r.collected || r.submitted) console.log(`[resume-batch] collected ${r.collected}, submitted ${r.submitted}`);
+    if (r.collected || r.submitted || r.rechecked) console.log(`[resume-batch] collected ${r.collected}, submitted ${r.submitted}, rechecked ${r.rechecked}`);
   } catch (err) { console.error('[resume-batch] pass failed:', err.message); }
 }, CRON_OPTS);
 // Projects to build, from the roles on each user's recent lists: Sundays, 9 AM Central.

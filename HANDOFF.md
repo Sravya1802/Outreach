@@ -124,6 +124,18 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-27 — Project bullets with power; built projects need dates (link optional)
+- **Why:** the user said project bullets read as flat one-liners with no result. They chose all three options: results in words, real numbers for every role, and bracketed targets they confirm on build. They also asked to keep only the dates mandatory when marking a project built.
+- **What:**
+  - `945354a`: dates required, link optional.
+  - `ad1f0a4` (VM `3769584`):
+    - TAILOR_RULES 3/10/13 and the projectIdeas prompt changed. Numbers the material states are allowed in project bullets for every role. Every bullet ends with a result (a number, or the result in words), about 2 lines per project bullet.
+    - A proposed project's bullets carry targets like "[1,000]", and its plan says how to measure them.
+    - `resumeRules`: `applyRules` and `lintDoc` no longer strip or flag project metrics, and metrics are bolded in projects too. New `placeholders`/`fillPlaceholders`.
+    - `markProjectBuilt({ values })` requires a real number per target and saves the filled bullets before re-rendering. TailoredResume shows one input per target.
+- **Verified live:** throwaway e2e projects (deleted). No dates → refused; dates without a link → built; targets without numbers → refused; with numbers → bullets saved with 1,200 / 1.4 s. Tests: backend 200, frontend 115.
+- **Blocked:** a real tailoring run (e2e eval 11, tailoring 164) failed at "AI keywords": **Groq 429 (daily limit) and the OpenAI fallback has no credits**. In the last 24h there were 40 tailorings `running`, 19 `needs_review` and 1 `ready`. New tailorings fail until Groq resets or the OpenAI account gets credits. The bullet-quality check on a real resume is still to do. Existing resumes (like the IBM one with TrialScreen) keep their old bullets until re-tailored.
+
 ### 2026-10-27 — Built projects: dates required, link optional
 - **What** (`945354a`, VM `a85476f`): the user asked to keep only the dates mandatory. `markProjectBuilt` refuses a missing start or end; the GitHub link stays optional (checked if given). `checkOneDate` was removed. The form's Start/End are `required` again.
 - **Verified live** (throwaway e2e project, deleted): no dates → refused; start only → refused; dates with no link → built. Tests: backend 199, frontend 115.

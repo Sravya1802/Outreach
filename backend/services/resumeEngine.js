@@ -27,7 +27,7 @@ import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
-import { applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
+import { placeholders, fillPlaceholders, applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
 import { resumeTex, coverLetterTex, compileTex, checkPreamble, RESUME_PREAMBLE } from './latex.js';
 
 const STALE_MINUTES = 20;
@@ -77,7 +77,7 @@ const TAILOR_RULES = `You are a senior technical recruiter and ATS expert with 2
 Truth
 1. Use only facts in CANDIDATE MATERIAL. Never change dates, titles, companies, degrees or contact details. Never add a skill, tool, metric, employer or outcome that isn't there. Never add a relocation line.
 2. Keyword mapping, for every ATS keyword: already there → say it in the job's words and move it higher; there but weak → strengthen it with the tools, scale and results the material shows; missing but the material shows equivalent work → write a truthful line from that work; missing with no basis → leave it out. Use the job's exact spelling of tools so the ATS matches.
-3. Numbers only as the material states them. Latency and throughput numbers (like 83ns or 36K orders per second) only when ROLE TYPE says quant/HFT/C++. For any other role, project bullets carry no numbers at all (experience bullets keep their real metrics).
+3. Numbers only as the material states them, in experience and project bullets alike, for every kind of role. Use every real number the material gives a project (scale, speed, accuracy, users, data size).
 
 Reframing
 4. Reframe experience and projects toward the job. Mirror its responsibilities in your own words, never copied.
@@ -88,12 +88,12 @@ Reframing
 
 Bullets
 9. 1–2 lines each (a line holds about 120 characters). A third line only when it's at least 80% full and every word carries a tool or a result.
-10. Strong action verb + what was built + tools + a measurable result (only results the material states).
+10. Strong action verb + what was built + tools + the result. Use a number when the material states one; otherwise end with the result in words: what it achieves, enables, speeds up or replaces. A bullet that only lists what was built isn't finished. Project bullets fill about 2 lines each.
 11. No em dashes or triple dashes, no "responsible for", no "helped", no filler. No two bullets in a row start with the same verb.
 12. Sound like a new grad with the candidate's real years of experience, not a senior engineer. It should read like a person wrote it.
 
 Weak fit
-13. proposed_project: when you judge the fit needs it (required job skills the candidate has no basis for, or no project that proves what the role hires for), add ONE new project the candidate will build and push to GitHub to close those gaps. It goes on this resume, and the resume isn't sent until they've built it. If a project under PLANNED PROJECTS already covers them, set reuse_id to its id instead. A new one: needed true, name ("Name | Subtitle"), tech (the tools it uses, in the job's spelling), bullets (as many as the other projects, no numbers, describing what the finished project does), covers (the job keywords it adds), why (the gap it closes) and plan (5–8 concrete build steps, the last one about what the README shows). Never suggest one listed as dismissed. Otherwise needed false, reuse_id "" and empty fields.
+13. proposed_project: when you judge the fit needs it (required job skills the candidate has no basis for, or no project that proves what the role hires for), add ONE new project the candidate will build and push to GitHub to close those gaps. It goes on this resume, and the resume isn't sent until they've built it. If a project under PLANNED PROJECTS already covers them, set reuse_id to its id instead. A new one: needed true, name ("Name | Subtitle"), tech (the tools it uses, in the job's spelling), bullets (as many as the other projects; each one a strong verb + what the finished project does + tools + a measurable target the candidate will hit and check while building, written in square brackets, like "screens [1,000] synthetic patient profiles against trial criteria in under [2 s]"; about 2 lines each), covers (the job keywords it adds), why (the gap it closes) and plan (5–8 concrete build steps, one of them saying how to measure each bracketed target, the last one about what the README shows). Never suggest one listed as dismissed. Otherwise needed false, reuse_id "" and empty fields.
 
 Scores
 14. The ATS match must end up above 90% (aim for 95%): every required skill the candidate truly has appears at least once, in the job's spelling. Never inflate or invent to get there.
@@ -395,7 +395,7 @@ async function build(draft, ctx) {
 
 async function renderScored(doc, ctx, { removed = [], fixed = [] } = {}) {
   const { keywords, kind, preamble, sourceText } = ctx;
-  const opts = { preamble, boldTerms: boldTools(keywords), metricSpans, projectMetrics: kind.quant };
+  const opts = { preamble, boldTerms: boldTools(keywords), metricSpans, projectMetrics: true };
   let rendered = await renderOnePage(doc, opts);
   let text = await pdfText(rendered.pdf);
   let score = atsScore({ keywords, pdfText: text, doc: rendered.doc, pages: rendered.pages });
@@ -590,7 +590,7 @@ function draftPrompt(ctx) {
   return {
     system: `${TAILOR_RULES}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned, ctx.confirmed)}`,
     user: `JOB: ${ctx.title} at ${ev.company_name}
-ROLE TYPE: ${ctx.kind.quant ? 'quant/HFT/C++ (latency numbers allowed; Industry Experience may go above Research)' : 'not quant (no numbers in project bullets)'}${ctx.kind.finance ? '; finance' : ''}
+ROLE TYPE: ${ctx.kind.quant ? 'quant/HFT/C++ (Industry Experience may go above Research)' : 'not quant'}${ctx.kind.finance ? '; finance' : ''}
 WHAT THIS ROLE IS REALLY HIRING FOR: ${ctx.focus.join('; ') || 'n/a'}
 ATS KEYWORDS (from the posting): ${ctx.keywords.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}
 
@@ -1068,7 +1068,7 @@ async function tailoringsWith(userId, projectId) {
  * rewrite; the bullets are what they built to). Returns the project and the
  * latest updated tailoring.
  */
-export async function markProjectBuilt(userId, projectId, { repoUrl, start, end }) {
+export async function markProjectBuilt(userId, projectId, { repoUrl, start, end, values = [] }) {
   const p = await one('SELECT * FROM planned_projects WHERE id = $1 AND user_id = $2', [projectId, userId]);
   if (!p) throw Object.assign(new Error('Project not found'), { status: 404 });
   // The dates are required; the link is optional, but if given it has to be right.
@@ -1077,11 +1077,18 @@ export async function markProjectBuilt(userId, projectId, { repoUrl, start, end 
   if (!str(start) || !str(end)) throw Object.assign(new Error('Add the start and end dates, like “Jun 2026” and “Aug 2026” or “Present”.'), { status: 400 });
   const bad = checkDates(start, end);
   if (bad) throw Object.assign(new Error(bad), { status: 400 });
+  // The bracketed targets in its bullets get the user's real numbers.
+  const targets = placeholders(p.bullets);
+  const given = list(values).map(str);
+  if (targets.length && (given.length !== targets.length || given.some(v => !v))) {
+    throw Object.assign(new Error(`Fill in your real number for each target (${targets.join(', ')}).`), { status: 400 });
+  }
+  const bullets = targets.length ? fillPlaceholders(p.bullets, given) : list(p.bullets);
   if (url && !(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it (and make it public), or leave the link empty.'), { status: 400 });
   const built = (await run(
-    `UPDATE planned_projects SET status = 'built', repo_url = $3, start_date = $4, end_date = $5, built_at = NOW(), updated_at = NOW()
+    `UPDATE planned_projects SET status = 'built', repo_url = $3, start_date = $4, end_date = $5, bullets = $6, built_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [projectId, userId, url || null, str(start), str(end)],
+    [projectId, userId, url || null, str(start), str(end), JSON.stringify(bullets)],
   )).rows[0];
   let tailoring = null;
   for (const t of await tailoringsWith(userId, projectId)) {

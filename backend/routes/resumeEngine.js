@@ -147,8 +147,8 @@ router.post('/projects/suggest', async (req, res) => {
 router.post('/projects/:id/built', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad id' });
-  const { repo_url: repoUrl, start: from, end: to } = req.body || {};
-  try { res.json(await markProjectBuilt(req.user.id, id, { repoUrl, start: from, end: to })); } catch (err) { fail(res, err); }
+  const { repo_url: repoUrl, start: from, end: to, values } = req.body || {};
+  try { res.json(await markProjectBuilt(req.user.id, id, { repoUrl, start: from, end: to, values: Array.isArray(values) ? values : [] })); } catch (err) { fail(res, err); }
 });
 
 router.post('/projects/:id/dismiss', async (req, res) => {

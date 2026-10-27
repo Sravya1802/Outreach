@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   metricSpans, hasMetric, fixDashes, bulletIssues, varyVerbs, equalizeBullets, experienceSections, sortNewestFirst,
-  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, keywordPlaces, boldTools, CHARS_PER_LINE,
+  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, placeholders, fillPlaceholders, keywordPlaces, boldTools, CHARS_PER_LINE,
 } from '../services/resumeRules.js';
 import { richText, checkPreamble, resumeTex, RESUME_PREAMBLE } from '../services/latex.js';
 
@@ -176,7 +176,7 @@ test('role kind: quant/C++ vs finance vs neither', () => {
   assert.equal(roleKind({ title: 'Software Engineer', description: 'Write modern C++. Profile C++ services. Own our C++ toolchain.' }).quant, true);
 });
 
-test('applyRules: project numbers only for quant roles, rules fixed, report lists it', () => {
+test('applyRules: real project numbers stay for every role, rules fixed', () => {
   const doc = {
     summary: '',
     experience: [{ section: 'Industry Experience', title: 'SWE', company: 'A', bullets: ['Built ETL — fast', 'Built dashboards cutting cost 15%'] }],
@@ -186,9 +186,10 @@ test('applyRules: project numbers only for quant roles, rules fixed, report list
     education: [],
   };
   const swe = applyRules(doc, { keywords: [k('Python')], kind: { quant: false, finance: false } });
-  // Order Book lost its metric bullet, so it can't match FinPath's two and drops out.
-  assert.deepEqual(swe.doc.projects.map(p => [p.name, p.bullets.length]), [['FinPath', 2]]);
-  assert.ok(swe.removed.some(r => /quant/.test(r.why)));
+  // Numbers the material states stay in project bullets for any role (the user's call, 2026-10-27).
+  assert.deepEqual(swe.doc.projects.map(p => [p.name, p.bullets.length]), [['Order Book', 2], ['FinPath', 2]]);
+  assert.ok(swe.doc.projects[0].bullets[0].includes('83ns'));
+  assert.deepEqual(lintDoc(swe.doc, { kind: { quant: false } }), []);
   assert.equal(swe.doc.experience[0].bullets[0], 'Built ETL, fast');
   assert.equal(swe.doc.experience[0].bullets[1], 'Developed dashboards cutting cost 15%');
   const quant = applyRules(doc, { keywords: [], kind: { quant: true, finance: true } });
@@ -250,4 +251,11 @@ test('resume body follows the template: sections, header labels, certifications 
   assert.ok(!/relocat/i.test(tex));
   assert.ok(resumeTex({ ...doc, projects: [{ name: 'One', start: 'May 2026', end: 'May 2026', bullets: ['x'] }] }).includes('\\hfill May 2026\n'));
   assert.ok(!tex.includes('\\section*{CERTIFICATIONS}'));
+});
+
+test('targets in a planned project: listed in order, filled with the real numbers', () => {
+  const bullets = ['Engineered a Spring Boot API screening [1,000] patient profiles in under [2 s].', 'Built a React UI for reviewing results.'];
+  assert.deepEqual(placeholders(bullets), ['1,000', '2 s']);
+  assert.deepEqual(fillPlaceholders(bullets, ['1,200', '1.4 s']), ['Engineered a Spring Boot API screening 1,200 patient profiles in under 1.4 s.', 'Built a React UI for reviewing results.']);
+  assert.deepEqual(placeholders(['no targets here']), []);
 });

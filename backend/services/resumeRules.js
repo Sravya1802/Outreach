@@ -6,8 +6,8 @@
  *   • bullets are 1–2 lines; a 3rd line only when it's at least 80% full
  *   • no two bullets in a row start with the same verb
  *   • every entry in a section has the same number of bullets
- *   • latency/throughput numbers only for quant, HFT or C++ roles; for any
- *     other role, project bullets carry no metrics at all
+ *   • numbers only as the candidate's material states them, in project
+ *     bullets too, for every kind of role (the fact check enforces that)
  *   • sections: Education, Research, Industry, Projects, Skills, the rest;
  *     Industry goes above Research for quant/C++ roles
  *   • projects newest first; at most 6 skill groups of 8, most relevant first
@@ -247,9 +247,28 @@ export function varyVerbs(bullets) {
   return out;
 }
 
-/** Bullets a rule says must go: metrics in project bullets for non-quant roles. */
-export function projectMetricsAllowed({ quant }) {
-  return Boolean(quant);
+/** Real numbers are allowed in project bullets for every role (the user's call, 2026-10-27). */
+export function projectMetricsAllowed() {
+  return true;
+}
+
+// A project the user hasn't built yet carries its measurable targets in
+// brackets ("screens [1,000] profiles in under [2 s]"); they confirm the real
+// numbers when they mark it built.
+const PLACEHOLDER = /\[([^\[\]]{1,40})\]/g;
+
+/** The bracketed targets in a project's bullets, in order. */
+export function placeholders(bullets) {
+  return list(bullets).flatMap(b => [...str(b).matchAll(PLACEHOLDER)].map(m => m[1].trim()));
+}
+
+/** The bullets with each bracketed target replaced by the user's real number, in order. */
+export function fillPlaceholders(bullets, values) {
+  let i = 0;
+  return list(bullets).map(b => str(b).replace(PLACEHOLDER, (all, target) => {
+    const v = str(list(values)[i++]);
+    return v || target.trim();
+  }));
 }
 
 /**
@@ -275,20 +294,8 @@ export function applyRules(doc, { keywords = [], kind = { quant: false, finance:
     experience.push(...eq.entries.map(e => ({ ...e, section: s.heading })));
   }
 
-  // Projects: no metrics unless the role is quant/HFT/C++, newest first, equal bullets.
-  let projects = list(doc.projects).map(p => {
-    let bullets = varyVerbs(list(p.bullets).map(clean));
-    if (!projectMetricsAllowed(kind)) {
-      const kept = bullets.filter(b => !hasMetric(b));
-      for (const b of bullets.filter(hasMetric)) removed.push({ where: p.name, what: b, why: 'numbers in project bullets are only for quant, HFT or C++ roles' });
-      bullets = kept;
-    }
-    return { ...p, bullets };
-  }).filter(p => {
-    if (p.bullets.length) return true;
-    removed.push({ where: 'Projects', what: p.name, why: 'every bullet had numbers, which project bullets leave out for this kind of role' });
-    return false;
-  });
+  // Projects: newest first, equal bullets. Real numbers stay (the fact check already dropped invented ones).
+  let projects = list(doc.projects).map(p => ({ ...p, bullets: varyVerbs(list(p.bullets).map(clean)) })).filter(p => p.bullets.length);
   projects = sortNewestFirst(projects);
   const eqp = equalizeBullets(projects, 'Projects');
   removed.push(...eqp.removed);
@@ -326,15 +333,12 @@ export function lintDoc(doc, { kind = { quant: false } } = {}) {
   for (const [section, counts] of bySection) {
     if (new Set(counts).size > 1) issues.push({ where: section, bullet: '', code: 'count', why: `entries have ${counts.join('/')} bullets; they should match` });
   }
-  if (!kind.quant) {
-    for (const p of list(doc.projects)) for (const b of list(p.bullets)) if (hasMetric(b)) issues.push({ where: p.name, bullet: b, code: 'metric', why: 'project bullets carry no numbers for this kind of role' });
-  }
   return issues;
 }
 
 /**
  * Terms to bold in bullets: the job's own tools that the bullet uses. Metrics
- * are bolded separately (experience always, projects only for quant roles).
+ * are bolded separately, in experience and project bullets alike.
  */
 export function boldTools(keywords) {
   return list(keywords).filter(k => k.kind !== 'soft' && k.tool !== false).flatMap(k => [k.term, ...list(k.aliases)]).filter(t => str(t).length >= 2);

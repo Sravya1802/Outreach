@@ -336,9 +336,12 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
   const [repo, setRepo] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  // Bracketed targets in the bullets ("[1,000]"): the user confirms the real number for each.
+  const targets = p.bullets.flatMap(b => [...b.matchAll(/\[([^[\]]{1,40})\]/g)].map(m => (m[1] ?? '').trim()))
+  const [values, setValues] = useState<string[]>(() => targets.map(() => ''))
   const refresh = () => { void qc.invalidateQueries({ queryKey: ['tailoring'] }); void qc.invalidateQueries({ queryKey: qk.resumeHistory }) }
   const built = useMutation({
-    mutationFn: () => api.markProjectBuilt(p.id, { repo_url: repo.trim(), start: from.trim(), end: to.trim() }),
+    mutationFn: () => api.markProjectBuilt(p.id, { repo_url: repo.trim(), start: from.trim(), end: to.trim(), values: values.map(v => v.trim()) }),
     onSuccess: (r) => { toast.success(r.tailoring ? 'Added to your resume and scored again' : 'Saved. It will be used in your next tailored resumes.'); refresh() },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -376,6 +379,18 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
             <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
             <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
           </div>
+          {targets.length > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="text-[13px] text-muted">Your real numbers. The bullets have targets in [brackets]; enter what you actually measured for each.</legend>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {targets.map((t, i) => (
+                  <Field key={`${t}-${i}`} label={`Target ${t}`}>
+                    {f => <Input {...f} value={values[i] ?? ''} onChange={e => setValues(v => v.map((x, j) => (j === i ? e.target.value : x)))} placeholder={t} required />}
+                  </Field>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" loading={built.isPending}>I built it, add it</Button>
             <Button type="button" variant="ghost" loading={dismiss.isPending} onClick={() => dismiss.mutate()}>{onPage ? 'Take it off the resume' : 'Not for me'}</Button>

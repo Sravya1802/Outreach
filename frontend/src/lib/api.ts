@@ -948,7 +948,7 @@ export const api = {
   saveResumeTemplate: (tex: string): Promise<ResumeTemplate> => legacy.career.saveResumeTemplate(tex),
   resetResumeTemplate: (): Promise<ResumeTemplate> => legacy.career.resetResumeTemplate(),
   /** You built a suggested project and pushed it; it's added to the resume it was suggested for. */
-  markProjectBuilt: (id: number, body: { repo_url: string; start: string; end: string }): Promise<{ project: unknown; tailoring: Tailoring | null }> => legacy.career.markProjectBuilt(id, body),
+  markProjectBuilt: (id: number, body: { repo_url: string; start: string; end: string; values?: string[] }): Promise<{ project: unknown; tailoring: Tailoring | null }> => legacy.career.markProjectBuilt(id, body),
   dismissProject: (id: number): Promise<{ project: unknown }> => legacy.career.dismissProject(id),
   plannedProjects: (): Promise<ProjectsState> => legacy.career.plannedProjects(),
   suggestProjects: (): Promise<{ suggesting: boolean }> => legacy.career.suggestProjects(),

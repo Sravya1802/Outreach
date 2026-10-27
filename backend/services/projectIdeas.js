@@ -42,9 +42,9 @@ Suggest 2 or 3 projects the candidate will build and push to GitHub:
 - Buildable by one person in 1–3 weeks, and realistic for a new grad: real data or public APIs, tests, a README with a demo. No toy CRUD apps.
 - Build on what the candidate already knows, so the project reads as a natural next step.
 - name: "Name | Subtitle". tech: the tools it uses, in the roles' exact spelling. covers: the gap keywords it adds.
-- bullets: 2–3 resume bullets for the finished project: strong verb + what it does + tools. No numbers (nothing has been measured yet), no em dashes.
+- bullets: 2–3 resume bullets for the finished project: strong verb + what it does + tools + a measurable target the candidate will hit and check while building, written in square brackets (like "serves [500] requests per second with p95 latency under [50 ms]"), about 2 lines each. The candidate confirms the real numbers when they mark it built. No em dashes.
 - why: one sentence on which roles it helps and why.
-- plan: 5–8 concrete build steps, the last one about what the README shows.
+- plan: 5–8 concrete build steps, one of them saying how to measure each bracketed target, the last one about what the README shows.
 - Don't repeat a project listed as already built or suggested, and never one listed as dismissed.`;
 
 const str = (v) => String(v ?? '').trim();

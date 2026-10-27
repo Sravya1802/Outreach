@@ -1107,7 +1107,8 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   const ev = await loadEvaluation(userId, t.evaluation_id);
   const { master, parsed } = await parsedMaster(userId);
   const [repos, planned, raw, preamble, confirmed] = await Promise.all([includedRepos(userId), plannedProjects(userId), resumeText(userId), templatePreamble(userId), confirmedSkills(userId)]);
-  const kind = t.report.roleKind || roleKind({ title: ev.job_title, company: ev.company_name, description: ev.job_description });
+  // Recomputed, not read from the report, so a fixed rule reaches resumes already drafted.
+  const kind = roleKind({ title: ev.job_title, company: ev.company_name, description: ev.job_description });
   const built = planned.filter(p => p.status === 'built');
   const sourceText = `${masterText(parsed)}\n${raw}\n${repos.map(repoText).join('\n')}\n${built.map(plannedText).join('\n')}\n${confirmedLine(confirmed)}`;
   const ctx = { ev, master, parsed, repos, planned, raw, preamble, confirmed, kind, keywords: t.ats?.keywords || [], focus: t.report.focus || [], title: t.report.title || ev.job_title, sourceText };

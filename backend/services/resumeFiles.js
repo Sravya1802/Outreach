@@ -103,6 +103,26 @@ export async function recordLibraryFile(userId, { objectPath, filename, sizeByte
   });
 }
 
+/**
+ * The user applied to this role themselves. The application counts as sent,
+ * with the resume that was set to go out for it, and the role's daily-list
+ * item moves to applied. Returns false if the role isn't theirs.
+ */
+export async function markAppliedYourself(userId, evalId) {
+  const r = await run(
+    `UPDATE evaluations
+        SET apply_status = 'submitted',
+            applied_at = COALESCE(applied_at, NOW()::text),
+            applied_resume_file_id = COALESCE(applied_resume_file_id, resume_file_id),
+            stage_changed_at = NOW()
+      WHERE id = $1 AND user_id = $2`, [evalId, userId]);
+  if (!r.rowCount) return false;
+  await run(
+    `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.'
+      WHERE evaluation_id = $1 AND user_id = $2 AND stage NOT IN ('applied', 'done')`, [evalId, userId]);
+  return true;
+}
+
 /** Remember exactly which file was submitted with an application. */
 export async function markSubmittedWith(userId, evalId, fileId) {
   if (!fileId) return;

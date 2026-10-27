@@ -26,7 +26,7 @@ import { parseNotesPatch } from '../services/pipelineNotes.js';
 import { isWithin } from '../services/safePaths.js';
 import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
-import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, fileLink, filesForEvaluation, resumeHistory, deleteMasterVersion } from '../services/resumeFiles.js';
+import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, fileLink, filesForEvaluation, resumeHistory, deleteMasterVersion, markAppliedYourself } from '../services/resumeFiles.js';
 import { parsedMaster } from '../services/resumeEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1010,9 +1010,8 @@ router.post('/evaluations/:id/apply', async (req, res) => {
 // ── POST /api/career/evaluations/:id/mark-applied — user confirms manual submit ─
 router.post('/evaluations/:id/mark-applied', async (req, res) => {
   try {
-    const row = await one('SELECT id FROM evaluations WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (!row) return res.status(404).json({ error: 'Evaluation not found' });
-    await run("UPDATE evaluations SET apply_status = 'submitted', applied_at = COALESCE(applied_at, NOW()::text) WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0 || !(await markAppliedYourself(req.user.id, id))) return res.status(404).json({ error: 'Evaluation not found' });
     res.json({ ok: true, status: 'submitted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

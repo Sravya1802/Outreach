@@ -31,6 +31,7 @@ import { connectionFor, sendToSelf } from './gmail.js';
 import { notify as whatsappNotify } from './whatsapp.js';
 import { detectPlatform } from './resumeRegistry.js';
 import { isRecruiterTitle } from './contactRules.js';
+import { markAppliedYourself } from './resumeFiles.js';
 
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 const MAX_EMAILS_PER_ROLE = 2;
@@ -438,7 +439,7 @@ export async function referralAction(userId, itemId, { action, link }) {
     await run("UPDATE plan_items SET stage = 'ready_to_apply', needs_reason = NULL, apply_after = NOW(), stage_note = 'Applying now.' WHERE id = $1", [item.id]);
   } else if (action === 'applied_myself') {
     await run("UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = NOW(), stage_note = 'You applied yourself.' WHERE id = $1", [item.id]);
-    if (item.evaluation_id) await run("UPDATE evaluations SET apply_status = 'submitted', applied_at = NOW()::text WHERE id = $1 AND user_id = $2", [item.evaluation_id, userId]);
+    if (item.evaluation_id) await markAppliedYourself(userId, item.evaluation_id);
   } else {
     throw Object.assign(new Error('Unknown action'), { status: 400 });
   }

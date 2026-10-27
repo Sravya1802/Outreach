@@ -124,6 +124,15 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-27 — Bullets fill two lines, like the user's FedEx resume
+- **Why:** the user showed their FedEx RM Analytics resume (written in Claude chat) and said resumes should look like it, and that the app's bullets were "so short it looks really bad". Its bullets run 160–200 characters (2 full lines, ending in a result clause); the app's IBM resume ran 136–152.
+- **What** (`ce93c7d`, `14d7557` on main; cherry-picked to the VM, health ok):
+  - TAILOR_RULES 5/9/10: every bullet 175–230 characters, closing clause with the result or who it served, no padding (results aren't "what I learned"; each number once per entry). 2 bullets for most entries; the main job may have 3–4; about 14–16 bullets per page.
+  - `resumeRules`: `MIN_BULLET_CHARS = 160` → a `short` lint issue, sent to the revision pass as one grouped note. `equalizeBullets(..., { lead: true })` lets the entry with the most bullets in an experience section keep up to `LEAD_MAX_BULLETS = 4` (projects still equal); `lintDoc`'s count check ignores that entry. This relaxes the older "every entry gets the same number" rule, matching the FedEx resume (Mercedes 4, Leaf 2).
+- **Verified:** a real Opus run for the e2e user (Robinhood, eval 11), with stored keywords standing in because Groq is still 429 and OpenAI has no credits. Every bullet was 196–206 characters, the page stayed at 1, and no rule issues. Tests 202/202.
+- **Still blocked:** new tailorings fail at the keyword step until Groq resets or OpenAI gets credits. Existing resumes (IBM etc.) keep their short bullets until re-tailored.
+- **Open question for the user:** the IBM resume's figures (YOLO/PyTorch 82.5%, 15% cost cut, "daily" 500GB, 500+ users) disagree with the FedEx one (Random Forest, 1000+ users). Which are true?
+
 ### 2026-10-27 — Project bullets with power; built projects need dates (link optional)
 - **Why:** the user said project bullets read as flat one-liners with no result. They chose all three options: results in words, real numbers for every role, and bracketed targets they confirm on build. They also asked to keep only the dates mandatory when marking a project built.
 - **What:**

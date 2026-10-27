@@ -972,7 +972,8 @@ export async function resumesByJob(userId) {
             t.id AS tailoring_id, t.status, t.ats_score, t.ats->'before' AS ats_before, t.report->'callback'->>'after' AS callback,
             t.report->>'verdict' AS verdict, t.batch->>'phase' AS batch_phase, t.file_id AS tailored_file_id, t.finished_at, t.approved_at,
             t.report->'proposedProject'->>'name' AS project, t.report->'proposedProject'->>'status' AS project_status,
-            pi.decision, pi.stage, dp.plan_date::text AS list_date
+            pi.decision, pi.stage, pi.id AS plan_item_id, to_jsonb(pi)->>'apply_mode' AS apply_mode, pi.stage_note, pi.needs_reason, pi.apply_after, pi.wait_until,
+            e.applied_at, dp.plan_date::text AS list_date
        FROM evaluations e
        LEFT JOIN resume_files f ON f.id = e.resume_file_id
        LEFT JOIN LATERAL (SELECT * FROM resume_tailorings rt WHERE rt.evaluation_id = e.id AND rt.user_id = e.user_id AND rt.kind = 'resume' ORDER BY rt.id DESC LIMIT 1) t ON true
@@ -987,6 +988,8 @@ export async function resumesByJob(userId) {
     id: Number(r.id), company_name: r.company_name, job_title: r.job_title, job_url: r.job_url,
     eval_score: r.eval_score == null ? null : Number(r.eval_score) / 10,
     list_date: r.list_date, decision: r.decision || null, stage: r.stage || null, apply_status: r.apply_status,
+    plan_item_id: r.plan_item_id == null ? null : Number(r.plan_item_id), apply_mode: r.apply_mode || null, stage_note: r.stage_note || null,
+    needs_reason: r.needs_reason || null, apply_after: r.apply_after || null, wait_until: r.wait_until || null, applied_at: r.applied_at || null,
     resume: r.tailoring_id ? {
       tailoring_id: Number(r.tailoring_id), status: r.status, batch_phase: r.batch_phase, ats: r.ats_score == null ? null : Number(r.ats_score),
       ats_before: r.ats_before == null ? null : Number(r.ats_before), callback: r.callback == null ? null : Number(r.callback),

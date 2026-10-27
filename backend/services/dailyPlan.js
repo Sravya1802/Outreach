@@ -468,8 +468,16 @@ export async function emailPlan(userId, planId) {
 /** How long a top role from an earlier list can still be approved. */
 export const MISSED_DAYS = 14;
 
-/** Approve / skip / undo one role. Approving creates its evaluation; the tick starts the resume. */
-export async function decide(userId, itemId, decision) {
+/**
+ * Approve / skip / undo one role. Approving creates its evaluation; the tick starts the resume.
+ * mode: 'auto' (the app goes on to apply) or 'review' (it stops once the resume is written).
+ */
+export async function decide(userId, itemId, decision, mode = 'auto') {
+  const applyMode = mode === 'review' ? 'review' : 'auto';
+  // Never approve a "review" role as automatic: without the column (migration 036) it would be applied unseen.
+  if (decision === 'approved' && applyMode === 'review' && !(await hasApplyMode())) {
+    throw Object.assign(new Error('Review mode needs a one-time database update first (migration 036). Use Approve for now, or apply yourself.'), { status: 503 });
+  }
   if (!['approved', 'skipped', 'pending'].includes(decision)) throw Object.assign(new Error('Bad decision'), { status: 400 });
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
@@ -484,7 +492,11 @@ export async function decide(userId, itemId, decision) {
   if (decision === 'approved' && item.decision !== 'approved') {
     // The draft written with the evening list (if any) is the one that goes ahead.
     const evalId = item.evaluation_id || await evaluationFor(userId, item);
-    await run("UPDATE plan_items SET decision = 'approved', decided_at = NOW(), evaluation_id = $2, stage = 'tailoring', stage_note = 'Writing your tailored resume' WHERE id = $1", [item.id, evalId]);
+    if (await hasApplyMode()) {
+      await run("UPDATE plan_items SET decision = 'approved', decided_at = NOW(), evaluation_id = $2, apply_mode = $3, stage = 'tailoring', stage_note = 'Writing your tailored resume' WHERE id = $1", [item.id, evalId, applyMode]);
+    } else {
+      await run("UPDATE plan_items SET decision = 'approved', decided_at = NOW(), evaluation_id = $2, stage = 'tailoring', stage_note = 'Writing your tailored resume' WHERE id = $1", [item.id, evalId]);
+    }
     // Start the resume now rather than at the next cron pass.
     advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
     // A draft that's already written: now's the time to ask about missing skills.
@@ -495,6 +507,33 @@ export async function decide(userId, itemId, decision) {
     if (decision === 'pending' && String(latest?.id) !== String(item.plan_id)) decision = 'expired';
     await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL, needs_reason = NULL WHERE id = $1", [item.id, decision]);
   }
+  return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+}
+
+// plan_items.apply_mode arrives with migration 036; until it's applied, every role is automatic.
+let applyModeColumn = null;
+export async function hasApplyMode() {
+  if (applyModeColumn === true) return true;
+  const r = await one("SELECT 1 AS ok FROM information_schema.columns WHERE table_name = 'plan_items' AND column_name = 'apply_mode'").catch(() => null);
+  applyModeColumn = Boolean(r);
+  return applyModeColumn;
+}
+
+/**
+ * Review mode, after reading the resume: "Send it". Marks the resume approved and
+ * moves the role on (referral first, then the app applies) right away.
+ */
+export async function sendReviewed(userId, itemId) {
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
+  if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (item.decision !== 'approved' || item.stage !== 'needs_you' || item.needs_reason !== 'resume' || !item.tailoring_id) {
+    throw Object.assign(new Error('This role isn’t waiting on its resume.'), { status: 409 });
+  }
+  const t = await one(
+    "UPDATE resume_tailorings SET approved_at = COALESCE(approved_at, NOW()) WHERE id = $1 AND user_id = $2 AND status IN ('ready', 'needs_review') RETURNING id",
+    [item.tailoring_id, userId]);
+  if (!t) throw Object.assign(new Error('The resume isn’t finished yet.'), { status: 409 });
+  await advanceUser(userId);
   return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
 }
 
@@ -571,7 +610,16 @@ export async function advanceUser(userId) {
       continue;
     }
     if (!i.tailoring_id || i.t_status === 'running') continue;
-    const passed = i.t_status === 'ready' || (i.t_status === 'needs_review' && i.t_approved);
+    // Review mode: even a good resume waits until the user has read it and pressed Send it.
+    const waitsForReview = i.apply_mode === 'review' && !i.t_approved;
+    const passed = (i.t_status === 'ready' && !waitsForReview) || (i.t_status === 'needs_review' && i.t_approved);
+    if (i.t_status === 'ready' && waitsForReview) {
+      if (i.stage !== 'needs_you') {
+        await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'resume', stage_note = $2 WHERE id = $1",
+          [i.id, `Resume ready for your review${i.t_score != null ? ` (ATS ${i.t_score}%)` : ''}. Read it, then Send it, or apply yourself.`]);
+      }
+      continue;
+    }
     if (passed) {
       if (settings.referralFirst) {
         await run("UPDATE plan_items SET stage = 'asking_referral', needs_reason = NULL, stage_note = 'Resume ready. Next: asking for a referral' WHERE id = $1", [i.id]);

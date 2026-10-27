@@ -1,7 +1,7 @@
 // The evening list: settings, tonight's roles, approve / skip.
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
-import { approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings } from '../services/dailyPlan.js';
+import { approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings, sendReviewed } from '../services/dailyPlan.js';
 import { markAskSent, referralAction, referralStats } from '../services/referralFlow.js';
 import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
@@ -47,7 +47,14 @@ router.post('/email', async (req, res) => {
 router.post('/items/:id/decision', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad id' });
-  try { res.json(await decide(req.user.id, id, req.body?.decision)); } catch (err) { fail(res, err); }
+  try { res.json(await decide(req.user.id, id, req.body?.decision, req.body?.mode)); } catch (err) { fail(res, err); }
+});
+
+// Review mode: the user read the resume and says go ahead.
+router.post('/items/:id/send', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json(await sendReviewed(req.user.id, id)); } catch (err) { fail(res, err); }
 });
 
 router.post('/plans/:id/approve-all', async (req, res) => {

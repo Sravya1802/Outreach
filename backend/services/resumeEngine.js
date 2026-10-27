@@ -88,7 +88,7 @@ Reframing
 
 Bullets
 9. Every bullet fills about 2 full lines: 175–230 characters (a line holds about 120). Never a one-line bullet, and never a second line with only a few words on it. A third line only when it's at least 80% full and every word carries a tool or a result. When the material is thin, fill the line with real detail from it (the data, the users, the scale, the tools, the domain), not filler.
-10. Strong action verb + what was built + tools + scale, then a closing clause with the result or who it served: a number when the material states one, otherwise the result in words (", giving researchers analysis-ready data", ", supporting safer in-vehicle alerts"). A bullet that only lists what was built isn't finished.
+10. Strong action verb + what was built + tools + scale, then a closing clause with the result or who it served: a number when the material states one, otherwise the result in words (", giving researchers analysis-ready data", ", supporting safer in-vehicle alerts"). A bullet that only lists what was built isn't finished. The result is what the work did for its users or the team, never what the candidate learned. Use each number once per entry; don't repeat it in every bullet to fill space.
 11. No em dashes or triple dashes, no "responsible for", no "helped", no filler. No two bullets in a row start with the same verb.
 12. Sound like a new grad with the candidate's real years of experience, not a senior engineer. It should read like a person wrote it.
 

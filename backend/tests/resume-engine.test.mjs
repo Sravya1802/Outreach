@@ -32,6 +32,15 @@ test('soft skills match by stem; hard skills stay exact', () => {
   assert.ok(!hasTerm('collaborated with teams', k('Collaboration')));
 });
 
+test('a degree requirement is met by the degree in any spelling plus the field', () => {
+  const edu = 'University of Illinois at Chicago Master of Science, Computer Science Jain University B.Tech, Computer Science and Technology in Artificial Intelligence';
+  assert.ok(hasTerm(edu, k("Bachelor's Degree in Computer Science")));
+  assert.ok(hasTerm(edu, k("Bachelor's degree in Computer Science or related technical discipline")));
+  assert.ok(hasTerm(edu, k("Master's Degree")));
+  assert.ok(!hasTerm(edu, k("Bachelor's Degree in Electrical Engineering")));
+  assert.ok(!hasTerm('Computer Science coursework', k("Bachelor's Degree in Computer Science")));
+});
+
 test('the resume never hyphenates a word across lines', () => {
   assert.match(resumeTex({ name: 'A', contact: {}, education: [], experience: [], projects: [], skills: [], extras: [] }), /\\hyphenpenalty=10000/);
 });

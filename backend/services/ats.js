@@ -64,11 +64,26 @@ function stemRegex(term) {
   return new RegExp(`(?<![a-z])${parts.join('[\\s-]+')}`);
 }
 
+// A degree requirement ("Bachelor's Degree in Computer Science or related field")
+// is met by the degree in any spelling ("B.Tech", "B.S.", "M.S.") plus the field.
+const DEGREE = /^(bachelor|master)['’]?s?(?: degree)?(?:\s*\([^)]*\))?(?: (?:in|of) (.+))?$/i;
+const DEGREE_ON_PAGE = {
+  bachelor: /(?<![a-z])(bachelor['’]?s?|b\.? ?tech|b\.s\.?|b\.sc|bsc|b\.e\.|b\.a\.|undergraduate)(?![a-z])/,
+  master: /(?<![a-z])(master['’]?s?|m\.? ?tech|m\.s\.?|m\.sc|msc|m\.eng|meng|mba)(?![a-z])/,
+};
+function degreeMet(hay, term) {
+  const m = normalizeText(term).trim().match(DEGREE);
+  if (!m) return null;
+  const field = (m[2] || '').split(/,| or | and \b|\(/)[0].replace(/\b(a |the )?related.*$/, '').trim();
+  return DEGREE_ON_PAGE[m[1]].test(hay) && (!field || hasTerm(hay, { term: field }));
+}
+
 /** Does the text contain this keyword (or one of its aliases)? */
 export function hasTerm(text, keyword) {
   const hay = EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), normalizeText(text));
   const hayLoose = hay.replace(/-/g, ' ').replace(/\.(?=[a-z])/g, '');
   const terms = [keyword.term, ...(keyword.aliases || [])];
+  if (terms.some(t => degreeMet(hay, t))) return true;
   return terms.some(t => variants(t).some(v => {
     const re = termRegex(v);
     return re.test(hay) || re.test(hayLoose);

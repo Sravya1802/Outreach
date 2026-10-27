@@ -1049,6 +1049,19 @@ function checkDates(start, end) {
   return null;
 }
 
+/** Only one of the dates given (or none): check that one. */
+function checkOneDate(start, end) {
+  if (str(start)) {
+    const a = dateValue(start);
+    if (a === null) return 'Use dates like “Jun 2026”.';
+    if (a === Infinity) return 'The start can’t be “Present”.';
+    const now = new Date();
+    if (a > now.getFullYear() + (now.getMonth() + 1) / 100) return 'The start date is in the future.';
+  }
+  if (str(end) && dateValue(end) === null) return 'Use dates like “Aug 2026”, or “Present”.';
+  return null;
+}
+
 export async function listProjects(userId) {
   return plannedProjects(userId);
 }
@@ -1071,15 +1084,16 @@ async function tailoringsWith(userId, projectId) {
 export async function markProjectBuilt(userId, projectId, { repoUrl, start, end }) {
   const p = await one('SELECT * FROM planned_projects WHERE id = $1 AND user_id = $2', [projectId, userId]);
   if (!p) throw Object.assign(new Error('Project not found'), { status: 404 });
+  // The link and the dates are optional; whatever is given has to be right.
   const url = str(repoUrl).replace(/\.git$/, '').replace(/\/$/, '');
-  if (!REPO_URL.test(url)) throw Object.assign(new Error('Paste the repo’s GitHub link, like https://github.com/you/project.'), { status: 400 });
-  const bad = checkDates(start, end);
+  if (url && !REPO_URL.test(url)) throw Object.assign(new Error('Paste the repo’s GitHub link, like https://github.com/you/project, or leave it empty.'), { status: 400 });
+  const bad = str(start) && str(end) ? checkDates(start, end) : checkOneDate(start, end);
   if (bad) throw Object.assign(new Error(bad), { status: 400 });
-  if (!(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it (and make it public), then try again.'), { status: 400 });
+  if (url && !(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it (and make it public), or leave the link empty.'), { status: 400 });
   const built = (await run(
     `UPDATE planned_projects SET status = 'built', repo_url = $3, start_date = $4, end_date = $5, built_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [projectId, userId, url, str(start), str(end)],
+    [projectId, userId, url || null, str(start), str(end)],
   )).rows[0];
   let tailoring = null;
   for (const t of await tailoringsWith(userId, projectId)) {
@@ -1128,7 +1142,7 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
   const keep = t.report;
   const change = mode === 'built'
-    ? { section: 'Projects', before: '', after: project.name, why: `You built it (${project.repo_url}); it adds ${list(project.covers).join(', ') || 'the missing skills'}.` }
+    ? { section: 'Projects', before: '', after: project.name, why: `You built it${project.repo_url ? ` (${project.repo_url})` : ''}; it adds ${list(project.covers).join(', ') || 'the missing skills'}.` }
     : mode === 'skills'
       ? { section: 'Technical Skills', before: '', after: project.terms.join(', '), why: 'You confirmed you know them.' }
       : { section: 'Projects', before: project.name, after: '', why: 'You chose not to build it, so it came off.' };

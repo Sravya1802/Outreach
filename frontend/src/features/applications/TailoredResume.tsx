@@ -368,13 +368,13 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
       {p.status === 'suggested' ? (
         <form className="mt-4 space-y-3" onSubmit={e => { e.preventDefault(); built.mutate() }}>
           <p className="text-[13px] text-muted">
-            Build it from the plan and push it to a public GitHub repo, then add the link and the dates to show.
+            Build it from the plan, then press “I built it”. The GitHub link and the dates are optional: whatever you fill in is shown on the resume.
             {onPage ? ' Until then this resume waits for you; it’s never sent with a project you haven’t built.' : ' This resume can go out without it meanwhile.'}
           </p>
           <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-            <Field label="GitHub repo">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" required />}</Field>
-            <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
-            <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
+            <Field label="GitHub repo (optional)">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" />}</Field>
+            <Field label="Start (optional)">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" />}</Field>
+            <Field label="End (optional)">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" />}</Field>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="primary" loading={built.isPending}>I built it, add it</Button>
@@ -382,7 +382,7 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-[14px] text-muted">{p.status === 'built' ? `Built, with its link and dates on this resume${p.addedAt ? ` (${timeAgo(p.addedAt)})` : ''}.` : 'You passed on it. It won’t be suggested again.'}</p>
+        <p className="mt-4 text-[14px] text-muted">{p.status === 'built' ? `Built and on this resume${p.addedAt ? ` (${timeAgo(p.addedAt)})` : ''}.` : 'You passed on it. It won’t be suggested again.'}</p>
       )}
     </section>
   )

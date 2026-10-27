@@ -132,7 +132,7 @@ function Today() {
   const { items, loading } = useToday()
   return (
     <section aria-labelledby="today-h">
-      <SectionTitle action={<Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">Today’s list</Link>}>
+      <SectionTitle action={<Link to="/jobs/auto-apply" className="text-[14px] text-accent hover:underline">Today’s list</Link>}>
         <span id="today-h">Today</span>
       </SectionTitle>
       {loading ? <div className="space-y-2 pt-2">{[0, 1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : items.length === 0 ? (
@@ -187,7 +187,7 @@ function TopPicks() {
 
   return (
     <section aria-labelledby="picks-h">
-      <SectionTitle action={picks.length > TOP_PICKS ? <Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">See all {picks.length}</Link> : undefined}>
+      <SectionTitle action={picks.length > TOP_PICKS ? <Link to="/jobs/auto-apply" className="text-[14px] text-accent hover:underline">See all {picks.length}</Link> : undefined}>
         <span id="picks-h">Top picks for you</span>
       </SectionTitle>
       {plan.isError ? <ErrorState compact error={plan.error} onRetry={() => void plan.refetch()} /> : plan.isLoading ? <Skeleton className="mt-2 h-32" /> : !d?.plan ? (
@@ -325,7 +325,7 @@ export default function HomePage() {
         </p>
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           <ButtonLink to="/jobs/roles/intern" variant="primary">Browse roles</ButtonLink>
-          <ButtonLink to="/applications/evaluate">Evaluate a job</ButtonLink>
+          <ButtonLink to="/jobs/evaluate">Evaluate a job</ButtonLink>
           {!setupDone && (
             <Link to="/how-it-works" className="inline-flex items-center gap-1.5 px-2 text-[14px] font-medium text-accent hover:underline">
               New here? See what each tab does <ArrowRight className="size-4" aria-hidden="true" />

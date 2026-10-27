@@ -71,7 +71,7 @@ export default function HowItWorksPage() {
       <PageHeader title="How it works" description="What happens to every role, email and message, step by step, with where each one is right now." />
       <div className="space-y-10">
       <div>
-        <SectionTitle action={<Link to="/applications/auto-apply" className="text-[14px] text-accent hover:underline">Change settings</Link>}>
+        <SectionTitle action={<Link to="/jobs/auto-apply" className="text-[14px] text-accent hover:underline">Change settings</Link>}>
           <span id="flow-h">How your job queue works</span>
         </SectionTitle>
         <p className="mb-4 text-[14px] text-muted">{plan.isLoading ? 'Loading your queue…' : flowSettingsLine(plan.data)}</p>

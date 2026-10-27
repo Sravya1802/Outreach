@@ -210,7 +210,7 @@ function UsedFor({ history, onDownload, onView }: {
               {rows.map(a => (
                 <tr key={`${a.evaluation_id}-${a.id}`} className="border-t border-line align-top">
                   <td className="py-3 pr-3">
-                    <Link to={`/applications/job/${a.evaluation_id}`} className="hover:text-accent">
+                    <Link to={`/jobs/job/${a.evaluation_id}`} className="hover:text-accent">
                       <b className="font-medium text-fg">{a.company_name}</b> <span className="text-muted">· {a.job_title}</span>
                     </Link>
                   </td>

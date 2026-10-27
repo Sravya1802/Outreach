@@ -57,17 +57,17 @@ export function todayItems(i: TodayInput): TodayItem[] {
   const review = i.queue?.needs_review ?? 0
   if (stuck.length + review > 0) {
     out.push({ id: 'needs-you', tone: 'danger', title: `${plural(stuck.length + review, 'application needs', 'applications need')} you`,
-      detail: stuck.length ? nameList(stuck.map(a => a.company_name)) : 'A form asked something it couldn’t answer.', to: '/applications/auto-apply' })
+      detail: stuck.length ? nameList(stuck.map(a => a.company_name)) : 'A form asked something it couldn’t answer.', to: '/jobs/auto-apply' })
   }
   if (i.queue?.failed) {
-    out.push({ id: 'failed', tone: 'danger', title: `${plural(i.queue.failed, 'application', 'applications')} couldn’t be sent`, to: '/applications/auto-apply' })
+    out.push({ id: 'failed', tone: 'danger', title: `${plural(i.queue.failed, 'application', 'applications')} couldn’t be sent`, to: '/jobs/auto-apply' })
   }
 
   // To do
   const pending = (i.plan?.items ?? []).filter(p => p.tier === 'top' && p.decision === 'pending')
   if (pending.length) {
     out.push({ id: 'approve', tone: 'action', title: `${plural(pending.length, 'role is', 'roles are')} waiting for your OK`,
-      detail: nameList(pending.map(p => p.company_name)), to: '/applications/auto-apply' })
+      detail: nameList(pending.map(p => p.company_name)), to: '/jobs/auto-apply' })
   }
   const drafts = (i.outbox ?? []).filter(o => o.status === 'draft' && o.step === 0)
   if (drafts.length) {
@@ -98,7 +98,7 @@ export function todayItems(i: TodayInput): TodayItem[] {
   if (onTheWay.length) {
     const waiting = onTheWay.filter(a => a.stage === 'waiting_referral' || a.stage === 'asking_referral').length
     out.push({ id: 'going-out', tone: 'info', title: `${plural(onTheWay.length, 'approved role is', 'approved roles are')} on the way`,
-      detail: waiting ? `${waiting} waiting on a referral first` : nameList(onTheWay.map(a => a.company_name)), to: '/applications/auto-apply' })
+      detail: waiting ? `${waiting} waiting on a referral first` : nameList(onTheWay.map(a => a.company_name)), to: '/jobs/auto-apply' })
   }
   const sending = (i.outbox ?? []).filter(o => o.status === 'scheduled' && new Date(o.send_after).getTime() - i.now <= OUTBOX_WINDOW)
   if (sending.length) {

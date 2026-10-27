@@ -284,7 +284,7 @@ function Roles({ company, initial }: { company: CompanyDetail; initial: CompanyR
           {list.map(r => (
             <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 border-b border-line py-3">
               <a href={r.apply_url} target="_blank" rel="noreferrer" className="truncate text-[14px] font-medium text-fg hover:text-accent">{r.title}</a>
-              <Link to={`/applications/evaluate?url=${encodeURIComponent(r.apply_url)}`} className="text-[14px] text-accent hover:underline">Evaluate</Link>
+              <Link to={`/jobs/evaluate?url=${encodeURIComponent(r.apply_url)}`} className="text-[14px] text-accent hover:underline">Evaluate</Link>
               <span className="truncate text-[13px] text-muted">{[r.role_type === 'intern' ? 'Internship' : 'New grad / full-time', r.location, r.source].filter(Boolean).join(' · ')}</span>
               <span className="text-[12px] text-subtle">{timeAgo(r.posted_at || r.created_at)}</span>
             </li>

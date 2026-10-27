@@ -167,7 +167,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     onError: (e: Error) => {
       if (/consent|paused/i.test(e.message)) {
         toast.error(`${e.message} Opening your auto-apply profile…`)
-        navigate('/applications/auto-apply')
+        navigate('/jobs/auto-apply')
       } else toast.error(e.message)
     },
     onSettled: (_r, _e, role) => setBusy(({ [role.id]: _done, ...rest }) => rest),
@@ -284,7 +284,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
       </Card>
 
       <p className="mt-3 text-xs text-subtle">
-        <strong className="font-medium text-muted">Track</strong> adds a role to <Link to="/applications/evaluate" className="text-accent hover:underline">Applications</Link> so you can evaluate it against your resume.{' '}
+        <strong className="font-medium text-muted">Track</strong> adds a role to <Link to="/jobs/evaluate" className="text-accent hover:underline">Applications</Link> so you can evaluate it against your resume.{' '}
         <strong className="font-medium text-muted">Auto-apply</strong> queues it for the auto-apply worker.
       </p>
 

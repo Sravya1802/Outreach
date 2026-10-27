@@ -1,4 +1,4 @@
-import { Briefcase, ChartColumnBig, FileText, Home, Inbox, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, FileText, Home, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -12,7 +12,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'resumes' | 'people' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'resumes' | 'people' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -32,7 +32,10 @@ export const SECTIONS: NavSection[] = [
   },
   {
     id: 'dashboard', label: 'Dashboard', icon: ChartColumnBig, to: '/dashboard',
-    tabs: [{ label: 'Dashboard', to: '/dashboard', keywords: 'analytics stats numbers charts metrics response rate interviews funnel' }],
+    tabs: [
+      { label: 'Overview', to: '/dashboard', keywords: 'analytics stats numbers charts metrics response rate interviews funnel' },
+      { label: 'Tracker', to: '/dashboard/tracker', keywords: 'sheet spreadsheet applications submitted status rejected waiting referral import csv google sheets monitor' },
+    ],
   },
   {
     id: 'jobs', label: 'Jobs', icon: Briefcase, to: '/jobs',
@@ -40,14 +43,8 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Roles', to: '/jobs/roles', keywords: 'intern new grad catalog openings alerts email digest' },
       { label: 'Companies', to: '/jobs/companies', keywords: 'industries categories yc find scrape scraper linkedin wellfound add' },
-    ],
-  },
-  {
-    id: 'applications', label: 'Applications', icon: Inbox, to: '/applications',
-    tabs: [
-      { label: 'Auto-apply', to: '/applications/auto-apply', keywords: 'queue daily plan rules submit tracker pipeline board kanban sent applied interview offer follow up' },
-      { label: 'Evaluate', to: '/applications/evaluate', keywords: 'score fit grade job link description' },
-      { label: 'Tracker', to: '/applications/tracker', keywords: 'sheet spreadsheet applications submitted status rejected waiting referral import csv google sheets monitor' },
+      { label: 'Evaluate', to: '/jobs/evaluate', keywords: 'score fit grade job link description' },
+      { label: 'Auto-apply', to: '/jobs/auto-apply', keywords: 'queue daily plan evening list rules submit approve referral apply applications' },
     ],
   },
   {
@@ -133,13 +130,17 @@ export function sectionFor(pathname: string): NavSection | undefined {
  * and users have bookmarks, so every one of these must keep working.
  */
 export const LEGACY_REDIRECTS: Record<string, string> = {
+  // The Applications section was split: Evaluate and Auto-apply moved to Jobs, Tracker to Dashboard.
+  '/applications/auto-apply': '/jobs/auto-apply',
+  '/applications/evaluate': '/jobs/evaluate',
+  '/applications/tracker': '/dashboard/tracker',
   '/': '/home',
   '/job-dashboard': '/home',
   '/discover/companies': '/jobs/companies',
   '/discover/scraper': '/jobs/find',
   '/discover/alerts': '/jobs/alerts',
-  '/discover/evaluate': '/applications/evaluate',
-  '/apply/auto-apply': '/applications/auto-apply',
+  '/discover/evaluate': '/jobs/evaluate',
+  '/apply/auto-apply': '/jobs/auto-apply',
   '/apply/pipeline': '/dashboard#tracker',
   '/apply/ranked': '/dashboard?sort=score#tracker',
   '/apply/intern-roles': '/jobs/roles/intern',
@@ -153,8 +154,8 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   // Pre-IA-refactor paths
   '/companies': '/jobs/companies',
   '/scraper': '/jobs/find',
-  '/career-ops-workflow': '/applications/evaluate',
+  '/career-ops-workflow': '/jobs/evaluate',
   '/pipeline': '/dashboard#tracker',
-  '/career-ops': '/applications/evaluate',
-  '/career': '/applications/evaluate',
+  '/career-ops': '/jobs/evaluate',
+  '/career': '/jobs/evaluate',
 }

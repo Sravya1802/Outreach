@@ -36,7 +36,7 @@ export function setupSteps(i: SetupInputs): SetupStep[] {
     { id: 'gmail', title: 'Connect Gmail', description: 'Referral asks, follow-ups and your daily list go out from your own address, and replies are tracked.',
       to: '/integrations/gmail', cta: 'Connect', done: i.gmailConnected },
     { id: 'rules', title: 'Set your auto-apply rules', description: 'The score that puts a role on your daily plan, and how many a day.',
-      to: '/applications/auto-apply', cta: 'Set', done: i.rulesSet },
+      to: '/jobs/auto-apply', cta: 'Set', done: i.rulesSet },
   ]
 }
 

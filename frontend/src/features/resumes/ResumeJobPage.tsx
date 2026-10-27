@@ -56,7 +56,7 @@ export default function ResumeJobPage() {
           {job?.eval_score != null && <span className="font-mono text-[13px]">fit {job.eval_score.toFixed(1)}/10</span>}
           {job?.list_date && <span className="text-[13px]">from the {new Date(`${job.list_date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} list</span>}
           {d.job_url && <a href={d.job_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] text-accent hover:underline">Posting <ExternalLink className="size-3" /></a>}
-          <Link to={`/applications/evaluate?id=${id}`} className="text-[13px] text-accent hover:underline">Full evaluation</Link>
+          <Link to={`/jobs/evaluate?id=${id}`} className="text-[13px] text-accent hover:underline">Full evaluation</Link>
         </p>
       </header>
 

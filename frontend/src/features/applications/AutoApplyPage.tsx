@@ -26,7 +26,7 @@ function Row({ r, right }: { r: EvaluationSummary; right?: ReactNode }) {
     <li className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-line py-3">
       <span className="font-mono text-[15px] text-fg">{s ?? '—'}</span>
       <div className="min-w-0">
-        <Link to={`/applications/job/${r.id}`} className="hover:text-accent"><b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span></Link>
+        <Link to={`/jobs/job/${r.id}`} className="hover:text-accent"><b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span></Link>
         {(REASON[r.apply_status ?? ''] || r.apply_error) && (
           <p className="text-[13px] text-subtle">{REASON[r.apply_status ?? ''] ?? ''}{r.apply_error ? ` · ${r.apply_error}` : ''}</p>
         )}

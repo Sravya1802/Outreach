@@ -22,27 +22,21 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     },
   },
   dashboard: {
-    what: 'Your job search in numbers.',
-    when: 'Open it to see how the search is going.',
+    what: 'Your job search in numbers, and every application you’ve made.',
+    when: 'Open it to see how the search is going, or to update where an application stands.',
     tabs: {
-      '/dashboard': 'Applications per week and where each one stands, fit scores, outreach emails, referrals and this month’s cost. The tracker of every application you’ve made is here too.',
+      '/dashboard': 'Applications per week and where each one stands, fit scores, outreach emails, referrals and this month’s cost.',
+      '/dashboard/tracker': 'Every application as a sheet: company, role, link, submitted, status and referral. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
     },
   },
   jobs: {
-    what: 'Every open role and company the app knows about.',
-    when: 'Open it to browse what’s open, or to add companies to watch.',
+    what: 'Finding roles and deciding which to go after.',
+    when: 'Open it to browse what’s open, when your evening list arrives, or when you find a role yourself.',
     tabs: {
       '/jobs/roles': 'Internship and new-grad openings in your country, refreshed every morning. Search, filter, open the posting, or turn on email alerts.',
       '/jobs/companies': 'Companies grouped by industry. Find new ones, and open one to see its roles and the people you’ve found there.',
-    },
-  },
-  applications: {
-    what: 'Where you decide what to apply to.',
-    when: 'Open it when your evening list arrives, or when you find a role yourself.',
-    tabs: {
-      '/applications/tracker': 'Every application as a sheet: company, role, link, submitted, status and referral. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
-      '/applications/auto-apply': 'Your evening list. Approve the roles you want and each gets a tailored resume, a referral ask, then an application. You also set the score cutoff and how many a day here.',
-      '/applications/evaluate': 'Paste a job link or description and get a fit score out of 10 against your resume, with the reasons.',
+      '/jobs/evaluate': 'Paste a job link or description and get a fit score out of 10 against your resume, with the reasons.',
+      '/jobs/auto-apply': 'Your evening list. Approve the roles you want and each gets a tailored resume, a referral ask, then an application. You also set the score cutoff and how many a day here.',
     },
   },
   resumes: {
@@ -90,6 +84,6 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
 export const START_HERE = [
   { title: 'Upload your resume and fill in your details', body: 'Every role is scored against your resume, and every form is filled from your details.', to: '/profile/resume' },
   { title: 'Connect Gmail and import your LinkedIn connections', body: 'So referral asks go to people you know, from your own address.', to: '/integrations' },
-  { title: 'Turn on your evening list', body: 'Each evening the day’s new roles are scored and the best ones land on Home.', to: '/applications/auto-apply' },
+  { title: 'Turn on your evening list', body: 'Each evening the day’s new roles are scored and the best ones land on Home.', to: '/jobs/auto-apply' },
   { title: 'Approve the roles you want', body: 'Each one gets a referral ask first, then an application. Replies are tracked for you.', to: '/home' },
 ] as const

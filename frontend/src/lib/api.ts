@@ -661,7 +661,7 @@ export interface Tailoring {
   /** Set while a nightly resume waits in Anthropic's batch (half price). */
   batch?: { phase: 'queued' | 'drafting' | 'revise_queued' | 'revising'; submittedAt?: string } | null
 }
-/** One row of Applications → Tracker (the sheet view of every application). */
+/** One row of Dashboard → Tracker (the sheet view of every application). */
 export type TrackerStatus = 'not_started' | 'submitted' | 'responded' | 'interview' | 'offer' | 'rejected'
 export type TrackerReferral = 'yes' | 'no' | 'not_required' | 'asked'
 export interface TrackerRow {

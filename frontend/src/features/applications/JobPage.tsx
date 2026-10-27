@@ -139,7 +139,7 @@ export default function JobPage() {
 
   return (
     <Page>
-      <button type="button" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/applications/tracker'))}
+      <button type="button" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/dashboard/tracker'))}
         className="mb-4 inline-flex items-center gap-1.5 text-[14px] text-muted hover:text-fg">
         <ArrowLeft className="size-4" /> Back
       </button>

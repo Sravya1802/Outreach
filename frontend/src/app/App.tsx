@@ -49,6 +49,12 @@ function Redirect({ to }: { to: string }) {
   return <Navigate to={`${target.pathname}${target.search}${hash || target.hash}`} replace />
 }
 
+/** Old /applications/job/:id links (emails, bookmarks) → the job page under Jobs. */
+function OldJobRedirect() {
+  const { id = '' } = useParams()
+  return <Redirect to={`/jobs/job/${id}`} />
+}
+
 /** Old /category/:name links → the Companies list filtered to that industry. */
 function CategoryRedirect() {
   const { name = '' } = useParams()
@@ -75,11 +81,12 @@ function SignedInRoutes() {
         <Route path="/category/:name" element={<CategoryRedirect />} />
         <Route path="/company/:id" element={<CompanyPage />} />
 
-        <Route path="/applications" element={<Navigate to="/applications/auto-apply" replace />} />
-        <Route path="/applications/auto-apply" element={<AutoApplyPage />} />
-        <Route path="/applications/evaluate" element={<EvaluatePage />} />
-        <Route path="/applications/job/:id" element={<JobPage />} />
-        <Route path="/applications/tracker" element={<TrackerPage />} />
+        <Route path="/applications" element={<Navigate to="/jobs/auto-apply" replace />} />
+        <Route path="/applications/job/:id" element={<OldJobRedirect />} />
+        <Route path="/jobs/auto-apply" element={<AutoApplyPage />} />
+        <Route path="/jobs/evaluate" element={<EvaluatePage />} />
+        <Route path="/jobs/job/:id" element={<JobPage />} />
+        <Route path="/dashboard/tracker" element={<TrackerPage />} />
         <Route path="/resumes" element={<Navigate to="/resumes/jobs" replace />} />
         <Route path="/resumes/jobs" element={<ResumesPage />} />
         <Route path="/resumes/job/:id" element={<ResumeJobPage />} />

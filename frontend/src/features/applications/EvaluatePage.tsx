@@ -64,7 +64,7 @@ export function Report({ detail, hasResume, onJobPage = false }: { detail: Evalu
             {stage === 'evaluated'
               ? <Button onClick={() => markApplied.mutate()} loading={markApplied.isPending}>I applied</Button>
               : <span className="px-2 text-[14px] text-success">In your pipeline as {stage === 'applied' ? 'applied' : stage}</span>}
-            {!onJobPage && <ButtonLink variant="ghost" to={`/applications/job/${detail.id}`}>Description and resume</ButtonLink>}
+            {!onJobPage && <ButtonLink variant="ghost" to={`/jobs/job/${detail.id}`}>Description and resume</ButtonLink>}
             <Button variant="ghost" onClick={() => void api.openReport(detail.id)}>Full report</Button>
           </div>
         </div>
@@ -185,7 +185,7 @@ export default function EvaluatePage() {
               const s = scoreOutOf10(r.score)
               return (
                 <li key={r.id}>
-                  <Link to={`/applications/evaluate?id=${r.id}`} aria-current={r.id === id ? 'true' : undefined}
+                  <Link to={`/jobs/evaluate?id=${r.id}`} aria-current={r.id === id ? 'true' : undefined}
                     className={cn('grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-4 border-b border-line py-3 hover:bg-hover/50', r.id === id && 'bg-hover/60')}>
                     <span className={cn('font-mono text-[15px]', TONE_TEXT[scoreTone(s)])}>{s ?? '—'}</span>
                     <span className="min-w-0 truncate"><b className="font-medium text-fg">{r.company_name}</b> <span className="text-muted">· {r.job_title}</span></span>

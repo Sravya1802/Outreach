@@ -17,7 +17,7 @@ const cell = 'border border-line px-3 py-2 align-middle'
 const head = 'border border-line bg-raised px-3 py-2 text-left text-[12px] font-medium tracking-wide text-subtle uppercase'
 const rownum = 'border border-line bg-raised px-2 text-center font-mono text-[11px] text-subtle'
 
-/** Applications → Tracker: every application, in a sheet that looks like your own. */
+/** Dashboard → Tracker: every application, in a sheet that looks like your own. */
 export default function TrackerPage() {
   const qc = useQueryClient()
   const toast = useToast()

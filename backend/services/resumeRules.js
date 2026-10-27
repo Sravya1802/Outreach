@@ -3,9 +3,11 @@
  * without an AI, run on every tailored draft after the fact check:
  *
  *   • no em dashes, triple dashes, "responsible for" or "helped"
- *   • bullets are 1–2 lines; a 3rd line only when it's at least 80% full
+ *   • bullets fill about 2 lines (the user's own resumes run 160–200
+ *     characters); a 3rd line only when it's at least 80% full
  *   • no two bullets in a row start with the same verb
- *   • every entry in a section has the same number of bullets
+ *   • every entry in a section has the same number of bullets, except the
+ *     main job in an experience section, which may carry up to 4
  *   • numbers only as the candidate's material states them, in project
  *     bullets too, for every kind of role (the fact check enforces that)
  *   • sections: Education, Research, Industry, Projects, Skills, the rest;
@@ -22,6 +24,9 @@
 import { hasTerm, weightOf, canonicalTerm } from './ats.js';
 
 export const CHARS_PER_LINE = 121;
+// Under this a bullet's second line is less than a third full and the page looks thin.
+export const MIN_BULLET_CHARS = 160;
+export const LEAD_MAX_BULLETS = 4;
 export const MAX_SKILL_GROUPS = 6;
 export const MAX_SKILL_ITEMS = 8;
 
@@ -110,6 +115,7 @@ export function bulletIssues(s) {
   const issues = [];
   if (/—|―|---/.test(b)) issues.push({ code: 'dash', why: 'uses an em dash or triple dash' });
   if (FILLER.test(b)) issues.push({ code: 'filler', why: `says “${b.match(FILLER)[1]}”` });
+  if (b.length < MIN_BULLET_CHARS) issues.push({ code: 'short', why: 'is too short; fill about 2 lines with the tools, scale and the result' });
   const lines = bulletLines(b);
   const fill = (b.length - (lines - 1) * CHARS_PER_LINE) / CHARS_PER_LINE;
   if (lines > 3) issues.push({ code: 'length', why: `runs to ${lines} lines (keep it to 2)` });
@@ -207,20 +213,24 @@ export function orderCertifications(extras, { finance = false } = {}) {
  * Make every entry in a section carry the same number of bullets. Entries
  * that can't reach 2 while the others can are dropped (a one-line internship
  * shouldn't cut the main job to one bullet); the rest are trimmed to the
- * shortest. Returns the entries and what was dropped or trimmed.
+ * shortest. With `lead`, the entry with the most bullets (the main job) keeps
+ * up to LEAD_MAX_BULLETS. Returns the entries and what was dropped or trimmed.
  */
-export function equalizeBullets(entries, where) {
+export function equalizeBullets(entries, where, { lead = false } = {}) {
   const removed = [];
   let xs = list(entries).filter(e => list(e.bullets).length);
   if (xs.length > 1 && xs.some(e => e.bullets.length >= 2)) {
     for (const e of xs.filter(e => e.bullets.length < 2 && !e.keep)) removed.push({ where, what: e.title ? `${e.title} at ${e.company}` : e.name, why: 'had one bullet while the others in the section have more; every entry in a section gets the same number' });
     xs = xs.filter(e => e.bullets.length >= 2 || e.keep);
   }
-  const n = Math.min(...xs.map(e => e.bullets.length));
+  const top = lead && xs.length > 1 ? xs.reduce((a, e) => (e.bullets.length > a.bullets.length ? e : a)) : null;
+  const n = Math.min(...xs.filter(e => e !== top).map(e => e.bullets.length));
   xs = xs.map(e => {
-    if (e.bullets.length <= n) return e;
-    for (const b of e.bullets.slice(n)) removed.push({ where: e.title ? `${e.title} at ${e.company}` : e.name, what: b, why: `trimmed so every entry in the section has ${n} bullet${n === 1 ? '' : 's'}` });
-    return { ...e, bullets: e.bullets.slice(0, n) };
+    const keep = e === top ? Math.max(n, Math.min(e.bullets.length, LEAD_MAX_BULLETS)) : n;
+    if (e.bullets.length <= keep) return e;
+    const why = e === top ? `trimmed to ${keep}, the most the main job carries` : `trimmed so every entry in the section has ${n} bullet${n === 1 ? '' : 's'}`;
+    for (const b of e.bullets.slice(keep)) removed.push({ where: e.title ? `${e.title} at ${e.company}` : e.name, what: b, why });
+    return { ...e, bullets: e.bullets.slice(0, keep) };
   });
   return { entries: xs, removed };
 }
@@ -289,7 +299,7 @@ export function applyRules(doc, { keywords = [], kind = { quant: false, finance:
   const experience = [];
   for (const s of sections) {
     const cleaned = s.entries.map(e => ({ ...e, bullets: varyVerbs(list(e.bullets).map(clean)) }));
-    const eq = equalizeBullets(cleaned, s.heading);
+    const eq = equalizeBullets(cleaned, s.heading, { lead: true });
     removed.push(...eq.removed);
     experience.push(...eq.entries.map(e => ({ ...e, section: s.heading })));
   }
@@ -330,8 +340,10 @@ export function lintDoc(doc, { kind = { quant: false } } = {}) {
   }
   const bySection = new Map();
   for (const e of entries) bySection.set(e.section, [...(bySection.get(e.section) || []), e.bullets.length]);
-  for (const [section, counts] of bySection) {
-    if (new Set(counts).size > 1) issues.push({ where: section, bullet: '', code: 'count', why: `entries have ${counts.join('/')} bullets; they should match` });
+  for (const [section, all] of bySection) {
+    // The main job in an experience section may carry more than the rest.
+    const counts = section === 'Projects' ? all : all.filter((c, i) => i !== all.indexOf(Math.max(...all)));
+    if (new Set(counts).size > 1) issues.push({ where: section, bullet: '', code: 'count', why: `entries have ${all.join('/')} bullets; they should match (the main job may have more)` });
   }
   return issues;
 }

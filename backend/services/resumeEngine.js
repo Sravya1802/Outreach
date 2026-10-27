@@ -81,14 +81,14 @@ Truth
 
 Reframing
 4. Reframe experience and projects toward the job. Mirror its responsibilities in your own words, never copied.
-5. experience: the jobs to show, by id. Keep every substantial job; leave out a short or unrelated internship when space is tight. Every entry in the same section gets the same number of bullets (usually 3; never cut the main job down to match a minor one, leave the minor one out instead). Choose and order bullets by relevance. Current roles in present tense, past roles in past tense.
+5. experience: the jobs to show, by id. Keep every substantial job; leave out a short or unrelated internship when space is tight. Bullets per entry: 2 for most entries; the job that best proves this role (usually the main industry job) may have 3–4. Every other entry in the same section gets the same number (never cut the main job down to match a minor one). The page holds about 14–16 two-line bullets in all, so pick the strongest. Choose and order bullets by relevance. Current roles in present tense, past roles in past tense.
 6. projects: the 2–3 that best prove the job's requirements, from resume projects (source "resume", ref = project id), GitHub repos (source "github", ref = full_name) or projects the candidate built (source "planned", ref = id). The same number of bullets for each project. For a repo, write the bullets from its README/description only.
 7. skills: up to 6 groups of up to 8 items, the most job-relevant group first, only skills in the material.
 8. summary: "" unless a summary adds job keywords the sections can't hold. If you write one: at most 2 lines (240 characters), facts from the material only.
 
 Bullets
-9. 1–2 lines each (a line holds about 120 characters). A third line only when it's at least 80% full and every word carries a tool or a result.
-10. Strong action verb + what was built + tools + the result. Use a number when the material states one; otherwise end with the result in words: what it achieves, enables, speeds up or replaces. A bullet that only lists what was built isn't finished. Project bullets fill about 2 lines each.
+9. Every bullet fills about 2 full lines: 175–230 characters (a line holds about 120). Never a one-line bullet, and never a second line with only a few words on it. A third line only when it's at least 80% full and every word carries a tool or a result. When the material is thin, fill the line with real detail from it (the data, the users, the scale, the tools, the domain), not filler.
+10. Strong action verb + what was built + tools + scale, then a closing clause with the result or who it served: a number when the material states one, otherwise the result in words (", giving researchers analysis-ready data", ", supporting safer in-vehicle alerts"). A bullet that only lists what was built isn't finished.
 11. No em dashes or triple dashes, no "responsible for", no "helped", no filler. No two bullets in a row start with the same verb.
 12. Sound like a new grad with the candidate's real years of experience, not a senior engineer. It should read like a person wrote it.
 
@@ -459,7 +459,9 @@ ${str(afterText).slice(0, 6000)}`,
 /** What the revision pass is asked to fix. Empty when the draft meets every target. */
 function revisionNotes(pass, judged, sourceText) {
   const notes = [];
-  for (const x of pass.lint.slice(0, 15)) notes.push(`${x.where}: ${x.bullet ? `“${x.bullet}” ` : ''}${x.why}.`);
+  for (const x of pass.lint.filter(x => x.code !== 'short').slice(0, 15)) notes.push(`${x.where}: ${x.bullet ? `“${x.bullet}” ` : ''}${x.why}.`);
+  const short = pass.lint.filter(x => x.code === 'short');
+  if (short.length) notes.push(`These bullets are too short and leave a thin second line. Rewrite each to fill about 2 lines (175–230 characters) with real tools, scale and the result, keeping the facts: ${short.map(x => `“${x.bullet}” (${x.bullet.length})`).join('; ')}.`);
   const { inSource, notInSource } = splitMissing(pass.score.missing, sourceText);
   if (inSource.length) notes.push(`These job keywords are in the candidate's material but not on the page; work them into bullets truthfully: ${inSource.map(k => k.term).join(', ')}.`);
   const hard = notInSource.filter(k => k.kind !== 'soft');

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   metricSpans, hasMetric, fixDashes, bulletIssues, varyVerbs, equalizeBullets, experienceSections, sortNewestFirst,
-  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, placeholders, fillPlaceholders, keywordPlaces, boldTools, CHARS_PER_LINE,
+  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, placeholders, fillPlaceholders, keywordPlaces, boldTools, CHARS_PER_LINE, MIN_BULLET_CHARS,
 } from '../services/resumeRules.js';
 import { richText, checkPreamble, resumeTex, RESUME_PREAMBLE } from '../services/latex.js';
 
@@ -101,8 +101,8 @@ test('dashes and filler are caught; dashes become commas', () => {
   assert.equal(fixDashes('Built a tool — fast and simple'), 'Built a tool, fast and simple');
   assert.equal(fixDashes('Built a tool---fast'), 'Built a tool, fast');
   assert.equal(fixDashes('ambulance-to-hospital triage'), 'ambulance-to-hospital triage');
-  assert.deepEqual(bulletIssues('Responsible for ETL jobs').map(i => i.code), ['filler']);
-  assert.deepEqual(bulletIssues('Helped the team ship — quickly').map(i => i.code), ['dash', 'filler']);
+  assert.deepEqual(bulletIssues('Responsible for ETL jobs').map(i => i.code), ['filler', 'short']);
+  assert.deepEqual(bulletIssues('Helped the team ship — quickly').map(i => i.code), ['dash', 'filler', 'short']);
 });
 
 test('bullets: two lines fine, a short third line not, a full third line fine', () => {
@@ -111,6 +111,14 @@ test('bullets: two lines fine, a short third line not, a full third line fine', 
   assert.deepEqual(bulletIssues(words(2 * CHARS_PER_LINE + 20)).map(i => i.code), ['length']);
   assert.deepEqual(bulletIssues(words(Math.ceil(2.9 * CHARS_PER_LINE))), []);
   assert.deepEqual(bulletIssues(words(4 * CHARS_PER_LINE)).map(i => i.code), ['length']);
+});
+
+test('bullets: a thin second line is short; the user\'s own 160–200 character bullets are fine', () => {
+  const ibm = 'Build automated data extraction pipelines that turn cancer patient records into structured clinical and genomic datasets for researchers and clinicians.';
+  const fedex = 'Automated data extraction pipelines that clean, map, and convert raw cancer patient records into structured clinical and genomic datasets, giving researchers analysis-ready data.';
+  assert.deepEqual(bulletIssues(ibm).map(i => i.code), ['short']);
+  assert.deepEqual(bulletIssues(fedex), []);
+  assert.deepEqual(bulletIssues('x'.repeat(MIN_BULLET_CHARS)), []);
 });
 
 test('no two bullets in a row start with the same verb', () => {
@@ -129,6 +137,20 @@ test('every entry in a section gets the same number of bullets', () => {
   // A pinned project (built for this role) stays even with one bullet.
   const p = equalizeBullets([{ name: 'A', bullets: ['1', '2'] }, { name: 'Built', keep: true, bullets: ['1'] }], 'Projects');
   assert.deepEqual(p.entries.map(e => e.bullets.length), [1, 1]);
+});
+
+test('the main job in an experience section may keep up to 4 bullets; the rest match', () => {
+  const r = equalizeBullets([
+    { title: 'SWE', company: 'Mercedes', bullets: ['1', '2', '3', '4', '5'] },
+    { title: 'Intern', company: 'Leaf', bullets: ['1', '2', '3'] },
+    { title: 'Analyst', company: 'C', bullets: ['1', '2'] },
+  ], 'Industry Experience', { lead: true });
+  assert.deepEqual(r.entries.map(e => e.bullets.length), [4, 2, 2]);
+  assert.ok(r.removed.some(x => x.where === 'SWE at Mercedes' && /main job/.test(x.why)));
+  const lint = lintDoc({ experience: r.entries.map(e => ({ ...e, section: 'Industry Experience' })), projects: [] });
+  assert.ok(!lint.some(x => x.code === 'count'));
+  // Without lead (projects) every entry matches.
+  assert.deepEqual(equalizeBullets([{ name: 'A', bullets: ['1', '2', '3'] }, { name: 'B', bullets: ['1', '2'] }], 'Projects').entries.map(e => e.bullets.length), [2, 2]);
 });
 
 test('Research before Industry, Industry first for quant roles', () => {
@@ -189,17 +211,18 @@ test('applyRules: real project numbers stay for every role, rules fixed', () => 
   // Numbers the material states stay in project bullets for any role (the user's call, 2026-10-27).
   assert.deepEqual(swe.doc.projects.map(p => [p.name, p.bullets.length]), [['Order Book', 2], ['FinPath', 2]]);
   assert.ok(swe.doc.projects[0].bullets[0].includes('83ns'));
-  assert.deepEqual(lintDoc(swe.doc, { kind: { quant: false } }), []);
+  const ruleIssues = (d, kind) => lintDoc(d, { kind }).filter(x => x.code !== 'short');
+  assert.deepEqual(ruleIssues(swe.doc, { quant: false }), []);
   assert.equal(swe.doc.experience[0].bullets[0], 'Built ETL, fast');
   assert.equal(swe.doc.experience[0].bullets[1], 'Developed dashboards cutting cost 15%');
   const quant = applyRules(doc, { keywords: [], kind: { quant: true, finance: true } });
   assert.ok(quant.doc.projects[0].bullets[0].includes('83ns'));
-  assert.deepEqual(lintDoc(quant.doc, { kind: { quant: true } }), []);
+  assert.deepEqual(ruleIssues(quant.doc, { quant: true }), []);
 });
 
-test('lintDoc flags uneven sections and repeated verbs', () => {
-  const doc = { experience: [{ section: 'Experience', title: 'A', company: 'X', bullets: ['Built a', 'Built b'] }, { section: 'Experience', title: 'B', company: 'Y', bullets: ['Led c'] }], projects: [] };
-  const codes = lintDoc(doc).map(i => i.code).sort();
+test('lintDoc flags uneven sections (past the main job) and repeated verbs', () => {
+  const doc = { experience: [{ section: 'Experience', title: 'A', company: 'X', bullets: ['Built a', 'Built b', 'Led z'] }, { section: 'Experience', title: 'B', company: 'Y', bullets: ['Led c', 'Ran d'] }, { section: 'Experience', title: 'C', company: 'Z', bullets: ['Led e'] }], projects: [] };
+  const codes = lintDoc(doc).map(i => i.code).filter(c => c !== 'short').sort();
   assert.deepEqual(codes, ['count', 'verb']);
 });
 

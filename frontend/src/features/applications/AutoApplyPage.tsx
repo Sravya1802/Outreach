@@ -60,7 +60,7 @@ export default function AutoApplyPage() {
 
   return (
     <Page wide>
-      <PageHeader title="Auto-apply" description="Every evening you get a list of the day’s best-fitting roles. Approve the ones you want: each gets its own tailored resume, a referral ask, and an application in the company’s morning. What happens after you apply is tracked on the Dashboard." />
+      <PageHeader title="Auto-apply" description="Every evening you get a list of the day’s best-fitting roles. Approve each one two ways. Apply for me: it gets a tailored resume, a referral ask, and an application in the company’s morning. I’ll review: the resume is written, then it waits on To apply for you to read it and Send it or apply yourself." />
 
       <div className="space-y-10">
         <DailyPlanSections />

@@ -48,7 +48,7 @@ export default function ResumesPage() {
             <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={RESUME_FILTERS} label="Show" /></div>
           </div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
-            <table className="w-full min-w-[1240px] border-collapse text-[14px] text-fg">
+            <table className="w-full min-w-[1100px] border-collapse text-[14px] text-fg">
               <thead>
                 <tr>
                   <th className={head}>Company</th>

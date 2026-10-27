@@ -34,10 +34,18 @@ const QUANT_TITLE = /\b(quant\w*|hft|high[- ]frequency|low[- ]latency|market[- ]
 const QUANT_JD = /\b(high[- ]frequency|hft|low[- ]latency|market[- ]mak\w*|order book|matching engine|nanosecond|microsecond)\b/i;
 const FINANCE = /\b(bank\w*|financ\w*|fintech|trading|investment\w*|asset management|capital markets|hedge fund|securities|brokerage|wealth|quant\w*)\b/i;
 
+// Other languages next to a C++ mention: "C, C++, C#, Java, or Python" is a generic list, not a C++ role.
+const OTHER_LANGS = /\b(java(script)?|python|typescript|golang|rust|ruby|kotlin|scala|swift)\b|c#/i;
+
+/** C++ mentions that stand on their own, not inside a list of languages. */
+function cppMentions(jd) {
+  return [...jd.matchAll(/c\+\+/gi)].filter(m => !OTHER_LANGS.test(jd.slice(Math.max(0, m.index - 40), m.index + 45))).length;
+}
+
 /** { quant, finance } from the job's title, company and description. */
 export function roleKind({ title = '', company = '', description = '' } = {}) {
   const jd = String(description);
-  const cpp = (jd.match(/c\+\+/gi) || []).length;
+  const cpp = cppMentions(jd);
   const quant = QUANT_TITLE.test(title) || QUANT_JD.test(jd) || cpp >= 3;
   const finance = quant || FINANCE.test(`${title} ${company}`) || (jd.match(new RegExp(FINANCE.source, 'gi')) || []).length >= 3;
   return { quant, finance };

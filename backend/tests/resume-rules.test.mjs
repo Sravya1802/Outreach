@@ -170,6 +170,10 @@ test('role kind: quant/C++ vs finance vs neither', () => {
   assert.deepEqual(roleKind({ title: 'C++ Software Engineer' }).quant, true);
   assert.deepEqual(roleKind({ title: 'Software Engineer, New Grad', company: 'Capital One', description: 'Build our banking platform for financial services and investment products.' }), { quant: false, finance: true });
   assert.deepEqual(roleKind({ title: 'Software Engineer, New Grad', company: 'Whatnot', description: 'live shopping marketplace' }), { quant: false, finance: false });
+  // C++ inside a list of languages, however often, isn't a C++ role (Microsoft FDE)
+  const list = 'coding in languages including, but not limited to, C, C++, C#, Java, JavaScript, or Python. ';
+  assert.deepEqual(roleKind({ title: 'Software Engineer - Forward Deployed Engineer', company: 'Microsoft', description: list.repeat(3) }), { quant: false, finance: false });
+  assert.equal(roleKind({ title: 'Software Engineer', description: 'Write modern C++. Profile C++ services. Own our C++ toolchain.' }).quant, true);
 });
 
 test('applyRules: project numbers only for quant roles, rules fixed, report lists it', () => {

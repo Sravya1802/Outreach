@@ -494,7 +494,9 @@ export interface DailyPlan {
   built_at: string | null
   emailed_at: string | null
 }
-export interface DailyPlanOverview { settings: DailyPlanSettings; plan: DailyPlan | null; items: PlanItem[]; active: ActivePlanItem[]; gmailConnected: boolean }
+/** A top role from an earlier list that was never answered (still approvable for 14 days). */
+export interface MissedPlanItem extends PlanItem { plan_date: string; ats_score: number | null }
+export interface DailyPlanOverview { settings: DailyPlanSettings; plan: DailyPlan | null; items: PlanItem[]; missed?: MissedPlanItem[]; active: ActivePlanItem[]; gmailConnected: boolean }
 
 // ── Gmail (each user's own account) ──────────────────────────────────────────
 

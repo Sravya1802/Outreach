@@ -218,6 +218,48 @@ export function TonightsList({ data }: { data: DailyPlanOverview }) {
   )
 }
 
+/** Top roles from earlier lists that were never answered. They stay approvable for 14 days. */
+export function MissedRoles({ data }: { data: DailyPlanOverview }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const decide = useMutation({
+    mutationFn: ({ id, decision }: { id: number; decision: 'approved' | 'skipped' }) => api.decidePlanItem(id, decision),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.dailyPlan }),
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const missed = data.missed ?? []
+  if (!missed.length) return null
+  const busyId = decide.isPending ? decide.variables?.id : null
+  const shown = open ? missed : missed.slice(0, 10)
+  return (
+    <section aria-labelledby="missed-h">
+      <h2 id="missed-h" className="font-display text-[22px] font-semibold text-fg">Missed roles <span className="font-sans text-[15px] font-normal text-subtle">· {missed.length}</span></h2>
+      <p className="mb-1 text-[13px] text-subtle">Top roles from earlier lists you didn’t answer. You can still approve them for 14 days after their list.</p>
+      <ul className="border-t border-rule">
+        {shown.map(m => (
+          <li key={m.id} className="grid grid-cols-[52px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-3 sm:grid-cols-[52px_minmax(0,1fr)_auto]">
+            <span className={cn('font-mono text-[18px]', (num(m.score) ?? 0) >= 9 ? 'text-success' : 'text-warning')}>{num(m.score)?.toFixed(1) ?? '—'}</span>
+            <div className="min-w-0">
+              <p className="text-[15px]"><PostingTitle company={m.company_name} title={m.title} url={m.apply_url} /></p>
+              <p className="mt-0.5 text-[13px] text-subtle">
+                {[`From ${new Date(`${m.plan_date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`, m.location].filter(Boolean).join(' · ')}
+                {m.connections > 0 && <span className="ml-2 text-accent">You know {m.connections} here</span>}
+              </p>
+            </div>
+            <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3">
+              {m.evaluation_id && <ButtonLink to={`/resumes/job/${m.evaluation_id}`} size="sm" variant="ghost">{m.ats_score != null ? `Resume · ATS ${m.ats_score}%` : 'Resume'}</ButtonLink>}
+              <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} loading={busyId === m.id} onClick={() => decide.mutate({ id: m.id, decision: 'approved' })}>Approve</Button>
+              <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busyId === m.id} onClick={() => decide.mutate({ id: m.id, decision: 'skipped' })}>Skip</Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {missed.length > 10 && <Button className="mt-3" variant="ghost" size="sm" onClick={() => setOpen(v => !v)}>{open ? 'Show fewer' : `Show all ${missed.length}`}</Button>}
+    </section>
+  )
+}
+
 /** Approved roles and where each one is. */
 export function InProgress({ data }: { data: DailyPlanOverview }) {
   if (!data.active.length) return null
@@ -257,6 +299,7 @@ export function DailyPlanSections() {
     <div className="space-y-10">
       <EveningListSettings data={q.data} />
       <TonightsList data={q.data} />
+      <MissedRoles data={q.data} />
       <InProgress data={q.data} />
     </div>
   )

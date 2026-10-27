@@ -465,12 +465,19 @@ export async function emailPlan(userId, planId) {
 
 // ── Decisions ───────────────────────────────────────────────────────────────
 
+/** How long a top role from an earlier list can still be approved. */
+export const MISSED_DAYS = 14;
+
 /** Approve / skip / undo one role. Approving creates its evaluation; the tick starts the resume. */
 export async function decide(userId, itemId, decision) {
   if (!['approved', 'skipped', 'pending'].includes(decision)) throw Object.assign(new Error('Bad decision'), { status: 400 });
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
-  if (item.decision === 'expired') throw Object.assign(new Error('This role’s list has expired. Find it in Jobs if you still want it.'), { status: 409 });
+  if (item.decision === 'expired') {
+    // A role from an earlier list can still be approved or skipped for MISSED_DAYS.
+    if (Date.now() - new Date(item.created_at).getTime() > MISSED_DAYS * 86400_000) throw Object.assign(new Error('This role’s list is too old. Find it in Jobs if you still want it.'), { status: 409 });
+    if (decision === 'pending') return item;
+  }
   if (item.decision === 'approved' && decision !== 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) {
     throw Object.assign(new Error('This role is already past the resume step.'), { status: 409 });
   }
@@ -483,6 +490,9 @@ export async function decide(userId, itemId, decision) {
     // A draft that's already written: now's the time to ask about missing skills.
     if (item.tailoring_id) import('./resumeEngine.js').then(m => m.askAboutSkills(userId, item.tailoring_id)).catch(() => {});
   } else if (decision !== 'approved') {
+    // Undo on a role from an earlier list puts it back with the missed ones, not on tonight's list.
+    const latest = await one('SELECT id FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
+    if (decision === 'pending' && String(latest?.id) !== String(item.plan_id)) decision = 'expired';
     await run("UPDATE plan_items SET decision = $2, decided_at = NOW(), stage = 'proposed', stage_note = NULL, needs_reason = NULL WHERE id = $1", [item.id, decision]);
   }
   return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
@@ -675,6 +685,16 @@ export async function overview(userId) {
       ORDER BY pi.decided_at DESC LIMIT 100`,
     [userId],
   );
+  // Top roles from earlier lists that were never answered. Still approvable for MISSED_DAYS.
+  const missed = await all(
+    `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score,
+            pi.reason, pi.decision, pi.decided_at, pi.stage, pi.stage_note, p.plan_date::text AS plan_date, t.ats_score
+       FROM plan_items pi JOIN daily_plans p ON p.id = pi.plan_id LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.user_id = $1 AND pi.decision = 'expired' AND pi.tier = 'top' AND pi.created_at > NOW() - make_interval(days => $2)
+        AND ($3::bigint IS NULL OR pi.plan_id <> $3)
+      ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 150`,
+    [userId, MISSED_DAYS, plan?.id ?? null],
+  );
   // People the user knows at each company (LinkedIn connections export).
   const keys = [...new Set([...items, ...active].map(i => companyKey(i.company_name)).filter(Boolean))];
   const known = keys.length ? await all(
@@ -702,6 +722,7 @@ export async function overview(userId) {
     settings,
     plan,
     items: items.map(withKnown),
+    missed: missed.map(m => ({ ...m, connections: knownBy[companyKey(m.company_name)] || 0 })),
     active: active.map(a => ({ ...withKnown(a), asks: asks.filter(x => String(x.plan_item_id) === String(a.id)) })),
     gmailConnected: Boolean(await connectionFor(userId)),
   };

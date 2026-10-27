@@ -192,6 +192,7 @@ export const api = {
   // The evening list (daily plan)
   dailyPlan: {
     overview:   ()            => apiCall('/daily-plan'),
+    getSettings: ()           => apiCall('/daily-plan/settings'),
     save:       (body)        => apiCall('/daily-plan/settings', { method: 'PUT', body }),
     build:      (rebuild)     => apiCall('/daily-plan/build', { method: 'POST', body: { rebuild: !!rebuild } }),
     email:      ()            => apiCall('/daily-plan/email', { method: 'POST' }),

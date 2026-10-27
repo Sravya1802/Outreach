@@ -46,6 +46,7 @@ export const qk = {
   resumeJobs: ['resume-jobs'] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
+  dailyPlanSettings: ['daily-plan', 'settings'] as const,
   connections: ['linkedin-connections'] as const,
   referralStats: ['referral-stats'] as const,
   whatsapp: ['whatsapp-status'] as const,

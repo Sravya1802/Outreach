@@ -902,6 +902,8 @@ export const api = {
   messageCompany: (key: string): Promise<MessageCompanyDetail> => legacy.messages.company(key),
   writeMessage: (key: string, ref: string): Promise<MessagePerson> => legacy.messages.write(key, ref),
   dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
+  /** Just the evening-list settings: fast, unlike the whole overview. */
+  dailyPlanSettings: (): Promise<DailyPlanSettings> => legacy.dailyPlan.getSettings(),
   saveDailyPlanSettings: (body: Partial<DailyPlanSettings>): Promise<DailyPlanSettings> => legacy.dailyPlan.save(body),
   buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),
   emailDailyPlan: (): Promise<{ ok?: boolean; skipped?: string }> => legacy.dailyPlan.email(),

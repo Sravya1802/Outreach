@@ -31,7 +31,8 @@ function SectionTitle({ children, action }: { children: ReactNode; action?: Reac
 function SetupChecklist({ onComplete }: { onComplete: (done: boolean) => void }) {
   const resume = useHasResume()
   const profile = useProfile()
-  const plan = useDailyPlan()
+  // Only the list's settings: the full daily plan takes seconds to build and would hold the box back.
+  const plan = useQuery({ queryKey: qk.dailyPlanSettings, queryFn: api.dailyPlanSettings })
   const answers = useQuery({ queryKey: qk.answers, queryFn: api.answers })
   const github = useQuery({ queryKey: qk.githubStatus, queryFn: api.githubStatus })
   const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
@@ -43,7 +44,7 @@ function SetupChecklist({ onComplete }: { onComplete: (done: boolean) => void })
     githubConnected: github.data?.connected,
     gmailConnected: gmail.data ? gmail.data.connected && gmail.data.status !== 'error' : undefined,
     // Auto-apply's rules live on the daily list; the step is done once the list is on.
-    rulesSet: plan.data?.settings.enabled,
+    rulesSet: plan.data?.enabled,
   })
   const anyError = [resume, profile, plan, answers, github, gmail].some(q => q.isError)
   const loading = steps.some(s => s.done === undefined) && !anyError

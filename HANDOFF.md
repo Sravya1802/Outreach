@@ -124,6 +124,10 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-27 — Built projects: dates required, link optional
+- **What** (`945354a`, VM `a85476f`): the user asked to keep only the dates mandatory. `markProjectBuilt` refuses a missing start or end; the GitHub link stays optional (checked if given). `checkOneDate` was removed. The form's Start/End are `required` again.
+- **Verified live** (throwaway e2e project, deleted): no dates → refused; start only → refused; dates with no link → built. Tests: backend 199, frontend 115.
+
 ### 2026-10-27 — "I built it" without a GitHub link or dates
 - **What** (`c5f74ee`, VM `5da98db`): on a suggested project, the GitHub repo, Start and End are now optional. `markProjectBuilt` only validates what's given: a link must be a public GitHub repo; a lone start can't be in the future or "Present"; both dates must be in order. Blank fields are stored empty and the PDF shows no link or dates (`dateRange`/`safeUrl` already handle empty values). The form labels say "(optional)".
 - **Verified live** on the VM with a throwaway e2e project (deleted after): blank fields → built; a bad link, a future start and start-after-end are refused; start-only is accepted. Tests: backend 199, frontend 115.

@@ -1018,6 +1018,39 @@ router.post('/evaluations/:id/mark-applied', async (req, res) => {
   }
 });
 
+// ── POST /api/career/evaluations/:id/apply-for-me — the app submits it ───────
+// Queues one role for the auto-applier and returns at once (a submit takes a
+// minute or two in a headless browser). The applier keeps every guard: saved
+// consent, never twice, the daily cap, and supported sites only.
+const AUTO_SITES = { greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby' };
+router.post('/evaluations/:id/apply-for-me', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = Number.isInteger(id) && id > 0
+      ? await one('SELECT id, job_url, apply_status FROM evaluations WHERE id = $1 AND user_id = $2', [id, req.user.id])
+      : null;
+    if (!row) return res.status(404).json({ error: 'Evaluation not found' });
+    if (!row.job_url) return res.status(400).json({ error: 'This role has no application link.' });
+    const platform = detectPlatform(row.job_url);
+    if (!AUTO_SITES[platform]) {
+      return res.status(400).json({ error: 'The app can only submit Greenhouse, Lever and Ashby applications. Use Apply to do this one yourself.', platform });
+    }
+    if (row.apply_status === 'submitted') return res.status(409).json({ error: 'Already applied.' });
+    if (['queued', 'in_progress'].includes(row.apply_status)) return res.json({ ok: true, queued: true, platform, already: true });
+    const consent = await one('SELECT auto_apply_consent FROM user_profile WHERE user_id = $1', [req.user.id]);
+    if (!Number(consent?.auto_apply_consent)) {
+      return res.status(400).json({ error: 'Turn on auto-apply first (Jobs → Auto-apply), so the app has your OK to submit for you.', code: 'consent' });
+    }
+    await run("UPDATE evaluations SET apply_mode = 'auto', apply_status = 'queued', apply_error = NULL WHERE id = $1 AND user_id = $2", [id, req.user.id]);
+    processOneEvaluation(req.user.id, id, { headless: true })
+      .catch(err => console.error('[careerOps] apply-for-me', id, err.message));
+    res.status(202).json({ ok: true, queued: true, platform: AUTO_SITES[platform] });
+  } catch (err) {
+    console.error('[careerOps] apply-for-me error:', err.message);
+    res.status(500).json({ error: 'Couldn’t start the application' });
+  }
+});
+
 // ── DELETE /api/career/evaluations/:id ───────────────────────────────────────
 router.delete('/evaluations/:id', async (req, res) => {
   try {

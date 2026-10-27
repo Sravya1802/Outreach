@@ -7,7 +7,7 @@ import { STATE_LABEL, STATE_TONE } from '@/features/integrations/overview'
 import { useIntegrations } from '@/features/integrations/useIntegrations'
 import type { NavTab } from './nav'
 import { CommandPalette } from './CommandPalette'
-import { sectionFor } from './nav'
+import { currentTab, sectionFor } from './nav'
 import { ErrorBoundary } from './ErrorBoundary'
 import { useLegacyEventBridge } from './queries'
 import { Sidebar } from './Sidebar'
@@ -28,11 +28,11 @@ function SectionTabs() {
   const { pathname } = useLocation()
   const section = sectionFor(pathname)
   if (!section || section.tabs.length < 2) return null
-  // The tab whose path is the longest prefix of the URL wins ("/home" vs "/home/analytics").
-  const current = [...section.tabs]
-    .sort((a, b) => b.to.length - a.to.length)
-    .find(t => pathname === t.to || pathname.startsWith(`${t.to}/`))
+  const current = currentTab(section.tabs, pathname)
+  const sub = current?.sub
+  const currentSub = sub ? currentTab(sub, pathname) : undefined
   return (
+    <>
     <div className="border-b border-line">
       <div className="app-frame flex gap-6 overflow-x-auto px-4 sm:px-8">
         {section.tabs.map(t => {
@@ -48,6 +48,25 @@ function SectionTabs() {
         })}
       </div>
     </div>
+    {sub && (
+      // Second row: the open tab's own pages (Integrations → Gmail, GitHub…).
+      <div className="border-b border-line bg-surface/60">
+        <nav aria-label={current?.label} className="app-frame flex gap-1 overflow-x-auto px-4 py-1.5 sm:px-8">
+          {sub.map(t => {
+            const isActive = currentSub?.to === t.to
+            return (
+              <Link key={t.to} to={t.to} aria-current={isActive ? 'page' : undefined}
+                className={cn('flex items-center rounded-[4px] px-2.5 py-1 text-[13px] whitespace-nowrap transition-colors',
+                  isActive ? 'bg-accent-soft font-medium text-fg' : 'text-muted hover:bg-hover hover:text-fg')}>
+                {t.label}
+                {t.integration && <IntegrationDot id={t.integration} />}
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+    )}
+    </>
   )
 }
 

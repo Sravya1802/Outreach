@@ -30,10 +30,10 @@ export function tourSteps(): TourStep[] {
     { id: 'welcome', title: 'Welcome to Scout’n’Jobs',
       body: 'It finds roles that fit your resume, asks people you know for referrals, applies, and tracks the replies. Here’s what each tab along the top is for (on a phone they’re in the ☰ menu). It takes about a minute.' },
     ...sections,
-    { id: 'account', anchor: 'account', title: 'Profile and Settings',
-      body: 'Your initial opens your profile and settings. Fill in your profile once and every application uses it.', tabs: account },
+    { id: 'account', anchor: 'account', title: 'Settings',
+      body: 'Your initial opens your account settings and sign out.', tabs: account },
     { id: 'status', anchor: 'status', title: 'Service status',
-      body: 'Green means everything the app relies on is working. Amber or red means something is down; click it to see what on Usage.' },
+      body: 'Green means everything the app relies on is working. Amber or red means something is down; click it to see what in Profile → Usage.' },
     { id: 'help', anchor: 'help', title: 'Help is always here',
       body: 'The ? button in the bottom-right corner is on every page. Click it to replay this tour or look up what any tab does.' },
   ]

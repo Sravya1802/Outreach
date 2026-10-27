@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import { matches } from '@/lib/search'
 import { Dialog, Kbd, Spinner } from '@/ui'
 import { useAuth } from './auth'
-import { SECTIONS } from './nav'
+import { SECTIONS, allTabs } from './nav'
 import { qk } from './queryClient'
 import { useTheme } from './theme'
 
@@ -50,7 +50,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const go = (to: string) => () => { navigate(to); onClose() }
     const nav: Command[] = SECTIONS.flatMap(s => {
       const Icon = s.icon
-      const tabs = s.tabs.length ? s.tabs : [{ label: s.label, to: s.to, keywords: '' }]
+      const tabs = s.tabs.length ? allTabs(s) : [{ label: s.label, to: s.to, keywords: '' }]
       return tabs.map(t => ({
         id: `nav:${t.to}`,
         label: s.tabs.length && t.label !== s.label ? `${s.label} › ${t.label}` : s.label,

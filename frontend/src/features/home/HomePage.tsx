@@ -17,6 +17,7 @@ import { STATE_TONE } from '@/features/integrations/overview'
 import { useIntegrations } from '@/features/integrations/useIntegrations'
 import { displayName, isProfileComplete, setupSteps } from './onboarding'
 import { needsYouCount, todayItems, type TodayTone } from './today'
+import { aiUsageLine } from './aiUsage'
 
 function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -50,7 +51,9 @@ function SetupChecklist({ onComplete }: { onComplete: (done: boolean) => void })
   const [toggled, setToggled] = useState<boolean | null>(null)
   const complete = !loading && doneCount === steps.length
   useEffect(() => { onComplete(complete) }, [complete, onComplete])
-  if (complete) return null
+  // Nothing until every check has answered: otherwise a finished setup flashes a
+  // half-filled "Checking…" bar on every visit, then vanishes and the page jumps.
+  if (complete || loading) return null
   // Nothing done yet: show every step so a new user sees what's ahead.
   const open = toggled ?? (!loading && doneCount === 0)
   const setOpen = (f: (v: boolean) => boolean) => setToggled(f(open))
@@ -246,6 +249,8 @@ function Pipeline() {
 /** Which accounts are connected, at a glance. Same rows as "So far". */
 function Accounts() {
   const { cards, connected, loading } = useIntegrations()
+  const ai = useQuery({ queryKey: qk.aiUsage, queryFn: api.aiUsage })
+  const usage = aiUsageLine(ai.data)
   return (
     <section aria-labelledby="accounts-h">
       <SectionTitle action={<Link to="/integrations" className="text-[14px] text-accent hover:underline">Manage</Link>}>
@@ -270,6 +275,18 @@ function Accounts() {
             </dd>
           </div>
         ))}
+        <div className="flex items-baseline justify-between gap-3 py-2 text-[14px]">
+          <dt className="flex min-w-0 items-center gap-2 text-muted">
+            <StatusDot tone={usage?.tone ?? 'neutral'} className="relative -top-px" />
+            AI usage
+          </dt>
+          <dd className="min-w-0 truncate text-right">
+            {ai.isError ? <Link to="/usage" className="font-medium text-accent hover:underline">See Usage</Link>
+              : !usage ? <Skeleton className="inline-block h-4 w-24" />
+              : <Link to="/usage" className={cn('font-mono text-[13px] hover:underline', usage.tone === 'danger' ? 'text-danger' : usage.tone === 'warning' ? 'text-warning' : 'text-subtle')}
+                  title="AI spending this month against your limit. Open Usage for the breakdown.">{usage.text}</Link>}
+          </dd>
+        </div>
       </dl>
     </section>
   )

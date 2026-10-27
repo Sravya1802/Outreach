@@ -47,7 +47,7 @@ export default function WalkthroughPage() {
   return (
     <Page wide>
       <PageHeader title="Walkthrough"
-        description="What every tab in Scout’n’Jobs is for. The tabs along the top are the main sections. Profile and Settings are under your initial at the top right." />
+        description="What every tab in Scout’n’Jobs is for. The tabs along the top are the main sections. Settings is under your initial at the top right." />
       <div className="space-y-10">
         <section aria-labelledby="start-h">
           <SectionTitle id="start-h">If you’re new, start here</SectionTitle>

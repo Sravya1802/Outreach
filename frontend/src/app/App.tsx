@@ -98,8 +98,8 @@ function SignedInRoutes() {
 
         <Route path="/profile" element={<Navigate to="/profile/details" replace />} />
         <Route path="/profile/details" element={<DetailsPage />} />
-        <Route path="/resumes/master" element={<ResumePage />} />
-        <Route path="/profile/resume" element={<Navigate to="/resumes/master" replace />} />
+        <Route path="/profile/resume" element={<ResumePage />} />
+        <Route path="/resumes/master" element={<Navigate to="/profile/resume" replace />} />
         <Route path="/profile/answers" element={<AnswersPage />} />
         <Route path="/profile/github" element={<Navigate to="/integrations/github" replace />} />
         <Route path="/integrations" element={<IntegrationsPage />} />

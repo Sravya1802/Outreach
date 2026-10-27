@@ -1,4 +1,4 @@
-import { Briefcase, ChartColumnBig, CircleHelp, FileText, Gauge, Home, Inbox, Plug, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, FileText, Home, Inbox, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -7,10 +7,12 @@ export interface NavTab {
   keywords?: string
   /** Show this integration's connected/not dot beside the tab. */
   integration?: 'gmail' | 'github' | 'linkedin' | 'whatsapp'
+  /** A second row of tabs shown under this one while it's open. */
+  sub?: NavTab[]
 }
 
 export interface NavSection {
-  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'resumes' | 'people' | 'integrations' | 'usage' | 'how' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'applications' | 'resumes' | 'people' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -53,7 +55,6 @@ export const SECTIONS: NavSection[] = [
     owns: ['/resumes/job/'],
     tabs: [
       { label: 'By job', to: '/resumes/jobs', keywords: 'tailored resume drafts evaluations ats interview chance cover letter upload my version download pdf' },
-      { label: 'Master resume', to: '/resumes/master', keywords: 'cv upload pdf master template latex' },
       { label: 'Projects', to: '/resumes/projects', keywords: 'portfolio build github project ideas suggestions gaps skills' },
     ],
   },
@@ -67,33 +68,33 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'integrations', label: 'Integrations', icon: Plug, to: '/integrations',
-    tabs: [
-      { label: 'Overview', to: '/integrations', keywords: 'connect accounts what does it do explained' },
-      { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies', integration: 'gmail' },
-      { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in', integration: 'github' },
-      { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv', integration: 'linkedin' },
-      { label: 'WhatsApp', to: '/integrations/whatsapp', keywords: 'phone messages approve reply alerts notifications', integration: 'whatsapp' },
-    ],
-  },
-  {
-    id: 'usage', label: 'Usage', icon: Gauge, to: '/usage',
-    tabs: [{ label: 'Usage', to: '/usage', keywords: 'services status api keys health lookups hunter apollo prospeo ai spending cost limit' }],
-  },
-  {
-    id: 'how', label: 'How it works', icon: CircleHelp, to: '/how-it-works',
-    tabs: [
-      { label: 'Walkthrough', to: '/how-it-works', keywords: 'tour guide help what does each tab do explained new start here' },
-      { label: 'Your queue, live', to: '/how-it-works/flow', keywords: 'queue pipeline steps evening list referral apply emails outreach follow up explained' },
-    ],
-  },
-  {
+    // Everything about you and your account's setup: the resume every tailored
+    // one starts from, connected accounts, spending, and how the app works.
     id: 'profile', label: 'Profile', icon: UserRound, to: '/profile',
+    owns: ['/integrations', '/usage', '/how-it-works'],
     tabs: [
       { label: 'Details', to: '/profile/details', keywords: 'contact phone address work authorization visa sponsorship education gpa school degree' },
+      { label: 'Master resume', to: '/profile/resume', keywords: 'cv upload pdf master template latex which resume went where' },
       { label: 'Application answers', to: '/profile/answers', keywords: 'questions why us how did you hear salary start date answer bank' },
+      {
+        label: 'Integrations', to: '/integrations', keywords: 'connect accounts gmail github linkedin whatsapp',
+        sub: [
+          { label: 'Overview', to: '/integrations', keywords: 'connect accounts what does it do explained' },
+          { label: 'Gmail', to: '/integrations/gmail', keywords: 'email app password connect send replies', integration: 'gmail' },
+          { label: 'GitHub', to: '/integrations/github', keywords: 'repos repositories projects connect sign in', integration: 'github' },
+          { label: 'LinkedIn', to: '/integrations/linkedin', keywords: 'connections referrals network export csv', integration: 'linkedin' },
+          { label: 'WhatsApp', to: '/integrations/whatsapp', keywords: 'phone messages approve reply alerts notifications', integration: 'whatsapp' },
+        ],
+      },
+      { label: 'Usage', to: '/usage', keywords: 'services status api keys health lookups hunter apollo prospeo ai spending cost limit' },
+      {
+        label: 'How it works', to: '/how-it-works', keywords: 'help guide explained',
+        sub: [
+          { label: 'Walkthrough', to: '/how-it-works', keywords: 'tour guide help what does each tab do explained new start here' },
+          { label: 'Your queue, live', to: '/how-it-works/flow', keywords: 'queue pipeline steps evening list referral apply emails outreach follow up explained' },
+        ],
+      },
     ],
-    inAccountMenu: true,
   },
   {
     id: 'settings', label: 'Settings', icon: Settings, to: '/settings',
@@ -102,9 +103,21 @@ export const SECTIONS: NavSection[] = [
   },
 ]
 
-/** The main bar; Profile and Settings live under the avatar. */
+/** The main bar; Settings lives under the avatar. */
 export const PRIMARY_SECTIONS = SECTIONS.filter(s => !s.inAccountMenu)
 export const ACCOUNT_SECTIONS = SECTIONS.filter(s => s.inAccountMenu)
+
+/** The tab whose path is the longest prefix of the URL ("/integrations" vs "/integrations/gmail"). */
+export function currentTab(tabs: NavTab[], pathname: string): NavTab | undefined {
+  return [...tabs]
+    .sort((a, b) => b.to.length - a.to.length)
+    .find(t => pathname === t.to || pathname.startsWith(`${t.to}/`))
+}
+
+/** Every tab, including second-row ones (for search). */
+export function allTabs(section: NavSection): NavTab[] {
+  return section.tabs.flatMap(t => [t, ...(t.sub ?? []).filter(st => st.to !== t.to)])
+}
 
 /** Which section a pathname belongs to (drives sidebar highlight + tab bar). */
 export function sectionFor(pathname: string): NavSection | undefined {

@@ -158,7 +158,7 @@ export default function EvaluatePage() {
 
       {noResume ? (
         <div className="rounded-[4px] border border-warning/40 bg-warning-soft px-5 py-4 text-[14px] text-fg">
-          Upload your resume first, so there’s something to score against. <Link to="/resumes/master" className="font-medium text-accent hover:underline">Upload resume</Link>
+          Upload your resume first, so there’s something to score against. <Link to="/profile/resume" className="font-medium text-accent hover:underline">Upload resume</Link>
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3">

@@ -46,11 +46,10 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     },
   },
   resumes: {
-    what: 'Every resume the app writes, job by job, and the master they start from.',
+    what: 'Every resume the app writes, job by job, and the projects that could strengthen them.',
     when: 'Open it when your evening list arrives: every top role already has a draft to read, change or replace.',
     tabs: {
       '/resumes/jobs': 'One row per job: its fit score, the draft or tailored resume with its ATS match and interview chance, and which version will be sent. Open a job to see every change, download the PDF or LaTeX, or upload your own version, which is then sent as-is.',
-      '/resumes/master': 'Your master resume and the LaTeX template. Every score and every tailored resume starts from it.',
       '/resumes/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, push it to GitHub, mark it built, and your resumes can use it.',
     },
   },
@@ -64,38 +63,16 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/people/outbox': 'Emails scheduled from your Gmail, their follow-ups, and the replies that came back. Needs Gmail connected.',
     },
   },
-  integrations: {
-    what: 'The accounts Scout’n’Jobs works through. All optional.',
-    when: 'Open it once while setting up, or when something stops sending.',
-    tabs: {
-      '/integrations': 'What each connection does for you and whether it’s on.',
-      '/integrations/gmail': 'Connect your Gmail with an app password, so emails go out as you and replies are read.',
-      '/integrations/github': 'Sign in with GitHub and pick which repos tailored resumes can use as projects.',
-      '/integrations/linkedin': 'Upload your LinkedIn connections export, so referral asks go to people you know.',
-      '/integrations/whatsapp': 'Link your phone to get the evening list and alerts there, and approve roles by replying.',
-    },
-  },
-  usage: {
-    what: 'What the app is costing and whether it’s working.',
-    when: 'Open it when something isn’t working, or to check spending. The coloured dot in the top bar leads here.',
-    tabs: {
-      '/usage': 'AI spending and email lookups this month against your limits, and the status of each outside service the app relies on.',
-    },
-  },
-  how: {
-    what: 'How the app works, in two views.',
-    when: 'Open it when you’re not sure what happens next.',
-    tabs: {
-      '/how-it-works': 'This page: what every tab is for.',
-      '/how-it-works/flow': 'Every stage a role and an outreach email goes through, using your own settings, with live counts of what’s at each stage.',
-    },
-  },
   profile: {
-    what: 'What you tell the app about yourself, once. Under your initial at the top right.',
-    when: 'Fill it in while setting up, and again when your resume changes.',
+    what: 'You and your setup: your details, the master resume, connected accounts, spending, and how the app works.',
+    when: 'Fill it in while setting up. Come back when your resume changes, to connect an account, or to check costs.',
     tabs: {
       '/profile/details': 'Contact, work authorization and education, filled into every application. Can be filled in from your resume.',
+      '/profile/resume': 'Your master resume and the LaTeX template, plus which resume went to which job. Every score and every tailored resume starts from it. View any PDF right on the page.',
       '/profile/answers': 'Answer common form questions once, like “Why us?” and start date. Every form that asks gets the same answer.',
+      '/integrations': 'Gmail, GitHub, LinkedIn and WhatsApp: what each one does for you, whether it’s connected, and where to set it up.',
+      '/usage': 'AI spending and email lookups this month against your limits, and the status of each outside service the app relies on. The coloured dot in the top bar leads here.',
+      '/how-it-works': 'What every tab is for, and every stage a role and an outreach email goes through, with live counts.',
     },
   },
   settings: {
@@ -111,7 +88,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
 
 /** If you're new: the order that gets the app working for you. */
 export const START_HERE = [
-  { title: 'Upload your resume and fill in your details', body: 'Every role is scored against your resume, and every form is filled from your details.', to: '/resumes/master' },
+  { title: 'Upload your resume and fill in your details', body: 'Every role is scored against your resume, and every form is filled from your details.', to: '/profile/resume' },
   { title: 'Connect Gmail and import your LinkedIn connections', body: 'So referral asks go to people you know, from your own address.', to: '/integrations' },
   { title: 'Turn on your evening list', body: 'Each evening the day’s new roles are scored and the best ones land on Home.', to: '/applications/auto-apply' },
   { title: 'Approve the roles you want', body: 'Each one gets a referral ask first, then an application. Replies are tracked for you.', to: '/home' },

@@ -321,7 +321,9 @@ export function resumeTex(doc, { preamble = RESUME_PREAMBLE, boldTerms = [], met
   const summary = String(doc.summary || '').trim();
   const extras = nonEmpty(doc.extras);
   const certs = extras.find(x => /certif/i.test(x.heading || ''));
+  // No words split across lines: an ATS reads "Kuber- netes" as two words and misses Kubernetes.
   return `${preamble}
+\\hyphenpenalty=10000 \\exhyphenpenalty=10000 \\emergencystretch=2em
 \\begin{document}
 
 ${resumeHeader(doc)}${summary ? `${heading('Summary', '3pt', '1.5pt')}${escapeTex(summary)}\n` : ''}${resumeEducation(doc.education)}${resumeExperience(doc.experience, fmt)}${resumeProjects(doc.projects, fmtProject)}${resumeSkills(doc.skills, certs)}${resumeExtras(extras.filter(x => x !== certs))}

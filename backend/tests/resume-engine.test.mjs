@@ -20,6 +20,22 @@ test('keyword matching handles the spellings ATS treat as equal', () => {
   assert.deepEqual(variants('Node.js').includes('nodejs'), true);
 });
 
+test('soft skills match by stem; hard skills stay exact', () => {
+  const soft = (term) => k(term, { kind: 'soft' });
+  assert.ok(hasTerm('collaborated with cross-functional teams', soft('Collaboration')));
+  assert.ok(hasTerm('owning the load stage of the migration', soft('Ownership')));
+  assert.ok(hasTerm('communicating findings to stakeholders', soft('Communication')));
+  assert.ok(hasTerm('strong problem-solving skills', soft('Problem solving')));
+  assert.ok(!hasTerm('built my own tool', soft('Ownership')));
+  assert.ok(hasTerm('paid attention to detail', soft('Attention to detail')));
+  assert.ok(!hasTerm('attention towards detail', soft('Attention to detail')));
+  assert.ok(!hasTerm('collaborated with teams', k('Collaboration')));
+});
+
+test('the resume never hyphenates a word across lines', () => {
+  assert.match(resumeTex({ name: 'A', contact: {}, education: [], experience: [], projects: [], skills: [], extras: [] }), /\\hyphenpenalty=10000/);
+});
+
 test('coverage weighs required over preferred and soft at half', () => {
   const kws = [k('Python'), k('Go', { importance: 'preferred' }), k('communication', { kind: 'soft' })];
   const c = keywordCoverage(kws, 'Python and strong communication');

@@ -50,6 +50,20 @@ function termRegex(v) {
   return new RegExp(`(?<![a-z0-9+#])${escapeRe(v)}${plural}(?![a-z0-9+#])`);
 }
 
+// A soft skill is read by its stem, the way ATS stemming does:
+// "Collaboration" ≈ "collaborated", "Ownership" ≈ "owning", "Communication" ≈ "communicating".
+const SOFT_SUFFIX = /(ership|ations?|ative|ions?|ing|ed|ship|ness|ive|ity|es|s|e)$/;
+function stemRegex(term) {
+  const words = normalizeText(term).replace(/[^a-z ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return null;
+  // A short stem ("own") needs a suffix after it, so "their own" isn't "ownership".
+  const parts = words.map(w => {
+    const s = w.length > 4 ? w.replace(SOFT_SUFFIX, '') || w : w;
+    return s === w ? `${escapeRe(w)}(?![a-z])` : `${escapeRe(s)}[a-z]{${s.length < 5 ? 1 : 0},}`;
+  });
+  return new RegExp(`(?<![a-z])${parts.join('[\\s-]+')}`);
+}
+
 /** Does the text contain this keyword (or one of its aliases)? */
 export function hasTerm(text, keyword) {
   const hay = EQUIVALENT.reduce((s, [re, to]) => s.replace(re, to), normalizeText(text));
@@ -58,7 +72,7 @@ export function hasTerm(text, keyword) {
   return terms.some(t => variants(t).some(v => {
     const re = termRegex(v);
     return re.test(hay) || re.test(hayLoose);
-  }));
+  }) || (keyword.kind === 'soft' && stemRegex(t)?.test(hayLoose)));
 }
 
 export function weightOf(k) {

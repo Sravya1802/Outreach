@@ -1,4 +1,4 @@
-import { Briefcase, ChartColumnBig, FileText, Home, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Briefcase, ChartColumnBig, FileText, Home, ListChecks, Settings, UserRound, Users, type LucideIcon } from 'lucide-react'
 
 export interface NavTab {
   label: string
@@ -12,7 +12,7 @@ export interface NavTab {
 }
 
 export interface NavSection {
-  id: 'home' | 'dashboard' | 'jobs' | 'resumes' | 'people' | 'profile' | 'settings'
+  id: 'home' | 'dashboard' | 'jobs' | 'toapply' | 'resumes' | 'people' | 'profile' | 'settings'
   label: string
   icon: LucideIcon
   to: string
@@ -46,6 +46,10 @@ export const SECTIONS: NavSection[] = [
       { label: 'Evaluate', to: '/jobs/evaluate', keywords: 'score fit grade job link description' },
       { label: 'Auto-apply', to: '/jobs/auto-apply', keywords: 'queue daily plan evening list rules submit approve referral apply applications' },
     ],
+  },
+  {
+    id: 'toapply', label: 'To apply', icon: ListChecks, to: '/to-apply',
+    tabs: [{ label: 'To apply', to: '/to-apply', keywords: 'missed apply review send it approved resumes written not applied follow through' }],
   },
   {
     id: 'resumes', label: 'Resumes', icon: FileText, to: '/resumes',

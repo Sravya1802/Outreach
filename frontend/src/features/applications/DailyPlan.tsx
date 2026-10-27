@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, ExternalLink, X } from 'lucide-react'
-import { api, type DailyPlanOverview, type DailyPlanSettings, type PlanItem } from '@/lib/api'
+import { api, type DailyPlanOverview, type DailyPlanSettings, type PlanItem, type ApplyMode } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
@@ -107,7 +107,19 @@ function PeopleFound({ n, withEmail, companyId }: { n?: number; withEmail?: numb
     : <span className="text-accent">{text}</span>
 }
 
-export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending') => void }) {
+/** Approve a role two ways: the app takes it to applying, or it stops for you to read the resume first. */
+export function ApproveButtons({ busy, onApprove }: { busy: boolean; onApprove: (mode: ApplyMode) => void }) {
+  return (
+    <>
+      <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} loading={busy} onClick={() => onApprove('auto')}
+        title="Approve: the app writes the resume, asks for a referral, and applies for you">Apply for me</Button>
+      <Button size="sm" disabled={busy} onClick={() => onApprove('review')}
+        title="Approve: the app writes the resume, then waits for you to read it and choose Send it or apply yourself">I’ll review</Button>
+    </>
+  )
+}
+
+export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolean; onDecide: (d: 'approved' | 'skipped' | 'pending', mode?: ApplyMode) => void }) {
   const score = num(item.score)
   const sponsor = item.sponsorship ? SPONSOR_TEXT[item.sponsorship] : null
   return (
@@ -128,13 +140,13 @@ export function ItemRow({ item, busy, onDecide }: { item: PlanItem; busy: boolea
       <div className="col-start-2 flex items-center gap-2 sm:col-start-3">
         {item.decision === 'pending' && (
           <>
-            <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} loading={busy} onClick={() => onDecide('approved')}>Approve</Button>
+            <ApproveButtons busy={busy} onApprove={mode => onDecide('approved', mode)} />
             <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busy} onClick={() => onDecide('skipped')}>Skip</Button>
           </>
         )}
         {item.decision === 'approved' && (
           <>
-            <Badge tone="success">Approved</Badge>
+            <Badge tone="success">{item.apply_mode === 'review' ? 'Approved · you review' : 'Approved · app applies'}</Badge>
             {['tailoring', 'needs_you'].includes(item.stage) && <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDecide('pending')}>Undo</Button>}
           </>
         )}
@@ -152,7 +164,7 @@ export function TonightsList({ data }: { data: DailyPlanOverview }) {
   const [showWorth, setShowWorth] = useState(false)
   const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
   const decide = useMutation({
-    mutationFn: ({ id, decision }: { id: number; decision: 'approved' | 'skipped' | 'pending' }) => api.decidePlanItem(id, decision),
+    mutationFn: ({ id, decision, mode }: { id: number; decision: 'approved' | 'skipped' | 'pending'; mode?: ApplyMode }) => api.decidePlanItem(id, decision, mode),
     onSuccess: refresh,
     onError: (e: Error) => toast.error(e.message),
   })
@@ -205,13 +217,13 @@ export function TonightsList({ data }: { data: DailyPlanOverview }) {
       ) : top.length === 0 ? (
         <p className="border-t border-rule py-4 text-[14px] text-muted">Nothing scored {data.settings.minScore} or higher today.{worth.length ? ` ${worth.length} worth a look below.` : ''}</p>
       ) : (
-        <ul className="border-t border-rule">{top.map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={d => decide.mutate({ id: i.id, decision: d })} />)}</ul>
+        <ul className="border-t border-rule">{top.map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={(d, mode) => decide.mutate({ id: i.id, decision: d, mode })} />)}</ul>
       )}
 
       {worth.length > 0 && (
         <div className="mt-4">
           <Button variant="ghost" size="sm" onClick={() => setShowWorth(v => !v)}>{showWorth ? 'Hide' : 'Show'} {worth.length} worth a look (7.0 to {(data.settings.minScore - 0.1).toFixed(1)})</Button>
-          {showWorth && <ul className="mt-2 border-t border-line">{worth.map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={d => decide.mutate({ id: i.id, decision: d })} />)}</ul>}
+          {showWorth && <ul className="mt-2 border-t border-line">{worth.map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={(d, mode) => decide.mutate({ id: i.id, decision: d, mode })} />)}</ul>}
         </div>
       )}
     </section>
@@ -224,7 +236,7 @@ export function MissedRoles({ data }: { data: DailyPlanOverview }) {
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const decide = useMutation({
-    mutationFn: ({ id, decision }: { id: number; decision: 'approved' | 'skipped' }) => api.decidePlanItem(id, decision),
+    mutationFn: ({ id, decision, mode }: { id: number; decision: 'approved' | 'skipped'; mode?: ApplyMode }) => api.decidePlanItem(id, decision, mode),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.dailyPlan }),
     onError: (e: Error) => toast.error(e.message),
   })
@@ -249,7 +261,7 @@ export function MissedRoles({ data }: { data: DailyPlanOverview }) {
             </div>
             <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3">
               {m.evaluation_id && <ButtonLink to={`/resumes/job/${m.evaluation_id}`} size="sm" variant="ghost">{m.ats_score != null ? `Resume · ATS ${m.ats_score}%` : 'Resume'}</ButtonLink>}
-              <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} loading={busyId === m.id} onClick={() => decide.mutate({ id: m.id, decision: 'approved' })}>Approve</Button>
+              <ApproveButtons busy={busyId === m.id} onApprove={mode => decide.mutate({ id: m.id, decision: 'approved', mode })} />
               <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busyId === m.id} onClick={() => decide.mutate({ id: m.id, decision: 'skipped' })}>Skip</Button>
             </div>
           </li>

@@ -5,7 +5,7 @@ import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
 import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
-import { api } from '@/lib/api'
+import { api, type ApplyMode } from '@/lib/api'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
 import { ItemRow } from '@/features/applications/DailyPlan'
 import { num } from '@/features/applications/plan'
@@ -169,7 +169,7 @@ function TopPicks() {
   const plan = useDailyPlan()
   const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
   const decide = useMutation({
-    mutationFn: ({ id, decision }: { id: number; decision: 'approved' | 'skipped' | 'pending' }) => api.decidePlanItem(id, decision),
+    mutationFn: ({ id, decision, mode }: { id: number; decision: 'approved' | 'skipped' | 'pending'; mode?: ApplyMode }) => api.decidePlanItem(id, decision, mode),
     onSuccess: refresh,
     onError: (e: Error) => toast.error(e.message),
   })
@@ -201,7 +201,7 @@ function TopPicks() {
       ) : picks.length === 0 ? (
         <p className="py-5 text-[14px] text-muted">Nothing scored high enough today. New roles are scored again tonight.</p>
       ) : (
-        <ul>{picks.slice(0, TOP_PICKS).map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={dec => decide.mutate({ id: i.id, decision: dec })} />)}</ul>
+        <ul>{picks.slice(0, TOP_PICKS).map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={(dec, mode) => decide.mutate({ id: i.id, decision: dec, mode })} />)}</ul>
       )}
     </section>
   )

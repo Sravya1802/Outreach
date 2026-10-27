@@ -414,8 +414,12 @@ export interface DailyPlanSettings {
   referralWaitDays: number
 }
 export type PlanStage = 'proposed' | 'tailoring' | 'asking_referral' | 'waiting_referral' | 'ready_to_apply' | 'applying' | 'applied' | 'referred' | 'needs_you' | 'done'
+/** What happens once a role is approved: the app applies, or it waits for you to read the resume. */
+export type ApplyMode = 'auto' | 'review'
+
 export interface PlanItem {
   id: number
+  apply_mode?: ApplyMode
   evaluation_id: number | null
   company_name: string
   title: string
@@ -696,6 +700,14 @@ export interface ResumeJob {
   decision: 'pending' | 'approved' | 'skipped' | 'expired' | null
   stage: string | null
   apply_status: string | null
+  /** Its evening-list item, for Approve / Send it. */
+  plan_item_id?: number | null
+  apply_mode?: ApplyMode | null
+  stage_note?: string | null
+  needs_reason?: string | null
+  apply_after?: string | null
+  wait_until?: string | null
+  applied_at?: string | null
   resume: {
     tailoring_id: number
     status: 'running' | 'ready' | 'needs_review' | 'failed'
@@ -907,7 +919,10 @@ export const api = {
   saveDailyPlanSettings: (body: Partial<DailyPlanSettings>): Promise<DailyPlanSettings> => legacy.dailyPlan.save(body),
   buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),
   emailDailyPlan: (): Promise<{ ok?: boolean; skipped?: string }> => legacy.dailyPlan.email(),
-  decidePlanItem: (id: number, decision: 'approved' | 'skipped' | 'pending'): Promise<PlanItem> => legacy.dailyPlan.decide(id, decision),
+  /** mode: 'auto' = the app goes on to apply; 'review' = it stops once the resume is written, for you to read. */
+  decidePlanItem: (id: number, decision: 'approved' | 'skipped' | 'pending', mode: ApplyMode = 'auto'): Promise<PlanItem> => legacy.dailyPlan.decide(id, decision, mode),
+  /** Review mode: you read the resume; the app moves the role on (referral, then applying). */
+  sendPlanItem: (id: number): Promise<PlanItem> => legacy.dailyPlan.send(id),
   approveAllPlan: (planId: number): Promise<{ approved: number }> => legacy.dailyPlan.approveAll(planId),
   referralAction: (id: number, action: ReferralAction, link?: string): Promise<unknown> => legacy.dailyPlan.referral(id, { action, link }),
   markAskSent: (id: number): Promise<unknown> => legacy.dailyPlan.askSent(id),

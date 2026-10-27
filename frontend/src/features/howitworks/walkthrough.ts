@@ -39,6 +39,13 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/jobs/auto-apply': 'Your evening list. Approve the roles you want and each gets a tailored resume, a referral ask, then an application. You also set the score cutoff and how many a day here.',
     },
   },
+  toapply: {
+    what: 'Every job the app wrote a resume for, and whether it’s been applied to.',
+    when: 'Open it each day to catch anything you missed, and to read the resumes you chose to review.',
+    tabs: {
+      '/to-apply': 'Newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. Approve with Apply for me (the app goes all the way) or I’ll review (it waits for you to read the resume, then Send it or apply yourself).',
+    },
+  },
   resumes: {
     what: 'Every resume the app writes, job by job, and the projects that could strengthen them.',
     when: 'Open it when your evening list arrives: every top role already has a draft to read, change or replace.',

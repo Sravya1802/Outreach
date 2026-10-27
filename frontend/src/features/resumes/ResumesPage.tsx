@@ -5,6 +5,8 @@ import { api } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Skeleton } from '@/ui'
+import { ManualApply } from '@/features/applications/ManualApply'
+import { isApplied } from '@/features/applications/applied'
 import { RESUME_FILTERS, latestListDate, matchesResumeFilter, resumeState, type ResumeFilter } from './resumes'
 
 const cell = 'border-b border-line px-3 py-2.5 align-middle'
@@ -43,7 +45,7 @@ export default function ResumesPage() {
             <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={RESUME_FILTERS} label="Show" /></div>
           </div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
-            <table className="w-full min-w-[960px] border-collapse text-[14px] text-fg">
+            <table className="w-full min-w-[1100px] border-collapse text-[14px] text-fg">
               <thead>
                 <tr>
                   <th className={head}>Company</th>
@@ -54,6 +56,7 @@ export default function ResumesPage() {
                   <th className={head}>ATS</th>
                   <th className={head}>Interview</th>
                   <th className={head}>Sent with</th>
+                  <th className={head}>Apply</th>
                 </tr>
               </thead>
               <tbody>
@@ -72,10 +75,11 @@ export default function ResumesPage() {
                       </td>
                       <td className={cn(cell, 'font-mono text-[13px]', r?.callback == null ? 'text-subtle' : r.callback >= 20 ? 'text-success' : 'text-muted')}>{pct(r?.callback)}</td>
                       <td className={cn(cell, 'text-[13px] text-muted')}>{j.sending?.kind === 'yours' ? 'Your upload' : j.sending ? 'The app’s resume' : '—'}</td>
+                      <td className={cell}><ManualApply evalId={j.id} jobUrl={j.job_url} applied={isApplied(j)} compact /></td>
                     </tr>
                   )
                 })}
-                {shown.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-muted">Nothing matches. Clear the search or pick another filter.</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-muted">Nothing matches. Clear the search or pick another filter.</td></tr>}
               </tbody>
             </table>
           </div>

@@ -6,6 +6,8 @@ import { api } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { Button, ErrorState, Page, Skeleton, useToast } from '@/ui'
 import { TailoredResume } from '@/features/applications/TailoredResume'
+import { ManualApply } from '@/features/applications/ManualApply'
+import { isApplied } from '@/features/applications/applied'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
@@ -58,6 +60,7 @@ export default function ResumeJobPage() {
           {d.job_url && <a href={d.job_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] text-accent hover:underline">Posting <ExternalLink className="size-3" /></a>}
           <Link to={`/jobs/evaluate?id=${id}`} className="text-[13px] text-accent hover:underline">Full evaluation</Link>
         </p>
+        <ManualApply evalId={id} jobUrl={d.job_url} applied={isApplied(d)} appliedAt={d.applied_at} className="mt-4" />
       </header>
 
       <section aria-labelledby="sent-h" className="mb-6 rounded-[4px] border border-line bg-surface p-5">

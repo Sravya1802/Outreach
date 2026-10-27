@@ -52,6 +52,7 @@ export const SECTIONS: NavSection[] = [
     owns: ['/resumes/job/'],
     tabs: [
       { label: 'By job', to: '/resumes/jobs', keywords: 'tailored resume drafts evaluations ats interview chance cover letter upload my version download pdf' },
+      { label: 'Applied', to: '/resumes/applied', keywords: 'applications sent submitted which resume went where manual apply i applied ready to apply' },
       { label: 'Projects', to: '/resumes/projects', keywords: 'portfolio build github project ideas suggestions gaps skills' },
     ],
   },

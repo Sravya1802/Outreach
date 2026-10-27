@@ -51,7 +51,9 @@ function SectionTabs() {
     {sub && (
       // Second row: the open tab's own pages (Integrations → Gmail, GitHub…).
       <div className="border-b border-line bg-surface/60">
-        <nav aria-label={current?.label} className="app-frame flex gap-1 overflow-x-auto px-4 py-1.5 sm:px-8">
+        <nav aria-label={current?.label} className="app-frame overflow-x-auto px-4 py-1.5 sm:px-8">
+          {/* Pulled left by the pill padding so the words line up with the row above. */}
+          <div className="-ml-2.5 flex gap-1">
           {sub.map(t => {
             const isActive = currentSub?.to === t.to
             return (
@@ -63,6 +65,7 @@ function SectionTabs() {
               </Link>
             )
           })}
+          </div>
         </nav>
       </div>
     )}

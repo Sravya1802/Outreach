@@ -50,7 +50,7 @@ export default function AppliedPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search company or role" aria-label="Search company or role" className="w-full sm:w-64" />
             <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={options} label="Show" /></div>
-            <Select value={country} onChange={e => setCountry(e.target.value as CountryFilter)} aria-label="Country" className="w-44">
+            <Select value={country} onChange={e => setCountry(e.target.value as CountryFilter)} aria-label="Country" className="w-44!">
               <option value="all">All countries</option>
               {(['usa', 'india', 'other'] as const).filter(m => counts[m] > 0).map(m => <option key={m} value={m}>{countryLabel(m)} · {counts[m]}</option>)}
             </Select>

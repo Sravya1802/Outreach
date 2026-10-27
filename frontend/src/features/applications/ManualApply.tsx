@@ -37,7 +37,7 @@ export function ManualApply({ evalId, jobUrl, applied, appliedAt, compact = fals
     return <span className={cn('inline-flex items-center gap-1 text-[13px] whitespace-nowrap text-success', className)}><Check className="size-3.5" aria-hidden="true" />{appliedLabel(appliedAt)}</span>
   }
   return (
-    <span className={cn('inline-flex flex-wrap items-center gap-1.5', className)} onClick={stop}>
+    <span className={cn('inline-flex items-center gap-1.5', compact ? 'flex-nowrap' : 'flex-wrap', className)} onClick={stop}>
       {jobUrl && (
         <a href={jobUrl} target="_blank" rel="noreferrer" onClick={stop}
           className={cn('inline-flex items-center gap-1 rounded-[4px] bg-accent font-semibold whitespace-nowrap text-on-accent hover:bg-accent-hover',

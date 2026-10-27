@@ -1,13 +1,14 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, ExternalLink, Upload } from 'lucide-react'
+import { ArrowLeft, Download, ExternalLink, Eye, Upload } from 'lucide-react'
 import { api } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { Button, ErrorState, Page, Skeleton, useToast } from '@/ui'
 import { TailoredResume } from '@/features/applications/TailoredResume'
 import { ManualApply } from '@/features/applications/ManualApply'
 import { isApplied } from '@/features/applications/applied'
+import { PdfDialog } from '@/features/profile/PdfViewer'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
@@ -17,6 +18,7 @@ export default function ResumeJobPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const file = useRef<HTMLInputElement>(null)
+  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
   const jobs = useQuery({ queryKey: qk.resumeJobs, queryFn: api.resumeJobs })
   const detail = useQuery({ queryKey: qk.evaluation(id), queryFn: () => api.evaluation(id), enabled: Number.isInteger(id) && id > 0 })
   const resume = useQuery({ queryKey: qk.resume, queryFn: api.resumeStatus })
@@ -60,7 +62,7 @@ export default function ResumeJobPage() {
           {d.job_url && <a href={d.job_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[13px] text-accent hover:underline">Posting <ExternalLink className="size-3" /></a>}
           <Link to={`/jobs/evaluate?id=${id}`} className="text-[13px] text-accent hover:underline">Full evaluation</Link>
         </p>
-        <ManualApply evalId={id} jobUrl={d.job_url} applied={isApplied(d)} appliedAt={d.applied_at} className="mt-4" />
+        <ManualApply evalId={id} company={d.company_name} jobUrl={d.job_url} applied={isApplied(d)} appliedAt={d.applied_at} applyStatus={d.apply_status} className="mt-4" />
       </header>
 
       <section aria-labelledby="sent-h" className="mb-6 rounded-[4px] border border-line bg-surface p-5">
@@ -72,6 +74,7 @@ export default function ResumeJobPage() {
             : 'The tailored resume below, once it’s written. You can upload your own version instead.'}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
+          {job?.sending && <Button icon={<Eye className="size-4" />} onClick={() => job.sending && setViewing({ id: job.sending.file_id, filename: job.sending.filename })}>View the resume</Button>}
           {yours && job?.sending && <Button variant="ghost" icon={<Download className="size-4" />} onClick={() => job.sending && download.mutate({ id: job.sending.file_id, filename: job.sending.filename })}>Download yours</Button>}
           <Button icon={<Upload className="size-4" />} loading={upload.isPending} onClick={() => file.current?.click()}>{yours ? 'Upload a new version' : 'Upload my version'}</Button>
           {yours && job?.resume?.file_id && <Button variant="ghost" loading={useApp.isPending} onClick={() => useApp.mutate()}>Send the app’s resume instead</Button>}
@@ -80,6 +83,7 @@ export default function ResumeJobPage() {
       </section>
 
       <TailoredResume evalId={id} company={d.company_name} hasResume={Boolean(resume.data?.hasResume)} />
+      <PdfDialog file={viewing} onClose={() => setViewing(null)} />
     </Page>
   )
 }

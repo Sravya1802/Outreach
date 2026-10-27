@@ -971,6 +971,8 @@ export const api = {
   deleteEvaluation: (id: number): Promise<unknown> => legacy.career.deleteEvaluation(id),
   setApplyStatus: (id: number, status: ApplyStatus): Promise<unknown> => legacy.career.setApplyStatus(id, status),
   markApplied: (id: number): Promise<unknown> => legacy.career.markApplied(id),
+  /** The app fills in and submits this role's application (Greenhouse, Lever, Ashby). Returns at once; the submit runs on the server. */
+  applyForMe: (id: number): Promise<{ ok: boolean; queued: boolean; platform: string; already?: boolean }> => legacy.career.applyForMe(id),
   pipeline: (): Promise<Pipeline> => legacy.career.pipeline(),
   savePipelineNotes: (id: number, notes: PipelineNotes): Promise<PipelineNotes> => legacy.career.savePipelineNotes(id, notes),
   openReport: async (id: number): Promise<void> => { await legacy.career.openReportTab(id) },

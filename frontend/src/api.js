@@ -389,6 +389,7 @@ export const api = {
     setApplyMode:   (id, mode)   => apiCall(`/career/evaluations/${id}/apply-mode`,   { method: 'PATCH', body: { mode } }),
     apply:          (id) => apiCall(`/career/evaluations/${id}/apply`,        { method: 'POST' }),
     markApplied:    (id) => apiCall(`/career/evaluations/${id}/mark-applied`, { method: 'POST' }),
+    applyForMe:     (id) => apiCall(`/career/evaluations/${id}/apply-for-me`, { method: 'POST' }),
 
     // ── Pipeline / tracker / stats / ranked ──────────────────────────────────
     pipeline:    () => apiCall('/career/pipeline'),

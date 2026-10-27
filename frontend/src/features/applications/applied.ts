@@ -22,3 +22,18 @@ export function appliedLabel(appliedAt: string | null | undefined, now = Date.no
   if (now - t < DAY && new Date(t).toDateString() === new Date(now).toDateString()) return 'Applied today'
   return `Applied ${new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 }
+
+/** The job sites the app can fill in and submit itself, by the application link. */
+export function autoSite(url: string | null | undefined): 'Greenhouse' | 'Lever' | 'Ashby' | null {
+  let host = ''
+  try { host = new URL(String(url)).hostname.toLowerCase() } catch { return null }
+  const on = (d: string) => host === d || host.endsWith(`.${d}`)
+  return on('greenhouse.io') ? 'Greenhouse' : on('lever.co') ? 'Lever' : on('ashbyhq.com') ? 'Ashby' : null
+}
+
+/** The app is submitting it right now. */
+export const isApplying = (status: string | null | undefined) => status === 'queued' || status === 'in_progress'
+
+/** The app tried and couldn't send it (needs your answer, a captcha, a login…). */
+export const appCouldNotSend = (status: string | null | undefined) =>
+  ['needs_review', 'submit_failed', 'captcha_needed', 'login_needed', 'platform_unsupported'].includes(String(status))

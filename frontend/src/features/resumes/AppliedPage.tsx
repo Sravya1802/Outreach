@@ -85,7 +85,7 @@ export default function AppliedPage() {
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <ManualApply evalId={a.evaluation_id} jobUrl={a.job_url} applied={isApplied(a)} appliedAt={a.applied_at} compact />
+                      <ManualApply evalId={a.evaluation_id} company={a.company_name} jobUrl={a.job_url} applied={isApplied(a)} appliedAt={a.applied_at} applyStatus={a.apply_status} compact />
                     </td>
                   </tr>
                 ))}

@@ -124,6 +124,12 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-28 — Gemini backs up Groq for keywords and the recruiter check
+- **Why:** new resumes were failing at the keyword step because Groq hit its daily limit and OpenAI had no credits. The user OK'd a third backup. (The resume itself is written by Opus; Groq's `gpt-oss-120b` only does keywords and the recruiter check.)
+- **What** (`9fb90a0`, `167bdbd`; VM `3f6404b` + next): `llm.js` routes `keywords` and `evaluate` as Groq → **Gemini 3.5 Flash** → OpenAI, through Gemini's OpenAI-compatible endpoint (`GEMINI_API_KEY`, already on the VM). `reasoning_effort` is now sent to every non-OpenAI provider. The price entry is a conservative guess (Gemini 3 Flash ×1.5). Score/email/categorize are unchanged (Groq → OpenAI).
+- **Why 3.5 and not 3.8:** `gemini-3.8-flash` took 29s to answer "ok" and 110s for a keyword run, too close to the 120s client timeout. 3.5 Flash: about 2s and 4s. `gemini-2.5-flash` is closed to new users.
+- **Verified on the VM** with Groq switched off in the test process: keywords for the Robinhood role (eval 11) came from Gemini (12 terms, 4.4s, $0.0046), and an evaluate call returned clean JSON in 4.2s. Groq had reset by then, so live traffic is back on Groq. Tests 206/206.
+
 ### 2026-10-27 — Bullets fill two lines, like the user's FedEx resume
 - **Why:** the user showed their FedEx RM Analytics resume (written in Claude chat) and said resumes should look like it, and that the app's bullets were "so short it looks really bad". Its bullets run 160–200 characters (2 full lines, ending in a result clause); the app's IBM resume ran 136–152.
 - **What** (`ce93c7d`, `14d7557` on main; cherry-picked to the VM, health ok):

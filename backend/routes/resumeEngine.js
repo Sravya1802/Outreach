@@ -6,7 +6,7 @@ import { parseId } from '../services/safePaths.js';
 import {
   approve, coverLetterRequested, latest, parsedMaster, start,
   templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
-  approveSkills, confirmedSkills, removeConfirmedSkill, resumesByJob, useTailored,
+  approveSkills, confirmedSkills, removeConfirmedSkill, resumesByJob, useTailored, skillGaps, approveSkillsEverywhere,
 } from '../services/resumeEngine.js';
 import { suggestProjects, isSuggesting } from '../services/projectIdeas.js';
 
@@ -88,6 +88,15 @@ router.post('/tailorings/:id/skills', async (req, res) => {
 });
 
 // Skills the user confirmed they know (used by every tailoring).
+// Skills holding unsent resumes under the ATS bar, and "I know these" for all of them at once.
+router.get('/skill-gaps', async (req, res) => {
+  try { res.json(await skillGaps(req.user.id)); } catch (err) { fail(res, err); }
+});
+router.post('/skill-gaps', async (req, res) => {
+  const skills = Array.isArray(req.body?.skills) ? req.body.skills.filter(x => typeof x === 'string') : [];
+  try { res.json(await approveSkillsEverywhere(req.user.id, skills)); } catch (err) { fail(res, err); }
+});
+
 router.get('/skills', async (req, res) => {
   try { res.json({ skills: await confirmedSkills(req.user.id) }); } catch (err) { fail(res, err); }
 });

@@ -59,9 +59,11 @@ function stemRegex(term) {
   // A short stem ("own") needs a suffix after it, so "their own" isn't "ownership".
   const parts = words.map(w => {
     const s = w.length > 4 ? w.replace(SOFT_SUFFIX, '') || w : w;
-    return s === w ? `${escapeRe(w)}(?![a-z])` : `${escapeRe(s)}[a-z]{${s.length < 5 ? 1 : 0},}`;
+    return s === w ? `${escapeRe(w)}s?(?![a-z])` : `${escapeRe(s)}[a-z]{${s.length < 5 ? 1 : 0},}`;
   });
-  return new RegExp(`(?<![a-z])${parts.join('[\\s-]+')}`);
+  // Two words read either way round: "solving data access problems" is problem solving.
+  const flipped = parts.length === 2 ? `|(?<![a-z])${parts[1]}(?:[\\s-]+[a-z]+){0,2}[\\s-]+${parts[0]}` : '';
+  return new RegExp(`(?<![a-z])${parts.join('[\\s-]+')}${flipped}`);
 }
 
 // A degree requirement ("Bachelor's Degree in Computer Science or related field")

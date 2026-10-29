@@ -25,7 +25,7 @@
 import { all, one, run } from '../db.js';
 import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
-import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
+import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, canonicalTerm, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
 import { placeholders, fillPlaceholders, applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
 import { resumeTex, coverLetterTex, compileTex, checkPreamble, RESUME_PREAMBLE } from './latex.js';
@@ -322,6 +322,84 @@ export async function rescoreTailoring(userId, tailoringId) {
 }
 
 /** The user knows these JD skills: remember them and put them on this resume. */
+// ── Skills holding resumes under the ATS bar, across every unsent draft ────
+
+/** Latest unsent resume per job: drafted, not approved, not applied. */
+async function unsentTailorings(userId) {
+  return all(
+    `SELECT DISTINCT ON (t.evaluation_id) t.id, t.status, t.ats
+       FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id AND e.user_id = t.user_id
+      WHERE t.user_id = $1 AND t.kind = 'resume' AND e.applied_at IS NULL
+      ORDER BY t.evaluation_id, t.id DESC`,
+    [userId],
+  ).then(rows => rows.filter(r => ['ready', 'needs_review'].includes(r.status) && r.ats));
+}
+
+// "Agile", "Agile methodology" and "Agile methodologies" are one skill to ask about.
+const gapKey = (term) => canonicalTerm(term).replace(/ (methodolog\w*|principles|practices)$/, '');
+
+/** Hard skills a draft is missing, from what the candidate's material doesn't show. */
+function hardGaps(t) {
+  const soft = new Set(list(t.ats.keywords).filter(k => k.kind === 'soft').map(k => k.term));
+  return list(t.ats.missingYouDont).filter(m => !soft.has(m.term));
+}
+
+const skillUpdates = new Map();
+
+/**
+ * The skills holding unsent resumes back, most resumes first: "CI/CD" is
+ * missing on 12 drafts, 9 of them under the bar. Skills already confirmed
+ * are left out.
+ */
+export async function skillGaps(userId) {
+  const [rows, confirmed] = await Promise.all([unsentTailorings(userId), confirmedSkills(userId)]);
+  const known = new Set(confirmed.map(gapKey));
+  const groups = new Map();
+  for (const t of rows) {
+    for (const m of hardGaps(t)) {
+      const key = gapKey(m.term);
+      if (!key || known.has(key)) continue;
+      const g = groups.get(key) || { terms: new Map(), resumes: new Set(), under: new Set(), required: 0 };
+      g.terms.set(m.term, (g.terms.get(m.term) || 0) + 1);
+      g.resumes.add(t.id);
+      if (!atsPasses(t.ats.score)) g.under.add(t.id);
+      if (m.importance === 'required') g.required += 1;
+      groups.set(key, g);
+    }
+  }
+  const skills = [...groups.values()].map(g => ({
+    skill: [...g.terms.entries()].sort((a, b) => b[1] - a[1])[0][0],
+    resumes: g.resumes.size,
+    underBar: g.under.size,
+    required: g.required,
+  })).sort((a, b) => b.underBar - a.underBar || b.resumes - a.resumes || b.required - a.required).slice(0, 30);
+  return { skills, unsent: rows.length, underBar: rows.filter(t => !atsPasses(t.ats.score)).length, updating: skillUpdates.get(userId) || null };
+}
+
+/**
+ * "I know these": remember the skills, then add them to every unsent resume
+ * missing them and re-score each one (in the background; one at a time).
+ */
+export async function approveSkillsEverywhere(userId, terms) {
+  const clean = list(terms).map(str).filter(Boolean).slice(0, 30);
+  if (!clean.length) throw Object.assign(new Error('Pick at least one skill'), { status: 400 });
+  if (skillUpdates.get(userId)?.running) throw Object.assign(new Error('Still adding the last skills you picked. Try again in a minute.'), { status: 409 });
+  const keys = new Set(clean.map(gapKey));
+  const rows = await unsentTailorings(userId);
+  const jobs = rows.map(t => ({ id: t.id, terms: hardGaps(t).filter(m => keys.has(gapKey(m.term))).map(m => m.term) })).filter(j => j.terms.length);
+  await addConfirmedSkills(userId, [...clean, ...jobs.flatMap(j => j.terms)]);
+  const state = { running: true, total: jobs.length, done: 0, skills: clean };
+  skillUpdates.set(userId, state);
+  (async () => {
+    for (const j of jobs) {
+      await rerenderWithProject(userId, j.id, { terms: j.terms }, 'skills').catch(err => console.warn(`[resumeEngine] skills for #${j.id} failed:`, err.message));
+      state.done += 1;
+    }
+    state.running = false;
+  })();
+  return { resumes: jobs.length, skills: clean };
+}
+
 export async function approveSkills(userId, tailoringId, terms) {
   const clean = list(terms).map(str).filter(Boolean).slice(0, 20);
   if (!clean.length) throw Object.assign(new Error('Pick at least one skill'), { status: 400 });
@@ -466,7 +544,7 @@ function revisionNotes(pass, judged, sourceText) {
   if (inSource.length) notes.push(`These job keywords are in the candidate's material but not on the page; work them into bullets truthfully: ${inSource.map(k => k.term).join(', ')}.`);
   const hard = notInSource.filter(k => k.kind !== 'soft');
   const soft = pass.score.missing.filter(k => k.kind === 'soft');
-  if (soft.length && !atsPasses(pass.score.score)) notes.push(`These soft skills from the job aren't on the page: ${soft.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. Show each through real work in a bullet, using the job's word where it's true (e.g. "collaborated with clinicians", "communicated findings to stakeholders", "solved…"). Don't list them under skills.`);
+  if (soft.length && !atsPasses(pass.score.score)) notes.push(`These soft skills from the job aren't on the page: ${soft.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. Show each through real work in a bullet, using the job's word where it's true (e.g. "collaborated with clinicians", "communicated findings to stakeholders", "problem-solving across…"). Don't list them under skills.`);
   if (hard.length && !atsPasses(pass.score.score)) notes.push(`These job keywords aren't written anywhere in the material: ${hard.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}. For each, decide whether the candidate's real work shows it in substance (e.g. "system design" for designing a microservices architecture, "NoSQL" for MongoDB, "REST APIs" for a FastAPI service). If it does, write a truthful line using the job's exact phrase. If it doesn't, leave it out; if several required ones are missing, that's when a project to build fits (rule 13).`);
   if (!atsPasses(pass.score.score)) notes.push(`ATS match is ${pass.score.score}%; the rule is above ${ATS_TARGET}% (aim for 95%). Improve keyword placement, reframing and project choice, or add a project to build (rule 13); never claim what the material doesn't show.`);
   if (judged && judged.callbackAfter < CALLBACK_TARGET && notes.length) notes.push(`A recruiter check puts the callback chance at ${judged.callbackAfter}% (target ${CALLBACK_TARGET}%): ${judged.callbackWhy} Suggested: ${judged.nextChange}`);
@@ -595,6 +673,7 @@ function draftPrompt(ctx) {
 ROLE TYPE: ${ctx.kind.quant ? 'quant/HFT/C++ (Industry Experience may go above Research)' : 'not quant'}${ctx.kind.finance ? '; finance' : ''}
 WHAT THIS ROLE IS REALLY HIRING FOR: ${ctx.focus.join('; ') || 'n/a'}
 ATS KEYWORDS (from the posting): ${ctx.keywords.map(k => `${k.term}${k.importance === 'required' ? ' (required)' : ''}`).join(', ')}
+SOFT SKILLS TO SHOW IN THE JOB'S OWN WORDS (in the summary or a bullet, where the work shows it; e.g. "problem-solving", "collaborated", "communicated"; never in the skills list): ${ctx.keywords.filter(k => k.kind === 'soft').map(k => k.term).join(', ') || 'none'}
 
 JOB DESCRIPTION:
 ${ev.job_description.slice(0, 7000)}`,

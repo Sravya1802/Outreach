@@ -30,6 +30,9 @@ test('soft skills match by stem; hard skills stay exact', () => {
   assert.ok(hasTerm('paid attention to detail', soft('Attention to detail')));
   assert.ok(!hasTerm('attention towards detail', soft('Attention to detail')));
   assert.ok(!hasTerm('collaborated with teams', k('Collaboration')));
+  assert.ok(hasTerm('solving data access problems for researchers', soft('Problem solving')));
+  assert.ok(hasTerm('solved scaling problems', soft('Problem solving')));
+  assert.ok(!hasTerm('solved it, then wrote about the problems they had', soft('Problem solving')));
 });
 
 test('a degree requirement is met by the degree in any spelling plus the field', () => {

@@ -1551,3 +1551,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
   - The Gmail `daily_cap` is 20, so two roles approved on the same day spill into the next morning.
   - AI drafts fall back to the template when Groq is rate-limited, so then all 20 read alike.
   - Apollo is still Free and API-blocked.
+
+### 2026-10-29 — GitHub link optional on Resumes → Projects too
+- User had asked earlier for the GitHub link to be optional when marking a project built; the per-job resume card already did this, but the Projects page (`ProjectsPage.tsx` IdeaCard) still had `required`. Now "GitHub repo (optional)", only Start/End needed. Wording fixed in walkthrough.ts and the resumeEngine "waiting on project" message.
+- Frontend 806d052 live; backend cherry-picked to VM as f70a3be (frontend files dropped from the pick — not on the VM branch). Verified live: form valid with empty repo (not submitted).

@@ -64,6 +64,7 @@ export function Report({ detail, hasResume, onJobPage = false }: { detail: Evalu
             {stage === 'evaluated'
               ? <Button onClick={() => markApplied.mutate()} loading={markApplied.isPending}>I applied</Button>
               : <span className="px-2 text-[14px] text-success">In your pipeline as {stage === 'applied' ? 'applied' : stage}</span>}
+            {stage === 'evaluated' && <ButtonLink to={`/resumes/job/${detail.id}`}>Upload my resume and apply</ButtonLink>}
             {!onJobPage && <ButtonLink variant="ghost" to={`/jobs/job/${detail.id}`}>Description and resume</ButtonLink>}
             <Button variant="ghost" onClick={() => void api.openReport(detail.id)}>Full report</Button>
           </div>

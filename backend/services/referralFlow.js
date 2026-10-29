@@ -36,6 +36,11 @@ import { markAppliedYourself } from './resumeFiles.js';
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 const MAX_EMAILS_PER_ROLE = 2;
 const MAX_NOTES_PER_ROLE = 2;
+// Prospeo people search: recruiters and engineers in the US, 1 credit per 25 people.
+const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recruiter', 'campus recruiter', 'talent acquisition'];
+const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
+// Verified emails revealed per company (1 Prospeo credit each), recruiters first.
+const REVEALS_PER_COMPANY = 6;
 const isProfile = (url) => /linkedin\.com\/in\//i.test(String(url || ''));
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
@@ -195,13 +200,84 @@ export async function guessEmailsAt(userId, jobId) {
   let n = 0;
   for (const p of people) {
     const email = emailFromPattern(known.pattern, p.name, job.domain);
-    if (!email) continue;
+    if (!email || await one('SELECT 1 FROM job_contacts WHERE user_id = $1 AND lower(email) = $2', [userId, email])) continue;
     await run(
       "UPDATE job_contacts SET email = $3, email_status = 'guessed', email_lookup_note = $4 WHERE id = $1 AND user_id = $2 AND email IS NULL",
       [p.id, userId, email, `Guessed from ${job.name}'s email pattern (${known.pattern}@${job.domain})`],
     ).then(() => { n += 1; }).catch(err => console.warn('[referrals] guessed email not saved', p.name, err.message));
   }
   return n;
+}
+
+/** The company's email domain when we're sure of it (looked up, never guessed). */
+async function trustedDomain(job) {
+  if (job.domain && job.domain_source !== 'guess') return job.domain;
+  const { resolveCompanyDomain } = await import('./companyDomain.js');
+  return (await resolveCompanyDomain(job, { verify: async () => false }).catch(() => null))?.domain || null;
+}
+
+/**
+ * Recruiters and engineers at the company from Prospeo (US only), saved as
+ * contacts, then their verified emails revealed for up to REVEALS_PER_COMPANY
+ * people who don't have a found email yet. Searches are cached per company,
+ * so a second role there costs nothing.
+ */
+export async function findProspeoPeopleAt(userId, jobId) {
+  const out = { people: 0, emails: 0 };
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  const providers = await import('./emailProviders.js');
+  if (!job || !providers.isConfigured('prospeo')) return out;
+  const domain = await trustedDomain(job);
+  if (!domain) return out;
+  const { cachedDomainSearch, spend } = await import('./providerUsage.js');
+  const { upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+
+  const found = [];
+  for (const [variant, titles] of [['recruiting-us', RECRUITING_TITLES], ['engineering-us', ENGINEERING_TITLES]]) {
+    try {
+      const { result } = await cachedDomainSearch('prospeo', `${domain}#${variant}`, () => providers.prospeoSearchPeople(domain, titles), { userId });
+      found.push(...(Array.isArray(result) ? result : []));
+    } catch (err) {
+      console.warn('[referrals] Prospeo search failed', job.name, variant, err.message);
+      break; // out of credits / budget: the second search would fail the same way
+    }
+  }
+  for (const p of found) {
+    const r = await upsertContact({ all, run }, {
+      userId, jobId, seniorityScore: seniorityScore(p.title),
+      contact: { name: p.name, title: p.title, linkedin_url: p.linkedin_url, source: 'prospeo' },
+    });
+    if (r === 'inserted') out.people += 1;
+  }
+
+  // Reveal verified emails for people without a found one (a guess doesn't count), recruiters first.
+  const verified = found.filter(p => p.verified && p.person_id && p.linkedin_url)
+    .sort((a, b) => Number(!isRecruiterTitle(a.title)) - Number(!isRecruiterTitle(b.title)));
+  for (const p of verified) {
+    if (out.emails >= REVEALS_PER_COMPANY) break;
+    const c = await one(
+      `SELECT id, email, email_status FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND lower(linkedin_url) = lower($3)`,
+      [userId, jobId, p.linkedin_url],
+    );
+    if (!c || (c.email && c.email_status !== 'guessed')) continue;
+    try {
+      await spend(userId, 'prospeo');
+      const hit = await providers.prospeoEnrich({ personId: p.person_id });
+      if (!hit?.email) continue;
+      // Someone else at the company already has this address: don't make a second contact with it.
+      if (await one('SELECT 1 FROM job_contacts WHERE user_id = $1 AND lower(email) = lower($2) AND id <> $3', [userId, hit.email, c.id])) continue;
+      await run(
+        `UPDATE job_contacts SET email = $3, email_status = $4, email_lookup_at = NOW(), email_lookup_note = NULL WHERE id = $1 AND user_id = $2`,
+        [c.id, userId, hit.email, hit.status || 'valid'],
+      );
+      out.emails += 1;
+    } catch (err) {
+      console.warn('[referrals] Prospeo reveal failed', p.name, err.message);
+      if (['QUOTA', 'BUDGET', 'AUTH', 'PLAN', 'SKIPPED'].includes(err.code)) break;
+    }
+  }
+  return out;
 }
 
 /** Look up one person's work email (Apollo by LinkedIn profile, then Hunter, Prospeo, the website) and save it. */
@@ -223,11 +299,14 @@ async function findEmailFor(userId, jobId, person) {
 /** Who works at an approved role's company: emails (when Gmail can send them) and LinkedIn profiles. */
 export async function findPeopleFor(userId, item) {
   const jobId = await companyRow(userId, item.company_name, item.location);
-  const out = { emails: 0, linkedin: 0, guessed: 0 };
+  const out = { emails: 0, prospeo: 0, linkedin: 0, guessed: 0 };
   try {
     if (await connectionFor(userId) && !(await hasEmailContact(userId, item.company_name))) {
       out.emails = await findEmailsAt(userId, jobId, item).catch(err => { console.warn('[referrals] email lookup failed', item.company_name, err.message); return 0; });
     }
+    const pr = await findProspeoPeopleAt(userId, jobId).catch(err => { console.warn('[referrals] Prospeo failed', item.company_name, err.message); return { people: 0, emails: 0 }; });
+    out.prospeo = pr.people;
+    out.emails += pr.emails;
     if (await linkedinPeopleAt(userId, item.company_name) < 3) {
       out.linkedin = await findLinkedInPeopleAt(userId, jobId).catch(err => { console.warn('[referrals] LinkedIn search failed', item.company_name, err.message); return 0; });
     }
@@ -363,6 +442,20 @@ export async function askForReferral(userId, item, settings) {
     if (pool.some(p => String(p.contactId) === String(c.id))) continue;
     pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, guessed: c.email_status === 'guessed', contactId: c.id, connectionId: null, knows: false });
   }
+  // Nobody is asked twice: people asked for another role, or already emailed, are left out.
+  const before = await all(
+    `SELECT a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin FROM referral_asks a
+      WHERE a.user_id = $1 AND a.plan_item_id <> $2 AND a.channel IN ('email', 'linkedin')
+     UNION
+     SELECT o.contact_id, lower(o.to_email), NULL FROM email_outbox o
+      WHERE o.user_id = $1 AND o.step = 0 AND o.status IN ('draft', 'scheduled', 'sending', 'sent')`,
+    [userId, item.id],
+  );
+  const askedBefore = (p) => before.some(b =>
+    (b.contact_id && String(b.contact_id) === String(p.contactId))
+    || (b.email && p.email && b.email === String(p.email).toLowerCase())
+    || (b.linkedin && p.linkedin && b.linkedin === String(p.linkedin).toLowerCase()));
+  for (let i = pool.length - 1; i >= 0; i--) if (askedBefore(pool[i])) pool.splice(i, 1);
   let targets = pickTargets(pool, { canEmail: Boolean(gmail) });
   // Fewer than 2 recruiters/engineers (or people the user knows) have a found email: look up theirs
   // (a guessed one gets checked first), at most 2 lookups.

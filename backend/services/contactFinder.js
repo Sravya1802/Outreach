@@ -4,8 +4,8 @@
 // done, so credits aren't spent on lookups we don't need:
 //
 //   Company (bulk):  Hunter domain search (engineering + HR first, then
-//                    everyone) → company website (free)
-//                    → Prospeo domain search → Google (Serper)
+//                    everyone) → company website (free) → Google (Serper)
+//                    (Prospeo's people search runs per approved role, in referralFlow)
 //                    … stopping once there are relevant contacts.
 //   Person:          Apollo match by LinkedIn URL (most accurate when we have
 //                    it) → Hunter finder → Prospeo finder → website match
@@ -96,7 +96,6 @@ export async function findCompanyEmails(job, { override = null, providers = real
       return r.emails;
     }],
     ['website', () => providers.websiteEmails(domain)],
-    ['prospeo', () => viaCache('prospeo', () => providers.prospeoDomainSearch(domain))],
     ['serper', async () => { await usage.spend(userId, 'serper'); await usage.spend(userId, 'serper'); return providers.serperEmails(domain); }],
   ];
   for (const [name, run] of steps) {

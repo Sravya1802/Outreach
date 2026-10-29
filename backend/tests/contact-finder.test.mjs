@@ -16,7 +16,6 @@ function fakeProviders(overrides = {}, configured = ['hunter', 'prospeo', 'serpe
     isConfigured: (p) => configured.includes(p),
     hunterDomainSearch: wrap('hunter', overrides.hunterDomainSearch || (async () => ({ emails: [], pattern: null }))),
     websiteEmails: wrap('website', overrides.websiteEmails || (async () => [])),
-    prospeoDomainSearch: wrap('prospeo', overrides.prospeoDomainSearch || (async () => [])),
     serperEmails: wrap('serper', overrides.serperEmails || (async () => [])),
     apolloMatch: wrap('apollo', overrides.apolloMatch || (async () => null)),
     hunterEmailFinder: wrap('hunterFinder', overrides.hunterEmailFinder || (async () => null)),
@@ -40,7 +39,7 @@ test('company: quota error is reported and the waterfall continues', async () =>
     websiteEmails: async () => [c('cto@acme.com', { source: 'website', status: 'risky' })],
   })
   const r = await findCompanyEmails({ name: 'Acme', domain: 'acme.com' }, { providers: p, verify: noMx, usage })
-  assert.deepEqual(p.calls, ['hunter', 'website', 'prospeo', 'serper']) // website rows have no title → keep looking
+  assert.deepEqual(p.calls, ['hunter', 'website', 'serper']) // website rows have no title → keep looking
   assert.equal(r.reasons[0].code, 'QUOTA')
   assert.deepEqual(r.candidates.map(x => x.email), ['cto@acme.com']) // title-less kept
   assert.equal(r.candidates[0].name, 'cto')

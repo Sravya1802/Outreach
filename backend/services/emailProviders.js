@@ -85,41 +85,68 @@ export function hunterEmailFinder(domain, first, last) {
 }
 
 // ── Prospeo ──────────────────────────────────────────────────────────────────
+// The old email-finder and domain-search endpoints were removed (DEPRECATED).
+// The current API: search-person (25 people a page, 1 credit a page, emails
+// hidden) and enrich-person (reveals one verified email, 1 credit, free when
+// there's no match).
 
-export function prospeoEmailFinder(first, last, domain) {
+async function prospeoPost(path, body) {
+  const res = await fetch(`https://api.prospeo.io/${path}`, {
+    method: 'POST',
+    headers: { 'X-KEY': key('PROSPEO_API_KEY', 'prospeo'), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* handled below */ }
+  if (data?.error && /^NO_(MATCH|RESULTS?)$/.test(String(data.error_code || ''))) return null;
+  if (!res.ok || !data || data.error) throw errorFromHttp('prospeo', res.ok ? 400 : res.status, text);
+  return data;
+}
+
+/** People at a company (by website) with these job titles, in the US. Emails stay hidden; `verified` says Prospeo has one. */
+export function prospeoSearchPeople(domain, titles, { page = 1 } = {}) {
   return guarded('prospeo', async () => {
-    const data = await fetchJson('prospeo', 'https://api.prospeo.io/email-finder', {
-      method: 'POST',
-      headers: { 'X-KEY': key('PROSPEO_API_KEY', 'prospeo'), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: first, last_name: last, company: domain }),
+    const data = await prospeoPost('search-person', {
+      page,
+      filters: {
+        person_job_title: { include: titles },
+        person_location_search: { include: ['United States'] },
+        company: { websites: { include: [domain] } },
+      },
     });
-    if (data?.error) {
-      if (/NO_RESULT|not found/i.test(String(data.message || data.error))) return null;
-      throw errorFromHttp('prospeo', 400, JSON.stringify(data));
-    }
-    const r = data?.response || {};
-    const email = typeof r.email === 'string' ? r.email : r.email?.email;
-    const status = typeof r.email === 'object' ? r.email?.email_status : r.email_status;
-    return candidate('prospeo', { email, first, last, raw: { status } });
+    return (data?.results || [])
+      .map(({ person: p = {} }) => ({
+        name: String(p.full_name || '').trim(),
+        title: String(p.current_job_title || p.headline || '').trim(),
+        linkedin_url: p.linkedin_url || null,
+        person_id: p.person_id || null,
+        verified: p.email?.status === 'VERIFIED',
+      }))
+      .filter(p => p.name);
   });
 }
 
-export function prospeoDomainSearch(domain, { limit = 20 } = {}) {
+/** Reveal one person's verified work email, by Prospeo id, LinkedIn profile, or name + company website. */
+export function prospeoEnrich({ personId = null, linkedinUrl = null, first = null, last = null, domain = null }) {
   return guarded('prospeo', async () => {
-    const data = await fetchJson('prospeo', 'https://api.prospeo.io/domain-search', {
-      method: 'POST',
-      headers: { 'X-KEY': key('PROSPEO_API_KEY', 'prospeo'), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company: domain, limit }),
+    const data = personId ? { person_id: personId }
+      : linkedinUrl ? { linkedin_url: linkedinUrl }
+        : { first_name: first, last_name: last, company_website: domain };
+    const r = await prospeoPost('enrich-person', { only_verified_email: true, data });
+    const p = r?.person;
+    if (!p?.email?.revealed) return null;
+    return candidate('prospeo', {
+      email: p.email.email, first: p.first_name, last: p.last_name, title: p.current_job_title, linkedin: p.linkedin_url,
+      raw: { status: p.email.status },
     });
-    const list = Array.isArray(data?.response?.email_list) ? data.response.email_list
-      : Array.isArray(data?.response) ? data.response : [];
-    return list
-      .map(e => candidate('prospeo', {
-        email: e.email, first: e.first_name, last: e.last_name, title: e.position || e.title, linkedin: e.linkedin,
-        raw: { status: e.email_status || e.verification },
-      }))
-      .filter(Boolean);
   });
+}
+
+/** One person's email by name + company website (the person-lookup waterfall). */
+export function prospeoEmailFinder(first, last, domain) {
+  return prospeoEnrich({ first, last, domain });
 }
 
 // ── Apollo ───────────────────────────────────────────────────────────────────

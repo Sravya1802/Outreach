@@ -72,8 +72,10 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   if (!str(subject) || !str(body)) throw Object.assign(new Error('Write a subject and a message first.'), { status: 400 });
   if (!(await connectionFor(userId))) throw Object.assign(new Error('Connect your Gmail under Integrations → Gmail to send from here.'), { status: 400 });
   const active = await one(
-    "SELECT id, status FROM email_outbox WHERE user_id = $1 AND contact_id = $2 AND step = 0 AND status IN ('draft','scheduled','sending','sent') LIMIT 1",
-    [userId, contactId],
+    // The same address under another contact (the company saved twice) counts too.
+    `SELECT id, status FROM email_outbox WHERE user_id = $1 AND (contact_id = $2 OR lower(to_email) = lower($3)) AND step = 0
+        AND status IN ('draft','scheduled','sending','sent') LIMIT 1`,
+    [userId, contactId, str(contact.email)],
   );
   if (active?.status === 'draft') throw Object.assign(new Error('An email to this person is already waiting for your OK in People → Outbox.'), { status: 409 });
   if (active) throw Object.assign(new Error('You’ve already emailed or scheduled this person. Follow-ups go out on their own.'), { status: 409 });

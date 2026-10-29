@@ -171,7 +171,7 @@ export default function OutboxPage() {
       <ConfirmDialog
         open={Boolean(approvingAll)}
         title={approvingAll ? `Approve all ${approvingAll.items.length} emails to ${approvingAll.company}?` : ''}
-        description={approvingAll ? `${approvingAll.items.length} different people at ${approvingAll.company}, each with your tailored resume. They go out in each person’s morning, at most ${gmail.data?.daily_cap ?? 20} a day, and stop by themselves if someone replies.${approvingAll.items.some(i => i.email_guessed) ? ` ${approvingAll.items.filter(i => i.email_guessed).length} go to guessed addresses that may bounce.` : ''}${progress ? ` ${progress}` : ''}` : ''}
+        description={approvingAll ? approveAllText(approvingAll.company, approvingAll.items, gmail.data?.daily_cap ?? 20) + (progress ? ` ${progress}` : '') : ''}
         confirmLabel="Approve all"
         busy={approveAll.isPending}
         onConfirm={() => approvingAll && approveAll.mutate(approvingAll.items)}
@@ -256,6 +256,13 @@ function EditDialog({ item, onClose, onSaved }: { item: OutboxItem; onClose: () 
       </div>
     </Dialog>
   )
+}
+
+function approveAllText(company: string, items: OutboxItem[], cap: number) {
+  const guessed = items.filter(i => i.email_guessed).length
+  return `${items.length} different people at ${company}${items.every(i => i.attachment_file_id) ? ', each with your tailored resume' : ''}. `
+    + `They go out in each person’s morning, at most ${cap} a day, and stop by themselves if someone replies.`
+    + (guessed ? ` ${guessed === 1 ? '1 goes to a guessed address' : `${guessed} go to guessed addresses`} that may bounce.` : '')
 }
 
 /** Drafts by company, in the order they arrived. */

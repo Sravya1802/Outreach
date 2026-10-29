@@ -1,20 +1,98 @@
 import { Fragment, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Send } from 'lucide-react'
 import { api, type ApplyMode, type ResumeJob } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
-import { Badge, Button, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Skeleton, useToast, type Tone } from '@/ui'
+import { Badge, Button, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Select, Skeleton, useToast, type Tone } from '@/ui'
 import { PdfDialog } from '@/features/profile/PdfViewer'
 import { ManualApply } from '@/features/applications/ManualApply'
 import { ApproveButtons } from '@/features/applications/DailyPlan'
 import { latestListDate } from '@/features/resumes/resumes'
 import { SkillGapsPanel } from './SkillGapsPanel'
-import { dayLabel, isMissed, jobState, matchesToApply, sortToApply, stateLabel, type JobState, type ToApplyFilter } from './toApply'
+import {
+  CATEGORY_LABEL, LEVEL_LABEL, NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally,
+  type JobState, type RoleCategory, type RoleFilters, type RoleLevel, type ToApplyFilter,
+} from './toApply'
 
 const TONE: Record<JobState, Tone> = { applied: 'success', applying: 'info', review: 'warning', needs: 'warning', working: 'info', open: 'neutral', skipped: 'neutral' }
 const cell = 'border-b border-line px-3 py-3 align-top'
+const pick = 'sm:w-auto! sm:min-w-36'
+const FILTER_KEYS = Object.keys(NO_FILTERS) as (keyof RoleFilters)[]
+
+/** Field, level, grad year and the rest, kept in the address so a reload or a shared link keeps them. */
+function useRoleFilters() {
+  const [params, setParams] = useSearchParams()
+  const f = Object.fromEntries(FILTER_KEYS.map(k => [k, params.get(k) ?? ''])) as unknown as RoleFilters
+  const set = (k: keyof RoleFilters, v: string) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n }, { replace: true })
+  const clear = () => setParams(p => { const n = new URLSearchParams(p); for (const k of FILTER_KEYS) n.delete(k); return n }, { replace: true })
+  return { f, set, clear, active: FILTER_KEYS.filter(k => f[k]).length }
+}
+
+function RoleFilterBar({ all, rf }: { all: ResumeJob[]; rf: ReturnType<typeof useRoleFilters> }) {
+  const { f, set } = rf
+  const by = <T extends string>(fn: (j: ResumeJob) => T) => Object.fromEntries(tally(all.map(fn)).map(t => [t.value, t.n])) as Partial<Record<T, number>>
+  const cats = by(roleCategory)
+  const levels = by(roleLevel)
+  const years = tally(all.flatMap(j => j.grad_years ?? []))
+  const industries = tally(all.map(j => j.industry))
+  const tiers = by(j => j.company_tier ?? '')
+  const n = (v?: number) => ` (${v ?? 0})`
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select value={f.category} onChange={e => set('category', e.target.value)} aria-label="Field" className={pick}>
+        <option value="">All fields</option>
+        {(Object.keys(CATEGORY_LABEL) as RoleCategory[]).map(c => <option key={c} value={c}>{CATEGORY_LABEL[c]}{n(cats[c])}</option>)}
+      </Select>
+      <Select value={f.level} onChange={e => set('level', e.target.value)} aria-label="Level" className={pick}>
+        <option value="">All levels</option>
+        {(Object.keys(LEVEL_LABEL) as RoleLevel[]).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}{n(levels[l])}</option>)}
+      </Select>
+      <Select value={f.year} onChange={e => set('year', e.target.value)} aria-label="Graduation or start year" className={pick} title="Years the posting names, like “class of 2027” or “Summer 2027”">
+        <option value="">Any grad year</option>
+        {years.map(y => <option key={y.value} value={y.value}>Mentions {y.value}{n(y.n)}</option>)}
+      </Select>
+      {industries.length > 0 && (
+        <Select value={f.industry} onChange={e => set('industry', e.target.value)} aria-label="Industry" className={pick}>
+          <option value="">All industries</option>
+          {industries.map(i => <option key={i.value} value={i.value}>{i.value}{n(i.n)}</option>)}
+        </Select>
+      )}
+      {(tiers.faang || tiers.quant || f.tier) && (
+        <Select value={f.tier} onChange={e => set('tier', e.target.value)} aria-label="Company tier" className={pick}>
+          <option value="">All companies</option>
+          <option value="faang">FAANG+{n(tiers.faang)}</option>
+          <option value="quant">Quant / trading{n(tiers.quant)}</option>
+        </Select>
+      )}
+      <Select value={f.visa} onChange={e => set('visa', e.target.value)} aria-label="Visa sponsorship" className={pick}>
+        <option value="">Any visa status</option>
+        <option value="open">Hide “won’t sponsor”</option>
+        <option value="sponsors">Says it sponsors</option>
+      </Select>
+      <Select value={f.ats} onChange={e => set('ats', e.target.value)} aria-label="ATS score" className={pick}>
+        <option value="">Any ATS</option>
+        <option value="pass">Above 90%</option>
+        <option value="under">90% or under</option>
+      </Select>
+      {rf.active > 0 && <Button size="sm" variant="ghost" onClick={rf.clear}>Clear filters ({rf.active})</Button>}
+    </div>
+  )
+}
+
+/** "AI / ML · New grad · 2027 · Fintech · New York, NY" under the role. */
+function roleTags(j: ResumeJob): string {
+  const lv = roleLevel(j)
+  const cat = roleCategory(j)
+  return [
+    cat === 'other' ? null : CATEGORY_LABEL[cat],
+    lv === 'intern' ? 'Internship' : lv === 'new_grad' ? 'New grad' : null,
+    j.grad_years?.length ? j.grad_years.join(', ') : null,
+    j.industry,
+    j.location && j.location.length > 48 ? `${j.location.slice(0, 46)}…` : j.location,
+  ].filter(Boolean).join(' · ')
+}
 
 /** The buttons a role needs right now. */
 function Actions({ j, onView }: { j: ResumeJob; onView: () => void }) {
@@ -55,13 +133,17 @@ export default function ToApplyPage() {
   const [filter, setFilter] = useState<ToApplyFilter>('todo')
   const [q, setQ] = useState('')
   const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const rf = useRoleFilters()
   const jobs = useQuery({
     queryKey: qk.resumeJobs, queryFn: api.resumeJobs,
     refetchInterval: query => ((query.state.data ?? []).some(j => j.resume?.status === 'running' || ['queued', 'in_progress'].includes(String(j.apply_status))) ? 60_000 : false),
   })
-  const all = jobs.data ?? []
-  const latest = latestListDate(all)
+  const everything = jobs.data ?? []
+  const latest = latestListDate(everything)
   const s = q.trim().toLowerCase()
+  // The dropdowns narrow everything, so the counts on To do / Missed follow them.
+  const all = everything.filter(j => matchesRoleFilters(j, rf.f)
+    && (!s || [j.company_name, j.job_title, j.location, j.industry].some(v => v?.toLowerCase().includes(s))))
   const count = (f: ToApplyFilter) => all.filter(j => matchesToApply(j, f, latest)).length
   const options = [
     { value: 'todo' as const, label: `To do · ${count('todo')}` },
@@ -70,21 +152,22 @@ export default function ToApplyPage() {
     { value: 'applied' as const, label: `Applied · ${count('applied')}` },
     { value: 'all' as const, label: 'All' },
   ]
-  const rows = sortToApply(all.filter(j => matchesToApply(j, filter, latest) && (!s || j.company_name.toLowerCase().includes(s) || j.job_title.toLowerCase().includes(s))))
+  const rows = sortToApply(all.filter(j => matchesToApply(j, filter, latest)))
 
   return (
     <Page wide>
       <PageHeader title="To apply"
         description="Every job the app wrote a resume for, newest list first. Apply for me: the app takes it from approval to applying. I’ll review: it stops once the resume is written so you can read it, then Send it or apply yourself." />
-      {jobs.error ? <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} /> : jobs.isLoading ? <Skeleton className="h-72" /> : all.length === 0 ? (
+      {jobs.error ? <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} /> : jobs.isLoading ? <Skeleton className="h-72" /> : everything.length === 0 ? (
         <EmptyState title="No resumes yet" description="Each evening the top roles get a resume written before the list arrives. They’ll show up here." />
       ) : (
         <div className="space-y-4">
           <SkillGapsPanel />
           <div className="flex flex-wrap items-center gap-2">
-            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search company or role" aria-label="Search company or role" className="w-full sm:w-64" />
+            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search company, role or place" aria-label="Search company, role or place" className="w-full sm:w-64" />
             <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={options} label="Show" /></div>
           </div>
+          <RoleFilterBar all={everything} rf={rf} />
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
             <table className="w-full min-w-[980px] border-collapse text-[14px] text-fg">
               <thead>
@@ -111,6 +194,7 @@ export default function ToApplyPage() {
                       <tr className={cn(missed && 'bg-warning-soft/30')}>
                         <td className={cell}>
                           <Link to={`/jobs/job/${j.id}`} className="hover:text-accent"><b className="font-medium">{j.company_name}</b> <span className="text-muted">· {j.job_title}</span></Link>
+                          {roleTags(j) && <p className="mt-0.5 text-[12px] text-subtle">{roleTags(j)}</p>}
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             {missed && <Badge tone="warning">Missed</Badge>}
                             {j.apply_mode === 'review' && j.decision === 'approved' && <Badge tone="neutral">You review</Badge>}
@@ -139,7 +223,7 @@ export default function ToApplyPage() {
                 })}
                 {rows.length === 0 && (
                   <tr><td colSpan={5} className="px-3 py-8 text-center text-muted">
-                    {filter === 'todo' ? 'Nothing waiting on you.' : filter === 'missed' ? 'Nothing missed.' : 'Nothing matches. Clear the search or pick another filter.'}
+                    {rf.active || s ? 'Nothing matches. Clear the search or the filters, or pick another tab.' : filter === 'todo' ? 'Nothing waiting on you.' : filter === 'missed' ? 'Nothing missed.' : 'Nothing matches. Clear the search or the filters, or pick another tab.'}
                   </td></tr>
                 )}
               </tbody>

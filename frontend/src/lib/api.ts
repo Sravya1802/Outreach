@@ -716,6 +716,16 @@ export interface ResumeJob {
   apply_after?: string | null
   wait_until?: string | null
   applied_at?: string | null
+  /** From the role listing it came from, when there is one. */
+  role_type?: 'intern' | 'new_grad' | null
+  tracks?: string[]
+  company_tier?: 'faang' | 'quant' | null
+  sponsorship?: Sponsorship | null
+  location?: string | null
+  /** The company's industry, from Companies. */
+  industry?: string | null
+  /** Graduation or start years the posting names ("class of 2027", "Summer 2027"). */
+  grad_years?: string[]
   resume: {
     tailoring_id: number
     status: 'running' | 'ready' | 'needs_review' | 'failed'

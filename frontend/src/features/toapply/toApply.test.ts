@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResumeJob } from '@/lib/api'
-import { dayLabel, isMissed, jobState, matchesToApply, sortToApply, stateLabel } from './toApply'
+import { NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally } from './toApply'
 
 const job = (p: Partial<ResumeJob>): ResumeJob => ({
   id: 1, company_name: 'Acme', job_title: 'SWE', job_url: null, eval_score: 9, list_date: '2026-10-27',
@@ -35,5 +35,37 @@ describe('to apply', () => {
     expect(sortToApply([a, b, c]).map(j => j.id)).toEqual([3, 2, 1])
     expect(dayLabel('2026-10-27', '2026-10-27')).toBe('Latest list · Tue, Oct 27')
     expect(dayLabel(null, '2026-10-27')).toBe('Not from a list')
+  })
+})
+
+describe('role filters', () => {
+  it('reads the field from the title', () => {
+    expect(roleCategory({ job_title: 'Machine Learning Engineer, New Grad' })).toBe('ai')
+    expect(roleCategory({ job_title: 'Data Scientist Intern', tracks: ['ai'] })).toBe('data')
+    expect(roleCategory({ job_title: 'Software Engineering Intern, Backend (Summer 2027)' })).toBe('swe')
+    expect(roleCategory({ job_title: 'Finance Intern (Summer 2027)', tracks: ['swe'] })).toBe('other')
+    expect(roleCategory({ job_title: 'Member of Technical Staff', tracks: ['ai'] })).toBe('ai')
+  })
+
+  it('reads the level from the title, then the listing', () => {
+    expect(roleLevel({ job_title: 'Summer 2027 Undergraduate Internship - Software' })).toBe('intern')
+    expect(roleLevel({ job_title: 'Software Engineer, University Graduate 2027' })).toBe('new_grad')
+    expect(roleLevel({ job_title: 'Software Engineer I' })).toBe('new_grad')
+    expect(roleLevel({ job_title: 'Entry Level AI/ML Engineer' })).toBe('new_grad')
+    expect(roleLevel({ job_title: 'Backend Engineer', role_type: 'new_grad' })).toBe('new_grad')
+    expect(roleLevel({ job_title: 'Senior Backend Engineer' })).toBe('other')
+  })
+
+  it('combines filters', () => {
+    const ng = job({ job_title: 'ML Engineer, New Grad', grad_years: ['2027'], sponsorship: 'no_sponsorship', resume: { ats: 93 } as ResumeJob['resume'] })
+    expect(matchesRoleFilters(ng, { ...NO_FILTERS, category: 'ai', level: 'new_grad', year: '2027' })).toBe(true)
+    expect(matchesRoleFilters(ng, { ...NO_FILTERS, year: '2026' })).toBe(false)
+    expect(matchesRoleFilters(ng, { ...NO_FILTERS, visa: 'open' })).toBe(false)
+    expect(matchesRoleFilters(ng, { ...NO_FILTERS, ats: 'pass' })).toBe(true)
+    expect(matchesRoleFilters(ng, { ...NO_FILTERS, ats: 'under' })).toBe(false)
+  })
+
+  it('tallies values, most first', () => {
+    expect(tally(['2027', '2026', '2027', null])).toEqual([{ value: '2027', n: 2 }, { value: '2026', n: 1 }])
   })
 })

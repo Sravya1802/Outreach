@@ -124,6 +124,18 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-29 — GlobalFoundries resume vs a Claude-chat review: PDF text layer, Publications, truth rules
+- **Why:** the user pasted a Claude-chat review of the app's GlobalFoundries resume (tailoring 53, eval 165; the app said Ready at 91–94%, the review said ~66% with 7 must-fixes).
+- **Checked each point against the app's data:**
+  - "daily telemetry", WebSockets, "500+ users": **all in the app's master** ("500GB+ daily telemetry", Order Book tech, Azure/AWS 500+). Claude chat works from different wording (its FedEx resume says Random Forest and 1000+ users). The two masters disagree; **asked the user which is true**.
+  - Merged facts (SPOC + 500+ Azure/AWS) and "shipping PyTorch CV": real Opus embellishments.
+  - **PDF text layer broken:** en dashes came out as `\u0015` and bullets were dropped. Cause: `cm-super` wasn't on the VM, so T1 fonts were embedded as 600dpi bitmap (PK/Type3) with no ToUnicode. Installed `cm-super-minimal` with apt; body text is now Type1 and the extracted text has 0 control characters. The full `cm-super` install was **denied by the permission classifier**, so `ecbx1200` (the name) and `ecrm0900` (9pt) are still bitmaps; their text extracted fine in the test. **PDFs made before 2026-10-29 still carry the broken layer until re-rendered.**
+  - Publications dropped and Bloomberg trimmed: the first SHRINK_STEPS cut extras, while a summary that added nothing stayed.
+- **What** (`9e96467`, deployed): the summary is now the first shrink step. Rule 1 adds no merging of two bullets' facts and no upgrading (built→shipped/production, contributed→led, one-time→daily). The soft-skill and missing-keyword revision notes forbid bolted-on phrasing. Tests 213/213.
+- **Already fixed by 10-27 changes** (the GF resume predates them): short or orphan bullets, project numbers (83ns, 36K).
+- **Proposed, awaiting the user:** a Claude-chat-style Opus review pass (truth risks, robotic lines, missing core JD terms, clarifying questions), about +$0.07 a resume; an MS GPA rule (hide unless the JD asks for GPA); re-rendering unsent resumes for the font fix; a corrected master upload.
+- **Minor bug noticed:** `report.shortenedSteps` reads 0 when the skills re-render starts from an already-shrunk doc (renderScored).
+
 ### 2026-10-28 — Gemini backs up Groq for keywords and the recruiter check
 - **Why:** new resumes were failing at the keyword step because Groq hit its daily limit and OpenAI had no credits. The user OK'd a third backup. (The resume itself is written by Opus; Groq's `gpt-oss-120b` only does keywords and the recruiter check.)
 - **What** (`9fb90a0`, `167bdbd`; VM `3f6404b` + next): `llm.js` routes `keywords` and `evaluate` as Groq → **Gemini 3.5 Flash** → OpenAI, through Gemini's OpenAI-compatible endpoint (`GEMINI_API_KEY`, already on the VM). `reasoning_effort` is now sent to every non-OpenAI provider. The price entry is a conservative guess (Gemini 3 Flash ×1.5). Score/email/categorize are unchanged (Groq → OpenAI).

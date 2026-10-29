@@ -13,6 +13,7 @@ test('routes follow the agreed split', () => {
     assert.deepEqual(ROUTES[t].map(s => s.model), ['claude-opus-5-5'], `${t} is Opus only, no silent downgrade`)
   }
   assert.ok(ROUTES.evaluate.every(s => s.model !== 'gpt-4o'), 'backup stays on the cheap model')
+  for (const t of ['keywords', 'evaluate']) assert.equal(ROUTES[t][1].provider, 'gemini', `${t} falls back to Gemini before OpenAI`)
 })
 
 test('costs per call', () => {

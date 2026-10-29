@@ -4,6 +4,8 @@
 //
 //   score, evaluate, email, categorize → Groq gpt-oss (OpenAI as backup)
 //   keywords (ATS terms from a JD)      → Groq, so the resume writer never grades itself
+//   keywords and evaluate also fall back to Gemini Flash, so one provider's
+//   daily limit never blocks a resume
 //   resume, resume_parse, cover_letter → Claude Opus 5.5 only. If it's down
 //                                        the caller waits and retries; resume
 //                                        quality is never quietly downgraded.
@@ -18,16 +20,18 @@ export const PRICES = {
   'groq:openai/gpt-oss-120b': [0.15, 0.075, 0.60],
   'groq:openai/gpt-oss-20b': [0.10, 0.05, 0.50],
   'openai:gpt-4o-mini': [0.15, 0.075, 0.60],
+  // Not yet on Google's price page when added; set high (Gemini 3 Flash ×1.5) so the cap trips early.
+  'gemini:gemini-3.8-flash': [0.75, 0.19, 4.50],
   'openai:gpt-4o': [2.50, 1.25, 10.00],
   'anthropic:claude-opus-5-5': [4.00, 0.40, 20.00],
 };
 
 export const ROUTES = {
   score: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'gemini', model: 'gemini-3.8-flash', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   email: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   categorize: [{ provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'gemini', model: 'gemini-3.8-flash', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   // Medium effort: high thought for ~12K output tokens a draft (~$0.30); medium is about half.
   resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'medium' }],
   resume_parse: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],
@@ -92,14 +96,16 @@ async function record({ userId, task, provider, model, usage, ok, error }) {
 }
 
 const clients = {};
+const BASE_URLS = { groq: 'https://api.groq.com/openai/v1', gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/' };
+const KEYS = { groq: 'GROQ_API_KEY', gemini: 'GEMINI_API_KEY', openai: 'OPENAI_API_KEY' };
 function openaiCompatible(provider) {
-  const key = provider === 'groq' ? process.env.GROQ_API_KEY : process.env.OPENAI_API_KEY;
-  if (!key) return null;
+  const key = process.env[KEYS[provider]];
+  if (!key || key === 'your_gemini_key_here') return null;
   const id = `${provider}:${key.slice(-6)}`;
   if (!clients[id]) {
     clients[id] = new OpenAI({
       apiKey: key,
-      ...(provider === 'groq' ? { baseURL: 'https://api.groq.com/openai/v1' } : {}),
+      ...(BASE_URLS[provider] ? { baseURL: BASE_URLS[provider] } : {}),
       timeout: 120_000,
       maxRetries: 2,
     });
@@ -134,7 +140,7 @@ async function callStep(step, { system, user, json, schema, maxTokens, timeoutMs
     messages: [...(system ? [{ role: 'system', content: system }] : []), { role: 'user', content: user }],
     max_completion_tokens: maxTokens,
     ...(json || schema ? { response_format: { type: 'json_object' } } : {}),
-    ...(step.reasoning && step.provider === 'groq' ? { reasoning_effort: step.reasoning } : {}),
+    ...(step.reasoning && step.provider !== 'openai' ? { reasoning_effort: step.reasoning } : {}),
   };
   // Groq's per-minute limits ask for waits the SDK's short retries don't cover:
   // wait as long as it says ("try again in 12.3s"), up to a minute, three times.

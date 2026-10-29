@@ -52,7 +52,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     tabs: {
       '/resumes/jobs': 'One row per job: its fit score, the draft or tailored resume with its ATS match and interview chance, and which version will be sent. Open a job to see every change, download the PDF or LaTeX, or upload your own version, which is then sent as-is.',
       '/resumes/applied': 'Every role you’ve applied to and the exact resume that went with it. Roles whose resume is ready but not sent wait under Ready to apply: open the application, apply, and press I applied.',
-      '/resumes/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, push it to GitHub, mark it built, and your resumes can use it.',
+      '/resumes/projects': 'Projects to build, picked from the skills your listed roles keep asking for that your resume doesn’t show yet. Build one, mark it built (a GitHub link is optional), and your resumes can use it.',
     },
   },
   people: {

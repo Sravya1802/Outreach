@@ -30,7 +30,7 @@ export default function ProjectsPage() {
     <Page>
       <PageHeader
         title="Projects to build"
-        description="Picked from the skills your recent evening-list roles keep asking for that your resume and GitHub don’t show yet. Build one, push it to a public repo and mark it built; from then on every tailored resume can use it."
+        description="Picked from the skills your recent evening-list roles keep asking for that your resume and GitHub don’t show yet. Build one and mark it built (a GitHub link is optional); from then on every tailored resume can use it."
         actions={<Button variant="primary" icon={<Sparkles className="size-4" />} loading={busy} onClick={() => suggest.mutate()}>{busy ? 'Reading your roles…' : 'Suggest from my roles'}</Button>}
       />
       {state.error ? <ErrorState error={state.error} onRetry={() => void state.refetch()} /> : state.isLoading ? <Skeleton className="h-60" /> : (
@@ -111,9 +111,9 @@ function IdeaCard({ p }: { p: PlannedProject }) {
         </details>
       )}
       <form className="mt-5 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); built.mutate() }}>
-        <p className="text-[13px] text-muted">Built it? Push it to a public GitHub repo, then add the link and the dates to show on your resume.</p>
+        <p className="text-[13px] text-muted">Built it? Add the dates to show on your resume. The GitHub link is optional.</p>
         <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-          <Field label="GitHub repo">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" required />}</Field>
+          <Field label="GitHub repo (optional)">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" />}</Field>
           <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
           <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
         </div>

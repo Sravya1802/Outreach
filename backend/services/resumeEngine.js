@@ -1114,7 +1114,7 @@ export function reviewReason(t) {
   const verdict = t.report?.verdict ?? t.verdict;
   const why = t.report?.verdictWhy ?? t.verdict_why;
   const project = t.report?.proposedProject ?? (t.project_name ? { name: t.project_name, status: t.project_status, onPage: true } : null);
-  if (project?.status === 'suggested' && project.onPage !== false) return `The resume for this role includes a project to build: “${project.name}”. Build it, push it to GitHub and mark it built (or take it off), then it can go out.`;
+  if (project?.status === 'suggested' && project.onPage !== false) return `The resume for this role includes a project to build: “${project.name}”. Build it and mark it built (or take it off), then it can go out.`;
   if (verdict === 'skip') return `The recruiter check says skip this role${why ? `: ${why}` : '.'} Review it and choose “Send anyway” or skip it.`;
   return `The tailored resume scored ${t.ats_score}% on the ATS check (target ${ATS_TARGET}%). Review it and choose “Send anyway” or skip the role.`;
 }

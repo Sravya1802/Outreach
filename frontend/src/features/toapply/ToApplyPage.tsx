@@ -81,7 +81,7 @@ function RoleFilterBar({ all, rf }: { all: ResumeJob[]; rf: ReturnType<typeof us
   )
 }
 
-/** "AI / ML · New grad · 2027 · Fintech · New York, NY" under the role. */
+/** "AI / ML · New grad · 2027 · FAANG+ · Tech & Software · Seattle, WA" under the role. */
 function roleTags(j: ResumeJob): string {
   const lv = roleLevel(j)
   const cat = roleCategory(j)
@@ -89,6 +89,7 @@ function roleTags(j: ResumeJob): string {
     cat === 'other' ? null : CATEGORY_LABEL[cat],
     lv === 'intern' ? 'Internship' : lv === 'new_grad' ? 'New grad' : null,
     j.grad_years?.length ? j.grad_years.join(', ') : null,
+    j.company_tier === 'faang' ? 'FAANG+' : j.company_tier === 'quant' ? 'Quant' : null,
     j.industry,
     j.location && j.location.length > 48 ? `${j.location.slice(0, 46)}…` : j.location,
   ].filter(Boolean).join(' · ')

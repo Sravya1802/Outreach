@@ -1555,3 +1555,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 ### 2026-10-29 — GitHub link optional on Resumes → Projects too
 - User had asked earlier for the GitHub link to be optional when marking a project built; the per-job resume card already did this, but the Projects page (`ProjectsPage.tsx` IdeaCard) still had `required`. Now "GitHub repo (optional)", only Start/End needed. Wording fixed in walkthrough.ts and the resumeEngine "waiting on project" message.
 - Frontend 806d052 live; backend cherry-picked to VM as f70a3be (frontend files dropped from the pick — not on the VM branch). Verified live: form valid with empty repo (not submitted).
+
+### 2026-10-29 — Projects page: real numbers for [targets]
+- Bug: `markProjectBuilt` requires a value per [bracketed] target, but ProjectsPage IdeaCard never sent `values`, so "I built it" there 400'd for bracketed projects. Added the same "Your real numbers" fieldset as TailoredResume's ProposedProjectCard (5c83860, live). Verified live with a route-faked bracketed project; POST blocked, body carried `values`.
+- What "I built it" does (for the user's question): project → built (dates, optional link, real numbers filled into bullets); every ready/needs_review resume listing it is re-rendered with it, re-scored, re-checked, and `approved_at` reset; future tailorings get it as a "planned/built" project Opus can pick. Resumes that didn't list it are NOT changed.

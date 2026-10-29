@@ -1131,12 +1131,21 @@ export async function resumesByJob(userId) {
             t.report->>'verdict' AS verdict, t.batch->>'phase' AS batch_phase, t.file_id AS tailored_file_id, t.finished_at, t.approved_at,
             t.report->'proposedProject'->>'name' AS project, t.report->'proposedProject'->>'status' AS project_status,
             pi.decision, pi.stage, pi.id AS plan_item_id, to_jsonb(pi)->>'apply_mode' AS apply_mode, pi.stage_note, pi.needs_reason, pi.apply_after, pi.wait_until,
-            e.applied_at, dp.plan_date::text AS list_date
+            e.applied_at, dp.plan_date::text AS list_date,
+            sr.role_type, sr.tracks, sr.tier AS company_tier, COALESCE(pi.sponsorship, sr.sponsorship) AS sponsorship,
+            COALESCE(pi.location, sr.location) AS location, co.category AS industry,
+            -- Graduation / start years the posting names ("class of 2027", "graduating in 2027", "2027 New Grad").
+            ARRAY(SELECT DISTINCT y[1] FROM regexp_matches(
+              COALESCE(e.job_title, '') || ' ' || left(COALESCE(e.job_description, pi.job_description, ''), 20000),
+              '\\m(?:grad\\w*|class of|degree|start\\w*|university)[^.\\n]{0,60}?\\m(202[5-9])\\M', 'gi') AS y) AS grad_years,
+            (regexp_match(e.job_title, '\\m(202[5-9])\\M'))[1] AS title_year
        FROM evaluations e
        LEFT JOIN resume_files f ON f.id = e.resume_file_id
        LEFT JOIN LATERAL (SELECT * FROM resume_tailorings rt WHERE rt.evaluation_id = e.id AND rt.user_id = e.user_id AND rt.kind = 'resume' ORDER BY rt.id DESC LIMIT 1) t ON true
        LEFT JOIN LATERAL (SELECT * FROM plan_items p WHERE p.evaluation_id = e.id AND p.user_id = e.user_id ORDER BY p.id DESC LIMIT 1) pi ON true
        LEFT JOIN daily_plans dp ON dp.id = pi.plan_id
+       LEFT JOIN LATERAL (SELECT s.role_type, s.tracks, s.tier, s.sponsorship, s.location FROM scraped_roles s WHERE s.id = pi.scraped_role_id OR s.apply_url = e.job_url LIMIT 1) sr ON true
+       LEFT JOIN LATERAL (SELECT j.category FROM jobs j WHERE j.user_id = e.user_id AND lower(j.name) = lower(e.company_name) AND j.category IS NOT NULL AND j.category <> 'daily_plan' ORDER BY j.id LIMIT 1) co ON true
       WHERE e.user_id = $1 AND (t.id IS NOT NULL OR f.kind = 'uploaded')
       ORDER BY COALESCE(t.finished_at, t.created_at, e.created_at) DESC
       LIMIT 300`,
@@ -1148,6 +1157,9 @@ export async function resumesByJob(userId) {
     list_date: r.list_date, decision: r.decision || null, stage: r.stage || null, apply_status: r.apply_status,
     plan_item_id: r.plan_item_id == null ? null : Number(r.plan_item_id), apply_mode: r.apply_mode || null, stage_note: r.stage_note || null,
     needs_reason: r.needs_reason || null, apply_after: r.apply_after || null, wait_until: r.wait_until || null, applied_at: r.applied_at || null,
+    role_type: r.role_type || null, tracks: list(r.tracks), company_tier: r.company_tier || null, sponsorship: r.sponsorship || null,
+    location: r.location || null, industry: r.industry || null,
+    grad_years: [...new Set([r.title_year, ...list(r.grad_years)].filter(Boolean))].sort(),
     resume: r.tailoring_id ? {
       tailoring_id: Number(r.tailoring_id), status: r.status, batch_phase: r.batch_phase, ats: r.ats_score == null ? null : Number(r.ats_score),
       ats_before: r.ats_before == null ? null : Number(r.ats_before), callback: r.callback == null ? null : Number(r.callback),

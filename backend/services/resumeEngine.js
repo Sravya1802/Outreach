@@ -329,7 +329,7 @@ async function unsentTailorings(userId) {
   return all(
     `SELECT DISTINCT ON (t.evaluation_id) t.id, t.status, t.ats
        FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id AND e.user_id = t.user_id
-      WHERE t.user_id = $1 AND t.kind = 'resume' AND e.applied_at IS NULL
+      WHERE t.user_id = $1 AND t.kind = 'resume' AND e.applied_at IS NULL AND t.created_at > NOW() - INTERVAL '14 days'
       ORDER BY t.evaluation_id, t.id DESC`,
     [userId],
   ).then(rows => rows.filter(r => ['ready', 'needs_review'].includes(r.status) && r.ats));
@@ -341,7 +341,8 @@ const gapKey = (term) => canonicalTerm(term).replace(/ (methodolog\w*|principles
 /** Hard skills a draft is missing, from what the candidate's material doesn't show. */
 function hardGaps(t) {
   const soft = new Set(list(t.ats.keywords).filter(k => k.kind === 'soft').map(k => k.term));
-  return list(t.ats.missingYouDont).filter(m => !soft.has(m.term));
+  // A degree requirement is met by the education section, not a skill to confirm.
+  return list(t.ats.missingYouDont).filter(m => !soft.has(m.term) && !/^(bachelor|master|ph\.?d)/i.test(str(m.term)));
 }
 
 const skillUpdates = new Map();
@@ -392,7 +393,9 @@ export async function approveSkillsEverywhere(userId, terms) {
   skillUpdates.set(userId, state);
   (async () => {
     for (const j of jobs) {
-      await rerenderWithProject(userId, j.id, { terms: j.terms }, 'skills').catch(err => console.warn(`[resumeEngine] skills for #${j.id} failed:`, err.message));
+      // The ATS score is re-measured in code; the recruiter check is kept, so a
+      // long run doesn't spend the Groq quota tonight's list needs.
+      await rerenderWithProject(userId, j.id, { terms: j.terms }, 'skills', { recheck: false }).catch(err => console.warn(`[resumeEngine] skills for #${j.id} failed:`, err.message));
       state.done += 1;
     }
     state.running = false;
@@ -1194,7 +1197,7 @@ export async function dismissProject(userId, projectId) {
  * Re-render a finished tailoring with a project now built (its link and
  * dates filled in) or taken off, then re-score and re-check it.
  */
-async function rerenderWithProject(userId, tailoringId, project, mode) {
+async function rerenderWithProject(userId, tailoringId, project, mode, { recheck = true } = {}) {
   const t = await one("SELECT * FROM resume_tailorings WHERE id = $1 AND user_id = $2 AND kind = 'resume' AND status IN ('ready', 'needs_review')", [tailoringId, userId]);
   if (!t?.report?.doc) return null;
   const ev = await loadEvaluation(userId, t.evaluation_id);
@@ -1214,7 +1217,7 @@ async function rerenderWithProject(userId, tailoringId, project, mode) {
   const ruled = applyRules(doc, { keywords: ctx.keywords, kind });
   const pass = await renderScored(ruled.doc, ctx, { removed: [...list(t.report.removed), ...ruled.removed], fixed: list(t.report.fixed) });
   const atsBefore = beforeScore(ctx).score;
-  const judged = await judge(ctx, { beforeText: raw || masterText(parsed), afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null);
+  const judged = recheck ? await judge(ctx, { beforeText: raw || masterText(parsed), afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null) : null;
   const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
   const keep = t.report;
   const change = mode === 'built'

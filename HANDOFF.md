@@ -1476,3 +1476,19 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **⚠️ Migration `supabase/migrations/036_plan_review_mode.sql` (adds `plan_items.apply_mode`) is NOT applied.** The session's permission policy blocked me from running DDL on production. Until it's applied, `hasApplyMode()` makes **I’ll review** fail with a 503 ("needs a one-time database update…"); it is never silently treated as automatic. Everything else works. Apply it in the Supabase SQL editor (paste the file) or allow the agent to run it; nothing else is needed (`hasApplyMode` re-checks until it finds the column).
 - **Deploy:** backend `ee71eb4` on the VM, health ok. Frontend `d0aab3c`, `db858fe` live. 118 frontend + 199 backend tests green.
 - **Verified on prod (e2e user):** the top bar has To apply; the page shows To do · 2, Applied · 2 with day headers; the evening list shows 23 × Apply for me / I’ll review / Skip. API: review approve → 503 (guard), send on a non-waiting role → 409, resume jobs and daily plan load. **Not exercised:** an actual auto or review approval, and Send it. Approving runs the real pipeline, and the e2e roles are real postings.
+
+### 2026-10-28 — People search finds more emails; Apollo is Free-plan blocked
+- **What (user request):** "its finding very less emails", then "can we connect apollo". The user's only approved role (IBM) had 10 people and 2 emails.
+- **Causes found (live):**
+  - **Apollo is connected, but on the Free plan.** The server key and the claude.ai connector belong to the same account (captainperiwinkle0@gmail.com; 59 of 75 lead credits left). Apollo answers `mixed_people/search`, `mixed_people/api_search` and `people/match` with 403 `API_INACCESSIBLE` ("not included in your Free plan"), so it found nobody and still spent the user's allowance.
+  - **Hunter's domain search** returned partners, sales and tax people, and all of them were filtered out.
+  - **The Apify LinkedIn actor** failed: "Field input.companies is required".
+  - **The Google query for CTOs/founders** filled the list with executives.
+- **Fix (`7daa411` main / `c42d39c` VM):**
+  - **Hunter:** searches `department=it,hr` first, with a separate cache key `domain#it,hr`, and falls back to a plain search only when that returns nothing.
+  - **`guessEmailsAt`** (referralFlow): gives people found without an email an address built from Hunter's pattern (`emailFromPattern`), with `email_status='guessed'` and a note. It runs at the end of `findPeopleFor`. `pickTargets` prefers a found address over a guessed one in the same rank, and person lookups go to guessed people first.
+  - **UI labels:** People shows "guessed from pattern". An Outbox draft to a guessed address says "may bounce" (`email_guessed` from `listOutbox`).
+  - **Google:** queries go recruiters, then engineers, then managers/ML, then leaders. Google runs before Apify, and Apify is now only a fallback with the actor's new input. Up to 15 people are saved.
+  - **Apollo refusals:** `errorFromHttp` maps a plan refusal to code `PLAN` with a 24h cooldown. The Apollo people layer and `findPersonEmail` skip a provider that is cooling down, so no allowance is spent on it.
+- **Verified live (user's IBM role):** the Hunter eng+HR search added 5 and pattern guesses added 7, taking IBM from 2 emails to 14. IBM's server accepts every address (`accept_all`), so none of them can be verified. 206 backend and 118 frontend tests are green.
+- **Open:** Apollo needs a paid plan for the app to use it; the user decides. The Apify actor still only returns Google results and timed out with 0 people in a test, so it's a weak fallback.

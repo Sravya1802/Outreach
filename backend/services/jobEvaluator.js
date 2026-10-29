@@ -318,7 +318,45 @@ async function fetchGhJidJD(jobUrl, company) {
   } catch { return null; }
 }
 
+// CareerPuck boards (app.careerpuck.com/job-board/<board>/job/<id>) render in
+// JavaScript, but a public API returns the posting. Most sit on Greenhouse:
+// then the Greenhouse embed form is the page to apply on (the plain
+// Greenhouse URL redirects back to CareerPuck).
+export function careerPuckIds(jobUrl) {
+  try {
+    const u = new URL(jobUrl);
+    if (u.hostname !== 'app.careerpuck.com') return null;
+    const m = u.pathname.match(/^\/job-board\/([\w-]+)\/job\/([\w-]+)/);
+    return m ? { board: m[1], job: m[2] } : null;
+  } catch { return null; }
+}
+
+async function fetchCareerPuckJD(jobUrl) {
+  const ids = careerPuckIds(jobUrl);
+  if (!ids) return null;
+  try {
+    const res = await fetch(`https://api.careerpuck.com/v1/public/job-boards/${ids.board}/jobs/${ids.job}`, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' }, signal: AbortSignal.timeout(10000) });
+    if (res.status === 404) return { closed: true };
+    if (!res.ok) return null;
+    const d = await res.json();
+    const { load } = await import('cheerio');
+    // The content is HTML, entity-encoded once more.
+    const html = load(`<div>${d?.content || ''}</div>`)('div').text();
+    const text = tidy([d?.title, d?.location, load(`<div>${html}</div>`)('div').text(), d?.salaryDescription].filter(Boolean).join('\n\n'));
+    if (text.length < 300) return null;
+    const board = d?.jobBoard?.atsSourceId;
+    const atsUrl = d?.atsSourcePlatform === 'greenhouse' && board && /^\d+$/.test(String(d.atsSourceId))
+      ? `https://job-boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(board)}&token=${d.atsSourceId}` : null;
+    return { text, atsUrl, company: d?.employerProfile?.name || null };
+  } catch { return null; }
+}
+
 export async function fetchJobFromUrl(url, { company } = {}) {
+  if (careerPuckIds(url)) {
+    const cp = await fetchCareerPuckJD(url);
+    if (cp?.closed) return { text: null, url, closed: true, error: 'The posting looks closed (CareerPuck says the job isn’t found).' };
+    if (cp?.text) return { text: cp.text, url, source: 'careerpuck-api', atsUrl: cp.atsUrl };
+  }
   // Try host-specific JSON APIs first — saves us from wasted plain-HTML
   // fetches against React/SPA boards that only return an empty shell.
   if (/myworkdayjobs\.com/i.test(url)) {

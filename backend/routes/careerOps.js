@@ -214,6 +214,8 @@ router.post('/evaluate', async (req, res) => {
       const fetched = await fetchJobFromUrl(jobUrl);
       if (!fetched.text) return res.status(400).json({ error: `Could not fetch job page: ${fetched.error || 'no content extracted (paste the JD manually instead)'}` });
       jobDescription = fetched.text;
+      // A board in front of an ATS (CareerPuck → Greenhouse): keep the ATS form, so Apply for me can fill it.
+      if (fetched.atsUrl) sourceUrl = fetched.atsUrl;
     }
 
     console.log(`[careerOps] Evaluating job (${jobDescription.length} chars)`);

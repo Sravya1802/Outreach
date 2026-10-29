@@ -1523,3 +1523,16 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Tried on real drafts:** Virtusa 88→100, Synchrony 88→90, TETRAHED 88→90, Cavendish 88→90, Twitch 89→94 (re-score only). The prompt forbids bolted-on labels ("applying problem solving to…"). The first try read stuffed, so the prompt was tightened and the drafts redone.
 - **Limits:** soft skills weigh half (~2 pts each), so many drafts stop at exactly 90. Only hard skills the user confirms in the SkillGapsPanel push them over. The callback % isn't re-checked (Groq quota).
 - AI caps on the VM are now `AI_MONTHLY_CAP_USD=120` / `AI_USER_MONTHLY_CAP_USD=100`. October spend was $28.60 on 10-29.
+
+### 2026-10-29 — Prospeo's new API, use every free credit, no overlap
+- **What (user request):** "use as much as you can, we need a lot of email" and "make sure there's no overlap".
+- **Prospeo was silently dead.** Its `domain-search` and `email-finder` endpoints answer `DEPRECATED`. Rewritten in `emailProviders.js` against the new API: `prospeoSearchPeople` (search-person: titles + `company.websites` + `person_location_search: United States`; 25 people per credit; email hidden, but `verified` says Prospeo has one) and `prospeoEnrich` (enrich-person, `only_verified_email`; 1 credit; NO_MATCH is free and returns null). `prospeoEmailFinder` now calls enrich, and the deprecated domain-search step is gone from `findCompanyEmails`.
+- **`findProspeoPeopleAt`** (referralFlow) runs in `findPeopleFor` after Hunter. It does 2 searches (recruiting titles, engineering titles), each cached per domain (`domain#recruiting-us`, `#engineering-us`), saves everyone, then reveals up to `REVEALS_PER_COMPANY = 6` verified emails, recruiters first, only for people without a found email. Google runs only if fewer than 3 LinkedIn people exist; pattern guesses fill the rest.
+- **No overlap:**
+  - `upsertContact` merges people by email, LinkedIn or name.
+  - A reveal or guess never reuses an address another contact already has.
+  - `askForReferral` drops anyone asked for another role (referral_asks by contact, email or LinkedIn) or already emailed.
+  - `scheduleEmail` refuses a second first email to the same address, even under another contact row.
+- **Limits:** the VM `.env` now has `HUNTER_USER_MONTHLY_LIMIT=50`, `PROSPEO_USER_MONTHLY_LIMIT=100` and `SERPER_USER_MONTHLY_LIMIT=300`, matching the free accounts (Hunter 50/mo; Prospeo 100/mo, renews on the 10th; Serper 2,041 one-time).
+- **Deploy:** `d43a796` on main, `f29a938` on the VM; 209 tests green; health ok.
+- **Verified live (user's IBM):** Prospeo returned 50 people and revealed 6 verified emails (3 recruiters, 3 engineers), and pattern guesses added 44. IBM now has 65 people, 64 with an email (6 verified, 7 found by Hunter, 51 guessed), with 0 duplicate emails or LinkedIn URLs. **Caveat:** the verified IBM emails don't all follow Hunter's first.last pattern (`mwesley@us.ibm.com`, `davidnguyen@ibm.com`), so guesses at big companies will bounce sometimes. Drafts prefer found addresses, and a draft to a guess says "may bounce".

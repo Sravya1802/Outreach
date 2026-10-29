@@ -152,3 +152,27 @@ test('master text includes dates and GPA, so they count as real', async () => {
   for (const x of ['Jun 2025', '2027', '3.8', 'Acme', 'Graded labs for 120 students']) assert.ok(t.includes(x), x);
   assert.deepEqual(unsupportedNumbers('Interned in Jun 2025; GPA 3.8; class of 2027', t), []);
 });
+
+test('keyword edits are kept only with evidence, real numbers and a new keyword', async () => {
+  const { applyWeave } = await import('../services/resumeGuard.js');
+  const doc = { ...MASTER, projects: MASTER.projects.map(p => ({ ...p })) };
+  const src = 'Built ETL in Python moving 2M rows a day\nWrote tests\nRealtime chat with WebSockets\nJava classes and interfaces';
+  const missing = [k('Problem solving', { kind: 'soft' }), k('Object-Oriented Programming'), k('C#'), k('Collaboration', { kind: 'soft' })];
+  const reply = {
+    edits: [
+      { key: 'E1.1', bullet: 'Built ETL in Python moving 2M rows a day through systematic problem-solving on failed loads', keywords: ['Problem solving'], evidence: 'Built ETL in Python' },
+      { key: 'E1.2', bullet: 'Wrote tests for 10M rows in C#', keywords: ['C#'], evidence: 'wrote tests' },
+      { key: 'E2.1', bullet: 'Collaborated with faculty while grading labs', keywords: ['Collaboration'], evidence: 'worked closely with faculty' },
+      { key: 'P1.1', bullet: 'Realtime chat with WebSockets', keywords: ['Problem solving'], evidence: 'Realtime chat with WebSockets' },
+    ],
+    skills: [{ keyword: 'Object-Oriented Programming', evidence: 'Java classes and interfaces' }, { keyword: 'C#', evidence: 'C# services' }, { keyword: 'Collaboration', evidence: 'Wrote tests' }],
+  };
+  const { doc: out, edits, added } = applyWeave(doc, reply, missing, src);
+  // Only the first edit holds: E1.2 invents 10M and C#, E2.1 quotes nothing real, P1.1 adds no keyword.
+  assert.deepEqual(edits.map(e => e.keywords), [['Problem solving']]);
+  assert.match(out.experience[0].bullets[0], /problem-solving/);
+  assert.equal(out.experience[0].bullets[1], 'Wrote tests');
+  assert.equal(out.experience[1].bullets[0], 'Graded labs for 120 students');
+  assert.deepEqual(added, ['Object-Oriented Programming']);
+  assert.equal(doc.experience[0].bullets[0], 'Built ETL in Python moving 2M rows a day', 'input left as it was');
+});

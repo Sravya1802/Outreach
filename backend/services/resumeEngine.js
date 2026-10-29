@@ -26,7 +26,7 @@ import { all, one, run } from '../db.js';
 import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, canonicalTerm, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
-import { guardDraft, addMissingSkills, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
+import { guardDraft, addMissingSkills, applyWeave, bulletKeys, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
 import { placeholders, fillPlaceholders, applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
 import { resumeTex, coverLetterTex, compileTex, checkPreamble, RESUME_PREAMBLE } from './latex.js';
 
@@ -60,6 +60,11 @@ export const DRAFT_SCHEMA = obj({
 });
 
 const LETTER_SCHEMA = obj({ greeting: S, paragraphs: SA, closing: S });
+
+const WEAVE_SCHEMA = obj({
+  edits: { type: 'array', items: obj({ key: S, bullet: S, keywords: SA, evidence: S }) },
+  skills: { type: 'array', items: obj({ keyword: S, evidence: S }) },
+});
 
 // ── Prompts ─────────────────────────────────────────────────────────────────
 
@@ -431,6 +436,44 @@ ${built.map(fmt).join('\n') || '(none)'}
 PLANNED PROJECTS (suggested, not built yet; reuse instead of suggesting a new one):
 ${suggested.map(fmt).join('\n') || '(none)'}
 Dismissed suggestions (never suggest again): ${dismissed.map(p => p.name).join('; ') || '(none)'}`;
+}
+
+const WEAVE_SYSTEM = `You polish one finished, tailored resume so an ATS finds the job's own words. You never change a fact. A fact-checker runs after you: an edit without real evidence is thrown away.
+
+You get the job's keywords the page is missing and the page's bullets, keyed like E1.2 (1st job, 2nd bullet) or P2.1 (2nd project, 1st bullet). For each missing keyword, decide whether the candidate's real work shows it in substance:
+- A soft skill ("Problem solving", "Collaboration", "Ownership", "Attention to detail") is shown by work a bullet already describes: tracking down a pipeline failure is problem-solving; building with a lab team or clinicians is collaboration; owning a stage end to end is ownership.
+- A hard skill is shown only when the material names it or its plain equivalent: MongoDB is NoSQL; Java classes and interfaces are object-oriented programming; a GitHub Actions pipeline is CI/CD; fixing failing jobs is debugging. A tool the material never mentions is never shown.
+
+When the work shows it:
+- edits: rewrite ONE bullet about that work so the job's word is part of what was done, the way a person writes it: "Collaborated with clinicians to...", "Solved schema-drift problems in...", "Communicated findings to the care team...", "...with CI/CD on GitHub Actions". Never bolt the skill on as a label ("applying problem solving to", "demonstrating collaboration", "in collaboration with cross-functional teams" tacked onto an unrelated clause); if it doesn't read naturally, pick another bullet or skip it. Keep every tool, number and result already in the bullet; add no number, tool, employer, scale or outcome the material doesn't state. 175–235 characters, one sentence, a strong past- or present-tense verb (match the bullet), no first person, no em dashes. Two related keywords may share a bullet; unrelated ones never do. At most 6 edits, never the same bullet twice. "keywords" lists the job keywords the new bullet adds, spelled as given. "evidence" is a phrase of 3+ words copied word for word from the candidate's material (or, for a soft skill, from the bullet itself) that itself shows the skill: for Collaboration, the people worked with; for Problem solving, the problem.
+- skills: a hard skill that fits better in the skills list than a bullet (a language, framework, practice), with "evidence" copied word for word from the material.
+When it doesn't, leave the keyword out. Fewer honest edits beat more weak ones.`;
+
+/**
+ * Opus words a finished draft's bullets in the job's language where the work
+ * already shows it. Every edit is checked in code (applyWeave) before it's used.
+ */
+async function weaveKeywords(ctx, pass, userId) {
+  const missing = pass.score.missing.filter(k => !/^(bachelor|master|ph\.?d)/i.test(k.term));
+  if (!missing.length) return null;
+  const bullets = [...bulletKeys(pass.doc)].map(([key, at]) => `${key} [${at.where}] ${at.b}`).join('\n');
+  const r = await complete({
+    task: 'resume_edit',
+    system: `${WEAVE_SYSTEM}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned, ctx.confirmed)}`,
+    user: `JOB: ${ctx.title} at ${ctx.ev.company_name}
+WHAT THIS ROLE IS REALLY HIRING FOR: ${ctx.focus.join('; ') || 'n/a'}
+
+MISSING FROM THE PAGE (the ATS looks for these words):
+${missing.map(k => `- ${k.term} (${k.kind}${k.importance === 'required' ? ', required' : ''})`).join('\n')}
+
+THE PAGE'S BULLETS:
+${bullets}`,
+    schema: WEAVE_SCHEMA,
+    maxTokens: 4000,
+    timeoutMs: 180_000,
+    userId,
+  });
+  return { ...applyWeave(pass.doc, parseJson(r.text), missing, ctx.sourceText, ctx.keywords), cost: r.costUsd };
 }
 
 // ── Runs ────────────────────────────────────────────────────────────────────
@@ -914,12 +957,43 @@ async function fillMissingChecks(limit = 3) {
   return fixed;
 }
 
-/** Every 5 minutes: pick up finished resume batches, send what's queued, fill in failed checks. */
+/**
+ * Unsent drafts under the bar, closest first: re-scored with today's matching
+ * and their bullets put in the job's words (once per draft).
+ */
+async function raiseUnderBar(limit = 4) {
+  const rows = await all(
+    `SELECT t.id, t.user_id FROM resume_tailorings t JOIN evaluations e ON e.id = t.evaluation_id AND e.user_id = t.user_id
+      WHERE t.kind = 'resume' AND t.status IN ('ready', 'needs_review') AND e.applied_at IS NULL AND t.created_at > NOW() - INTERVAL '14 days'
+        AND t.ats_score <= $2 AND t.report->>'wovenAt' IS NULL
+        AND t.id = (SELECT MAX(x.id) FROM resume_tailorings x WHERE x.evaluation_id = t.evaluation_id AND x.user_id = t.user_id AND x.kind = 'resume')
+      ORDER BY t.ats_score DESC LIMIT $1`,
+    [limit, ATS_TARGET],
+  );
+  let raised = 0;
+  for (const r of rows) {
+    if (skillUpdates.get(r.user_id)?.running) continue;
+    const t = await rerenderWithProject(r.user_id, r.id, { id: 0 }, 'weave', { recheck: false }).catch(err => { console.warn(`[resumeEngine] raise #${r.id}:`, err.message); return null; });
+    if (t && atsPasses(t.ats_score)) raised += 1;
+  }
+  return raised;
+}
+
+let pumping = false;
+
+/** Every 5 minutes: pick up finished resume batches, send what's queued, fill in failed checks, lift drafts under the bar. */
 export async function pumpBatches() {
-  const collected = await collectFinished();
-  const submitted = await submitQueued();
-  const rechecked = await fillMissingChecks().catch(() => 0);
-  return { collected, submitted, rechecked };
+  if (pumping) return { busy: true };
+  pumping = true;
+  try {
+    const collected = await collectFinished();
+    const submitted = await submitQueued();
+    const rechecked = await fillMissingChecks().catch(() => 0);
+    const raised = await raiseUnderBar().catch(() => 0);
+    return { collected, submitted, rechecked, raised };
+  } finally {
+    pumping = false;
+  }
 }
 
 export async function writeCoverLetter(userId, ev) {
@@ -1211,11 +1285,23 @@ async function rerenderWithProject(userId, tailoringId, project, mode, { recheck
   const ref = String(project.id);
   const skillKeywords = mode === 'skills' ? project.terms.map(term => ctx.keywords.find(k => k.term.toLowerCase() === term.toLowerCase()) || { term, aliases: [], importance: 'preferred', kind: 'hard' }) : [];
   const doc = mode === 'built' ? withProject(t.report.doc, project)
-    : mode === 'rescore' ? t.report.doc
+    : mode === 'rescore' || mode === 'weave' ? t.report.doc
     : mode === 'skills' ? addMissingSkills(t.report.doc, skillKeywords, ctx.keywords).doc
     : { ...t.report.doc, projects: t.report.doc.projects.filter(x => !(x.source === 'planned' && x.ref === ref)) };
   const ruled = applyRules(doc, { keywords: ctx.keywords, kind });
-  const pass = await renderScored(ruled.doc, ctx, { removed: [...list(t.report.removed), ...ruled.removed], fixed: list(t.report.fixed) });
+  let pass = await renderScored(ruled.doc, ctx, { removed: [...list(t.report.removed), ...ruled.removed], fixed: list(t.report.fixed) });
+  // Under the bar: word the bullets in the job's language where the work shows it; kept only if the page scores higher.
+  let woven = null;
+  let editCost = 0;
+  if (mode === 'weave' && !atsPasses(pass.score.score)) {
+    const w = await weaveKeywords(ctx, pass, userId).catch(err => { console.warn(`[resumeEngine] keywords for #${tailoringId}:`, err.message); return null; });
+    editCost = w?.cost || 0;
+    if (w?.edits.length || w?.added.length) {
+      const reruled = applyRules(w.doc, { keywords: ctx.keywords, kind });
+      const tried = await renderScored(reruled.doc, ctx, { removed: pass.removed, fixed: pass.fixed });
+      if (tried.pages === 1 && tried.score.score > pass.score.score) { pass = tried; woven = w; }
+    }
+  }
   const atsBefore = beforeScore(ctx).score;
   const judged = recheck ? await judge(ctx, { beforeText: raw || masterText(parsed), afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null) : null;
   const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
@@ -1225,22 +1311,28 @@ async function rerenderWithProject(userId, tailoringId, project, mode, { recheck
     : mode === 'skills'
       ? { section: 'Technical Skills', before: '', after: project.terms.join(', '), why: 'You confirmed you know them.' }
       : { section: 'Projects', before: project.name, after: '', why: 'You chose not to build it, so it came off.' };
+  const wovenChanges = woven ? [
+    ...woven.edits.map(e => ({ section: e.section, before: e.before, after: e.after, why: `Says ${e.keywords.join(', ')} in the job’s words; your material shows it (“${e.evidence}”).` })),
+    ...(woven.added.length ? [{ section: 'Technical Skills', before: '', after: woven.added.join(', '), why: 'Your material shows them; now in the job’s spelling.' }] : []),
+  ] : [];
   const fields = rowFields(ctx, pass, judged || {
     callbackBefore: keep.callback?.before, callbackAfter: keep.callback?.after, callbackWhy: keep.callback?.why, atsWhy: keep.atsWhy,
     topChanges: keep.topChanges, nextChange: keep.nextChange, blockers: keep.blockers, verdict: keep.verdict, verdictWhy: keep.verdictWhy,
   }, {
     notes: keep.notes,
-    changes: mode === 'rescore' ? list(keep.changes) : [...list(keep.changes), change],
+    changes: mode === 'rescore' ? list(keep.changes) : mode === 'weave' ? [...list(keep.changes), ...wovenChanges] : [...list(keep.changes), change],
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: p.source === 'planned' ? 'The project you built for this role' : str(list(keep.projects).find(d => d.name === p.name)?.why) })),
-    proposedProject: !keep.proposedProject || mode === 'skills' || mode === 'rescore' ? keep.proposedProject || null
+    proposedProject: !keep.proposedProject || ['skills', 'rescore', 'weave'].includes(mode) ? keep.proposedProject || null
       : { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined },
     revised: keep.revised,
     model: keep.model,
     judgeModel: judged?.model || keep.judgeModel || null,
+    // Tried once per draft; a skill confirmed later re-renders without it.
+    wovenAt: mode === 'weave' ? new Date().toISOString() : keep.wovenAt || null,
   });
   await run(
     'UPDATE resume_tailorings SET status = $3, ats_score = $4, ats = $5, report = $6, file_id = $7, approved_at = NULL, cost_usd = cost_usd + $8, finished_at = NOW() WHERE id = $1 AND user_id = $2',
-    [tailoringId, userId, fields.status, fields.ats_score, JSON.stringify(fields.ats), JSON.stringify(fields.report), file.id, Number((judged?.cost || 0).toFixed(5))],
+    [tailoringId, userId, fields.status, fields.ats_score, JSON.stringify(fields.ats), JSON.stringify(fields.report), file.id, Number(((judged?.cost || 0) + editCost).toFixed(5))],
   );
   return one('SELECT * FROM resume_tailorings WHERE id = $1', [tailoringId]);
 }

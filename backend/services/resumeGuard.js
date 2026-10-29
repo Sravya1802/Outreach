@@ -217,6 +217,50 @@ export function addMissingSkills(doc, missing, keywords = missing) {
   return { doc: { ...doc, skills }, added };
 }
 
+/** The page's bullets by key: E1.2 = the 1st job's 2nd bullet, P2.1 = the 2nd project's 1st. */
+export function bulletKeys(doc) {
+  const out = new Map();
+  list(doc.experience).forEach((e, i) => list(e.bullets).forEach((b, j) => out.set(`E${i + 1}.${j + 1}`, { section: 'experience', i, j, b, where: `${e.title} at ${e.company}` })));
+  list(doc.projects).forEach((p, i) => list(p.bullets).forEach((b, j) => out.set(`P${i + 1}.${j + 1}`, { section: 'projects', i, j, b, where: p.name })));
+  return out;
+}
+
+const words = (s) => ` ${str(s).toLowerCase().replace(/[‐-―−]/g, '-').replace(/[^a-z0-9+#]+/g, ' ').trim()} `;
+
+/**
+ * Checks the AI's keyword edits on a finished page and applies the ones that
+ * hold up. A reworded bullet must add a missing keyword the old one didn't
+ * have, keep to numbers the material states, stay within two lines, and
+ * quote the candidate's material (three words or more) showing the skill; a
+ * soft skill may instead quote the work the bullet already describes. A
+ * skills-list addition is a hard skill with a quote from the material.
+ */
+export function applyWeave(doc, reply, missing, sourceText, keywords = missing) {
+  const keys = bulletKeys(doc);
+  const src = words(sourceText);
+  const quoted = (q, min) => { const w = words(q); return w.trim().split(' ').length >= min && w.trim().length >= 4 ? w : null; };
+  const byTerm = (t) => missing.find(k => k.term.toLowerCase() === str(t).toLowerCase());
+  const out = { ...doc, experience: list(doc.experience).map(e => ({ ...e, bullets: [...list(e.bullets)] })), projects: list(doc.projects).map(p => ({ ...p, bullets: [...list(p.bullets)] })) };
+  const edits = [];
+  const used = new Set();
+  for (const e of list(reply?.edits)) {
+    const at = keys.get(str(e.key));
+    const bullet = str(e.bullet);
+    if (!at || used.has(at) || !bullet || bullet.length > 2 * CHARS_PER_LINE) continue;
+    const q = quoted(e.evidence, 3);
+    const backed = (k) => q && (src.includes(q) || (k.kind === 'soft' && words(at.b).includes(q)));
+    const adds = list(e.keywords).map(byTerm).filter(k => k && hasTerm(bullet, k) && !hasTerm(at.b, k));
+    if (!adds.length || !adds.every(backed) || unsupportedNumbers(bullet, `${at.b}\n${sourceText}`).length) continue;
+    out[at.section][at.i].bullets[at.j] = bullet;
+    used.add(at);
+    edits.push({ section: at.where, before: at.b, after: bullet, keywords: adds.map(k => k.term), evidence: str(e.evidence) });
+  }
+  const skills = list(reply?.skills).map(s => ({ k: byTerm(s.keyword), q: quoted(s.evidence, 1) }))
+    .filter(s => s.k && s.k.kind !== 'soft' && s.q && src.includes(s.q) && !edits.some(e => e.keywords.includes(s.k.term)));
+  const { doc: withSkills, added } = addMissingSkills(out, skills.map(s => s.k), keywords);
+  return { doc: withSkills, edits, added };
+}
+
 /**
  * Ways to make the page shorter, least costly first. Each returns a new doc
  * or null when it has nothing left to cut.

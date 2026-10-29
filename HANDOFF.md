@@ -1536,3 +1536,18 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Limits:** the VM `.env` now has `HUNTER_USER_MONTHLY_LIMIT=50`, `PROSPEO_USER_MONTHLY_LIMIT=100` and `SERPER_USER_MONTHLY_LIMIT=300`, matching the free accounts (Hunter 50/mo; Prospeo 100/mo, renews on the 10th; Serper 2,041 one-time).
 - **Deploy:** `d43a796` on main, `f29a938` on the VM; 209 tests green; health ok.
 - **Verified live (user's IBM):** Prospeo returned 50 people and revealed 6 verified emails (3 recruiters, 3 engineers), and pattern guesses added 44. IBM now has 65 people, 64 with an email (6 verified, 7 found by Hunter, 51 guessed), with 0 duplicate emails or LinkedIn URLs. **Caveat:** the verified IBM emails don't all follow Hunter's first.last pattern (`mwesley@us.ibm.com`, `davidnguyen@ibm.com`), so guesses at big companies will bounce sometimes. Drafts prefer found addresses, and a draft to a guess says "may bounce".
+
+### 2026-10-29 — 15–20 referral email drafts per role; Approve all per company
+- **What (user request):** "we need to send at least 15 to 20 emails". The user chose **15–20 drafts per approved role, each to a different person at that company**.
+- **Backend (referralFlow):**
+  - `MAX_EMAILS_PER_ROLE = 20` and `REVEALS_PER_COMPANY = 10` (Prospeo verified reveals). The no-overlap rules from the previous entry still apply: nobody is asked twice, across roles.
+  - **`checkGuesses`:** guessed addresses that would get a draft are checked with Hunter's verifier first (`hunterVerify`, its own budget `hunter_verify` of 100/month, separate from searches). Invalid → the contact is marked invalid and the next person moves up; valid → no longer a guess; `accept_all` (like IBM) → checking stops for that company.
+  - **`referralNote`:** shortens long name lists to "Ana, Bo and 16 others".
+  - **`providerUsage`:** defaults now match the free accounts (hunter 50, hunter_verify 100, prospeo 100, serper 300).
+- **Outbox** ([OutboxPage.tsx](frontend/src/features/outreach/OutboxPage.tsx)): drafts are grouped by company, and each group has **Approve all N**. A confirm dialog says how many people, the daily cap, and how many go to guessed addresses. Approvals run one at a time with progress, and failures are named.
+- **Deploy:** `4c16ba0` and `f9d389d` on main, `b8e019e` on the VM; 210 backend and 118 frontend tests green; health ok.
+- **Verified live (e2e, placeholder rows at example.invalid plus a placeholder Gmail connection with `status='error'` so nothing logs in; all removed afterwards):** the group header reads "QA Approve Corp · 3 drafts"; the dialog text is right at 1280 and 390 px; **Cancel → 0 approve requests**; no page errors; no horizontal scroll. **Not exercised:** a real 20-draft referral run. It writes real Gmail drafts, and the user's only approved role (IBM) already has its asks.
+- **Limits to keep in mind:**
+  - The Gmail `daily_cap` is 20, so two roles approved on the same day spill into the next morning.
+  - AI drafts fall back to the template when Groq is rate-limited, so then all 20 read alike.
+  - Apollo is still Free and API-blocked.

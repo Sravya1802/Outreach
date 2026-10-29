@@ -20,18 +20,18 @@ export const PRICES = {
   'groq:openai/gpt-oss-120b': [0.15, 0.075, 0.60],
   'groq:openai/gpt-oss-20b': [0.10, 0.05, 0.50],
   'openai:gpt-4o-mini': [0.15, 0.075, 0.60],
-  // Not yet on Google's price page when added; set high (Gemini 3 Flash ×1.5) so the cap trips early.
-  'gemini:gemini-3.8-flash': [0.75, 0.19, 4.50],
+  // Not confirmed against Google's price page; set high (Gemini 3 Flash ×1.5) so the cap trips early. 3.8 Flash took ~30s for one word.
+  'gemini:gemini-3.5-flash': [0.75, 0.19, 4.50],
   'openai:gpt-4o': [2.50, 1.25, 10.00],
   'anthropic:claude-opus-5-5': [4.00, 0.40, 20.00],
 };
 
 export const ROUTES = {
   score: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'gemini', model: 'gemini-3.8-flash', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'gemini', model: 'gemini-3.5-flash', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   email: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   categorize: [{ provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
-  keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'gemini', model: 'gemini-3.8-flash', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'gemini', model: 'gemini-3.5-flash', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   // Medium effort: high thought for ~12K output tokens a draft (~$0.30); medium is about half.
   resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'medium' }],
   resume_parse: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],

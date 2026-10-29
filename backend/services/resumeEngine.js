@@ -25,6 +25,7 @@
 import { all, one, run } from '../db.js';
 import { complete, submitBatch, collectBatch } from './llm.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
+import { companyTiers, tierFor, industryFor } from './companyTier.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, canonicalTerm, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, applyWeave, bulletKeys, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
 import { placeholders, fillPlaceholders, applyRules, diffChanges, skillsToAsk, fixDashes, lintDoc, roleKind, boldTools, keywordPlaces, metricSpans, sortNewestFirst, equalizeBullets, dateValue } from './resumeRules.js';
@@ -1151,14 +1152,15 @@ export async function resumesByJob(userId) {
       LIMIT 300`,
     [userId],
   );
+  const tiers = await companyTiers();
   return rows.map(r => ({
     id: Number(r.id), company_name: r.company_name, job_title: r.job_title, job_url: r.job_url,
     eval_score: r.eval_score == null ? null : Number(r.eval_score) / 10,
     list_date: r.list_date, decision: r.decision || null, stage: r.stage || null, apply_status: r.apply_status,
     plan_item_id: r.plan_item_id == null ? null : Number(r.plan_item_id), apply_mode: r.apply_mode || null, stage_note: r.stage_note || null,
     needs_reason: r.needs_reason || null, apply_after: r.apply_after || null, wait_until: r.wait_until || null, applied_at: r.applied_at || null,
-    role_type: r.role_type || null, tracks: list(r.tracks), company_tier: r.company_tier || null, sponsorship: r.sponsorship || null,
-    location: r.location || null, industry: r.industry || null,
+    role_type: r.role_type || null, tracks: list(r.tracks), company_tier: r.company_tier || tierFor(r.company_name, tiers), sponsorship: r.sponsorship || null,
+    location: r.location || null, industry: r.industry || industryFor(r.company_name),
     grad_years: [...new Set([r.title_year, ...list(r.grad_years)].filter(Boolean))].sort(),
     resume: r.tailoring_id ? {
       tailoring_id: Number(r.tailoring_id), status: r.status, batch_phase: r.batch_phase, ats: r.ats_score == null ? null : Number(r.ats_score),

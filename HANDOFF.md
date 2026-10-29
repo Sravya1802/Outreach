@@ -1591,3 +1591,22 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **What:** the user's Domino Data Lab link (`app.careerpuck.com/job-board/domino-data-lab/job/7992530`) failed with "Page returned only 46 chars". CareerPuck is a JS app in front of Greenhouse.
 - **Fix (`5b59219` main / `9bcdd96` VM):** `fetchJobFromUrl` reads `api.careerpuck.com/v1/public/job-boards/<board>/jobs/<id>`, whose content is HTML entity-encoded twice. When `atsSourcePlatform` is greenhouse, it returns `atsUrl` = `job-boards.greenhouse.io/embed/job_app?for=<token>&token=<id>`. The plain Greenhouse URL redirects back to CareerPuck; the embed form doesn't. The evaluate route saves `atsUrl` as `job_url`, so Apply for me detects Greenhouse. Verified locally on the real link: 4,633-char JD and the embed URL. VM tests 213/213.
 - **Also:** after the user confirmed 21 skills plus the weave pump, 109 of 169 unsent drafts are above 90 (22 this morning).
+
+### 2026-10-29 — To apply: "Add a job you found" (link + company + own PDF → Apply for me)
+- **Asked:** on To apply, add my own link and company, upload my resume, and the app auto-applies, asks for a referral "and all".
+- **Built (`df89e8c` main / `445728c` VM):**
+  - **`addOwnJob`** (dailyPlan.js), `POST /api/daily-plan/own-job` (multipart: url, company, title?, jobDescription?, resume PDF?). It reads the link with `fetchJobFromUrl`, or takes pasted text.
+    - **Company:** CareerPuck returns it, so it's optional there.
+    - **Title:** the posting's first line when it's 100 characters or less.
+    - **Apply link:** the `atsUrl` when the board fronts an ATS.
+  - **What it creates:** an evaluation (source `daily_plan`), plus the PDF saved as `uploaded`, so it's what goes out and what the referral email attaches. Also a plan_item on the user's latest list (yesterday's if they have none, so tonight's still builds): tier `worth`, reason "Added by you", approved, apply_mode auto.
+  - **With a PDF:** stage goes straight to `asking_referral` (or `ready_to_apply` in the company's morning if referral-first is off).
+  - **Without a PDF:** stage is `tailoring`.
+  - It kicks `advanceUser` and `prepareContacts` at once. A duplicate approved link returns 409.
+  - **UI:** `AddOwnJob.tsx` at the top of To apply. It shows a Job description box when the link can't be read, and opens `/resumes/job/:id` after adding.
+- **No AI needed with an own PDF:** referral emails fall back to `templateAsk` when Groq, Gemini and OpenAI are all out (they were at 09:30 UTC 10-29: Groq daily 429, Gemini 429, OpenAI no credits). That outage is what broke the user's Evaluate.
+- **Verified on the VM (e2e user, cleaned up):**
+  - A bad link returns 400.
+  - An unreadable link asks for the job description.
+  - The CareerPuck Domino link became item `asking_referral`, with the title and company read from the posting, the Greenhouse embed URL, and the uploaded file attached.
+  - The frontend chunk is live.

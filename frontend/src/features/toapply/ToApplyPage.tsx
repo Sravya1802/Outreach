@@ -10,6 +10,7 @@ import { PdfDialog } from '@/features/profile/PdfViewer'
 import { ManualApply } from '@/features/applications/ManualApply'
 import { ApproveButtons } from '@/features/applications/DailyPlan'
 import { latestListDate } from '@/features/resumes/resumes'
+import { SkillGapsPanel } from './SkillGapsPanel'
 import { dayLabel, isMissed, jobState, matchesToApply, sortToApply, stateLabel, type JobState, type ToApplyFilter } from './toApply'
 
 const TONE: Record<JobState, Tone> = { applied: 'success', applying: 'info', review: 'warning', needs: 'warning', working: 'info', open: 'neutral', skipped: 'neutral' }
@@ -79,6 +80,7 @@ export default function ToApplyPage() {
         <EmptyState title="No resumes yet" description="Each evening the top roles get a resume written before the list arrives. They’ll show up here." />
       ) : (
         <div className="space-y-4">
+          <SkillGapsPanel />
           <div className="flex flex-wrap items-center gap-2">
             <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search company or role" aria-label="Search company or role" className="w-full sm:w-64" />
             <div className="max-w-full overflow-x-auto"><Segmented value={filter} onChange={setFilter} options={options} label="Show" /></div>
@@ -89,7 +91,7 @@ export default function ToApplyPage() {
                 <tr className="bg-raised text-left text-[12px] font-medium tracking-wide text-subtle uppercase">
                   <th className="border-b border-line px-3 py-2 font-medium">Company and role</th>
                   <th className="border-b border-line px-3 py-2 font-medium">Fit</th>
-                  <th className="border-b border-line px-3 py-2 font-medium">ATS</th>
+                  <th className="border-b border-line px-3 py-2 font-medium" title="Your original resume → the one tailored for this job. The rule is above 90%.">ATS original → tailored</th>
                   <th className="border-b border-line px-3 py-2 font-medium">Status</th>
                   <th className="border-b border-line px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
@@ -116,7 +118,14 @@ export default function ToApplyPage() {
                           </div>
                         </td>
                         <td className={cn(cell, 'font-mono text-[13px]')}>{j.eval_score == null ? '—' : j.eval_score.toFixed(1)}</td>
-                        <td className={cn(cell, 'font-mono text-[13px] whitespace-nowrap', j.resume?.ats == null ? 'text-subtle' : j.resume.ats > 90 ? 'text-success' : 'text-warning')}>{j.resume?.ats == null ? '—' : `${j.resume.ats}%`}</td>
+                        <td className={cn(cell, 'font-mono text-[13px] whitespace-nowrap')}>
+                          {j.resume?.ats == null ? <span className="text-subtle">—</span> : (
+                            <span title={j.resume.ats_before == null ? 'Tailored resume' : `Your original resume: ${j.resume.ats_before}%. Tailored for this job: ${j.resume.ats}%.`}>
+                              {j.resume.ats_before != null && <span className="text-subtle">{j.resume.ats_before}% → </span>}
+                              <span className={j.resume.ats > 90 ? 'text-success' : 'text-warning'}>{j.resume.ats}%</span>
+                            </span>
+                          )}
+                        </td>
                         <td className={cell}>
                           <Badge tone={TONE[st]}>{stateLabel(j)}</Badge>
                           {j.stage_note && (st === 'review' || st === 'needs' || st === 'working') && <p className="mt-1 max-w-80 text-[12px] leading-snug text-muted">{j.stage_note}</p>}

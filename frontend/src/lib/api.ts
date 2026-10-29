@@ -688,6 +688,13 @@ export interface TrackerImport { total: number; added: number; updated: number; 
 
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
 /** One row of Resumes → By job. */
+export interface SkillGaps {
+  skills: { skill: string; resumes: number; underBar: number; required: number }[]
+  unsent: number
+  underBar: number
+  updating: { running: boolean; total: number; done: number; skills: string[] } | null
+}
+
 export interface ResumeJob {
   id: number
   company_name: string
@@ -949,6 +956,10 @@ export const api = {
   /** You know these JD skills: added to this resume and remembered for the next ones. */
   approveSkills: (id: number, skills: string[]): Promise<{ tailoring: Tailoring | null }> => legacy.career.approveSkills(id, skills),
   resumeJobs: async (): Promise<ResumeJob[]> => (await legacy.career.resumeJobs()).jobs ?? [],
+  /** Skills holding unsent resumes under the ATS bar, across every draft. */
+  skillGaps: (): Promise<SkillGaps> => legacy.career.skillGaps(),
+  /** "I know these": added to every unsent resume missing them, each re-scored. */
+  approveSkillGaps: (skills: string[]): Promise<{ resumes: number; skills: string[] }> => legacy.career.approveSkillGaps(skills),
   /** Send the app's tailored resume for this role instead of the one you uploaded. */
   useTailored: (id: number): Promise<{ ok: boolean }> => legacy.career.useTailored(id),
   /** Upload your own resume for one role; it's sent as-is. */

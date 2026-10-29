@@ -44,6 +44,7 @@ export const qk = {
   tracker: ['tracker'] as const,
   projects: ['planned-projects'] as const,
   resumeJobs: ['resume-jobs'] as const,
+  skillGaps: ['skill-gaps'] as const,
   gmail: ['gmail-status'] as const,
   dailyPlan: ['daily-plan'] as const,
   dailyPlanSettings: ['daily-plan', 'settings'] as const,

@@ -77,10 +77,13 @@ function IdeaCard({ p }: { p: PlannedProject }) {
   const [repo, setRepo] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  // Bracketed targets in the bullets ("[1,000]"): the user confirms the real number for each.
+  const targets = p.bullets.flatMap(b => [...b.matchAll(/\[([^[\]]{1,40})\]/g)].map(m => (m[1] ?? '').trim()))
+  const [values, setValues] = useState<string[]>(() => targets.map(() => ''))
   const refresh = () => { void qc.invalidateQueries({ queryKey: qk.projects }); void qc.invalidateQueries({ queryKey: ['tailoring'] }) }
   const built = useMutation({
-    mutationFn: () => api.markProjectBuilt(p.id, { repo_url: repo.trim(), start: from.trim(), end: to.trim() }),
-    onSuccess: () => { toast.success('Marked built. Your resumes can use it now.'); refresh() },
+    mutationFn: () => api.markProjectBuilt(p.id, { repo_url: repo.trim(), start: from.trim(), end: to.trim(), values: values.map(v => v.trim()) }),
+    onSuccess: (r) => { toast.success(r.tailoring ? 'Marked built and added to the resumes that list it.' : 'Marked built. Your next tailored resumes can use it.'); refresh() },
     onError: (e: Error) => toast.error(e.message),
   })
   const dismiss = useMutation({ mutationFn: () => api.dismissProject(p.id), onSuccess: refresh, onError: (e: Error) => toast.error(e.message) })
@@ -117,6 +120,18 @@ function IdeaCard({ p }: { p: PlannedProject }) {
           <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
           <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
         </div>
+        {targets.length > 0 && (
+          <fieldset className="space-y-2">
+            <legend className="text-[13px] text-muted">Your real numbers. The bullets have targets in [brackets]; enter what you actually measured for each.</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {targets.map((t, i) => (
+                <Field key={`${t}-${i}`} label={`Target ${t}`}>
+                  {f => <Input {...f} value={values[i] ?? ''} onChange={e => setValues(v => v.map((x, j) => (j === i ? e.target.value : x)))} placeholder={t} required />}
+                </Field>
+              ))}
+            </div>
+          </fieldset>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button type="submit" variant="primary" loading={built.isPending}>I built it</Button>
           <Button type="button" variant="ghost" loading={dismiss.isPending} onClick={() => dismiss.mutate()}>Not for me</Button>

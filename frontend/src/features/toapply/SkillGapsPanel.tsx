@@ -18,13 +18,14 @@ export function SkillGapsPanel() {
     refetchInterval: query => (query.state.data?.updating?.running ? 5_000 : false),
   })
   const updating = gaps.data?.updating
-  // When the re-scoring finishes, the table's ATS column picks up the new scores.
+  // As resumes are re-scored (every poll, and once more at the end), the table's ATS column picks up the new scores.
   const running = Boolean(updating?.running)
-  const wasRunning = useRef(false)
+  const done = updating?.done ?? 0
+  const seen = useRef({ running: false, done: 0 })
   useEffect(() => {
-    if (wasRunning.current && !running) void qc.invalidateQueries({ queryKey: qk.resumeJobs })
-    wasRunning.current = running
-  }, [running, qc])
+    if ((seen.current.running && !running) || (running && done !== seen.current.done)) void qc.invalidateQueries({ queryKey: qk.resumeJobs })
+    seen.current = { running, done }
+  }, [running, done, qc])
   const add = useMutation({
     mutationFn: () => api.approveSkillGaps(picked),
     onSuccess: (r) => {

@@ -199,6 +199,8 @@ export const api = {
     decide:     (id, decision, mode) => apiCall(`/daily-plan/items/${id}/decision`, { method: 'POST', body: { decision, mode } }),
     send:       (id)          => apiCall(`/daily-plan/items/${id}/send`, { method: 'POST' }),
     approveAll: (planId)      => apiCall(`/daily-plan/plans/${planId}/approve-all`, { method: 'POST' }),
+    // A job you bring (link, company, your PDF): approved as Apply for me.
+    ownJob:     (formData)    => apiCall('/daily-plan/own-job', { method: 'POST', body: formData }),
     referral:   (id, body)    => apiCall(`/daily-plan/items/${id}/referral`, { method: 'POST', body }),
     askSent:    (id)          => apiCall(`/daily-plan/asks/${id}/sent`, { method: 'POST' }),
     connections: ()           => apiCall('/daily-plan/connections'),

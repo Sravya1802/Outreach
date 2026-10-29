@@ -11,6 +11,7 @@ import { ManualApply } from '@/features/applications/ManualApply'
 import { ApproveButtons } from '@/features/applications/DailyPlan'
 import { latestListDate } from '@/features/resumes/resumes'
 import { SkillGapsPanel } from './SkillGapsPanel'
+import { AddOwnJob } from './AddOwnJob'
 import {
   CATEGORY_LABEL, LEVEL_LABEL, NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally,
   type JobState, type RoleCategory, type RoleFilters, type RoleLevel, type ToApplyFilter,
@@ -159,6 +160,7 @@ export default function ToApplyPage() {
     <Page wide>
       <PageHeader title="To apply"
         description="Every job the app wrote a resume for, newest list first. Apply for me: the app takes it from approval to applying. I’ll review: it stops once the resume is written so you can read it, then Send it or apply yourself." />
+      <div className="mb-4"><AddOwnJob /></div>
       {jobs.error ? <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} /> : jobs.isLoading ? <Skeleton className="h-72" /> : everything.length === 0 ? (
         <EmptyState title="No resumes yet" description="Each evening the top roles get a resume written before the list arrives. They’ll show up here." />
       ) : (

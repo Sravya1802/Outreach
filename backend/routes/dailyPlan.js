@@ -1,7 +1,8 @@
 // The evening list: settings, tonight's roles, approve / skip.
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
-import { approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings, sendReviewed } from '../services/dailyPlan.js';
+import multer from 'multer';
+import { addOwnJob, approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings, sendReviewed } from '../services/dailyPlan.js';
 import { markAskSent, referralAction, referralStats } from '../services/referralFlow.js';
 import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
@@ -42,6 +43,26 @@ router.post('/email', async (req, res) => {
     if (!o.plan) return res.status(400).json({ error: 'No list yet' });
     res.json(await emailPlan(req.user.id, o.plan.id));
   } catch (err) { fail(res, err); }
+});
+
+// A job the user brings: link, company, optional title / description, and their own resume (PDF).
+const ownResume = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => (file.mimetype === 'application/pdf' ? cb(null, true) : cb(Object.assign(new Error('Upload your resume as a PDF'), { status: 400 }))),
+}).single('resume');
+
+router.post('/own-job', (req, res) => {
+  ownResume(req, res, async (upErr) => {
+    if (upErr) return fail(res, Object.assign(upErr, { status: upErr.status || 400 }));
+    const b = req.body || {};
+    try {
+      res.json(await addOwnJob(req.user.id, {
+        url: b.url, company: b.company, title: b.title, jobDescription: b.jobDescription,
+        resume: req.file ? { buffer: req.file.buffer, filename: req.file.originalname } : null,
+      }));
+    } catch (err) { fail(res, err); }
+  });
 });
 
 router.post('/items/:id/decision', async (req, res) => {

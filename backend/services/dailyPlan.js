@@ -95,6 +95,7 @@ export function localDate(tz, now = new Date()) {
 export const localHour = (tz, now = new Date()) => partsIn(now, tz).hour;
 
 const lc = (s) => String(s ?? '').trim().toLowerCase();
+const str = (v) => String(v ?? '').trim();
 
 export const CLOSE_MATCH = 'Close match · ';
 
@@ -535,6 +536,68 @@ export async function sendReviewed(userId, itemId) {
   if (!t) throw Object.assign(new Error('The resume isn’t finished yet.'), { status: 409 });
   await advanceUser(userId);
   return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+}
+
+/**
+ * A job the user brings: its link, the company, and (optionally) their own
+ * resume. It joins the latest list approved as Apply for me and goes the way
+ * the list's roles go: people found at the company, a referral asked for,
+ * then the application in the company's morning. With their PDF it skips the
+ * resume step and that PDF goes out as it is; without one, the app writes the
+ * tailored resume first.
+ */
+export async function addOwnJob(userId, { url, company, title, jobDescription, resume }) {
+  const link = str(url);
+  if (!/^https?:\/\/\S+$/i.test(link)) throw Object.assign(new Error('Paste the job’s link (https://…)'), { status: 400 });
+  const { fetchJobFromUrl, looksLikeJobDescription } = await import('./jobEvaluator.js');
+  const pasted = str(jobDescription);
+  const fetched = await fetchJobFromUrl(link, { company: str(company) || undefined }).catch(() => null);
+  const text = looksLikeJobDescription(pasted) ? pasted : looksLikeJobDescription(fetched?.text) ? String(fetched.text) : '';
+  if (!text) {
+    throw Object.assign(new Error(fetched?.closed ? 'That posting looks closed.' : `Couldn’t read the job from that link${fetched?.error ? ` (${fetched.error.split(' — ')[0]})` : ''}. Paste the job description too.`), { status: 400 });
+  }
+  const name = str(company) || str(fetched?.company);
+  if (!name) throw Object.assign(new Error('Add the company name'), { status: 400 });
+  // Boards in front of an ATS (CareerPuck → Greenhouse) apply on the ATS form.
+  const applyUrl = fetched?.atsUrl || link;
+  const firstLine = text.split('\n').map(x => x.trim()).find(Boolean) || '';
+  const role = str(title) || (firstLine.length <= 100 ? firstLine : '') || 'Role';
+  const dup = await one(
+    `SELECT pi.id FROM plan_items pi WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.apply_url IN ($2, $3)`,
+    [userId, link, applyUrl],
+  );
+  if (dup) throw Object.assign(new Error('That job is already on To apply.'), { status: 409 });
+
+  const settings = await getSettings(userId);
+  let plan = await one('SELECT id FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
+  if (!plan) {
+    // No list yet: yesterday's, so tonight's list still builds.
+    const yesterday = localDate(settings.timezone, new Date(Date.now() - 86400_000));
+    plan = (await run("INSERT INTO daily_plans (user_id, plan_date, status, built_at) VALUES ($1, $2, 'ready', NOW()) RETURNING id", [userId, yesterday])).rows[0];
+  }
+  const evalId = (await run(
+    `INSERT INTO evaluations (user_id, job_url, job_title, company_name, job_description, source, apply_mode, apply_status)
+     VALUES ($1, $2, $3, $4, $5, 'daily_plan', 'auto', 'not_started') RETURNING id`,
+    [userId, applyUrl, role, name, text.slice(0, 20000)],
+  )).rows[0].id;
+  if (resume?.buffer?.length) {
+    const { saveForEvaluation } = await import('./resumeFiles.js');
+    await saveForEvaluation(userId, evalId, resume.buffer, resume.filename || `${name}-resume.pdf`, 'uploaded');
+  }
+  const own = Boolean(resume?.buffer?.length);
+  const stage = !own ? 'tailoring' : settings.referralFirst ? 'asking_referral' : 'ready_to_apply';
+  const note = !own ? 'Writing your tailored resume'
+    : settings.referralFirst ? 'Your resume. Next: finding people and asking for a referral'
+    : 'Your resume. Applying in the company’s morning';
+  const applyAfter = stage === 'ready_to_apply' ? nextSendSlot(settings.timezone, { startHour: 6, endHour: 10 }) : null;
+  const cols = ['plan_id', 'user_id', 'evaluation_id', 'company_name', 'title', 'apply_url', 'tier', 'reason', 'decision', 'decided_at', 'stage', 'stage_note', 'apply_after', 'job_description'];
+  const vals = [plan.id, userId, evalId, name, role, applyUrl, 'worth', 'Added by you', 'approved', new Date(), stage, note, applyAfter, text.slice(0, 20000)];
+  if (await hasApplyMode()) { cols.push('apply_mode'); vals.push('auto'); }
+  const item = (await run(`INSERT INTO plan_items (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, vals)).rows[0];
+  // Start now rather than at the next cron pass: the resume (if the app writes it) and the people search.
+  advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
+  prepareContacts(userId).catch(err => console.warn('[daily-plan] contacts:', err.message));
+  return { item, evaluationId: Number(evalId), ownResume: own };
 }
 
 /** The evaluation (application row) a plan item's resume and application hang off. */

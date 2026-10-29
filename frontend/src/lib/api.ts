@@ -971,6 +971,15 @@ export const api = {
   skillGaps: (): Promise<SkillGaps> => legacy.career.skillGaps(),
   /** "I know these": added to every unsent resume missing them, each re-scored. */
   approveSkillGaps: (skills: string[]): Promise<{ resumes: number; skills: string[] }> => legacy.career.approveSkillGaps(skills),
+  addOwnJob: (f: { url: string; company: string; title?: string; jobDescription?: string; resume?: File | null }): Promise<{ evaluationId: number; ownResume: boolean }> => {
+    const fd = new FormData()
+    fd.append('url', f.url)
+    fd.append('company', f.company)
+    if (f.title) fd.append('title', f.title)
+    if (f.jobDescription) fd.append('jobDescription', f.jobDescription)
+    if (f.resume) fd.append('resume', f.resume)
+    return legacy.dailyPlan.ownJob(fd)
+  },
   /** Send the app's tailored resume for this role instead of the one you uploaded. */
   useTailored: (id: number): Promise<{ ok: boolean }> => legacy.career.useTailored(id),
   /** Upload your own resume for one role; it's sent as-is. */

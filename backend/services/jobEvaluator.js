@@ -355,7 +355,7 @@ export async function fetchJobFromUrl(url, { company } = {}) {
   if (careerPuckIds(url)) {
     const cp = await fetchCareerPuckJD(url);
     if (cp?.closed) return { text: null, url, closed: true, error: 'The posting looks closed (CareerPuck says the job isn’t found).' };
-    if (cp?.text) return { text: cp.text, url, source: 'careerpuck-api', atsUrl: cp.atsUrl };
+    if (cp?.text) return { text: cp.text, url, source: 'careerpuck-api', atsUrl: cp.atsUrl, company: cp.company };
   }
   // Try host-specific JSON APIs first — saves us from wasted plain-HTML
   // fetches against React/SPA boards that only return an empty shell.

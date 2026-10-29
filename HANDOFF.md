@@ -1507,3 +1507,19 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 ### 2026-10-29 — Hunter monthly allowance 15 → 45
 - **What:** the user asked to use the whole free Hunter allowance. The VM `.env` now has `HUNTER_USER_MONTHLY_LIMIT=45` (backup `.env.bak-<timestamp>`). The Hunter account is Free, with 50 searches a month (43 left on 2026-10-28). The limit is per app user, so the e2e test account can spend from the same Hunter key; keep e2e Hunter use low. Restarted; health ok; `monthlyLimit('hunter')` = 45.
 - **Other providers (2026-10-28):** Prospeo Free 100/100 (renews 2026-11-10; app allowance 25). Serper 2,041 one-time credits. Apollo is Free, so its API is blocked (see the entry above); Basic is about $59/mo monthly (~$49 billed yearly), and the user is deciding.
+
+### 2026-10-29 — Drafts under 90 are lifted automatically (job's words in the bullets)
+- **Asked:** "I want each resume above 90%".
+- **Measured (170 unsent drafts, 149 under 90):** a typical draft under the bar lost 18.6 points to hard skills the material never shows (11.4 required + 7.2 preferred), 4.9 to soft skills, 1.2 to skills it has but left off the page, and 0 to format. "Problem solving" was missing on 130 drafts, Collaboration on 50. Simulated: soft skills fixed alone → 48/170 pass; plus the 5 top hard skills confirmed (CI/CD, OOP, Debugging, Agile, C#) → 88/170; with a wider confirmed list → 106/170. About 64 can't reach 90 truthfully (Garmin embedded/C, SpaceX C#/.NET, TikTok Flink/Hive, Pony.ai robotics…).
+- **Built (`bf72b07` main / `530d4bc` VM):**
+  - **`raiseUnderBar`** in `pumpBatches`, every 5 min. Picks 4 unsent drafts a pass that are under the bar, closest first, and runs each once (`report.wovenAt`). Skipped while that user's skill approval is running. `pumpBatches` now has a `pumping` guard against overlapping runs.
+  - **Mode `weave`** in `rerenderWithProject`. It re-scores with today's matching (free; some drafts pass from this alone, e.g. Twitch 89→94). Still under the bar → `weaveKeywords`: Opus (`resume_edit` route, low effort, $0.015–0.07) rewords up to 6 bullets and/or adds hard skills to the list.
+  - **`applyWeave`** (resumeGuard) keeps an edit only if all of these hold:
+    - it adds a missing keyword the old bullet lacked
+    - it quotes 3+ words of the candidate's material as evidence (a soft skill may quote the bullet itself)
+    - it adds no number the material doesn't state
+    - it's ≤242 chars
+  - The result is kept only if the page scores higher and stays one page. Each edit is listed in `report.changes` with its evidence.
+- **Tried on real drafts:** Virtusa 88→100, Synchrony 88→90, TETRAHED 88→90, Cavendish 88→90, Twitch 89→94 (re-score only). The prompt forbids bolted-on labels ("applying problem solving to…"). The first try read stuffed, so the prompt was tightened and the drafts redone.
+- **Limits:** soft skills weigh half (~2 pts each), so many drafts stop at exactly 90. Only hard skills the user confirms in the SkillGapsPanel push them over. The callback % isn't re-checked (Groq quota).
+- AI caps on the VM are now `AI_MONTHLY_CAP_USD=120` / `AI_USER_MONTHLY_CAP_USD=100`. October spend was $28.60 on 10-29.

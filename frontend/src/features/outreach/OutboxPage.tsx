@@ -16,6 +16,8 @@ export default function OutboxPage() {
   const replies = useQuery({ queryKey: qk.replies, queryFn: api.replies, enabled: Boolean(gmail.data?.connected), refetchInterval: 120_000 })
   const [editing, setEditing] = useState<OutboxItem | null>(null)
   const [cancelling, setCancelling] = useState<OutboxItem | null>(null)
+  const [approvingAll, setApprovingAll] = useState<{ company: string; items: OutboxItem[] } | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: qk.outbox })
     void qc.invalidateQueries({ queryKey: qk.replies })
@@ -31,6 +33,26 @@ export default function OutboxPage() {
     mutationFn: (id: number) => api.cancelOutbox(id),
     onSuccess: r => { setCancelling(null); toast.success(r.cancel_reason === 'You discarded it' ? 'Discarded' : 'Cancelled'); refresh() },
     onError: (e: Error) => toast.error(e.message),
+  })
+
+  // One at a time: each approval reads (and removes) the draft's copy in Gmail.
+  const approveAll = useMutation({
+    mutationFn: async (items: OutboxItem[]) => {
+      let done = 0
+      const failed: string[] = []
+      for (const item of items) {
+        setProgress(`Approving ${done + failed.length + 1} of ${items.length}…`)
+        try { await api.approveOutbox(item.id); done += 1 } catch { failed.push(item.to_name || item.to_email) }
+      }
+      return { done, failed }
+    },
+    onSuccess: r => {
+      setApprovingAll(null)
+      if (r.failed.length) toast.error(`Approved ${r.done}. Couldn’t approve ${r.failed.join(', ')}; try those one by one.`)
+      else toast.success(`Approved ${r.done}. They go out in each person’s morning, at most ${gmail.data?.daily_cap ?? 20} a day.`)
+    },
+    onError: (e: Error) => toast.error(e.message),
+    onSettled: () => { setProgress(null); refresh() },
   })
 
   if (gmail.isLoading) return <Page><Skeleton className="h-64" /></Page>
@@ -66,9 +88,19 @@ export default function OutboxPage() {
             Referral emails for roles you approved, each with that role’s tailored resume attached. Nothing is sent until you approve it.
             A copy is also in your Gmail Drafts. If you edit it there, your edited version is the one that goes out.
           </p>
-          <ul className="border-t border-rule">
-            {drafts.map(d => <DraftRow key={d.id} item={d} onEdit={() => setEditing(d)} onDiscard={() => setCancelling(d)} onDone={refresh} />)}
-          </ul>
+          {draftGroups(drafts).map(([company, items]) => (
+            <div key={company} className="mb-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-3">
+                <h3 className="text-[15px] font-medium text-fg">{company} <span className="font-normal text-muted">· {items.length} {items.length === 1 ? 'draft' : 'drafts'}</span></h3>
+                {items.length > 1 && (
+                  <Button size="sm" variant="primary" disabled={approveAll.isPending} onClick={() => setApprovingAll({ company, items })}>Approve all {items.length}</Button>
+                )}
+              </div>
+              <ul>
+                {items.map(d => <DraftRow key={d.id} item={d} onEdit={() => setEditing(d)} onDiscard={() => setCancelling(d)} onDone={refresh} />)}
+              </ul>
+            </div>
+          ))}
         </section>
       )}
 
@@ -136,6 +168,15 @@ export default function OutboxPage() {
       </section>
 
       {editing && <EditDialog item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
+      <ConfirmDialog
+        open={Boolean(approvingAll)}
+        title={approvingAll ? `Approve all ${approvingAll.items.length} emails to ${approvingAll.company}?` : ''}
+        description={approvingAll ? `${approvingAll.items.length} different people at ${approvingAll.company}, each with your tailored resume. They go out in each person’s morning, at most ${gmail.data?.daily_cap ?? 20} a day, and stop by themselves if someone replies.${approvingAll.items.some(i => i.email_guessed) ? ` ${approvingAll.items.filter(i => i.email_guessed).length} go to guessed addresses that may bounce.` : ''}${progress ? ` ${progress}` : ''}` : ''}
+        confirmLabel="Approve all"
+        busy={approveAll.isPending}
+        onConfirm={() => approvingAll && approveAll.mutate(approvingAll.items)}
+        onCancel={() => { if (!approveAll.isPending) setApprovingAll(null) }}
+      />
       <ConfirmDialog
         open={cancelling != null}
         title={cancelling?.status === 'draft' ? 'Discard this draft?' : cancelling?.step === 0 ? 'Cancel this email and its follow-ups?' : 'Cancel this follow-up?'}
@@ -215,4 +256,14 @@ function EditDialog({ item, onClose, onSaved }: { item: OutboxItem; onClose: () 
       </div>
     </Dialog>
   )
+}
+
+/** Drafts by company, in the order they arrived. */
+function draftGroups(drafts: OutboxItem[]): [string, OutboxItem[]][] {
+  const groups = new Map<string, OutboxItem[]>()
+  for (const d of drafts) {
+    const k = d.company_name || 'Other'
+    groups.set(k, [...(groups.get(k) ?? []), d])
+  }
+  return [...groups.entries()]
 }

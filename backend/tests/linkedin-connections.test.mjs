@@ -71,8 +71,10 @@ test('referral targets: emails and LinkedIn notes go to different people, best f
     { name: 'NoLink', title: 'Software Engineer', email: null, linkedin: null },
     { name: 'Eng2', title: 'Backend Developer', email: 'eng2@x.com', linkedin: 'https://www.linkedin.com/search/results/people/?keywords=x' },
   ];
-  const t = pickTargets(pool);
+  const t = pickTargets(pool, { maxEmails: 2 });
   assert.deepEqual(t.email.map(p => p.name), ['Rec', 'Eng2']);
+  // Default: up to 20 emails a role, everyone with an address (leaders last).
+  assert.deepEqual(pickTargets(pool).email.map(p => p.name), ['Rec', 'Eng2', 'VP']);
   assert.deepEqual(t.note.map(p => p.name), ['Friend', 'Eng']);
   // No Gmail: nobody is emailed, so the best LinkedIn profiles get notes.
   assert.deepEqual(pickTargets(pool, { canEmail: false }).note.map(p => p.name), ['Friend', 'Rec']);
@@ -96,5 +98,11 @@ test('referral targets: a found address beats a guessed one in the same rank', a
     { name: 'Found', title: 'Software Engineer', email: 'found@x.com' },
     { name: 'RecGuess', title: 'Recruiter', email: 'rec@x.com', guessed: true },
   ];
-  assert.deepEqual(pickTargets(pool).email.map(p => p.name), ['RecGuess', 'Found']);
+  assert.deepEqual(pickTargets(pool, { maxEmails: 2 }).email.map(p => p.name), ['RecGuess', 'Found']);
+});
+
+test('referral note: a long list names two people and counts the rest', async () => {
+  const { referralNote } = await import('../services/referralFlow.js');
+  const asks = ['Ana', 'Bo', 'Cy', 'Di', 'Ed'].map(n => ({ channel: 'email', person_name: n, status: 'draft' }));
+  assert.equal(referralNote(asks, 'Fri'), 'Your emails to Ana, Bo and 3 others are waiting for your OK in People → Outbox. Applying Fri unless a referral comes first.');
 });

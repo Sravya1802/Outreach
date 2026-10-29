@@ -35,7 +35,8 @@ test('monthly budget stops at the limit and resets next month', async () => {
   await spend('u1', 'hunter', { db, now: new Date('2026-11-01T00:00:00Z') })
   assert.equal(currentMonth(oct), '2026-10')
   delete process.env.HUNTER_USER_MONTHLY_LIMIT
-  assert.equal(monthlyLimit('hunter'), 15)
+  assert.equal(monthlyLimit('hunter'), 50)
+  assert.equal(monthlyLimit('hunter_verify'), 100)
 })
 
 test('domain cache: one paid lookup serves everyone until it expires', async () => {

@@ -6,7 +6,8 @@
 //     user, so a domain search is cached for CACHE_DAYS and reused by all.
 import { ProviderError } from './providerGuard.js';
 
-const DEFAULT_MONTHLY_LIMITS = { hunter: 15, prospeo: 25, apollo: 40, serper: 150 };
+// Defaults match the free accounts: Hunter 50 searches + 100 verifications, Prospeo 100, Serper (one-time credits).
+const DEFAULT_MONTHLY_LIMITS = { hunter: 50, hunter_verify: 100, prospeo: 100, apollo: 40, serper: 300 };
 export const CACHE_DAYS = 14;
 
 export function monthlyLimit(provider) {
@@ -40,7 +41,7 @@ export async function spend(userId, provider, { db, now = new Date() } = {}) {
     [userId, provider, currentMonth(now), limit],
   );
   if (!row) {
-    const label = { hunter: 'Hunter', prospeo: 'Prospeo', apollo: 'Apollo', serper: 'Serper' }[provider] || provider;
+    const label = { hunter: 'Hunter', hunter_verify: 'Hunter email check', prospeo: 'Prospeo', apollo: 'Apollo', serper: 'Serper' }[provider] || provider;
     throw new ProviderError(provider, 'BUDGET', `You've used your ${limit} ${label} lookups for this month — resets on the 1st`);
   }
 }

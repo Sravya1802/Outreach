@@ -34,13 +34,14 @@ import { isRecruiterTitle } from './contactRules.js';
 import { markAppliedYourself } from './resumeFiles.js';
 
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
-const MAX_EMAILS_PER_ROLE = 2;
+// 15–20 email drafts per approved role, each to a different person there (the user's call).
+const MAX_EMAILS_PER_ROLE = 20;
 const MAX_NOTES_PER_ROLE = 2;
 // Prospeo people search: recruiters and engineers in the US, 1 credit per 25 people.
 const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recruiter', 'campus recruiter', 'talent acquisition'];
 const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
 // Verified emails revealed per company (1 Prospeo credit each), recruiters first.
-const REVEALS_PER_COMPANY = 6;
+const REVEALS_PER_COMPANY = 10;
 const isProfile = (url) => /linkedin\.com\/in\//i.test(String(url || ''));
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
@@ -280,6 +281,37 @@ export async function findProspeoPeopleAt(userId, jobId) {
   return out;
 }
 
+/**
+ * Check the guessed addresses about to get a draft (Hunter's verifier): a
+ * bounce-to-be is marked invalid and dropped, a confirmed one stops being a
+ * guess. Once the company's server turns out to accept any address, there's
+ * nothing more to learn there, so checking stops.
+ */
+async function checkGuesses(userId, people) {
+  const { hunterVerify, isConfigured } = await import('./emailProviders.js');
+  if (!isConfigured('hunter')) return;
+  const { spend } = await import('./providerUsage.js');
+  for (const p of people) {
+    let verdict;
+    try {
+      await spend(userId, 'hunter_verify');
+      verdict = await hunterVerify(p.email);
+    } catch (err) {
+      console.warn('[referrals] email check stopped', err.message);
+      return;
+    }
+    if (verdict === 'invalid') {
+      await run("UPDATE job_contacts SET email_status = 'invalid', email_lookup_note = 'Guessed address failed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+      p.email = null;
+    } else if (verdict === 'valid') {
+      await run("UPDATE job_contacts SET email_status = 'valid', email_lookup_note = 'Guessed from the company pattern; passed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+      p.guessed = false;
+    } else if (verdict === 'accept_all') {
+      return;
+    }
+  }
+}
+
 /** Look up one person's work email (Apollo by LinkedIn profile, then Hunter, Prospeo, the website) and save it. */
 async function findEmailFor(userId, jobId, person) {
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
@@ -469,6 +501,9 @@ export async function askForReferral(userId, item, settings) {
       const found = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });
       if (found) Object.assign(p, { email: found, guessed: false });
     }
+    // Guessed addresses that would get a draft are checked first; a failed one makes room for the next person.
+    const guessed = pickTargets(pool, { canEmail: true }).email.filter(p => p.guessed);
+    if (guessed.length) await checkGuesses(userId, guessed);
     targets = pickTargets(pool, { canEmail: true });
   }
   const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
@@ -514,12 +549,16 @@ export async function askForReferral(userId, item, settings) {
 }
 
 const names = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+// Long lists name the first two: "Ana, Bo and 16 others" (still counts as plural).
+function shortList(xs) {
+  return xs.length <= 3 ? xs : [xs[0], xs[1], `${xs.length - 2} others`];
+}
 
 /** The status line under a waiting role. */
 export function referralNote(asks, when) {
-  const drafts = asks.filter(a => a.channel === 'email' && a.status === 'draft').map(a => a.person_name);
-  const emailed = asks.filter(a => a.channel === 'email' && a.status !== 'draft').map(a => a.person_name);
-  const notes = asks.filter(a => a.channel === 'linkedin').map(a => a.person_name);
+  const drafts = shortList(asks.filter(a => a.channel === 'email' && a.status === 'draft').map(a => a.person_name));
+  const emailed = shortList(asks.filter(a => a.channel === 'email' && a.status !== 'draft').map(a => a.person_name));
+  const notes = shortList(asks.filter(a => a.channel === 'linkedin').map(a => a.person_name));
   if (!drafts.length && !emailed.length && !notes.length) return `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${when} otherwise.`;
   const parts = [];
   if (drafts.length) parts.push(`your email${drafts.length > 1 ? 's' : ''} to ${names(drafts)} ${drafts.length > 1 ? 'are' : 'is'} waiting for your OK in People → Outbox`);

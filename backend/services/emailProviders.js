@@ -70,6 +70,27 @@ export function hunterDomainSearch(domain, { limit = 10, department = null } = {
   });
 }
 
+/**
+ * Check one address (Hunter's verifier, its own 100-a-month allowance, not
+ * search credits) → 'valid' | 'invalid' | 'accept_all' | 'unknown'.
+ * accept_all: the company's server takes any address, so it can't tell.
+ */
+export function hunterVerify(email) {
+  return guarded('hunter', async () => {
+    const res = await http.get('https://api.hunter.io/v2/email-verifier', {
+      params: { email, api_key: key('HUNTER_API_KEY', 'hunter') },
+      validateStatus: s => s < 500,
+    });
+    if (res.status === 202 || res.status === 222) return 'unknown'; // still checking on Hunter's side
+    if (res.status >= 400) throw errorFromHttp('hunter', res.status, JSON.stringify(res.data));
+    const d = res.data?.data || {};
+    if (d.status === 'valid' || d.result === 'deliverable') return 'valid';
+    if (d.status === 'invalid' || d.result === 'undeliverable') return 'invalid';
+    if (d.status === 'accept_all') return 'accept_all';
+    return 'unknown';
+  });
+}
+
 /** Email finder for one person. Returns a candidate or null (not found). */
 export function hunterEmailFinder(domain, first, last) {
   return guarded('hunter', async () => {

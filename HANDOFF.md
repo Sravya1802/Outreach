@@ -124,6 +124,11 @@ Also update the "Known gaps" section above when an item is resolved (strike thro
 
 ## Session log
 
+### 2026-10-29 — Master resume facts corrected
+- **User confirmed:** DMS was Random Forest only (no PyTorch/YOLO, no 82.5%); 500GB+ was one dataset (not daily); the Azure/AWS 500+ users migration is real and separate from the 1000+ Tableau Cloud/Jira SPOC migration.
+- **Done on the VM DB** (user's master, resume_files 12): removed the YOLO 82.5% bullet, rewrote the eye-pattern and ETL bullets in the user's own wording, and changed the YOLO skill to Random Forest, in both `parsed` and meta `user_resume_text` (the fact-checker's source). Backup: `~/master-backup-2026-10-29T091153123Z.json`.
+- **Not done:** 164 of the user's 170 latest resumes still carry YOLO/82.5%/daily. **1 already went out:** Fortray Global Service Limited, Graduate AI Engineer (submitted 2026-10-29 08:19 UTC). The user has spent **$29.69 of the $30 monthly AI cap**, so no rebuilds are possible until Nov 1 or a cap raise.
+
 ### 2026-10-29 — GlobalFoundries resume vs a Claude-chat review: PDF text layer, Publications, truth rules
 - **Why:** the user pasted a Claude-chat review of the app's GlobalFoundries resume (tailoring 53, eval 165; the app said Ready at 91–94%, the review said ~66% with 7 must-fixes).
 - **Checked each point against the app's data:**

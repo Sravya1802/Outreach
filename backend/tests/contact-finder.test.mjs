@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { findCompanyEmails, findPersonEmail, nameFromEmailAddress, upsertContact } from '../services/contactFinder.js'
+import { emailFromPattern, findCompanyEmails, findPersonEmail, nameFromEmailAddress, upsertContact } from '../services/contactFinder.js'
 import { ProviderError } from '../services/providerGuard.js'
 
 const noMx = async () => false
@@ -120,4 +120,25 @@ test('person: an exhausted budget is a reason, not a crash, and skips the call',
   assert.equal(r.reasons[0].code, 'BUDGET')
   assert.ok(p.calls.includes('prospeoFinder'), 'falls through to the next provider')
   assert.ok(!p.calls.includes('hunterFinder'))
+})
+
+test('company: Hunter asks for engineering + HR first, everyone only when that comes back empty', async () => {
+  const asked = []
+  const p = fakeProviders({ hunterDomainSearch: async (_d, opts = {}) => {
+    asked.push(opts.department || 'all')
+    return opts.department ? { emails: [], pattern: '{first}.{last}' } : { emails: [c('jane@acme.com', { title: 'Software Engineer', status: 'valid' })], pattern: null }
+  } })
+  const r = await findCompanyEmails({ name: 'Acme', domain: 'acme.com' }, { providers: p, verify: noMx, usage })
+  assert.deepEqual(asked, ['it,hr', 'all'])
+  assert.equal(r.pattern, '{first}.{last}')
+  assert.deepEqual(r.candidates.map(x => x.email), ['jane@acme.com'])
+})
+
+test('emailFromPattern builds the address from a name, skips initials', () => {
+  assert.equal(emailFromPattern('{first}.{last}', 'Marie Laser Buzzetti', 'ibm.com'), 'marie.buzzetti@ibm.com')
+  assert.equal(emailFromPattern('{f}{last}', 'Dr. José Núñez, PhD', 'acme.com'), 'jnunez@acme.com')
+  assert.equal(emailFromPattern('{first}', 'Jane Doe', 'acme.com'), 'jane@acme.com')
+  assert.equal(emailFromPattern('{first}.{last}', 'A B Vijay Kumar', 'ibm.com'), null)
+  assert.equal(emailFromPattern('{first}.{last}', 'Cher', 'acme.com'), null)
+  assert.equal(emailFromPattern(null, 'Jane Doe', 'acme.com'), null)
 })

@@ -165,7 +165,7 @@ export async function findLinkedInPeopleAt(userId, jobId) {
   const trusted = await resolveCompanyDomain(job, { verify: async () => false }).catch(() => null);
   const found = await findPeopleAtLinkedInCompany(job.name, job.linkedin_company_url || null, trusted?.domain || null, null, { userId });
   let added = 0;
-  for (const p of found.slice(0, 10)) {
+  for (const p of found.slice(0, 15)) {
     if (!p.name || p.name.toLowerCase() === 'unknown') continue;
     const r = await upsertContact({ all, run }, {
       userId, jobId, seniorityScore: seniorityScore(p.title),
@@ -174,6 +174,34 @@ export async function findLinkedInPeopleAt(userId, jobId) {
     if (r === 'inserted') added += 1;
   }
   return added;
+}
+
+/**
+ * People found without an email get one built from the company's email
+ * pattern (from Hunter's domain search, no extra lookup), marked 'guessed' so
+ * the user sees it's a guess before approving a draft to it.
+ */
+export async function guessEmailsAt(userId, jobId) {
+  const job = await one('SELECT name, domain, domain_source FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  if (!job?.domain || job.domain_source === 'guess') return 0;
+  const known = await one(
+    `SELECT result->>'pattern' AS pattern FROM provider_domain_cache
+      WHERE (domain = $1 OR domain LIKE $1 || '#%') AND result->>'pattern' IS NOT NULL ORDER BY searched_at DESC LIMIT 1`,
+    [job.domain],
+  );
+  if (!known?.pattern) return 0;
+  const { emailFromPattern } = await import('./contactFinder.js');
+  const people = await all('SELECT id, name FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email IS NULL', [userId, jobId]);
+  let n = 0;
+  for (const p of people) {
+    const email = emailFromPattern(known.pattern, p.name, job.domain);
+    if (!email) continue;
+    await run(
+      "UPDATE job_contacts SET email = $3, email_status = 'guessed', email_lookup_note = $4 WHERE id = $1 AND user_id = $2 AND email IS NULL",
+      [p.id, userId, email, `Guessed from ${job.name}'s email pattern (${known.pattern}@${job.domain})`],
+    ).then(() => { n += 1; }).catch(err => console.warn('[referrals] guessed email not saved', p.name, err.message));
+  }
+  return n;
 }
 
 /** Look up one person's work email (Apollo by LinkedIn profile, then Hunter, Prospeo, the website) and save it. */
@@ -185,7 +213,8 @@ async function findEmailFor(userId, jobId, person) {
   const email = r.best?.email ? String(r.best.email).toLowerCase() : null;
   await run(
     `UPDATE job_contacts SET email = COALESCE($3, email), email_status = CASE WHEN $3::text IS NULL THEN email_status ELSE $4 END,
-            email_lookup_at = NOW(), email_lookup_note = $5 WHERE id = $1 AND user_id = $2`,
+            email_lookup_at = NOW(), email_lookup_note = CASE WHEN $3::text IS NULL AND email_status = 'guessed' THEN email_lookup_note ELSE $5 END
+      WHERE id = $1 AND user_id = $2`,
     [person.contactId, userId, email, r.best?.status || 'unverified', email ? null : (r.reasons?.[0]?.message || 'No email found').slice(0, 200)],
   );
   return email;
@@ -194,7 +223,7 @@ async function findEmailFor(userId, jobId, person) {
 /** Who works at an approved role's company: emails (when Gmail can send them) and LinkedIn profiles. */
 export async function findPeopleFor(userId, item) {
   const jobId = await companyRow(userId, item.company_name, item.location);
-  const out = { emails: 0, linkedin: 0 };
+  const out = { emails: 0, linkedin: 0, guessed: 0 };
   try {
     if (await connectionFor(userId) && !(await hasEmailContact(userId, item.company_name))) {
       out.emails = await findEmailsAt(userId, jobId, item).catch(err => { console.warn('[referrals] email lookup failed', item.company_name, err.message); return 0; });
@@ -202,6 +231,7 @@ export async function findPeopleFor(userId, item) {
     if (await linkedinPeopleAt(userId, item.company_name) < 3) {
       out.linkedin = await findLinkedInPeopleAt(userId, jobId).catch(err => { console.warn('[referrals] LinkedIn search failed', item.company_name, err.message); return 0; });
     }
+    out.guessed = await guessEmailsAt(userId, jobId).catch(err => { console.warn('[referrals] email guesses failed', item.company_name, err.message); return 0; });
   } finally {
     await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
   }
@@ -255,10 +285,12 @@ export function rankForAsk(pool) {
     .map(x => x.p);
 }
 
-/** Who gets an email and who gets a LinkedIn note (different people), best first. */
+/** Who gets an email and who gets a LinkedIn note (different people), best first; a found address beats a guessed one. */
 export function pickTargets(pool, { canEmail = true, maxEmails = MAX_EMAILS_PER_ROLE, maxNotes = MAX_NOTES_PER_ROLE } = {}) {
   const ranked = rankForAsk(pool);
-  const email = canEmail ? ranked.filter(p => p.email).slice(0, maxEmails) : [];
+  const email = canEmail
+    ? ranked.filter(p => p.email).sort((a, b) => askRank(a) - askRank(b) || Number(Boolean(a.guessed)) - Number(Boolean(b.guessed))).slice(0, maxEmails)
+    : [];
   const note = ranked.filter(p => !email.includes(p) && isProfile(p.linkedin)).slice(0, maxNotes);
   return { email, note };
 }
@@ -329,18 +361,20 @@ export async function askForReferral(userId, item, settings) {
   );
   for (const c of saved) {
     if (pool.some(p => String(p.contactId) === String(c.id))) continue;
-    pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, contactId: c.id, connectionId: null, knows: false });
+    pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, guessed: c.email_status === 'guessed', contactId: c.id, connectionId: null, knows: false });
   }
   let targets = pickTargets(pool, { canEmail: Boolean(gmail) });
-  // Fewer than 2 recruiters/engineers (or people the user knows) have an email: look up theirs, at most 2 lookups.
+  // Fewer than 2 recruiters/engineers (or people the user knows) have a found email: look up theirs
+  // (a guessed one gets checked first), at most 2 lookups.
   if (gmail) {
     const best = rankForAsk(pool).filter(p => askRank(p) <= 2);
     let tries = 0;
     for (const p of best) {
-      if (tries >= 2 || best.filter(x => x.email).length >= MAX_EMAILS_PER_ROLE) break;
-      if (p.email || !p.contactId) continue;
+      if (tries >= 2 || best.filter(x => x.email && !x.guessed).length >= MAX_EMAILS_PER_ROLE) break;
+      if ((p.email && !p.guessed) || !p.contactId) continue;
       tries += 1;
-      p.email = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });
+      const found = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });
+      if (found) Object.assign(p, { email: found, guessed: false });
     }
     targets = pickTargets(pool, { canEmail: true });
   }

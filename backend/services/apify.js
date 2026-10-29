@@ -2,6 +2,7 @@ import { ApifyClient } from 'apify-client';
 import { isDomainPlausibleForCompany } from './companyDomain.js';
 import { isRelevantContact, isUsableEmail, nameKey, seniorityScore } from './contactRules.js';
 import { apolloOrganization, isConfigured, serperSearch as providerSerperSearch } from './emailProviders.js';
+import { errorFromHttp, markCooldown, providerStatus } from './providerGuard.js';
 import { spend as spendProviderBudget } from './providerUsage.js';
 
 // Token is read lazily so dotenv has time to load before first use
@@ -643,8 +644,9 @@ export function parseLinkedInSerpResult(item, companyName) {
  * Find people worth contacting at a company:
  *   L1 Apollo  — organization (by trusted domain, else by name with a
  *                plausibility check) → people search
- *   L2 Apify   — LinkedIn company people actors (quota-aware via runActor)
- *   L3 Google  — LinkedIn profiles that name the company in their headline
+ *   L2 Google  — LinkedIn profiles that name the company in their headline
+ *                (recruiters and engineers first)
+ *   L3 Apify   — LinkedIn company people actors (quota-aware via runActor)
  * Later layers only run while fewer than 3 people were found, and nothing
  * runs after the caller aborts (client closed the stream).
  *
@@ -683,6 +685,8 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
   // ── L1 Apollo ──────────────────────────────────────────────────────────────
   if (!isConfigured('apollo')) {
     notify('apollo', 'skip', 0, 'not configured');
+  } else if (!providerStatus('apollo').available) {
+    notify('apollo', 'skip', 0, providerStatus('apollo').message);
   } else if (!aborted()) {
     notify('apollo', 'running');
     try {
@@ -703,7 +707,11 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
             body: JSON.stringify({ organization_ids: [org.id], person_seniorities: ['founder', 'c_suite', 'vp', 'head', 'director', 'manager', 'senior', 'entry'], page, per_page: 25 }),
             signal: AbortSignal.timeout(15000),
           });
-          if (!res.ok) throw new Error(`Apollo people search HTTP ${res.status}`);
+          if (!res.ok) {
+            const err = errorFromHttp('apollo', res.status, await res.text().catch(() => ''));
+            markCooldown(err);
+            throw err;
+          }
           const data = await res.json();
           const batch = Array.isArray(data.people) ? data.people : [];
           raw.push(...batch);
@@ -722,50 +730,18 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
     }
   }
 
-  // ── L2 LinkedIn actors (Apify) ─────────────────────────────────────────────
-  if (people.length < 3 && !aborted()) {
-    const cookie = (process.env.LINKEDIN_SESSION_COOKIE || '').trim();
-    const slug = (linkedinCompanyUrl || '').match(/linkedin\.com\/company\/([^/?#]+)/)?.[1]
-      || companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const auth = cookie.length > 20 ? { cookie, sessionCookie: cookie, li_at: cookie } : {};
-    const actors = [
-      ['powerai/linkedin-company-people-scraper', { url: `https://www.linkedin.com/company/${slug}/people/`, maxResults: 25, ...auth }],
-      ['george.the.developer/linkedin-company-employees-scraper', { companyUrl: `https://www.linkedin.com/company/${slug}`, maxResults: 25, ...auth }],
-    ];
-    notify('linkedin', 'running', 0, `company page /${slug}`);
-    let n = 0;
-    let lastError = null;
-    for (const [actorId, input] of actors) {
-      if (n > 0 || aborted()) break;
-      try {
-        const items = await runActor(actorId, input, 90);
-        n = addPeople(items.map(p => ({
-          name: String(p.fullName || p.name || '').trim(),
-          title: String(p.headline || p.title || p.jobTitle || '').trim(),
-          linkedin_url: p.profileUrl || p.url || p.linkedin_url || null,
-        })), 'linkedin');
-      } catch (err) {
-        lastError = err;
-        if (err.code === 'APIFY_QUOTA_BURNED') break; // same answer for every actor
-      }
-    }
-    notify('linkedin', lastError && n === 0 ? 'error' : 'done', n,
-      n === 0 ? (lastError ? lastError.message.slice(0, 160) : (auth.cookie ? 'no results' : 'no LinkedIn session cookie set')) : null);
-  } else if (!aborted()) {
-    notify('linkedin', 'skip', 0, 'enough people already');
-  }
-
-  // ── L3 Google (Serper) ─────────────────────────────────────────────────────
+  // ── L2 Google (Serper) ─────────────────────────────────────────────────────
   if (people.length < 3 && !aborted()) {
     if (!isConfigured('serper')) {
       notify('google', 'skip', 0, 'not configured');
     } else {
       notify('google', 'running');
       const queries = [
-        `site:linkedin.com/in "${companyName}" "software engineer"`,
-        `site:linkedin.com/in "${companyName}" CTO OR "VP Engineering" OR "Head of Engineering" OR founder`,
+        // The people who refer and reply: recruiters and engineers. Leaders last.
         `site:linkedin.com/in "${companyName}" recruiter OR "talent acquisition" OR "university recruiting"`,
+        `site:linkedin.com/in "${companyName}" "software engineer"`,
         `site:linkedin.com/in "${companyName}" "engineering manager" OR "staff engineer" OR "machine learning"`,
+        `site:linkedin.com/in "${companyName}" CTO OR "VP Engineering" OR "Head of Engineering" OR founder`,
       ];
       const found = [];
       const errors = [];
@@ -787,6 +763,42 @@ export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUr
       const n = addPeople(found, 'google');
       notify('google', errors.length && n === 0 ? 'error' : 'done', n, n === 0 ? (errors[0] || `no LinkedIn profiles mention ${companyName}`) : null);
     }
+  }
+
+  // ── L3 LinkedIn actors (Apify) ─────────────────────────────────────────────
+  if (people.length < 3 && !aborted()) {
+    const cookie = (process.env.LINKEDIN_SESSION_COOKIE || '').trim();
+    const slug = (linkedinCompanyUrl || '').match(/linkedin\.com\/company\/([^/?#]+)/)?.[1]
+      || companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const auth = cookie.length > 20 ? { cookie, sessionCookie: cookie, li_at: cookie } : {};
+    const actors = [
+      ['powerai/linkedin-company-people-scraper', { url: `https://www.linkedin.com/company/${slug}/people/`, maxResults: 25, ...auth }],
+      ['george.the.developer/linkedin-company-employees-scraper', {
+        companies: [`https://www.linkedin.com/company/${slug}/`], location: 'United States', maxEmployees: 25,
+        targetTitles: ['Recruiter', 'Technical Recruiter', 'University Recruiter', 'Talent Acquisition', 'Software Engineer', 'Engineering Manager'],
+      }],
+    ];
+    notify('linkedin', 'running', 0, `company page /${slug}`);
+    let n = 0;
+    let lastError = null;
+    for (const [actorId, input] of actors) {
+      if (n > 0 || aborted()) break;
+      try {
+        const items = await runActor(actorId, input, 90);
+        n = addPeople(items.map(p => ({
+          name: String(p.fullName || p.name || '').trim(),
+          title: String(p.headline || p.title || p.jobTitle || '').trim(),
+          linkedin_url: p.profileUrl || p.linkedinUrl || p.url || p.linkedin_url || null,
+        })), 'linkedin');
+      } catch (err) {
+        lastError = err;
+        if (err.code === 'APIFY_QUOTA_BURNED') break; // same answer for every actor
+      }
+    }
+    notify('linkedin', lastError && n === 0 ? 'error' : 'done', n,
+      n === 0 ? (lastError ? lastError.message.slice(0, 160) : (auth.cookie ? 'no results' : 'no LinkedIn session cookie set')) : null);
+  } else if (!aborted()) {
+    notify('linkedin', 'skip', 0, 'enough people already');
   }
 
   people.sort((a, b) => seniorityScore(b.title) - seniorityScore(a.title));

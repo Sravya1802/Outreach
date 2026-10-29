@@ -335,7 +335,7 @@ export async function listOutbox(userId) {
     `SELECT o.id, o.contact_id, o.step, o.thread_root_id, o.to_email, o.to_name, o.subject, o.body, o.recipient_tz, o.send_after,
             o.status, o.cancel_reason, o.error, o.sent_at, o.created_at, o.purpose, o.approved_at, (o.gmail_draft_hash IS NOT NULL) AS in_gmail_drafts,
             o.attachment_file_id, f.filename AS attachment_name,
-            j.name AS company_name, j.id AS company_id, c.status AS contact_status, c.title AS contact_title
+            j.name AS company_name, j.id AS company_id, c.status AS contact_status, c.title AS contact_title, (c.email_status = 'guessed' AND lower(c.email) = lower(o.to_email)) AS email_guessed
        FROM email_outbox o
        LEFT JOIN job_contacts c ON c.id = o.contact_id
        LEFT JOIN jobs j ON j.id = c.job_id

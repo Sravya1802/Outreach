@@ -3,7 +3,8 @@
 // Order is cheapest-and-most-accurate first, and stops as soon as the job is
 // done, so credits aren't spent on lookups we don't need:
 //
-//   Company (bulk):  Hunter domain search → company website (free)
+//   Company (bulk):  Hunter domain search (engineering + HR first, then
+//                    everyone) → company website (free)
 //                    → Prospeo domain search → Google (Serper)
 //                    … stopping once there are relevant contacts.
 //   Person:          Apollo match by LinkedIn URL (most accurate when we have
@@ -17,7 +18,7 @@ import { resolveCompanyDomain } from './companyDomain.js';
 import { betterCandidate, isGoodEnough, isRelevantContact, nameKey, splitName } from './contactRules.js';
 import * as realProviders from './emailProviders.js';
 import * as realUsage from './providerUsage.js';
-import { toReason } from './providerGuard.js';
+import { providerStatus, toReason } from './providerGuard.js';
 
 /** "jane.doe@acme.com" → "Jane Doe" (best effort) for emails that came without a name. */
 export function nameFromEmailAddress(email) {
@@ -25,6 +26,23 @@ export function nameFromEmailAddress(email) {
   const parts = local.split(/[._-]+/).filter(p => /^[a-z]{2,}$/i.test(p));
   if (parts.length >= 2) return parts.slice(0, 3).map(p => p[0].toUpperCase() + p.slice(1).toLowerCase()).join(' ');
   return local || 'Unknown';
+}
+
+/**
+ * An address built from the company's email pattern (Hunter's "{first}.{last}"),
+ * e.g. Jane Doe at acme.com → jane.doe@acme.com. Null when the name doesn't fit
+ * (initials only, one word).
+ */
+export function emailFromPattern(pattern, name, domain) {
+  const n = splitName(name);
+  if (!pattern || !n || !domain) return null;
+  const ascii = s => s.toLowerCase().normalize('NFKD').replace(/[^a-z]/g, '');
+  const first = ascii(n.first);
+  const last = ascii(n.last);
+  if (first.length < 2 || last.length < 2) return null;
+  const local = String(pattern).toLowerCase()
+    .replace(/\{first\}/g, first).replace(/\{last\}/g, last).replace(/\{f\}/g, first[0]).replace(/\{l\}/g, last[0]);
+  return /^[a-z0-9][a-z0-9._-]*$/.test(local) ? `${local}@${domain}` : null;
 }
 
 function dedupeByEmail(list) {
@@ -61,14 +79,22 @@ export async function findCompanyEmails(job, { override = null, providers = real
   const cachedFrom = [];
   // Domain searches are shared across users for CACHE_DAYS; only a cache
   // miss spends a credit (and the caller's monthly budget).
-  const viaCache = async (provider, fetchFresh) => {
-    const { result, cached } = await usage.cachedDomainSearch(provider, domain, fetchFresh, { userId });
+  const viaCache = async (provider, fetchFresh, variant = null) => {
+    const { result, cached } = await usage.cachedDomainSearch(provider, variant ? `${domain}#${variant}` : domain, fetchFresh, { userId });
     if (cached) cachedFrom.push(provider);
     return result;
   };
 
   const steps = [
-    ['hunter', async () => { const r = await viaCache('hunter', () => providers.hunterDomainSearch(domain)); pattern = r.pattern; return r.emails; }],
+    ['hunter', async () => {
+      // Engineering and HR people first; a plain search only when there are none.
+      const focused = await viaCache('hunter', () => providers.hunterDomainSearch(domain, { department: 'it,hr' }), 'it,hr');
+      pattern = focused.pattern;
+      if (focused.emails.length) return focused.emails;
+      const r = await viaCache('hunter', () => providers.hunterDomainSearch(domain));
+      pattern = pattern || r.pattern;
+      return r.emails;
+    }],
     ['website', () => providers.websiteEmails(domain)],
     ['prospeo', () => viaCache('prospeo', () => providers.prospeoDomainSearch(domain))],
     ['serper', async () => { await usage.spend(userId, 'serper'); await usage.spend(userId, 'serper'); return providers.serperEmails(domain); }],
@@ -135,6 +161,8 @@ export async function findPersonEmail(contact, job, { providers = realProviders,
     if (isGoodEnough(best)) break;
     if (!run) continue;
     if (name !== 'website' && !providers.isConfigured(name)) continue;
+    // Cooling down (out of credits, or the plan doesn't allow it): don't spend the allowance on it.
+    if (name !== 'website' && !providerStatus(name).available) { reasons.push({ provider: name, code: 'SKIPPED', message: providerStatus(name).message }); continue; }
     tried.push(name);
     try {
       if (name !== 'website') await usage.spend(userId, name);

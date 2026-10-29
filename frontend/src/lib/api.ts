@@ -537,6 +537,7 @@ export interface OutboxItem {
   company_id: number | null
   contact_status: string | null
   contact_title?: string | null
+  email_guessed?: boolean | null
   purpose?: 'outreach' | 'referral'
   approved_at?: string | null
   /** A copy sits in the user's Gmail Drafts. */

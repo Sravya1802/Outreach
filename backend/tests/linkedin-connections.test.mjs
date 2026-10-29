@@ -88,3 +88,13 @@ test('referral targets: emails and LinkedIn notes go to different people, best f
   assert.deepEqual(t2.email.map(p => p.name), []);
   assert.deepEqual(t2.note.map(p => p.name), ['Pal', 'Swe']);
 });
+
+test('referral targets: a found address beats a guessed one in the same rank', async () => {
+  const { pickTargets } = await import('../services/referralFlow.js');
+  const pool = [
+    { name: 'Guess', title: 'Software Engineer', email: 'guess@x.com', guessed: true },
+    { name: 'Found', title: 'Software Engineer', email: 'found@x.com' },
+    { name: 'RecGuess', title: 'Recruiter', email: 'rec@x.com', guessed: true },
+  ];
+  assert.deepEqual(pickTargets(pool).email.map(p => p.name), ['RecGuess', 'Found']);
+});

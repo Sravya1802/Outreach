@@ -50,11 +50,14 @@ async function fetchJson(provider, url, init = {}) {
 
 // ── Hunter ───────────────────────────────────────────────────────────────────
 
-/** Domain search → { emails, pattern, organization }. One Hunter credit when it returns results. */
-export function hunterDomainSearch(domain, { limit = 10 } = {}) {
+/**
+ * Domain search → { emails, pattern, organization }. One Hunter credit when it returns results.
+ * `department` ('it,hr') keeps it to engineering and recruiting people.
+ */
+export function hunterDomainSearch(domain, { limit = 10, department = null } = {}) {
   return guarded('hunter', async () => {
     const res = await http.get('https://api.hunter.io/v2/domain-search', {
-      params: { domain, limit, type: 'personal', api_key: key('HUNTER_API_KEY', 'hunter') },
+      params: { domain, limit, type: 'personal', ...(department ? { department } : {}), api_key: key('HUNTER_API_KEY', 'hunter') },
     });
     const d = res.data?.data || {};
     const emails = (d.emails || [])

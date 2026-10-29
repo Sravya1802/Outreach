@@ -7,7 +7,7 @@
 // the user instead of a silent zero.
 
 export class ProviderError extends Error {
-  /** @param {'QUOTA'|'AUTH'|'RATE_LIMIT'|'CONFIG'|'SKIPPED'|'HTTP'|'NETWORK'} code */
+  /** @param {'QUOTA'|'PLAN'|'AUTH'|'RATE_LIMIT'|'CONFIG'|'SKIPPED'|'HTTP'|'NETWORK'} code */
   constructor(provider, code, message, { status = null, retryAt = null } = {}) {
     super(message);
     this.name = 'ProviderError';
@@ -18,7 +18,7 @@ export class ProviderError extends Error {
   }
 }
 
-const COOLDOWN_MS = { QUOTA: 60 * 60_000, AUTH: 60 * 60_000, RATE_LIMIT: 2 * 60_000 };
+const COOLDOWN_MS = { QUOTA: 60 * 60_000, PLAN: 24 * 60 * 60_000, AUTH: 60 * 60_000, RATE_LIMIT: 2 * 60_000 };
 const cooldowns = new Map(); // provider → { until, code, message }
 
 const PROVIDER_LABEL = { hunter: 'Hunter', prospeo: 'Prospeo', apollo: 'Apollo', serper: 'Serper' };
@@ -28,6 +28,10 @@ export function errorFromHttp(provider, status, bodyText = '') {
   const label = PROVIDER_LABEL[provider] || provider;
   const body = String(bodyText || '').slice(0, 200);
   if (status === 401) return new ProviderError(provider, 'AUTH', `${label} rejected the API key`, { status });
+  // Apollo's Free plan: the key works, but its API lookups need a paid plan.
+  if (/not included in your \w+ plan|API_INACCESSIBLE/i.test(body)) {
+    return new ProviderError(provider, 'PLAN', `${label}'s Free plan doesn't include API lookups`, { status });
+  }
   if (status === 402 || /quota|credit|limit reached|usage limit|insufficient|plan/i.test(body) && status !== 404) {
     return new ProviderError(provider, 'QUOTA', `${label} is out of credits for this month`, { status });
   }

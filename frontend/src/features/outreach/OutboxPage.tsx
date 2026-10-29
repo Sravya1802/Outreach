@@ -169,7 +169,7 @@ function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdi
         {item.contact_title && <span className="text-muted">, {item.contact_title}</span>}
         {item.company_name && <span className="text-muted"> · {item.company_id ? <Link to={`/company/${item.company_id}`} className="hover:text-accent">{item.company_name}</Link> : item.company_name}</span>}
       </p>
-      <p className="text-[13px] text-subtle">{item.to_email}</p>
+      <p className="text-[13px] text-subtle">{item.to_email}{item.email_guessed && <span className="text-warning"> · guessed from the company’s email pattern, may bounce</span>}</p>
       <div className="mt-3 rounded-[4px] border border-line bg-raised p-3">
         <p className="text-[14px] font-medium text-fg">{item.subject}</p>
         <p className="mt-2 whitespace-pre-line break-words text-[14px] leading-relaxed text-fg">{item.body}</p>

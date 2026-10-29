@@ -29,3 +29,10 @@ test('transient errors do not trip a cooldown', async () => {
   assert.equal(providerStatus('serper').available, true)
   assert.equal(await guarded('serper', async () => 42), 42)
 })
+
+test("Apollo's Free plan refusal is PLAN (a day's cooldown), not out of credits", () => {
+  const body = '{"error":"The api/v1/people/match API is not included in your Free plan and is not accessible, even with a master key.","error_code":"API_INACCESSIBLE"}'
+  const e = errorFromHttp('apollo', 403, body)
+  assert.equal(e.code, 'PLAN')
+  assert.match(e.message, /Free plan/)
+})

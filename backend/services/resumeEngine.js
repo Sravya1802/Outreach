@@ -625,7 +625,7 @@ async function handleProposal(userId, draft, ctx, final, tailoringId) {
     [userId, ctx.ev.id, tailoringId, str(p.name).slice(0, 120), JSON.stringify(list(p.tech).map(str).filter(Boolean).slice(0, 8)), JSON.stringify(bullets),
       JSON.stringify(adds.slice(0, 10)), str(p.why).slice(0, 500), JSON.stringify(list(p.plan).map(str).filter(Boolean).slice(0, 10))],
   )).rows[0];
-  if (!tailoringId || !(await isPendingDraft(userId, tailoringId))) {
+  if (!ctx.quiet && (!tailoringId || !(await isPendingDraft(userId, tailoringId)))) {
     const { notify, projectsMessage } = await import('./whatsapp.js');
     await notify(userId, 'projects', projectsMessage([{ name: row.name, covers: row.covers, demand: null, roles: [`${ctx.ev.company_name} · ${ctx.ev.job_title}`] }])).catch(() => {});
   }
@@ -914,7 +914,8 @@ async function moveOn(r, res) {
     if (!revising) { await failRow(r.id, res?.error || 'The resume batch returned nothing for this role.'); return; }
   }
   const ev = await loadEvaluation(r.user_id, r.evaluation_id);
-  const ctx = await context(r.user_id, ev, b.jd);
+  // A bulk rebuild is quiet: no WhatsApp skill question or project message per resume.
+  const ctx = { ...(await context(r.user_id, ev, b.jd)), quiet: Boolean(b.quiet) };
   if (!revising) {
     const draft = parseJson(res.text);
     const checked = await checkDraft(r.user_id, ctx, draft);
@@ -923,7 +924,7 @@ async function moveOn(r, res) {
       return;
     }
     await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { draft, pass: checked.pass, judged: checked.judged, model: res.model, revised: false, cost: cost + checked.cost, tailoringId: r.id })), batch: null });
-    await askAboutSkills(r.user_id, r.id).catch(() => null);
+    if (!b.quiet) await askAboutSkills(r.user_id, r.id).catch(() => null);
     return;
   }
   // The revision is back (or failed for good, in which case the first draft stands).
@@ -936,7 +937,7 @@ async function moveOn(r, res) {
     if (t.revised) state = { ...state, ...t, model: res.model };
   }
   await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { ...state, cost: cost + extra, tailoringId: r.id })), batch: null });
-  await askAboutSkills(r.user_id, r.id).catch(() => null);
+  if (!b.quiet) await askAboutSkills(r.user_id, r.id).catch(() => null);
 }
 
 /**
@@ -1044,7 +1045,7 @@ const running = new Set();
  * Start a tailoring or cover letter in the background. Returns the new row,
  * or the one already running for this role.
  */
-export async function start(userId, evalId, kind = 'resume', { batch = false } = {}) {
+export async function start(userId, evalId, kind = 'resume', { batch = false, quiet = false } = {}) {
   const ev = await loadEvaluation(userId, evalId);
   const busy = await one(
     `SELECT * FROM resume_tailorings WHERE user_id = $1 AND evaluation_id = $2 AND kind = $3 AND status = 'running'
@@ -1058,7 +1059,7 @@ export async function start(userId, evalId, kind = 'resume', { batch = false } =
     // Half price: waits for pumpBatches() to send it with the rest of tonight's resumes.
     return (await run(
       "INSERT INTO resume_tailorings (user_id, evaluation_id, kind, batch) VALUES ($1, $2, 'resume', $3) RETURNING *",
-      [userId, ev.id, JSON.stringify({ phase: 'queued', queuedAt: new Date().toISOString() })],
+      [userId, ev.id, JSON.stringify({ phase: 'queued', queuedAt: new Date().toISOString(), ...(quiet ? { quiet: true } : {}) })],
     )).rows[0];
   }
   const row = (await run(

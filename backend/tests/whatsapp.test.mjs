@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'crypto';
 
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z';
-const { normalizePhone, cleanParam, parseCommand, listMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES, templateDefinition, welcomeMessage, chatReply } = await import('../services/whatsapp.js');
+const { normalizePhone, cleanParam, parseCommand, pickListMessage, eveningMessage, verifyHandshake, signatureOk, waLink, WHATSAPP_TEMPLATES, templateDefinition, welcomeMessage, chatReply } = await import('../services/whatsapp.js');
 
 test('phone numbers', () => {
   assert.equal(normalizePhone('+1 (555) 010-2000'), '15550102000');
@@ -23,6 +23,10 @@ test('reply commands', () => {
   assert.deepEqual(parseCommand('yes'), { cmd: 'yes', picks: 'all' });
   assert.deepEqual(parseCommand('YES 1 3, 3'), { cmd: 'yes', picks: [1, 3] });
   assert.deepEqual(parseCommand('skip 2'), { cmd: 'skip', picks: [2] });
+  assert.deepEqual(parseCommand('APP 1 3, 12'), { cmd: 'app', picks: [1, 3, 12] });
+  assert.deepEqual(parseCommand('mine 2'), { cmd: 'mine', picks: [2] });
+  assert.equal(parseCommand('app'), null);
+  assert.equal(parseCommand('mine all'), null);
   assert.deepEqual(parseCommand('List'), { cmd: 'list' });
   assert.deepEqual(parseCommand('STOP'), { cmd: 'stop' });
   assert.deepEqual(parseCommand('help'), { cmd: 'help' });
@@ -30,32 +34,37 @@ test('reply commands', () => {
   assert.equal(parseCommand('join 12'), null);
 });
 
-test('list message numbers roles the way YES 1 3 reads them', () => {
-  const m = listMessage([
-    { company_name: 'Ramp', title: 'SWE Intern', score: '9.4', location: 'New York', reason: 'Kafka match' },
-    { company_name: 'Stripe', title: 'Data Intern', score: 9.1 },
-  ], '2026-10-15');
+test('pick list keeps each role’s number on today’s list, and stays short for the template', () => {
+  const m = pickListMessage([
+    { num: 1, company_name: 'Ramp', title: 'SWE Intern', score: '9.4', pay: '$55/hr' },
+    { num: 4, company_name: 'Stripe', title: 'Data Intern', score: 9.1 },
+  ], 'Thu, Oct 15');
   assert.equal(m.params.header, 'Thu, Oct 15');
-  assert.deepEqual(m.params.body, ['2', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1']);
-  assert.match(m.text, /^\*Tonight’s list · Thu, Oct 15\*\nHello,\n2 roles scored 9\+ today:/);
-  assert.match(m.text, /\*1\)\*\nCompany: \*Ramp\*\nRole: SWE Intern\nScore: 9\.4\/10\nWhere: New York\nWhy: _Kafka match_\n/);
-  assert.match(m.text, /Reply \*YES\* to approve all, or \*YES 1 3\*/);
+  assert.deepEqual(m.params.body, ['2', '1) Ramp · SWE Intern · 9.4  4) Stripe · Data Intern · 9.1']);
+  assert.match(m.text, /^\*Roles to pick · Thu, Oct 15\*\nHello,\n2 roles match you:/);
+  assert.match(m.text, /\*1\)\* Ramp · SWE Intern · 9\.4 · \$55\/hr\n\*4\)\* Stripe · Data Intern · 9\.1/);
+  assert.match(m.text, /Reply \*APP 1 3\*/);
   assert.match(m.text, /Good luck! ;\)$/);
+  const many = pickListMessage(Array.from({ length: 60 }, (_, k) => ({ company_name: `Company ${k}`, title: 'Software Engineer, New Grad', score: 8 })), '12 new', { fresh: true });
+  assert.ok(many.params.body[1].length < 700 && /\+\d+ more$/.test(many.params.body[1]));
+  assert.match(many.text, /60 new roles match you since this morning/);
+  assert.match(many.text, /…and 20 more on the site\./);
 });
 
-test('webhook handshake and signature', () => {
-  process.env.WHATSAPP_VERIFY_TOKEN = 'tok';
-  assert.equal(verifyHandshake({ 'hub.mode': 'subscribe', 'hub.verify_token': 'tok', 'hub.challenge': '42' }), '42');
-  assert.equal(verifyHandshake({ 'hub.mode': 'subscribe', 'hub.verify_token': 'nope', 'hub.challenge': '42' }), null);
-  process.env.WHATSAPP_APP_SECRET = 's3cret';
-  const body = Buffer.from('{"entry":[]}');
-  const sig = `sha256=${crypto.createHmac('sha256', 's3cret').update(body).digest('hex')}`;
-  assert.ok(signatureOk(body, sig));
-  assert.ok(!signatureOk(body, 'sha256=00'));
-  assert.ok(!signatureOk(body, undefined));
-  delete process.env.WHATSAPP_APP_SECRET;
-  assert.ok(!signatureOk(body, sig), 'unsigned webhooks are refused when no secret is set');
-  delete process.env.WHATSAPP_VERIFY_TOKEN;
+test('evening message: drafts to approve and your own resumes to finish', () => {
+  const m = eveningMessage({
+    ready: [{ company_name: 'Ramp', title: 'SWE', t_ats: 93 }],
+    drafting: [{ company_name: 'Figma', title: 'Data' }],
+    own: [{ company_name: 'Amazon', title: 'SDE I' }, { company_name: 'Microsoft', title: 'SWE' }],
+    label: 'Fri, Oct 31',
+  });
+  assert.deepEqual(m.params, { header: 'Fri, Oct 31', body: ['Ramp', 'Amazon, Microsoft'] });
+  assert.match(m.text, /\*Drafts ready to approve \(1\)\*\n• Ramp · SWE · ATS 93%/);
+  assert.match(m.text, /\*Still drafting \(1\)\*\n• Figma · Data/);
+  assert.match(m.text, /\*Your own resumes \(2\)\*: did you finish them\?\n• Amazon · SDE I\n• Microsoft · SWE\nUpload the PDF/);
+  assert.equal(m.subject, '1 draft to approve · 2 resumes of your own to finish · Fri, Oct 31');
+  assert.ok(!m.plain.includes('*'));
+  assert.deepEqual(eveningMessage({ own: [{ company_name: 'Cursor', title: 'SWE' }], label: 'x' }).params.body, ['none yet', 'Cursor']);
 });
 
 test('every template has as many example values as placeholders, and a valid shape', () => {

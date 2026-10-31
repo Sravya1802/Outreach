@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import multer from 'multer';
-import { addOwnJob, approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, saveSettings, sendReviewed } from '../services/dailyPlan.js';
+import { addOwnJob, approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, ownResumeForItem, pickItem, saveSettings, sendReviewed } from '../services/dailyPlan.js';
 import { markAskSent, referralAction, referralStats } from '../services/referralFlow.js';
 import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
@@ -61,6 +61,25 @@ router.post('/own-job', (req, res) => {
         url: b.url, company: b.company, title: b.title, jobDescription: b.jobDescription,
         resume: req.file ? { buffer: req.file.buffer, filename: req.file.originalname } : null,
       }));
+    } catch (err) { fail(res, err); }
+  });
+});
+
+// App drafts / I'll draft my own / Skip (or 'none' to undo).
+router.post('/items/:id/pick', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json(await pickItem(req.user.id, id, req.body?.pick)); } catch (err) { fail(res, err); }
+});
+
+// "I'll draft my own", done: the user's PDF goes out for this role.
+router.post('/items/:id/own-resume', (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  ownResume(req, res, async (upErr) => {
+    if (upErr) return fail(res, Object.assign(upErr, { status: upErr.status || 400 }));
+    try {
+      res.json(await ownResumeForItem(req.user.id, id, req.file ? { buffer: req.file.buffer, filename: req.file.originalname } : null));
     } catch (err) { fail(res, err); }
   });
 });

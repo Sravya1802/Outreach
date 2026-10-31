@@ -43,30 +43,41 @@ test('tiers: best per company, capped, rest worth a look', () => {
   assert.equal(tierOf('Blank'), 'low');
 });
 
-test('evening email lists the top roles and says what happens next', () => {
-  const settings = normalizeSettings({ enabled: true });
+test('morning email lists every match to pick and says what each pick does', () => {
+  const settings = normalizeSettings({ enabled: true, listHour: 21 });
   const mail = planEmail({
     items: [
       { tier: 'top', score: 9.4, company_name: 'Ramp', title: 'SWE Intern', location: 'New York', pay: '$55/hr', sponsorship: 'sponsors', reason: 'Kafka + Python match', apply_url: 'https://jobs.ramp.com/swe?a=1&b=2' },
       { tier: 'top', score: 9.1, company_name: 'Evil', title: 'Intern', apply_url: 'javascript:alert(1)' },
       { tier: 'worth', score: 8.1, company_name: 'Acme', title: 'Data Intern' },
+      { tier: 'low', score: 5, company_name: 'Low', title: 'X' },
     ],
     stats: { excluded: 2 }, settings, date: '2026-10-15', firstName: 'Sravya',
   });
-  assert.equal(mail.subject, '[Scout’n’Jobs] 2 roles to approve tonight · Thu, Oct 15');
-  // Each role links to its posting; only http(s) links.
-  assert.match(mail.html, /<a href="https:\/\/jobs\.ramp\.com\/swe\?a=1&amp;b=2" style="color:#1f3bc4">SWE Intern<\/a>/);
-  assert.match(mail.text, /Kafka \+ Python match\n {6}https:\/\/jobs\.ramp\.com\/swe\?a=1&b=2/);
+  assert.equal(mail.subject, '[Scout’n’Jobs] 3 roles to pick · Thu, Oct 15');
+  assert.match(mail.html, /<a href="https:\/\/jobs\.ramp\.com\/swe\?a=1&amp;b=2" style="color:#0b6bcb">SWE Intern<\/a>/);
   assert.ok(!mail.html.includes('javascript:') && !mail.text.includes('javascript:'));
-  assert.match(mail.text, /^Good evening, Sravya\. 2 new roles scored 9 or higher today\./);
+  assert.match(mail.text, /^Good morning, Sravya\. 3 roles match you today\./);
   assert.match(mail.text, /9\.4 {2}Ramp · SWE Intern · New York · \$55\/hr · Sponsors visas/);
-  assert.match(mail.text, /ask someone at the company for a referral tomorrow morning, and apply 2 business days later/);
-  assert.match(mail.text, /Also worth a look: 1 role/);
+  assert.match(mail.text, /8\.1 {2}Acme · Data Intern/);
+  assert.ok(!mail.text.includes('Low · X'));
+  assert.match(mail.text, /App drafts .*I’ll draft my own .*Skip/);
+  assert.match(mail.text, /ready by 9 PM/);
   assert.match(mail.text, /Left out: 2/);
-  assert.match(mail.html, /Review and approve/);
+  assert.match(mail.html, /Pick today’s roles/);
   assert.ok(!mail.html.includes('<script'));
-  const none = planEmail({ items: [{ tier: 'worth', score: 7.5, company_name: 'A', title: 'B' }], stats: {}, settings, date: '2026-10-15' });
-  assert.match(none.subject, /No 9\+ roles tonight · 1 worth a look/);
+  const fresh = planEmail({ items: [{ tier: 'worth', score: 7.5, company_name: 'A', title: 'B' }], stats: { excluded: 4 }, settings, date: '2026-10-15', fresh: true });
+  assert.equal(fresh.subject, '[Scout’n’Jobs] 1 new role to pick since this morning · Thu, Oct 15');
+  assert.ok(!fresh.text.includes('Left out'));
+  const none = planEmail({ items: [], stats: {}, settings, date: '2026-10-15' });
+  assert.match(none.subject, /No matching roles today/);
+});
+
+test('settings carry the morning and afternoon hours, clamped', () => {
+  const s = normalizeSettings({});
+  assert.deepEqual([s.morningHour, s.updateHour], [9, 14]);
+  const c = normalizeSettings({ morningHour: 2, updateHour: 23 });
+  assert.deepEqual([c.morningHour, c.updateHour], [5, 18]);
 });
 
 test('fills up to the daily minimum with close matches (8+), never below', async () => {

@@ -133,7 +133,8 @@ export async function markAppliedYourself(userId, evalId) {
       WHERE id = $1 AND user_id = $2`, [evalId, userId]);
   if (!r.rowCount) return false;
   await run(
-    `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.'
+    `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.',
+            decision = CASE WHEN decision IN ('pending', 'expired') THEN 'approved' ELSE decision END, decided_at = COALESCE(decided_at, NOW())
       WHERE evaluation_id = $1 AND user_id = $2 AND stage NOT IN ('applied', 'done')`, [evalId, userId]);
   return true;
 }

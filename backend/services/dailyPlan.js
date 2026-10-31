@@ -1,15 +1,17 @@
 /**
- * dailyPlan.js — the evening list (opt-in).
+ * dailyPlan.js — the day's roles, picked by the user (opt-in).
  *
- *   ~1 hour before the list time: score the day's new roles in the user's
- *   market against their resume (Groq, cheap), after hard filters (role type,
- *   sponsorship, one company per 30 days)
- *   list time (default 10 PM America/Chicago): email the top roles (9+/10, at
- *   most 15) from the user's own Gmail
- *   user approves → evaluation row + tailored resume (resumeEngine); under-90
- *   ATS waits for them. Then the referral ask and the morning apply
- *   (referralFlow.js).
- *   Anything not approved by the next list expires. Nothing applies without approval.
+ *   morning (default 9 AM): score the day's new roles in the user's market
+ *   against their resume (Groq, cheap), after hard filters (role type,
+ *   sponsorship, one company per 30 days), and send every match (7+/10) by
+ *   email and WhatsApp to be picked
+ *   afternoon (default 2 PM): roles found since join the list; only those are announced
+ *   the user picks each role: 'app' drafts its resume right away (batched),
+ *   'self' is theirs to write, or skip. Unpicked roles cost nothing.
+ *   list time (default 9 PM): the app's drafts wait for Approve; their own
+ *   resumes get a reminder (upload it for the app to apply, or mark it applied)
+ *   approve → the referral ask and the morning apply (referralFlow.js)
+ *   Unpicked roles expire with the next list. Nothing applies without approval.
  */
 
 import { all, one, run } from '../db.js';
@@ -22,7 +24,7 @@ import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring, reviewReason } from './resumeEngine.js';
 import { advanceReferrals, asksFor, maybeSendSummary, prepareContacts } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
-import { notify as whatsappNotify, sendPlanList } from './whatsapp.js';
+import { notify as whatsappNotify, sendPickList, eveningMessage, pickListMessage, numberedTop } from './whatsapp.js';
 
 const KEY = 'daily_plan_settings';
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
@@ -36,6 +38,8 @@ const COMPANY_COOLDOWN_DAYS = 30;
 
 export const DEFAULT_SETTINGS = {
   enabled: false,
+  morningHour: 9,
+  updateHour: 14,
   listHour: 22,
   timezone: 'America/Chicago',
   minScore: 9.0,
@@ -51,6 +55,8 @@ export function normalizeSettings(s = {}) {
   const d = DEFAULT_SETTINGS;
   return {
     enabled: s.enabled === true,
+    morningHour: Math.round(clamp(s.morningHour, 5, 12, d.morningHour)),
+    updateHour: Math.round(clamp(s.updateHour, 11, 18, d.updateHour)),
     listHour: Math.round(clamp(s.listHour, 17, 23, d.listHour)),
     timezone: isValidTz(s.timezone) ? s.timezone : d.timezone,
     minScore: Math.round(clamp(s.minScore, 5, 10, d.minScore) * 10) / 10,
@@ -244,9 +250,9 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
   else await run("UPDATE daily_plans SET status = 'building', error = NULL WHERE id = $1", [plan.id]);
 
   try {
-    // Yesterday's unanswered roles expire when a new list arrives.
+    // Yesterday's unpicked roles expire when a new list arrives; picked ones stay until they're done.
     await run(
-      "UPDATE plan_items SET decision = 'expired', decided_at = NOW() WHERE user_id = $1 AND decision = 'pending' AND plan_id <> $2 AND tier IN ('top','worth')",
+      "UPDATE plan_items SET decision = 'expired', decided_at = NOW() WHERE user_id = $1 AND decision = 'pending' AND pick IS NULL AND plan_id <> $2 AND tier IN ('top','worth')",
       [userId, plan.id],
     );
     const profile = await profileFor(userId);
@@ -343,7 +349,6 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
       costUsd: Number(((prev.costUsd || 0) + cost).toFixed(5)), ...(budgetErr ? { stoppedEarly: 'AI budget reached' } : {}),
     };
     await run("UPDATE daily_plans SET status = 'ready', stats = $2, built_at = NOW() WHERE id = $1", [plan.id, JSON.stringify(stats)]);
-    if (drafting()) await draftTopRoles(userId, plan.id).catch(err => console.warn('[daily-plan] drafts:', err.message));
   } catch (err) {
     await run("UPDATE daily_plans SET status = 'failed', error = $2 WHERE id = $1", [plan.id, String(err.message).slice(0, 300)]);
     throw err;
@@ -402,46 +407,44 @@ export async function refreshPlan(userId, planId) {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SPONSOR_LABEL = { sponsors: 'Sponsors visas', no_sponsorship: 'No sponsorship', citizens_only: 'US citizens only' };
 
-export function planEmail({ items, stats, settings, date, firstName }) {
-  const top = items.filter(i => i.tier === 'top');
-  const worth = items.filter(i => i.tier === 'worth');
+const PICK_HOW = 'For each one, pick on the site: App drafts (I write the resume now; it waits for your approval tonight and nothing goes out before), I’ll draft my own (I remind you tonight; then upload it for me to apply, or mark it applied), or Skip. Roles you don’t pick cost nothing.';
+
+/** The morning list (or the afternoon's new roles): every match, best first, to be picked. */
+export function planEmail({ items, stats, settings, date, firstName, fresh = false }) {
+  const roles = items.filter(i => i.tier === 'top' || i.tier === 'worth');
   const day = new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const link = `${SITE}/applications/auto-apply`;
-  const subject = top.length
-    ? `${top.length} role${top.length === 1 ? '' : 's'} to approve tonight · ${day}`
-    : `No ${settings.minScore}+ roles tonight · ${worth.length} worth a look · ${day}`;
-  const when = settings.referralFirst
-    ? `Each one already has a draft resume you can open and change (or upload your own). For each one you approve, I'll ask someone at the company for a referral tomorrow morning, and apply ${settings.referralWaitDays} business days later in the company's morning if no referral comes through.`
-    : 'For each one you approve, I’ll write a tailored resume tonight and apply tomorrow between 6 and 10 AM in the company’s time zone.';
+  const link = `${SITE}/jobs/auto-apply`;
+  const n = roles.length;
+  const subject = n
+    ? `${n} ${fresh ? 'new ' : ''}role${n === 1 ? '' : 's'} to pick${fresh ? ' since this morning' : ''} · ${day}`
+    : `No matching roles${fresh ? ' since this morning' : ' today'} · ${day}`;
   // Only http(s) links go into the email.
   const posting = (i) => (/^https?:\/\//i.test(String(i.apply_url || '')) ? i.apply_url : null);
-  const resume = (i) => (!i.tailoring_id ? '' : i.t_status === 'running' ? 'Resume: being written, ready within the hour'
-    : i.t_ats != null ? `Resume: ATS ${i.t_ats}%${i.t_callback != null ? ` · interview chance ${i.t_callback}%` : ''}` : '');
-  const resumeLink = (i) => (i.evaluation_id ? `${SITE}/resumes/job/${i.evaluation_id}` : null);
-  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}${posting(i) ? `\n      ${posting(i)}` : ''}${resume(i) ? `\n      ${resume(i)}${resumeLink(i) ? `: ${resumeLink(i)}` : ''}` : ''}`;
+  const line = (i) => `${i.score?.toFixed(1) ?? '–'}  ${i.company_name} · ${i.title}${i.location ? ` · ${i.location}` : ''}${i.pay ? ` · ${i.pay}` : ''}${SPONSOR_LABEL[i.sponsorship] ? ` · ${SPONSOR_LABEL[i.sponsorship]}` : ''}\n      ${i.reason || ''}${posting(i) ? `\n      ${posting(i)}` : ''}`;
+  const greet = fresh ? 'Good afternoon' : 'Good morning';
   const text = [
-    `Good evening${firstName ? `, ${firstName}` : ''}. ${top.length ? `${top.length} new role${top.length === 1 ? '' : 's'} scored ${settings.minScore} or higher today.` : `Nothing scored ${settings.minScore} or higher today.`}`,
-    top.length ? `Approve the ones you want before bed: ${link}\n\n${when}` : '',
-    top.map(line).join('\n\n'),
-    worth.length ? `Also worth a look: ${worth.length} role${worth.length === 1 ? '' : 's'} scored 7.0–${(settings.minScore - 0.1).toFixed(1)}. They're on the site.` : '',
-    stats.excluded ? `Left out: ${stats.excluded} (sponsorship, or a company you applied to recently).` : '',
-    'Nothing is applied without your approval. Change the time or turn this off on the Auto-apply page.',
+    `${greet}${firstName ? `, ${firstName}` : ''}. ${n ? `${n} ${fresh ? 'new ' : ''}role${n === 1 ? '' : 's'} match${n === 1 ? 'es' : ''} you${fresh ? ' since this morning' : ' today'}.` : `Nothing new matches you${fresh ? ' since this morning' : ' today'}.`}`,
+    n ? `Pick them here: ${link}\n\n${PICK_HOW}` : '',
+    roles.map(line).join('\n\n'),
+    !fresh && stats.excluded ? `Left out: ${stats.excluded} (sponsorship, or a company you applied to recently).` : '',
+    `Your drafts are ready by ${hourText(settings.listHour)}. Change these times or turn this off on the Auto-apply page.`,
   ].filter(Boolean).join('\n\n');
-  const rows = top.map(i => `
-    <tr><td style="padding:14px 0;border-bottom:1px solid #dcd7cb;vertical-align:top;width:48px;font-family:monospace;font-size:17px;color:#1e6b52">${esc(i.score?.toFixed(1) ?? '–')}</td>
-    <td style="padding:14px 0;border-bottom:1px solid #dcd7cb"><b>${esc(i.company_name)}</b> · ${posting(i) ? `<a href="${esc(posting(i))}" style="color:#1f3bc4">${esc(i.title)}</a>` : esc(i.title)}<br>
-    <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span>${resume(i) ? `<br><span style="font-size:13px;color:#1e6b52">${esc(resume(i))}</span>${resumeLink(i) ? ` · <a href="${esc(resumeLink(i))}" style="color:#1f3bc4">see the resume</a>` : ''}` : ''}</td></tr>`).join('');
+  const rows = roles.map(i => `
+    <tr><td style="padding:14px 0;border-bottom:1px solid #d6e2ef;vertical-align:top;width:48px;font-family:monospace;font-size:17px;color:#0b6bcb">${esc(i.score?.toFixed(1) ?? '–')}</td>
+    <td style="padding:14px 0;border-bottom:1px solid #d6e2ef"><b>${esc(i.company_name)}</b> · ${posting(i) ? `<a href="${esc(posting(i))}" style="color:#0b6bcb">${esc(i.title)}</a>` : esc(i.title)}<br>
+    <span style="font-size:13px;color:#5b5e66">${esc([i.location, i.pay, SPONSOR_LABEL[i.sponsorship]].filter(Boolean).join(' · '))}${i.reason ? ` · ${esc(i.reason)}` : ''}</span></td></tr>`).join('');
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:640px;margin:0 auto;padding:24px">
     <p style="font-size:20px;font-weight:600;margin:0 0 16px">Scout’n’Jobs</p>
     <h1 style="font-size:24px;font-weight:500;margin:0 0 10px">${esc(text.split('\n')[0])}</h1>
-    ${top.length ? `<p style="font-size:15px;line-height:1.6;color:#4f525a">${esc(when)} Anything you don't approve isn't sent.</p>
-    <p style="margin:18px 0"><a href="${link}" style="background:#1f3bc4;color:#fff;padding:11px 18px;border-radius:4px;text-decoration:none;font-weight:600">Review and approve</a></p>
-    <table style="width:100%;border-collapse:collapse;border-top:1px solid #17181a">${rows}</table>` : ''}
-    ${worth.length ? `<p style="font-size:14px;color:#4f525a;margin-top:20px"><b>Also worth a look:</b> ${worth.length} role${worth.length === 1 ? '' : 's'} scored 7.0–${(settings.minScore - 0.1).toFixed(1)}. They're on the site.</p>` : ''}
-    ${stats.excluded ? `<p style="font-size:14px;color:#4f525a"><b>Left out:</b> ${stats.excluded} (sponsorship, or a company you applied to recently).</p>` : ''}
-    <p style="font-size:12px;color:#6a6d75;margin-top:24px">Nothing is applied without your approval. Sent from your own Gmail by Scout’n’Jobs. Change the time or turn this off on the Auto-apply page.</p></div>`;
+    ${n ? `<p style="font-size:15px;line-height:1.6;color:#4f525a">${esc(PICK_HOW)}</p>
+    <p style="margin:18px 0"><a href="${link}" style="background:#0b6bcb;color:#fff;padding:11px 18px;border-radius:4px;text-decoration:none;font-weight:600">Pick today’s roles</a></p>
+    <table style="width:100%;border-collapse:collapse;border-top:1px solid #9fb6cf">${rows}</table>` : ''}
+    ${!fresh && stats.excluded ? `<p style="font-size:14px;color:#4f525a"><b>Left out:</b> ${stats.excluded} (sponsorship, or a company you applied to recently).</p>` : ''}
+    <p style="font-size:12px;color:#6a6d75;margin-top:24px">Nothing is applied without your approval. Sent from your own Gmail by Scout’n’Jobs. Change these times or turn this off on the Auto-apply page.</p></div>`;
   return { subject: `[Scout’n’Jobs] ${subject}`, text, html };
 }
+
+const hourText = (h) => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
 
 export async function emailPlan(userId, planId) {
   const plan = await one('SELECT * FROM daily_plans WHERE id = $1 AND user_id = $2', [planId, userId]);
@@ -453,7 +456,7 @@ export async function emailPlan(userId, planId) {
       WHERE pi.plan_id = $1 AND pi.tier IN ('top','worth') ORDER BY pi.score DESC NULLS LAST`,
     [planId],
   );
-  // Nothing to look at: no email (the page still shows the night's numbers).
+  // Nothing to look at: no email (the page still shows the day's numbers).
   if (!items.length) { await run('UPDATE daily_plans SET emailed_at = NOW() WHERE id = $1', [planId]); return { skipped: 'empty' }; }
   if (!(await connectionFor(userId))) return { skipped: 'gmail_not_connected' };
   const settings = await getSettings(userId);
@@ -609,14 +612,9 @@ async function evaluationFor(userId, item) {
   )).rows[0].id;
 }
 
-// Draft a tailored resume for every top role as soon as the list is built, so
-// the user sees the changes (and can upload their own version) before deciding.
-// DAILY_DRAFTS=off goes back to writing them only after approval.
-const drafting = () => process.env.DAILY_DRAFTS !== 'off';
-
-/** Start a (batched) resume draft for each top role on the list that has none. Idempotent. */
-export async function draftTopRoles(userId, planId) {
-  const items = await all("SELECT * FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND tier = 'top' AND decision IN ('pending', 'approved') AND tailoring_id IS NULL ORDER BY score DESC NULLS LAST", [planId, userId]);
+/** Start a (batched) resume for every role picked for the app that has none yet. Idempotent. */
+export async function draftPicked(userId) {
+  const items = await all("SELECT * FROM plan_items WHERE user_id = $1 AND pick = 'app' AND decision IN ('pending', 'approved') AND tailoring_id IS NULL ORDER BY picked_at", [userId]);
   let started = 0;
   for (const it of items) {
     try {
@@ -632,8 +630,71 @@ export async function draftTopRoles(userId, planId) {
   return started;
 }
 
+const PICKS = ['app', 'self', 'skip', 'none'];
+
+/**
+ * The user's call on one listed role: 'app' (the app drafts it now and waits
+ * for Approve), 'self' (they write the resume; reminded at list time), 'skip',
+ * or 'none' (undecided again). Only 'app' spends anything, on its draft.
+ */
+export async function pickItem(userId, itemId, choice) {
+  if (!PICKS.includes(choice)) throw Object.assign(new Error('Pick App drafts, I’ll draft my own, or Skip'), { status: 400 });
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
+  if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (item.decision === 'approved') throw Object.assign(new Error('This role is already approved.'), { status: 409 });
+  if (item.decision === 'expired' && Date.now() - new Date(item.created_at).getTime() > MISSED_DAYS * 86400_000) {
+    throw Object.assign(new Error('This role’s list is too old. Find it in Jobs if you still want it.'), { status: 409 });
+  }
+  if (choice === 'skip') {
+    await run("UPDATE plan_items SET decision = 'skipped', decided_at = NOW(), pick = NULL, picked_at = NULL WHERE id = $1", [item.id]);
+    return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+  }
+  const pick = choice === 'none' ? null : choice;
+  // A picked role gets its application row now (no AI), so uploads and "I applied" have somewhere to land.
+  const evalId = item.evaluation_id || (pick ? await evaluationFor(userId, item) : null);
+  await run(
+    "UPDATE plan_items SET pick = $2, picked_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END, evaluation_id = $3, decision = 'pending', decided_at = NULL WHERE id = $1",
+    [item.id, pick, evalId],
+  );
+  if (pick === 'app' && !item.tailoring_id) {
+    // Drafting starts now (batched); the tick retries if it can't.
+    try {
+      const t = await startTailoring(userId, evalId, 'resume', { batch: batched() });
+      await run('UPDATE plan_items SET tailoring_id = $2 WHERE id = $1', [item.id, t.id]);
+    } catch (err) {
+      console.warn(`[daily-plan] draft for ${item.company_name}:`, err.message);
+    }
+  }
+  return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+}
+
+/** "I'll draft my own", finished: their PDF goes out for this role, the way addOwnJob's does. */
+export async function ownResumeForItem(userId, itemId, resume) {
+  if (!resume?.buffer?.length) throw Object.assign(new Error('Upload your resume as a PDF'), { status: 400 });
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
+  if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (item.decision === 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) {
+    throw Object.assign(new Error('This role is already past the resume step.'), { status: 409 });
+  }
+  const evalId = item.evaluation_id || await evaluationFor(userId, item);
+  const { saveForEvaluation } = await import('./resumeFiles.js');
+  await saveForEvaluation(userId, evalId, resume.buffer, resume.filename || 'Resume.pdf', 'uploaded');
+  const settings = await getSettings(userId);
+  const stage = settings.referralFirst ? 'asking_referral' : 'ready_to_apply';
+  const note = settings.referralFirst ? 'Your resume. Next: finding people and asking for a referral' : 'Your resume. Applying in the company’s morning';
+  const applyAfter = stage === 'ready_to_apply' ? nextSendSlot(item.company_tz || settings.timezone, { startHour: 6, endHour: 10 }) : null;
+  await run(
+    `UPDATE plan_items SET pick = 'self', picked_at = COALESCE(picked_at, NOW()), evaluation_id = $2, decision = 'approved', decided_at = NOW(),
+            stage = $3, stage_note = $4, needs_reason = NULL, apply_after = $5${(await hasApplyMode()) ? ", apply_mode = 'auto'" : ''} WHERE id = $1`,
+    [item.id, evalId, stage, note, applyAfter],
+  );
+  prepareContacts(userId).catch(err => console.warn('[daily-plan] contacts:', err.message));
+  return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+}
+
+/** Approve every role picked for the app that's still waiting (its draft goes ahead). */
 export async function approveAllTop(userId, planId) {
-  const items = await all("SELECT id FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND tier = 'top' AND decision = 'pending'", [planId, userId]);
+  const items = await all("SELECT id FROM plan_items WHERE plan_id = $1 AND user_id = $2 AND pick = 'app' AND decision = 'pending'", [planId, userId]);
   for (const i of items) await decide(userId, i.id, 'approved');
   return items.length;
 }
@@ -725,6 +786,56 @@ export async function notifyNeedsYou(userId) {
   });
 }
 
+// ── The afternoon update and the list-time message ───────────────────────────
+
+const dayLabel = (date) => new Date(`${String(date instanceof Date ? date.toISOString() : date).slice(0, 10)}T12:00:00Z`)
+  .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** Score the roles found since the morning into today's list, and announce only those. */
+export async function sendUpdate(userId, planId) {
+  const before = new Set((await all('SELECT id FROM plan_items WHERE plan_id = $1', [planId])).map(r => String(r.id)));
+  const plan = await buildPlan(userId, { force: true });
+  // Numbered on today's whole list, so "APP 12" means the same role everywhere.
+  const fresh = (await numberedTop(userId)).items
+    .filter(i => !before.has(String(i.id)) && i.decision === 'pending' && !i.pick)
+    .map(i => ({ ...i, score: i.score == null ? null : Number(i.score) }));
+  if (!fresh.length) return { skipped: 'nothing_new' };
+  const settings = await getSettings(userId);
+  if (await connectionFor(userId)) {
+    const p = await one('SELECT first_name FROM user_profile WHERE user_id = $1', [userId]);
+    await sendToSelf(userId, planEmail({ items: fresh, stats: plan?.stats || {}, settings, date: localDate(settings.timezone), firstName: p?.first_name, fresh: true }));
+  }
+  await whatsappNotify(userId, 'picks', pickListMessage(fresh, `${fresh.length} new`, { fresh: true }));
+  return { fresh: fresh.length };
+}
+
+/** What's waiting at list time: the app's drafts to approve and the user's own resumes. */
+export async function eveningItems(userId) {
+  return all(
+    `SELECT pi.id, pi.company_name, pi.title, pi.pick, pi.evaluation_id, t.status AS t_status, t.ats_score AS t_ats
+       FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.user_id = $1 AND pi.decision = 'pending' AND pi.pick IS NOT NULL
+      ORDER BY pi.pick, pi.picked_at`,
+    [userId],
+  );
+}
+
+/** List time: one email and one WhatsApp with the drafts to approve and the user's own resumes to finish. */
+export async function sendEvening(userId, plan) {
+  const items = await eveningItems(userId);
+  const ready = items.filter(i => i.pick === 'app' && ['ready', 'needs_review'].includes(i.t_status));
+  const drafting = items.filter(i => i.pick === 'app' && !['ready', 'needs_review'].includes(i.t_status));
+  const own = items.filter(i => i.pick === 'self');
+  if (!items.length) return { skipped: 'nothing_picked' };
+  const m = eveningMessage({ ready, drafting, own, label: dayLabel(plan.plan_date) });
+  if (await connectionFor(userId)) {
+    const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#17181a;max-width:640px;margin:0 auto;padding:24px;white-space:pre-wrap;font-size:15px;line-height:1.6">${esc(m.plain)}</div>`;
+    await sendToSelf(userId, { subject: `[Scout’n’Jobs] ${m.subject}`, text: m.plain, html });
+  }
+  await whatsappNotify(userId, 'evening', m);
+  return { ready: ready.length, drafting: drafting.length, own: own.length };
+}
+
 // ── Cron entry point ────────────────────────────────────────────────────────
 
 let ticking = false;
@@ -750,18 +861,29 @@ export async function tick(now = new Date()) {
           const hour = localHour(s.timezone, now);
           const date = localDate(s.timezone, now);
           let plan = await one('SELECT * FROM daily_plans WHERE user_id = $1 AND plan_date = $2', [u.user_id, date]);
-          // Two hours early: scoring takes ~15 minutes and the resume drafts go through the batch API.
-          if (!plan && hour >= s.listHour - 2) { plan = await buildPlan(u.user_id, { now }); done.built += 1; }
-          if (plan?.status === 'ready' && drafting()) await draftTopRoles(u.user_id, plan.id).catch(err => console.warn('[daily-plan] drafts:', err.message));
-          if (plan?.status === 'ready' && !plan.emailed_at && hour >= s.listHour) {
+          // Morning: score the day's roles and send them to be picked.
+          if (!plan && hour >= s.morningHour) { plan = await buildPlan(u.user_id, { now }); done.built += 1; }
+          if (plan?.status === 'ready' && !plan.emailed_at && hour >= s.morningHour) {
             const r = await emailPlan(u.user_id, plan.id);
             if (r.ok) done.emailed += 1;
           }
-          if (plan?.status === 'ready' && !plan.whatsapp_at && hour >= s.listHour) {
+          if (plan?.status === 'ready' && !plan.whatsapp_at && hour >= s.morningHour) {
             await run('UPDATE daily_plans SET whatsapp_at = NOW() WHERE id = $1', [plan.id]);
-            await sendPlanList(u.user_id).catch(err => console.warn('[daily-plan] whatsapp list:', err.message));
+            await sendPickList(u.user_id).catch(err => console.warn('[daily-plan] whatsapp list:', err.message));
+          }
+          // Afternoon: roles found since the morning join today's list; only those are announced.
+          if (plan?.status === 'ready' && !plan.update_at && hour >= s.updateHour) {
+            await run('UPDATE daily_plans SET update_at = NOW() WHERE id = $1', [plan.id]);
+            await sendUpdate(u.user_id, plan.id).catch(err => console.warn('[daily-plan] update:', err.message));
+          }
+          // List time: the app's drafts to approve, and a reminder for the resumes the user writes.
+          if (plan?.status === 'ready' && !plan.evening_at && hour >= s.listHour) {
+            await run('UPDATE daily_plans SET evening_at = NOW() WHERE id = $1', [plan.id]);
+            await sendEvening(u.user_id, plan).catch(err => console.warn('[daily-plan] evening:', err.message));
           }
         }
+        // Picked for the app: the draft starts right away (and is retried here).
+        await draftPicked(u.user_id).catch(err => console.warn('[daily-plan] drafts:', err.message));
         // People at the companies of roles just approved (runs in the background).
         await prepareContacts(u.user_id).catch(err => console.warn('[daily-plan] contacts:', err.message));
         await advanceUser(u.user_id);
@@ -784,10 +906,21 @@ export async function overview(userId) {
   const settings = await getSettings(userId);
   const plan = await one('SELECT * FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
   const items = plan ? await all(
-    `SELECT id, scraped_role_id, evaluation_id, company_name, title, apply_url, location, pay, sponsorship, tier, score, reason, decision, decided_at, stage, stage_note
-       FROM plan_items WHERE plan_id = $1 AND tier IN ('top','worth') ORDER BY tier = 'top' DESC, score DESC NULLS LAST`,
+    `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score, pi.reason,
+            pi.decision, pi.decided_at, pi.stage, pi.stage_note, pi.pick, pi.picked_at, pi.tailoring_id, t.status AS t_status, t.ats_score AS t_ats
+       FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.plan_id = $1 AND pi.tier IN ('top','worth') ORDER BY pi.score DESC NULLS LAST, pi.id`,
     [plan.id],
   ) : [];
+  // Picked on an earlier day and still open (a draft not approved yet, a resume of their own not done).
+  const picked = await all(
+    `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score, pi.reason,
+            pi.decision, pi.decided_at, pi.stage, pi.stage_note, pi.pick, pi.picked_at, pi.tailoring_id, t.status AS t_status, t.ats_score AS t_ats, p.plan_date::text AS plan_date
+       FROM plan_items pi JOIN daily_plans p ON p.id = pi.plan_id LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
+      WHERE pi.user_id = $1 AND pi.decision = 'pending' AND pi.pick IS NOT NULL AND ($2::bigint IS NULL OR pi.plan_id <> $2)
+      ORDER BY pi.picked_at DESC LIMIT 100`,
+    [userId, plan?.id ?? null],
+  );
   const active = await all(
     `SELECT pi.id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.score, pi.stage, pi.stage_note, pi.referral_status,
             pi.referral_link, pi.company_tz, pi.wait_until, pi.apply_after, pi.applied_at, pi.decided_at, t.ats_score
@@ -807,13 +940,13 @@ export async function overview(userId) {
     [userId, MISSED_DAYS, plan?.id ?? null],
   );
   // People the user knows at each company (LinkedIn connections export).
-  const keys = [...new Set([...items, ...active].map(i => companyKey(i.company_name)).filter(Boolean))];
+  const keys = [...new Set([...items, ...picked, ...active].map(i => companyKey(i.company_name)).filter(Boolean))];
   const known = keys.length ? await all(
     'SELECT company_key, COUNT(*)::int AS n FROM linkedin_connections WHERE user_id = $1 AND company_key = ANY($2) GROUP BY company_key', [userId, keys],
   ) : [];
   const knownBy = Object.fromEntries(known.map(k => [k.company_key, k.n]));
   // People found at each company (with a usable email or a LinkedIn profile).
-  const names = [...new Set([...items, ...active].map(i => String(i.company_name).toLowerCase()))];
+  const names = [...new Set([...items, ...picked, ...active].map(i => String(i.company_name).toLowerCase()))];
   const found = names.length ? await all(
     `SELECT lower(j.name) AS name, MIN(j.id) AS company_id, COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid')::int AS with_email
@@ -833,6 +966,7 @@ export async function overview(userId) {
     settings,
     plan,
     items: items.map(withKnown),
+    picked: picked.map(withKnown),
     missed: missed.map(m => ({ ...m, connections: knownBy[companyKey(m.company_name)] || 0 })),
     active: active.map(a => ({ ...withKnown(a), asks: asks.filter(x => String(x.plan_item_id) === String(a.id)) })),
     gmailConnected: Boolean(await connectionFor(userId)),

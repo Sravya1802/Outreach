@@ -12,7 +12,7 @@
  * with a variable, so none does.
  *
  * Replies the user can send: YES (approve all of tonight's list), YES 1 3,
- * SKIP 2, LIST, STOP, START, HELP.
+ * SKIP 2, APP 1 3, MINE 2, LIST, STOP, START, HELP.
  *
  * Env: WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_BUSINESS_NUMBER
  * (shown to users, e.g. +15551234567), WHATSAPP_VERIFY_TOKEN (webhook
@@ -40,6 +40,26 @@ export const WHATSAPP_TEMPLATES = {
     },
     footer: APP,
     button: { text: 'Review and approve', path: '/applications/auto-apply' },
+  },
+  picks: {
+    name: 'snj_pick_list',
+    header: { text: 'Roles to pick · {{1}}', example: 'Fri, Oct 31' },
+    body: {
+      text: 'Hello,\n{{1}} roles match you:\n{{2}}\n\nPick each one on Scout’n’Jobs: App drafts, I’ll draft my own, or Skip. Or reply APP 1 3 or MINE 2. The app’s drafts are ready tonight and wait for your approval.\n\nGood luck! ;)',
+      example: ['3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1  3) Figma · SWE Intern · 9.0'],
+    },
+    footer: APP,
+    button: { text: 'Pick today’s roles', path: '/jobs/auto-apply' },
+  },
+  evening: {
+    name: 'snj_evening_check',
+    header: { text: 'Tonight · {{1}}', example: 'Fri, Oct 31' },
+    body: {
+      text: 'Hello,\nDrafts ready to approve: {{1}}\nYour own resumes to finish: {{2}}\n\nApprove the drafts you like. For your own, upload the PDF so the app applies, or mark it applied.\n\nGood luck! ;)',
+      example: ['Ramp, Stripe', 'Amazon, Microsoft'],
+    },
+    footer: APP,
+    button: { text: 'Open tonight’s roles', path: '/jobs/auto-apply' },
   },
   reply: {
     name: 'snj_reply_alert',
@@ -135,7 +155,7 @@ export function templateDefinition(kind) {
   return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: true, components };
 }
 
-const PREF_FOR = { list: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };
+const PREF_FOR = { list: 'list', picks: 'list', evening: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };
 
 const cfg = () => ({
   token: process.env.WHATSAPP_TOKEN,
@@ -167,9 +187,15 @@ export function parseCommand(text) {
   const t = String(text ?? '').trim();
   let m = /^join\s+(\d{6})\b/i.exec(t);
   if (m) return { cmd: 'join', code: m[1] };
+  // APP 1 3: the app drafts those; MINE 2: the user writes those. Numbers only (no "all": each draft costs).
+  m = /^(app|mine)\s+([\d\s,and&]+)$/i.exec(t);
+  if (m) {
+    const nums = [...m[2].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 200);
+    if (nums.length) return { cmd: m[1].toLowerCase(), picks: [...new Set(nums)] };
+  }
   m = /^(yes|y|approve|skip|no)\b(.*)$/i.exec(t);
   if (m) {
-    const nums = [...m[2].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 100);
+    const nums = [...m[2].matchAll(/\d+/g)].map(x => Number(x[0])).filter(n => n > 0 && n < 200);
     const cmd = /^(skip|no)$/i.test(m[1]) ? 'skip' : 'yes';
     return { cmd, picks: nums.length ? [...new Set(nums)] : 'all' };
   }
@@ -375,51 +401,86 @@ export async function sendTest(userId) {
 // ── Messages ────────────────────────────────────────────────────────────────
 
 /** Tonight's top roles in the same order the list message numbers them. */
-async function numberedTop(userId) {
+/** Today's list, best first: the numbers every message shows and every reply (APP 1 3) uses. */
+export async function numberedTop(userId) {
   const plan = await one("SELECT * FROM daily_plans WHERE user_id = $1 AND status = 'ready' ORDER BY plan_date DESC LIMIT 1", [userId]);
   if (!plan) return { plan: null, items: [] };
   const items = await all(
     `SELECT pi.*, t.status AS t_status, t.ats_score AS t_ats, (t.report->'callback'->>'after')::int AS t_callback
        FROM plan_items pi LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
-      WHERE pi.plan_id = $1 AND pi.tier = 'top' ORDER BY pi.score DESC NULLS LAST, pi.id`,
+      WHERE pi.plan_id = $1 AND pi.tier IN ('top', 'worth') ORDER BY pi.score DESC NULLS LAST, pi.id`,
     [plan.id],
   );
-  return { plan, items };
+  return { plan, items: items.map((i, n) => ({ ...i, num: n + 1 })) };
 }
 
-export function listMessage(items, date) {
-  const day = new Date(`${String(date).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const short = items.map((i, n) => `${n + 1}) ${i.company_name} · ${i.title} · ${Number(i.score).toFixed(1)}`).join('  ');
+const dayOf = (date) => new Date(`${String(date instanceof Date ? date.toISOString() : date).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+const score1 = (v) => (v == null || !Number.isFinite(Number(v)) ? '–' : Number(v).toFixed(1));
+const PICK_LINES = 40;
+
+/**
+ * The day's roles to pick (or the afternoon's new ones). Each keeps its number
+ * on today's list, so "APP 3" means the same role in every message.
+ */
+export function pickListMessage(items, label, { fresh = false } = {}) {
+  const num = (i, n) => i.num ?? n + 1;
+  const n = items.length;
+  // The template's line must stay short; the rest is on the site.
+  let short = '';
+  for (const [k, i] of items.entries()) {
+    const part = `${num(i, k)}) ${i.company_name} · ${i.title} · ${score1(i.score)}`;
+    if (short.length + part.length > 600) { short += `  +${n - k} more`; break; }
+    short += `${short ? '  ' : ''}${part}`;
+  }
+  const lines = items.slice(0, PICK_LINES).map((i, k) => `*${num(i, k)})* ${i.company_name} · ${i.title} · ${score1(i.score)}${i.pay ? ` · ${i.pay}` : ''}`);
   const text = [
-    `*Tonight’s list · ${day}*`,
+    `*Roles to pick · ${label}*`,
     'Hello,',
-    `${items.length} role${items.length === 1 ? '' : 's'} scored 9+ today:`,
+    `${n} ${fresh ? 'new ' : ''}role${n === 1 ? '' : 's'} match${n === 1 ? 'es' : ''} you${fresh ? ' since this morning' : ''}:`,
     '',
-    ...items.map((i, n) => [
-      `*${n + 1})*`,
-      `Company: *${i.company_name}*`,
-      `Role: ${i.title}`,
-      `Score: ${Number(i.score).toFixed(1)}/10`,
-      ...(i.location ? [`Where: ${i.location}`] : []),
-      ...(i.reason ? [`Why: _${i.reason}_`] : []),
-      ...(i.tailoring_id ? [i.t_status === 'running' ? 'Resume: being written' : i.t_ats != null ? `Resume: ATS ${i.t_ats}%${i.t_callback != null ? ` · interview ${i.t_callback}%` : ''}` : 'Resume: drafted'] : []),
-      ...(i.evaluation_id ? [`See it: ${SITE}/resumes/job/${i.evaluation_id}`] : []),
-      '',
-    ].join('\n')),
+    ...lines,
+    ...(n > PICK_LINES ? [`…and ${n - PICK_LINES} more on the site.`] : []),
     '',
-    'Reply *YES* to approve all, or *YES 1 3* for a couple of them.',
-    `Every draft resume, to read or replace with your own: ${SITE}/resumes`,
+    'Pick each one: *App drafts*, *I’ll draft my own*, or *Skip*.',
+    'Reply *APP 1 3* (the app drafts those), *MINE 2* (you write those) or *SKIP 4*.',
+    'The app’s drafts are ready tonight and wait for your approval.',
+    `${SITE}/jobs/auto-apply`,
     '',
     'Good luck! ;)',
   ].join('\n');
-  return { params: { header: day, body: [String(items.length), short] }, text };
+  return { params: { header: label, body: [String(n), short] }, text };
 }
 
-export async function sendPlanList(userId) {
+/** The morning list on WhatsApp: every role on today's list still waiting for a pick. */
+export async function sendPickList(userId) {
   const { plan, items } = await numberedTop(userId);
-  if (!plan || !items.length) return { skipped: 'empty' };
-  const m = listMessage(items.filter(i => i.decision === 'pending' || i.decision === 'approved'), plan.plan_date);
-  return notify(userId, 'list', m);
+  const open = items.filter(i => i.decision === 'pending' && !i.pick);
+  if (!plan || !open.length) return { skipped: 'empty' };
+  return notify(userId, 'picks', pickListMessage(open, dayOf(plan.plan_date)));
+}
+
+/**
+ * List time: the app's drafts to approve and the user's own resumes to finish.
+ * → { params, text } for notify(), plus `plain` and `subject` for the email.
+ */
+export function eveningMessage({ ready = [], drafting = [], own = [], label }) {
+  const names = (xs) => xs.map(i => i.company_name).join(', ');
+  const ats = (i) => (i.t_ats != null ? ` · ATS ${i.t_ats}%` : '');
+  const role = (i) => `• ${i.company_name} · ${i.title}`;
+  const parts = [
+    ready.length ? [`*Drafts ready to approve (${ready.length})*`, ...ready.map(i => `${role(i)}${ats(i)}`), 'Read each one and press Approve; nothing goes out before.'].join('\n') : '',
+    drafting.length ? [`*Still drafting (${drafting.length})*`, ...drafting.map(role)].join('\n') : '',
+    own.length ? [`*Your own resumes (${own.length})*: did you finish them?`, ...own.map(role), 'Upload the PDF on the role so the app applies, or mark it applied.'].join('\n') : '',
+  ].filter(Boolean);
+  const text = [`*Tonight · ${label}*`, 'Hello,', '', parts.join('\n\n'), '', `${SITE}/jobs/auto-apply`, '', 'Good luck! ;)'].join('\n');
+  const subject = [ready.length ? `${ready.length} draft${ready.length === 1 ? '' : 's'} to approve` : '', own.length ? `${own.length} resume${own.length === 1 ? '' : 's'} of your own to finish` : '', drafting.length && !ready.length ? `${drafting.length} still drafting` : '']
+    .filter(Boolean).join(' · ') || 'Tonight’s roles';
+  return {
+    params: { header: label, body: [cleanParam(names(ready) || 'none yet', 400), cleanParam(names(own) || 'none', 400)] },
+    text,
+    plain: text.replace(/\*/g, ''),
+    subject: `${subject} · ${label}`,
+  };
 }
 
 // ── Inbound ─────────────────────────────────────────────────────────────────
@@ -427,10 +488,11 @@ export async function sendPlanList(userId) {
 // WhatsApp formatting: *bold*, _italic_.
 export const HELP = [
   '*Reply with*',
-  '*YES*  approve tonight’s whole list',
-  '*YES 1 3*  approve only those numbers',
+  '*APP 1 3*  the app drafts those resumes (ready tonight)',
+  '*MINE 2*  you write that resume; I remind you tonight',
+  '*YES 1 3*  approve those (the app goes on to apply)',
   '*SKIP 2*  skip one',
-  '*LIST*  see tonight’s list again',
+  '*LIST*  see today’s roles again',
   '*ADD 1 3* / *ADD ALL*  you know those skills; they go on your resume',
   '*APPLIED 1 3*  you applied to those roles from the “needs you” message',
   '*STOP* / *START*  pause or resume these messages',
@@ -444,7 +506,8 @@ export function welcomeMessage(listHour = 22) {
     '✅ *You’re connected to Scout’n’Jobs*',
     '',
     'I’ll message you here when:',
-    `• your evening list is ready (${hourText(listHour)})`,
+    '• today’s roles are ready to pick (morning, plus an afternoon update)',
+    `• your drafts are ready to approve (${hourText(listHour)})`,
     '• someone replies to your outreach',
     '• one of your roles needs you',
     '• your morning summary is in',
@@ -551,10 +614,22 @@ export async function handleInbound(from, text) {
   if (c.cmd === 'applied') return reply(userId, phone, await appliedReply(userId, c.picks));
   const { plan, items } = await numberedTop(userId);
   if (c.cmd === 'list') {
-    if (!plan || !items.length) return reply(userId, phone, 'No list right now. It arrives in the evening.');
-    return reply(userId, phone, listMessage(items, plan.plan_date).text);
+    if (!plan || !items.length) return reply(userId, phone, 'No list right now. Today’s roles arrive in the morning.');
+    return reply(userId, phone, pickListMessage(items.filter(i => i.decision === 'pending' && !i.pick), dayOf(plan.plan_date)).text);
   }
-  if (!plan || !items.length) return reply(userId, phone, 'There’s no list to approve right now.');
+  if (!plan || !items.length) return reply(userId, phone, 'There’s no list right now.');
+  if (c.cmd === 'app' || c.cmd === 'mine') {
+    const { pickItem } = await import('./dailyPlan.js');
+    const choice = c.cmd === 'app' ? 'app' : 'self';
+    const bad = c.picks.filter(n => n > items.length);
+    const done = [];
+    for (const it of c.picks.filter(n => n <= items.length).map(n => items[n - 1])) {
+      try { await pickItem(userId, it.id, choice); done.push(it); } catch { /* already approved, too old */ }
+    }
+    const lines = done.map(i => `• ${i.num}) ${i.company_name} · ${i.title}`);
+    const what = choice === 'app' ? 'The app drafts these; they’re ready tonight for you to approve:' : 'You’re writing these; I’ll remind you tonight:';
+    return reply(userId, phone, `${done.length ? `${what}\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on today’s list.` : ''}`);
+  }
   const picks = c.picks === 'all' ? items.map((_, n) => n + 1) : c.picks;
   const bad = picks.filter(n => n > items.length);
   const chosen = picks.filter(n => n <= items.length).map(n => items[n - 1]);
@@ -569,7 +644,7 @@ export async function handleInbound(from, text) {
   }
   const verb = c.cmd === 'yes' ? 'Approved' : 'Skipped';
   const lines = done.map(i => `• ${i.company_name} · ${i.title}`);
-  return reply(userId, phone, `${done.length ? `${verb}:\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on tonight’s list.` : ''}${c.cmd === 'yes' && done.length ? '\n\nTailored resumes are being written now.' : ''}`);
+  return reply(userId, phone, `${done.length ? `${verb}:\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on today’s list.` : ''}${c.cmd === 'yes' && done.length ? '\n\nApproved roles go ahead: referral ask, then the application.' : ''}`);
 }
 
 /** APPLIED 1 3: the user applied to those roles from the last "needs you" message. */

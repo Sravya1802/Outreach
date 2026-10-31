@@ -20,7 +20,7 @@ export default function AppliedPage() {
   const [filter, setFilter] = useState<AppliedFilter>('applied')
   const [country, setCountry] = useState<CountryFilter>('all')
   const [q, setQ] = useState('')
-  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const [viewing, setViewing] = useState<{ id: number; filename: string; company?: string } | null>(null)
   const download = useMutation({
     mutationFn: (f: { id: number; filename: string }) => api.downloadResumeFile(f.id, f.filename),
     onError: (e: Error) => toast.error(e.message),
@@ -80,7 +80,7 @@ export default function AppliedPage() {
                           <p className="max-w-72 truncate text-[13px] text-fg" title={a.filename}>{a.filename}</p>
                           <p className="text-[12px] text-subtle">{KIND_LABEL[a.kind]}{isApplied(a) && !a.sent ? ' · set for this role' : ''}</p>
                         </div>
-                        <Button size="sm" variant="ghost" icon={<Eye className="size-3.5" />} aria-label={`View the resume for ${a.company_name}`} onClick={() => setViewing({ id: a.id, filename: a.filename })}>View</Button>
+                        <Button size="sm" variant="ghost" icon={<Eye className="size-3.5" />} aria-label={`View the resume for ${a.company_name}`} onClick={() => setViewing({ id: a.id, filename: a.filename, company: a.company_name })}>View</Button>
                         <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />} aria-label={`Download the resume for ${a.company_name}`} onClick={() => download.mutate({ id: a.id, filename: a.filename })} />
                       </div>
                     </td>

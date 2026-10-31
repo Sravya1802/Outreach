@@ -20,7 +20,7 @@ export default function ResumesPage() {
   const navigate = useNavigate()
   const [filter, setFilter] = useState<ResumeFilter>('all')
   const [q, setQ] = useState('')
-  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const [viewing, setViewing] = useState<{ id: number; filename: string; company?: string } | null>(null)
   const jobs = useQuery({
     queryKey: qk.resumeJobs,
     queryFn: api.resumeJobs,
@@ -82,7 +82,7 @@ export default function ResumesPage() {
                           {j.sending?.kind === 'yours' ? 'Your upload' : j.sending ? 'The app’s resume' : '—'}
                           {j.sending && (
                             <button type="button" aria-label={`View the resume for ${j.company_name}`}
-                              onClick={e => { e.stopPropagation(); if (j.sending) setViewing({ id: j.sending.file_id, filename: j.sending.filename }) }}
+                              onClick={e => { e.stopPropagation(); if (j.sending) setViewing({ id: j.sending.file_id, filename: j.sending.filename, company: j.company_name }) }}
                               className="inline-flex items-center gap-1 rounded-[4px] border border-line px-2 py-0.5 text-[12px] text-fg hover:bg-hover">
                               <Eye className="size-3" aria-hidden="true" /> View
                             </button>

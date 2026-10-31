@@ -23,6 +23,21 @@ export function safeName(name, fallback = 'resume.pdf') {
   return /\.pdf$/i.test(clean) ? clean : `${clean}.pdf`;
 }
 
+/**
+ * The name a recruiter sees, spaces kept ("Lakshmi Sravya Rachakonda_Resume.pdf").
+ * Storage paths still go through safeName; this is only the file's own name.
+ */
+export function displayName(name, fallback = 'Resume.pdf') {
+  const base = String(name || '').split(/[\\/]/).pop().replace(/[^\p{L}\p{N} ._()&,'-]/gu, '_').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const clean = base.replace(/^[._ ]+/, '');
+  if (!clean) return fallback;
+  return /\.pdf$/i.test(clean) ? clean : `${clean}.pdf`;
+}
+
+/** Every resume the app writes goes out under the candidate's name, the same for every company. */
+export const resumeFileName = (fullName) => displayName(`${String(fullName || '').trim() || 'Resume'}_Resume.pdf`);
+export const coverLetterFileName = (fullName) => displayName(`${String(fullName || '').trim() || 'Cover'}_Cover_Letter.pdf`);
+
 /** "20261014-180200" — sorts by time and keeps master versions apart. */
 export function stamp(now = new Date()) {
   return now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
@@ -70,7 +85,7 @@ export async function currentMaster(userId) {
  */
 export async function saveForEvaluation(userId, evalId, buffer, filename, kind) {
   if (kind !== 'tailored' && kind !== 'uploaded') throw new Error(`bad kind ${kind}`);
-  const name = safeName(filename);
+  const name = displayName(filename);
   const objectPath = forEvalPath(userId, evalId, kind, name);
   await putObject(BUCKETS.tailored, objectPath, buffer);
   const market = await marketFor(userId);
@@ -88,7 +103,7 @@ export async function saveForEvaluation(userId, evalId, buffer, filename, kind) 
 
 /** Store a cover letter for one evaluation (doesn't change which resume goes). */
 export async function saveCoverLetter(userId, evalId, buffer, filename) {
-  const name = safeName(filename);
+  const name = displayName(filename);
   const objectPath = forEvalPath(userId, evalId, 'cover_letter', name);
   await putObject(BUCKETS.tailored, objectPath, buffer);
   const market = await marketFor(userId);
@@ -170,7 +185,8 @@ export async function filesForEvaluation(userId, evalId) {
       WHERE e.id = $1 AND e.user_id = $2
       ORDER BY primary_file DESC, f.created_at DESC`, [evalId, userId]);
 }
-export const fileToTemp = (file) => objectToTemp(file.bucket, file.object_path);
+// Named as the file itself, so a form upload shows "Lakshmi Sravya Rachakonda_Resume.pdf".
+export const fileToTemp = (file) => objectToTemp(file.bucket, file.object_path, file.filename);
 
 /**
  * What Profile → Resume shows: every master version, and every application

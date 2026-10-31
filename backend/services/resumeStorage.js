@@ -79,9 +79,12 @@ async function downloadBytes(bucket, objectPath) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function downloadToTemp(bucket, objectPath) {
+async function downloadToTemp(bucket, objectPath, filename = '') {
   const buf = await downloadBytes(bucket, objectPath);
-  const tmpPath = path.join(os.tmpdir(), `resume-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${path.basename(objectPath)}`);
+  // Its own folder, so the file keeps exactly the name an upload form will show.
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'resume-'));
+  const name = path.basename(String(filename || '')).replace(/[\0/\\]/g, '_').trim() || path.basename(objectPath);
+  const tmpPath = path.join(dir, name);
   await fs.promises.writeFile(tmpPath, buf);
   return tmpPath;
 }

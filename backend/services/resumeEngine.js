@@ -24,7 +24,7 @@
 
 import { all, one, run } from '../db.js';
 import { complete, submitBatch, collectBatch } from './llm.js';
-import { currentMaster, saveForEvaluation, saveCoverLetter } from './resumeFiles.js';
+import { currentMaster, saveForEvaluation, saveCoverLetter, resumeFileName, coverLetterFileName } from './resumeFiles.js';
 import { companyTiers, tierFor, industryFor } from './companyTier.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, canonicalTerm, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
 import { guardDraft, addMissingSkills, applyWeave, bulletKeys, SHRINK_STEPS, masterText, repoText, plannedText, unsupportedNumbers } from './resumeGuard.js';
@@ -152,7 +152,6 @@ const LETTER_SYSTEM = `You write a short, specific cover letter for a student or
 const str = (v) => String(v ?? '').trim();
 const list = (v) => (Array.isArray(v) ? v : []);
 const parseJson = (text) => JSON.parse(String(text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim());
-const safeName = (s) => str(s).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 40);
 
 /** Give every job/project a stable id the tailoring step can point at. */
 export function withIds(parsed) {
@@ -830,7 +829,7 @@ async function finishTailoring(userId, ctx, { draft, pass, judged, review = null
     }
   }
 
-  const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(ctx.parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
+  const file = await saveForEvaluation(userId, ev.id, pass.pdf, resumeFileName(ctx.parsed.name), 'tailored');
   const fields = rowFields(ctx, pass, judged, {
     notes: str(draft.notes),
     changes: diffChanges(ctx.parsed, pass.doc, ctx.keywords, Object.fromEntries(list(draft.projects).flatMap(d => [[str(d.ref), str(d.why)], [str(d.name), str(d.why)]]))),
@@ -1088,8 +1087,7 @@ export async function writeCoverLetter(userId, ev) {
   }).join(' ')).filter(Boolean);
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
   const { pdf, pages } = await compileTex(coverLetterTex({ name: parsed.name, contact: parsed.contact, date, company: ev.company_name, greeting: letter.greeting, paragraphs, closing: letter.closing || 'Sincerely,' }));
-  const safe = (s) => str(s).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 40);
-  const file = await saveCoverLetter(userId, ev.id, pdf, `${safe(parsed.name || 'cover')}-${safe(ev.company_name)}-cover-letter.pdf`);
+  const file = await saveCoverLetter(userId, ev.id, pdf, coverLetterFileName(parsed.name));
   return {
     status: 'ready',
     file_id: file.id,
@@ -1383,7 +1381,7 @@ async function rerenderWithProject(userId, tailoringId, project, mode, { recheck
   }
   const atsBefore = beforeScore(ctx).score;
   const judged = recheck ? await judge(ctx, { beforeText: raw || masterText(parsed), afterText: pass.text, atsBefore, atsAfter: pass.score.score, userId }).catch(() => null) : null;
-  const file = await saveForEvaluation(userId, ev.id, pass.pdf, `${safeName(parsed.name || 'resume')}-${safeName(ev.company_name)}.pdf`, 'tailored');
+  const file = await saveForEvaluation(userId, ev.id, pass.pdf, resumeFileName(parsed.name), 'tailored');
   const keep = t.report;
   const change = mode === 'built'
     ? { section: 'Projects', before: '', after: project.name, why: `You built it${project.repo_url ? ` (${project.repo_url})` : ''}; it adds ${list(project.covers).join(', ') || 'the missing skills'}.` }

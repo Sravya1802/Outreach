@@ -134,7 +134,7 @@ function Actions({ j, onView }: { j: ResumeJob; onView: () => void }) {
 export default function ToApplyPage() {
   const [filter, setFilter] = useState<ToApplyFilter>('todo')
   const [q, setQ] = useState('')
-  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const [viewing, setViewing] = useState<{ id: number; filename: string; company?: string } | null>(null)
   const rf = useRoleFilters()
   const jobs = useQuery({
     queryKey: qk.resumeJobs, queryFn: api.resumeJobs,
@@ -218,7 +218,7 @@ export default function ToApplyPage() {
                           {j.stage_note && (st === 'review' || st === 'needs' || st === 'working') && <p className="mt-1 max-w-80 text-[12px] leading-snug text-muted">{j.stage_note}</p>}
                         </td>
                         <td className={cell}>
-                          <Actions j={j} onView={() => fileId != null && setViewing({ id: fileId, filename })} />
+                          <Actions j={j} onView={() => fileId != null && setViewing({ id: fileId, filename, company: j.company_name })} />
                         </td>
                       </tr>
                     </Fragment>

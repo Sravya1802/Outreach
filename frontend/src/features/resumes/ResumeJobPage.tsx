@@ -18,7 +18,7 @@ export default function ResumeJobPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const file = useRef<HTMLInputElement>(null)
-  const [viewing, setViewing] = useState<{ id: number; filename: string } | null>(null)
+  const [viewing, setViewing] = useState<{ id: number; filename: string; company?: string } | null>(null)
   const jobs = useQuery({ queryKey: qk.resumeJobs, queryFn: api.resumeJobs })
   const detail = useQuery({ queryKey: qk.evaluation(id), queryFn: () => api.evaluation(id), enabled: Number.isInteger(id) && id > 0 })
   const resume = useQuery({ queryKey: qk.resume, queryFn: api.resumeStatus })
@@ -74,7 +74,7 @@ export default function ResumeJobPage() {
             : 'The tailored resume below, once it’s written. You can upload your own version instead.'}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {job?.sending && <Button icon={<Eye className="size-4" />} onClick={() => job.sending && setViewing({ id: job.sending.file_id, filename: job.sending.filename })}>View the resume</Button>}
+          {job?.sending && <Button icon={<Eye className="size-4" />} onClick={() => job.sending && setViewing({ id: job.sending.file_id, filename: job.sending.filename, company: job.company_name })}>View the resume</Button>}
           {yours && job?.sending && <Button variant="ghost" icon={<Download className="size-4" />} onClick={() => job.sending && download.mutate({ id: job.sending.file_id, filename: job.sending.filename })}>Download yours</Button>}
           <Button icon={<Upload className="size-4" />} loading={upload.isPending} onClick={() => file.current?.click()}>{yours ? 'Upload a new version' : 'Upload my version'}</Button>
           {yours && job?.resume?.file_id && <Button variant="ghost" loading={useApp.isPending} onClick={() => useApp.mutate()}>Send the app’s resume instead</Button>}

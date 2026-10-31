@@ -116,7 +116,9 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
 });
 
 function sendPdf(res, buffer, filename) {
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  // Plain-ASCII fallback plus the exact name (spaces and all) for browsers that read filename*.
+  const ascii = String(filename || 'resume.pdf').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(String(filename || 'resume.pdf'))}`);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Length', buffer.length);
   res.end(buffer);

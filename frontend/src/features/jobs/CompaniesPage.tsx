@@ -7,9 +7,9 @@ import { api, type CompanyPage, type CompanyRow, type CompanySort, type CompanyS
 import { cn } from '@/lib/cn'
 import { formatNumber, timeAgo } from '@/lib/format'
 import { Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pager, Select, Skeleton, useToast } from '@/ui'
+import { usePageSize } from '@/lib/pageSize'
 import { FindCompaniesDialog } from './FindCompaniesDialog'
 
-const PAGE_SIZE = 50
 
 const STATUSES: { value: CompanyStatus; label: string }[] = [
   { value: 'new', label: 'New' },
@@ -106,6 +106,7 @@ export default function CompaniesPage() {
   const status = params.get('status') ?? ''
   const sort = (params.get('sort') as CompanySort | null) ?? 'recent'
   const page = Math.max(0, Number(params.get('page')) || 0)
+  const [pageSize, setPageSize] = usePageSize('companies')
   const [searchInput, setSearchInput] = useState(params.get('q') ?? '')
   const search = useDebounced(searchInput.trim(), 300)
   const [findOpen, setFindOpen] = useState(params.get('find') === '1')
@@ -124,7 +125,7 @@ export default function CompaniesPage() {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { category: category || undefined, status: status || undefined, search: search || undefined, sort, page, pageSize: PAGE_SIZE }
+  const query = { category: category || undefined, status: status || undefined, search: search || undefined, sort, page, pageSize }
   const list = useQuery({ queryKey: qk.companies(query), queryFn: () => api.companies(query), placeholderData: keepPreviousData })
   const counts = useQuery({ queryKey: qk.categoryCounts, queryFn: api.categoryCounts })
   const totalCompanies = (counts.data ?? []).reduce((n, c) => n + c.count, 0)
@@ -218,7 +219,7 @@ export default function CompaniesPage() {
             )}
             {rows.length > 0 && (
               <div className="border-t border-line">
-                <Pager page={page} pageSize={PAGE_SIZE} total={list.data?.total ?? 0} busy={list.isFetching}
+                <Pager page={page} pageSize={pageSize} total={list.data?.total ?? 0} busy={list.isFetching} onPageSize={setPageSize}
                   onPage={p => { setParam('page', p ? String(p) : ''); window.scrollTo({ top: 0 }) }} />
               </div>
             )}

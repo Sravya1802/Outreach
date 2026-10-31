@@ -13,8 +13,8 @@ import { AlertsDialog } from './AlertsDialog'
 import { countsByList, listForKind, listsForMarket, postedDate, postedWords, sourceLabel, visaLabel, type CatalogList } from './catalog'
 import { useMarket, useProfile } from '@/app/queries'
 import { marketPhrase, type Market } from '@/lib/markets'
+import { usePageSize } from '@/lib/pageSize'
 
-const PAGE_SIZE = 50
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value)
@@ -115,6 +115,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const fieldParam = params.get('field')
   const field: Field | undefined = fieldParam === 'swe' || fieldParam === 'ai' ? fieldParam : undefined
   const page = Math.max(0, Number(params.get('page')) || 0)
+  const [pageSize, setPageSize] = usePageSize('roles')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [busy, setBusy] = useState<Record<number, 'track' | 'auto'>>({})
 
@@ -127,7 +128,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, page, pageSize: PAGE_SIZE }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, page, pageSize }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
   const counts = countsByList(sources.data ?? [], market, field)
@@ -248,6 +249,11 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
         </Select>
       </div>
 
+      {rows.length > 0 && (
+        <div className="-mx-4 -mt-1">
+          <Pager page={page} pageSize={pageSize} total={total} busy={listing.isFetching} onPageSize={setPageSize} onPage={(p) => setParam('page', p ? String(p) : '')} />
+        </div>
+      )}
       <Card className="overflow-hidden">
         <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_150px_110px_176px] gap-4 xl:grid-cols-[minmax(0,1fr)_100px_120px_140px_88px_110px_176px] border-b border-line px-4 py-2 text-[11px] font-medium tracking-wide text-subtle uppercase md:grid">
           <span>Role</span><span>Pay</span><span>Visa</span><span>Location</span><span className="hidden xl:block">Posted</span><span>Source</span><span>&nbsp;</span>
@@ -278,13 +284,13 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
         )}
         {rows.length > 0 && (
           <div className="border-t border-line">
-            <Pager page={page} pageSize={PAGE_SIZE} total={total} busy={listing.isFetching} onPage={(p) => { setParam('page', p ? String(p) : ''); window.scrollTo({ top: 0 }) }} />
+            <Pager page={page} pageSize={pageSize} total={total} busy={listing.isFetching} onPageSize={setPageSize} onPage={(p) => { setParam('page', p ? String(p) : ''); window.scrollTo({ top: 0 }) }} />
           </div>
         )}
       </Card>
 
       <p className="mt-3 text-xs text-subtle">
-        <strong className="font-medium text-muted">Track</strong> adds a role to <Link to="/jobs/evaluate" className="text-accent hover:underline">Applications</Link> so you can evaluate it against your resume.{' '}
+        <strong className="font-medium text-muted">Track</strong> adds a role to <Link to="/jobs/evaluate" className="text-accent hover:underline">Evaluate</Link> so you can evaluate it against your resume.{' '}
         <strong className="font-medium text-muted">Auto-apply</strong> queues it for the auto-apply worker.
       </p>
 

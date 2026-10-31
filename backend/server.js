@@ -37,6 +37,7 @@ import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
 import trackerRouter from './routes/tracker.js';
+import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
@@ -688,6 +689,10 @@ async function resumeInterruptedPlans() {
 async function startup() {
   await pingDb();
   resumeInterruptedPlans().catch(err => console.error('[daily-plan] resume pass failed:', err.message));
+  // People emailed before LinkedIn notes were kept get theirs (template, once).
+  addMissingNotes()
+    .then(n => { if (n) console.log(`[referrals] added LinkedIn notes for ${n} emailed people`); })
+    .catch(err => console.error('[referrals] note backfill failed:', err.message));
 
   app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);

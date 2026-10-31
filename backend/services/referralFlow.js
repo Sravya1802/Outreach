@@ -8,11 +8,12 @@
  *      Google), within the monthly lookup allowance. They land in People.
  *   1. Ask for a referral. Who: people the user knows there (LinkedIn
  *      connections export) first, then recruiters, then engineers.
- *      Up to 2 get an email draft with the tailored resume attached, waiting
- *      for the user's OK (People → Outbox, also in Gmail Drafts); once
- *      approved it goes at the recipient's next 8–11 AM weekday slot.
- *      Up to 2 others get a drafted LinkedIn note the user sends themselves
- *      (copy + open profile). Nobody found → a LinkedIn search link + a note.
+ *      Up to 20 get an email draft with the tailored resume attached, waiting
+ *      for the user's OK (People → Contacts or Outbox, also in Gmail Drafts);
+ *      once approved it goes at the recipient's next 8–11 AM weekday slot.
+ *      Each of them also gets a LinkedIn note, and up to 2 others get a note
+ *      only; the user sends notes themselves (copy + open profile).
+ *      Nobody found → a LinkedIn search link + a note.
  *   2. Wait `referralWaitDays` business days. The user reports what happened:
  *      a link or code / "they submitted me" / "they said no". Email replies
  *      are flagged automatically (replyWatcher).
@@ -530,12 +531,15 @@ export async function askForReferral(userId, item, settings) {
         channel = 'email';
       } catch { /* already emailed, no Gmail, etc.: fall back to a LinkedIn note */ }
     }
+    const linkedinUrl = p.linkedin || linkedinSearchUrl(`${p.name} ${item.company_name}`);
     await run(
       `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, connection_id, outbox_id, subject, message, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [userId, item.id, channel, p.name, p.title, p.linkedin || linkedinSearchUrl(`${p.name} ${item.company_name}`), p.email, p.contactId, p.connectionId, outboxId,
+      [userId, item.id, channel, p.name, p.title, linkedinUrl, p.email, p.contactId, p.connectionId, outboxId,
         channel === 'email' ? d.subject : null, channel === 'email' ? d.body : d.note, status],
     );
+    // Everyone emailed also gets the LinkedIn note written with their email; the user sends it by hand.
+    if (channel === 'email') await insertNote(userId, item.id, { ...p, linkedin: linkedinUrl }, d.note);
   }
 
   const tz = item.company_tz || settings.timezone;
@@ -548,6 +552,40 @@ export async function askForReferral(userId, item, settings) {
   );
 }
 
+async function insertNote(userId, planItemId, p, note) {
+  await run(
+    `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, connection_id, message, status)
+     VALUES ($1, $2, 'linkedin', $3, $4, $5, $6, $7, $8, $9, 'to_send')`,
+    [userId, planItemId, p.name, p.title, p.linkedin, p.email, p.contactId, p.connectionId, note],
+  );
+}
+
+/**
+ * People emailed before notes were kept get their LinkedIn note now, from the
+ * template (no AI call). Idempotent; skips discarded emails and replies.
+ */
+export async function addMissingNotes() {
+  const rows = await all(
+    `SELECT a.user_id, a.plan_item_id, a.person_name, a.person_title, a.linkedin_url, a.email, a.contact_id, a.connection_id,
+            pi.title, pi.company_name, pi.apply_url
+       FROM referral_asks a
+       JOIN plan_items pi ON pi.id = a.plan_item_id
+       LEFT JOIN email_outbox o ON o.id = a.outbox_id
+      WHERE a.channel = 'email' AND a.status <> 'replied' AND o.status IS DISTINCT FROM 'cancelled'
+        AND NOT EXISTS (SELECT 1 FROM referral_asks b WHERE b.plan_item_id = a.plan_item_id AND b.channel = 'linkedin'
+                         AND lower(COALESCE(b.person_name, '')) = lower(COALESCE(a.person_name, '')))`,
+  );
+  const mine = new Map();
+  for (const r of rows) {
+    if (!mine.has(r.user_id)) mine.set(r.user_id, await me(r.user_id));
+    const who = mine.get(r.user_id);
+    const { note } = templateAsk({ personName: r.person_name, me: who.name, school: who.school, title: r.title, company: r.company_name, jobUrl: r.apply_url });
+    await insertNote(r.user_id, r.plan_item_id,
+      { name: r.person_name, title: r.person_title, linkedin: r.linkedin_url, email: r.email, contactId: r.contact_id, connectionId: r.connection_id }, note);
+  }
+  return rows.length;
+}
+
 const names = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 // Long lists name the first two: "Ana, Bo and 16 others" (still counts as plural).
 function shortList(xs) {
@@ -558,11 +596,16 @@ function shortList(xs) {
 export function referralNote(asks, when) {
   const drafts = shortList(asks.filter(a => a.channel === 'email' && a.status === 'draft').map(a => a.person_name));
   const emailed = shortList(asks.filter(a => a.channel === 'email' && a.status !== 'draft').map(a => a.person_name));
-  const notes = shortList(asks.filter(a => a.channel === 'linkedin').map(a => a.person_name));
+  // A LinkedIn note that goes with an email is mentioned once, not listed by name.
+  const emailedNames = new Set(asks.filter(a => a.channel === 'email').map(a => str(a.person_name).toLowerCase()));
+  const linkedin = asks.filter(a => a.channel === 'linkedin');
+  const notes = shortList(linkedin.filter(a => !emailedNames.has(str(a.person_name).toLowerCase())).map(a => a.person_name));
+  const paired = linkedin.filter(a => emailedNames.has(str(a.person_name).toLowerCase()) && (a.status ?? 'to_send') === 'to_send').length;
   if (!drafts.length && !emailed.length && !notes.length) return `Nobody you know there yet. Use the LinkedIn search below to find someone, send the note, and tell us what happens. Applying ${when} otherwise.`;
   const parts = [];
-  if (drafts.length) parts.push(`your email${drafts.length > 1 ? 's' : ''} to ${names(drafts)} ${drafts.length > 1 ? 'are' : 'is'} waiting for your OK in People → Outbox`);
+  if (drafts.length) parts.push(`your email${drafts.length > 1 ? 's' : ''} to ${names(drafts)} ${drafts.length > 1 ? 'are' : 'is'} waiting for your OK in People → Contacts`);
   if (emailed.length) parts.push(`emailing ${names(emailed)} at their next morning`);
+  if (paired) parts.push(`send the matching LinkedIn note${paired > 1 ? 's' : ''} from ${drafts.length ? 'there too' : 'People → Contacts'}`);
   if (notes.length) parts.push(`notes for ${names(notes)} are ready for you to send on LinkedIn`);
   const line = parts.join('; ');
   return `${line[0].toUpperCase()}${line.slice(1)}. Applying ${when} unless a referral comes first.`;
@@ -614,7 +657,7 @@ export async function referralAction(userId, itemId, { action, link }) {
 
 export async function markAskSent(userId, askId) {
   const r = await run("UPDATE referral_asks SET status = 'marked_sent' WHERE id = $1 AND user_id = $2 AND status = 'to_send' RETURNING *", [askId, userId]);
-  if (r.rows[0]?.contact_id) await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'dm_sent' END WHERE id = $1", [r.rows[0].contact_id]);
+  if (r.rows[0]?.contact_id) await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed','sent') THEN status ELSE 'dm_sent' END WHERE id = $1", [r.rows[0].contact_id]);
   return r.rows[0] || null;
 }
 

@@ -332,7 +332,7 @@ export async function runOutbox({ limit = 25 } = {}) {
   }
 }
 
-export async function listOutbox(userId) {
+export async function listOutbox(userId, { contactIds = null } = {}) {
   return all(
     `SELECT o.id, o.contact_id, o.step, o.thread_root_id, o.to_email, o.to_name, o.subject, o.body, o.recipient_tz, o.send_after,
             o.status, o.cancel_reason, o.error, o.sent_at, o.created_at, o.purpose, o.approved_at, (o.gmail_draft_hash IS NOT NULL) AS in_gmail_drafts,
@@ -342,10 +342,10 @@ export async function listOutbox(userId) {
        LEFT JOIN job_contacts c ON c.id = o.contact_id
        LEFT JOIN jobs j ON j.id = c.job_id
        LEFT JOIN resume_files f ON f.id = o.attachment_file_id AND f.user_id = o.user_id
-      WHERE o.user_id = $1
+      WHERE o.user_id = $1 AND ($2::bigint[] IS NULL OR o.contact_id = ANY($2))
       ORDER BY COALESCE(o.thread_root_id, o.id) DESC, o.step
       LIMIT 600`,
-    [userId],
+    [userId, contactIds],
   );
 }
 

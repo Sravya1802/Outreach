@@ -1,6 +1,7 @@
 // People → Messages: companies with people, and a personalized note + email per person.
 import { Router } from 'express';
 import { companyList, companyPeople, writeAll, writeFor } from '../services/messages.js';
+import { companyPlan, planCompanies } from '../services/outreachPlan.js';
 
 const router = Router();
 const fail = (res, err) => {
@@ -24,6 +25,14 @@ router.post('/companies/:key/write', async (req, res) => {
 });
 router.post('/companies/:key/write-all', async (req, res) => {
   try { res.json(await writeAll(req.user.id, keyOf(req))); } catch (err) { fail(res, err); }
+});
+
+// People → Contacts: companies, each with its planned emails and LinkedIn notes.
+router.get('/plan', async (req, res) => {
+  try { res.json({ companies: await planCompanies(req.user.id) }); } catch (err) { fail(res, err); }
+});
+router.get('/plan/:key', async (req, res) => {
+  try { res.json(await companyPlan(req.user.id, keyOf(req))); } catch (err) { fail(res, err); }
 });
 
 export default router;

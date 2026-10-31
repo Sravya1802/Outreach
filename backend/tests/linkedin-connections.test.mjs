@@ -37,9 +37,18 @@ test('referral status line', async () => {
     'Emailing Ana at their next morning; notes for Bo are ready for you to send on LinkedIn. Applying Tue unless a referral comes first.');
   assert.match(referralNote([{ channel: 'search' }], 'Wed'), /^Nobody you know there yet/);
   assert.equal(referralNote([{ channel: 'email', person_name: 'Ana', status: 'draft' }, { channel: 'email', person_name: 'Bo', status: 'draft' }], 'Thu'),
-    'Your emails to Ana and Bo are waiting for your OK in People → Outbox. Applying Thu unless a referral comes first.');
+    'Your emails to Ana and Bo are waiting for your OK in People → Contacts. Applying Thu unless a referral comes first.');
   assert.equal(referralNote([{ channel: 'email', person_name: 'Ana', status: 'draft' }, { channel: 'email', person_name: 'Bo', status: 'scheduled' }], 'Fri'),
-    'Your email to Ana is waiting for your OK in People → Outbox; emailing Bo at their next morning. Applying Fri unless a referral comes first.');
+    'Your email to Ana is waiting for your OK in People → Contacts; emailing Bo at their next morning. Applying Fri unless a referral comes first.');
+  // A note that goes with an email is mentioned once, not listed as its own ask.
+  assert.equal(referralNote([
+    { channel: 'email', person_name: 'Ana', status: 'draft' }, { channel: 'linkedin', person_name: 'Ana', status: 'to_send' },
+    { channel: 'email', person_name: 'Bo', status: 'draft' }, { channel: 'linkedin', person_name: 'bo', status: 'to_send' },
+    { channel: 'linkedin', person_name: 'Cy', status: 'to_send' },
+  ], 'Thu'), 'Your emails to Ana and Bo are waiting for your OK in People → Contacts; send the matching LinkedIn notes from there too; notes for Cy are ready for you to send on LinkedIn. Applying Thu unless a referral comes first.');
+  assert.equal(referralNote([
+    { channel: 'email', person_name: 'Ana', status: 'scheduled' }, { channel: 'linkedin', person_name: 'Ana', status: 'marked_sent' },
+  ], 'Fri'), 'Emailing Ana at their next morning. Applying Fri unless a referral comes first.');
   const t = templateAsk({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', why: '' });
   assert.ok(t.note.length <= 300 && t.note.startsWith('Hi Ana,'));
   assert.match(t.body, /The posting: https:\/\/x/);
@@ -104,5 +113,5 @@ test('referral targets: a found address beats a guessed one in the same rank', a
 test('referral note: a long list names two people and counts the rest', async () => {
   const { referralNote } = await import('../services/referralFlow.js');
   const asks = ['Ana', 'Bo', 'Cy', 'Di', 'Ed'].map(n => ({ channel: 'email', person_name: n, status: 'draft' }));
-  assert.equal(referralNote(asks, 'Fri'), 'Your emails to Ana, Bo and 3 others are waiting for your OK in People → Outbox. Applying Fri unless a referral comes first.');
+  assert.equal(referralNote(asks, 'Fri'), 'Your emails to Ana, Bo and 3 others are waiting for your OK in People → Contacts. Applying Fri unless a referral comes first.');
 });

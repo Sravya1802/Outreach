@@ -199,6 +199,10 @@ export const api = {
     build:      (rebuild)     => apiCall('/daily-plan/build', { method: 'POST', body: { rebuild: !!rebuild } }),
     email:      ()            => apiCall('/daily-plan/email', { method: 'POST' }),
     decide:     (id, decision, mode) => apiCall(`/daily-plan/items/${id}/decision`, { method: 'POST', body: { decision, mode } }),
+    // App drafts ('app') / I'll draft my own ('self') / 'skip' / 'none' (undo).
+    pick:       (id, pick)    => apiCall(`/daily-plan/items/${id}/pick`, { method: 'POST', body: { pick } }),
+    // Your own resume for a listed role: the app applies with it.
+    ownResume:  (id, formData) => apiCall(`/daily-plan/items/${id}/own-resume`, { method: 'POST', body: formData }),
     send:       (id)          => apiCall(`/daily-plan/items/${id}/send`, { method: 'POST' }),
     approveAll: (planId)      => apiCall(`/daily-plan/plans/${planId}/approve-all`, { method: 'POST' }),
     // A job you bring (link, company, your PDF): approved as Apply for me.

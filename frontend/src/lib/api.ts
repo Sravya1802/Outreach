@@ -435,7 +435,11 @@ export type MessageFilter = 'all' | 'roles' | 'connections' | 'emails'
 
 export interface DailyPlanSettings {
   enabled: boolean
-  /** Local hour, 17–23 */
+  /** Local hour the day's roles arrive, 5–12 */
+  morningHour: number
+  /** Local hour roles found since the morning are added, 11–18 */
+  updateHour: number
+  /** Local hour the drafts wait for approval and your own resumes are reminded, 17–23 */
   listHour: number
   timezone: string
   minScore: number
@@ -465,6 +469,15 @@ export interface PlanItem {
   decision: 'pending' | 'approved' | 'skipped' | 'expired'
   stage: PlanStage
   stage_note: string | null
+  /** Who writes the resume: the app ('app') or you ('self'); null until picked */
+  pick?: PlanPick | null
+  picked_at?: string | null
+  tailoring_id?: number | null
+  /** The app's draft for an 'app' pick */
+  t_status?: 'running' | 'ready' | 'needs_review' | 'failed' | null
+  t_ats?: number | null
+  /** Set on roles picked on an earlier day */
+  plan_date?: string
   /** LinkedIn connections the user has at this company */
   connections: number
   /** People found there, with an email or a LinkedIn profile (People → Contacts) */
@@ -532,7 +545,8 @@ export interface DailyPlan {
 }
 /** A top role from an earlier list that was never answered (still approvable for 14 days). */
 export interface MissedPlanItem extends PlanItem { plan_date: string; ats_score: number | null }
-export interface DailyPlanOverview { settings: DailyPlanSettings; plan: DailyPlan | null; items: PlanItem[]; missed?: MissedPlanItem[]; active: ActivePlanItem[]; gmailConnected: boolean }
+export type PlanPick = 'app' | 'self'
+export interface DailyPlanOverview { settings: DailyPlanSettings; plan: DailyPlan | null; items: PlanItem[]; picked?: PlanItem[]; missed?: MissedPlanItem[]; active: ActivePlanItem[]; gmailConnected: boolean }
 
 // ── Gmail (each user's own account) ──────────────────────────────────────────
 
@@ -977,6 +991,13 @@ export const api = {
   buildDailyPlan: (rebuild = false): Promise<{ plan: DailyPlan }> => legacy.dailyPlan.build(rebuild),
   emailDailyPlan: (): Promise<{ ok?: boolean; skipped?: string }> => legacy.dailyPlan.email(),
   /** mode: 'auto' = the app goes on to apply; 'review' = it stops once the resume is written, for you to read. */
+  pickPlanItem: (id: number, pick: PlanPick | 'skip' | 'none'): Promise<PlanItem> => legacy.dailyPlan.pick(id, pick),
+  /** Your own resume for a listed role ("I'll draft my own"): the app applies with it. */
+  ownResumeForPlanItem: (id: number, file: File): Promise<PlanItem> => {
+    const fd = new FormData()
+    fd.append('resume', file)
+    return legacy.dailyPlan.ownResume(id, fd)
+  },
   decidePlanItem: (id: number, decision: 'approved' | 'skipped' | 'pending', mode: ApplyMode = 'auto'): Promise<PlanItem> => legacy.dailyPlan.decide(id, decision, mode),
   /** Review mode: you read the resume; the app moves the role on (referral, then applying). */
   sendPlanItem: (id: number): Promise<PlanItem> => legacy.dailyPlan.send(id),

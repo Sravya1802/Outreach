@@ -5,7 +5,7 @@ import { ArrowRight, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/app/auth'
 import { useAutoApplyQueue, useDailyUpdates, useHasResume, useJobMetrics, useMarket, useProfile, useServiceHealth } from '@/app/queries'
 import { qk } from '@/app/queryClient'
-import { api, type ApplyMode } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useDailyPlan } from '@/features/applications/useDailyPlan'
 import { ItemRow } from '@/features/applications/DailyPlan'
 import { num } from '@/features/applications/plan'
@@ -168,40 +168,34 @@ function TopPicks() {
   const toast = useToast()
   const plan = useDailyPlan()
   const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
-  const decide = useMutation({
-    mutationFn: ({ id, decision, mode }: { id: number; decision: 'approved' | 'skipped' | 'pending'; mode?: ApplyMode }) => api.decidePlanItem(id, decision, mode),
-    onSuccess: refresh,
-    onError: (e: Error) => toast.error(e.message),
-  })
   const build = useMutation({
     mutationFn: () => api.buildDailyPlan(false),
     onSuccess: () => { toast.success('Building today’s list. This takes a few minutes.'); refresh() },
     onError: (e: Error) => toast.error(e.message),
   })
   const d = plan.data
-  // Top tier first, then the best of "worth a look"; skipped and expired ones drop out.
+  // Roles still waiting for a pick, best first.
   const picks = (d?.items ?? [])
-    .filter(i => i.decision === 'pending' || i.decision === 'approved')
-    .sort((a, b) => (a.tier === b.tier ? 0 : a.tier === 'top' ? -1 : 1) || (num(b.score) ?? 0) - (num(a.score) ?? 0))
-  const busyId = decide.isPending ? decide.variables?.id : null
+    .filter(i => i.decision === 'pending' && !i.pick)
+    .sort((a, b) => (num(b.score) ?? 0) - (num(a.score) ?? 0))
 
   return (
     <section aria-labelledby="picks-h">
       <SectionTitle action={picks.length > TOP_PICKS ? <Link to="/jobs/auto-apply" className="text-[14px] text-accent hover:underline">See all {picks.length}</Link> : undefined}>
-        <span id="picks-h">Top picks for you</span>
+        <span id="picks-h">Roles to pick</span>
       </SectionTitle>
       {plan.isError ? <ErrorState compact error={plan.error} onRetry={() => void plan.refetch()} /> : plan.isLoading ? <Skeleton className="mt-2 h-32" /> : !d?.plan ? (
         <div className="py-5">
           <p className="text-[15px] text-fg">No list yet today.</p>
-          <p className="mt-1 text-[14px] text-muted">Each evening the app scores the day’s new roles against your resume and picks the best. You can build today’s now.</p>
+          <p className="mt-1 text-[14px] text-muted">Each morning the app scores the day’s new roles against your resume and sends them to you to pick. You can build today’s now.</p>
           <Button className="mt-3" size="sm" variant="primary" loading={build.isPending} onClick={() => build.mutate()}>Build today’s list</Button>
         </div>
       ) : d.plan.status === 'building' ? (
         <p className="flex items-center gap-2 py-5 text-[14px] text-muted" role="status"><Spinner /> Scoring today’s new roles. This takes a few minutes.</p>
       ) : picks.length === 0 ? (
-        <p className="py-5 text-[14px] text-muted">Nothing scored high enough today. New roles are scored again tonight.</p>
+        <p className="py-5 text-[14px] text-muted">Nothing left to pick today. New roles arrive tomorrow morning, with an update in the afternoon.</p>
       ) : (
-        <ul>{picks.slice(0, TOP_PICKS).map(i => <ItemRow key={i.id} item={i} busy={busyId === i.id} onDecide={(dec, mode) => decide.mutate({ id: i.id, decision: dec, mode })} />)}</ul>
+        <ul>{picks.slice(0, TOP_PICKS).map(i => <ItemRow key={i.id} item={i} />)}</ul>
       )}
     </section>
   )

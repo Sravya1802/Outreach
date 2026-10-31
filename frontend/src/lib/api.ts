@@ -401,6 +401,33 @@ export interface MessagePerson {
   subject: string | null
   body: string | null
 }
+/** People → Contacts: a company you're reaching out to. */
+export interface PlanCompany { key: string; name: string; people: number; waiting: number; scheduled: number; sent: number; notesToSend: number; notesSent: number }
+export interface PlanNote { id: number; message: string; status: 'to_send' | 'marked_sent' | 'replied'; linkedinUrl: string | null }
+/** One person: the email planned for them and the LinkedIn note that goes with it. */
+export interface PlanPerson {
+  ref: string
+  contactId: number | null
+  name: string
+  title: string | null
+  /** Their address and how it was checked (valid, risky, guessed…). */
+  address: string | null
+  addressCheck: string | null
+  linkedinUrl: string | null
+  contactStatus: string
+  email: OutboxItem | null
+  note: PlanNote | null
+  role: { title: string; url: string | null } | null
+}
+export interface PlanCompanyDetail {
+  key: string
+  name: string
+  roles: { title: string; url: string | null }[]
+  /** Nobody found there: a note to send after a LinkedIn search. */
+  search: PlanNote | null
+  planned: PlanPerson[]
+  others: Omit<PlanPerson, 'email' | 'note' | 'role'>[]
+}
 export interface MessageCompanyDetail { key: string; name: string; role: { title: string; url: string } | null; people: MessagePerson[] }
 export type MessageFilter = 'all' | 'roles' | 'connections' | 'emails'
 
@@ -940,6 +967,8 @@ export const api = {
   whatsappTemplates: async (): Promise<Record<string, WhatsAppTemplate>> => (await legacy.whatsapp.templates()).templates,
   messageCompanies: (q: { q?: string; filter?: MessageFilter; page?: number }): Promise<MessageCompanyPage> => legacy.messages.companies(q),
   messageCompany: (key: string): Promise<MessageCompanyDetail> => legacy.messages.company(key),
+  planCompanies: async (): Promise<PlanCompany[]> => (await legacy.messages.plan()).companies ?? [],
+  planCompany: (key: string): Promise<PlanCompanyDetail> => legacy.messages.planCompany(key),
   writeMessage: (key: string, ref: string): Promise<MessagePerson> => legacy.messages.write(key, ref),
   dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
   /** Just the evening-list settings: fast, unlike the whole overview. */

@@ -187,6 +187,8 @@ export const api = {
     companies: (params)       => apiCall(`/messages/companies${qs(params)}`),
     company:   (key)          => apiCall(`/messages/companies/${encodeURIComponent(key)}`),
     write:     (key, ref)     => apiCall(`/messages/companies/${encodeURIComponent(key)}/write`, { method: 'POST', body: { ref } }),
+    plan:      ()             => apiCall('/messages/plan'),
+    planCompany: (key)        => apiCall(`/messages/plan/${encodeURIComponent(key)}`),
   },
 
   // The evening list (daily plan)

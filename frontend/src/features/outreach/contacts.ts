@@ -1,4 +1,4 @@
-import type { OutreachContact } from '@/lib/api'
+import type { OutreachContact, PlanCompany } from '@/lib/api'
 
 const EMAIL: Record<string, { text: string; tone: string }> = {
   verified: { text: 'verified', tone: 'text-success' },
@@ -35,3 +35,16 @@ export function contactMatches(c: Pick<OutreachContact, 'name' | 'title' | 'comp
   if (!q) return true
   return [c.name, c.title, c.company_name, c.email].some(v => (v ?? '').toLowerCase().includes(q))
 }
+
+/** What a company row says at a glance: what's waiting on you first. */
+export function planSummary(c: Pick<PlanCompany, 'waiting' | 'notesToSend' | 'scheduled' | 'sent'>): { text: string; tone: 'accent' | 'info' | 'neutral' | 'success' }[] {
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`
+  return [
+    c.waiting > 0 && { text: n(c.waiting, 'email to approve', 'emails to approve'), tone: 'accent' as const },
+    c.notesToSend > 0 && { text: n(c.notesToSend, 'LinkedIn note to send', 'LinkedIn notes to send'), tone: 'info' as const },
+    c.scheduled > 0 && { text: `${c.scheduled} scheduled`, tone: 'neutral' as const },
+    c.sent > 0 && { text: `${c.sent} emailed`, tone: 'success' as const },
+  ].filter((b): b is { text: string; tone: 'accent' | 'info' | 'neutral' | 'success' } => Boolean(b))
+}
+
+export const needsYou = (c: Pick<PlanCompany, 'waiting' | 'notesToSend'>) => c.waiting + c.notesToSend > 0

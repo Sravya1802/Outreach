@@ -53,6 +53,8 @@ export const qk = {
   whatsapp: ['whatsapp-status'] as const,
   messageCompanies: (q: object) => ['message-companies', q] as const,
   messageCompany: (key: string) => ['message-company', key] as const,
+  planCompanies: ['plan-companies'] as const,
+  planCompany: (key: string) => ['plan-company', key] as const,
   outbox: ['gmail-outbox'] as const,
   replies: ['gmail-replies'] as const,
   evaluations: ['evaluations'] as const,

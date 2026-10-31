@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy, ExternalLink, Mail } from 'lucide-react'
 import { api, type ActivePlanItem, type ReferralAction, type ReferralAsk } from '@/lib/api'
@@ -12,7 +13,7 @@ function askLine(a: ReferralAsk): string {
   const who = `${a.person_name || 'Someone'}${a.person_title ? `, ${a.person_title}` : ''}`
   if (a.channel === 'email') {
     if (a.status === 'replied' || a.contact_status === 'replied') return `${who} replied by email. Read it in Gmail.`
-    if (a.email_status === 'draft') return `Email to ${who} is waiting for your OK in People → Outbox (also in your Gmail Drafts).`
+    if (a.email_status === 'draft') return `Email to ${who} is waiting for your OK in People → Contacts (also in your Gmail Drafts).`
     if (a.email_status === 'sent') return `Emailed ${who} ${timeAgo(a.sent_at)}.`
     if (a.email_status === 'cancelled') return `Email to ${who} was cancelled.`
     if (a.email_status === 'failed') return `Email to ${who} failed to send.`
@@ -72,12 +73,23 @@ export function ReferralPanel({ item }: { item: ActivePlanItem }) {
     },
     onError: (e: Error) => toast.error(e.message),
   })
+  // A LinkedIn note that goes with an email is shown with it in People → Contacts, not here.
+  const emailed = new Set(item.asks.filter(a => a.channel === 'email').map(a => (a.person_name ?? '').toLowerCase()))
+  const paired = (a: ReferralAsk) => a.channel === 'linkedin' && emailed.has((a.person_name ?? '').toLowerCase())
+  const shown = item.asks.filter(a => !paired(a))
+  const pairedToSend = item.asks.filter(a => paired(a) && a.status === 'to_send').length
   const waiting = item.stage === 'waiting_referral'
   const canApplyMyself = item.stage === 'needs_you' || item.stage === 'ready_to_apply'
 
   return (
     <div className="mt-2 space-y-2">
-      {item.asks.length > 0 && <ul className="divide-y divide-line border-y border-line">{item.asks.map(a => <AskRow key={a.id} a={a} />)}</ul>}
+      {shown.length > 0 && <ul className="divide-y divide-line border-y border-line">{shown.map(a => <AskRow key={a.id} a={a} />)}</ul>}
+      {pairedToSend > 0 && (
+        <p className="text-[13px] text-muted">
+          {pairedToSend === 1 ? 'The LinkedIn note that goes with that email is' : `The ${pairedToSend} LinkedIn notes that go with those emails are`} in{' '}
+          <Link to="/people/contacts" className="text-accent hover:underline">People → Contacts</Link>, next to each email.
+        </p>
+      )}
       {waiting && (
         askingLink ? (
           <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); act.mutate({ action: 'link', link }) }}>

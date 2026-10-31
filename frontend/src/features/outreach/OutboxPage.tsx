@@ -5,8 +5,9 @@ import { Paperclip, RefreshCw } from 'lucide-react'
 import { api, type OutboxItem } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
-import { Badge, Button, ButtonLink, ConfirmDialog, Dialog, EmptyState, ErrorState, Field, Input, Page, PageHeader, Skeleton, Textarea, useToast } from '@/ui'
+import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Skeleton, useToast } from '@/ui'
 import { STEP_LABEL, cityOf, draftsOf, groupThreads, itemStatus, replyText } from './outbox'
+import { EditEmailDialog } from './EditEmailDialog'
 
 export default function OutboxPage() {
   const qc = useQueryClient()
@@ -167,7 +168,7 @@ export default function OutboxPage() {
         )}
       </section>
 
-      {editing && <EditDialog item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
+      {editing && <EditEmailDialog item={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
       <ConfirmDialog
         open={Boolean(approvingAll)}
         title={approvingAll ? `Approve all ${approvingAll.items.length} emails to ${approvingAll.company}?` : ''}
@@ -230,31 +231,6 @@ function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdi
         <span className="text-[13px] text-subtle">Once approved, it goes on {first ? `${first}’s` : 'their'} next weekday morning, 8–11 AM {cityOf(item.recipient_tz)} time.</span>
       </div>
     </li>
-  )
-}
-
-function EditDialog({ item, onClose, onSaved }: { item: OutboxItem; onClose: () => void; onSaved: () => void }) {
-  const toast = useToast()
-  const [subject, setSubject] = useState(item.subject)
-  const [body, setBody] = useState(item.body)
-  const save = useMutation({
-    mutationFn: () => api.editOutbox(item.id, { subject, body }),
-    onSuccess: () => { toast.success('Saved'); onSaved() },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  return (
-    <Dialog open onClose={onClose} label="Edit email" className="max-w-xl">
-      <div className="space-y-3 p-5">
-        <h3 className="font-display text-[20px] font-semibold text-fg">{item.status === 'draft' ? 'Edit draft' : `Edit ${STEP_LABEL[item.step].toLowerCase()}`}</h3>
-        {item.status === 'draft' && item.in_gmail_drafts && <p className="text-[13px] text-muted">Saving replaces the copy in your Gmail Drafts.</p>}
-        <Field label="Subject">{f => <Input {...f} value={subject} onChange={e => setSubject(e.target.value)} />}</Field>
-        <Field label="Message">{f => <Textarea {...f} rows={10} value={body} onChange={e => setBody(e.target.value)} />}</Field>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Close</Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>Save</Button>
-        </div>
-      </div>
-    </Dialog>
   )
 }
 

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { contactMatches, emailLabel, statusLabel } from './contacts'
+import { contactMatches, emailLabel, needsYou, planSummary, statusLabel } from './contacts'
 
 describe('contacts', () => {
+  it('sums up a company: what waits on you first', () => {
+    expect(planSummary({ waiting: 3, notesToSend: 1, scheduled: 0, sent: 2 })).toEqual([
+      { text: '3 emails to approve', tone: 'accent' },
+      { text: '1 LinkedIn note to send', tone: 'info' },
+      { text: '2 emailed', tone: 'success' },
+    ])
+    expect(planSummary({ waiting: 0, notesToSend: 0, scheduled: 0, sent: 0 })).toEqual([])
+    expect(needsYou({ waiting: 0, notesToSend: 2 })).toBe(true)
+    expect(needsYou({ waiting: 0, notesToSend: 0 })).toBe(false)
+  })
   it('labels email verification and outreach status', () => {
     expect(emailLabel('verified')?.text).toBe('verified')
     expect(emailLabel('catch_all')?.text).toBe('catch-all')

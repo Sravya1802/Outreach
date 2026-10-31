@@ -1401,6 +1401,7 @@ async function rerenderWithProject(userId, tailoringId, project, mode, { recheck
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: p.source === 'planned' ? 'The project you built for this role' : str(list(keep.projects).find(d => d.name === p.name)?.why) })),
     proposedProject: !keep.proposedProject || ['skills', 'rescore', 'weave'].includes(mode) ? keep.proposedProject || null
       : { ...keep.proposedProject, status: mode === 'built' ? 'built' : 'dismissed', onPage: mode === 'built', addedAt: mode === 'built' ? new Date().toISOString() : undefined },
+    review: keep.review || null,
     revised: keep.revised,
     model: keep.model,
     judgeModel: judged?.model || keep.judgeModel || null,

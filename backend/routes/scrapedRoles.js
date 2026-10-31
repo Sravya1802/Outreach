@@ -1,7 +1,7 @@
 /**
  * /api/scraped-roles — read the global daily-scraped role catalog.
  *
- * GET    /api/scraped-roles?role_type=intern&source=&search=&page=&pageSize=
+ * GET    /api/scraped-roles?role_type=intern&source=&search=&year=2027[-or-unstated]&page=&pageSize=
  * POST   /api/scraped-roles/:id/track          — queue this role for the user (manual)
  * POST   /api/scraped-roles/:id/auto-apply     — queue this role for auto-apply
  * POST   /api/scraped-roles/refresh            — admin-only: trigger the cron pipeline now
@@ -14,6 +14,7 @@
 import { Router } from 'express';
 import { all, one, run } from '../db.js';
 import { scrapeAllSourcesAndPersist } from '../services/multiSourceScraper.js';
+import { parseYearFilter, yearCondition, YEARS_SELECT } from '../services/gradYear.js';
 
 const router = Router();
 
@@ -44,6 +45,9 @@ router.get('/', async (req, res) => {
     // visa: sponsors = says it sponsors; open = hides "no sponsorship" and
     // "citizens only" (keeps roles that don't say); citizens = US citizens only.
     const visa      = ['sponsors', 'open', 'citizens'].includes(req.query.visa) ? req.query.visa : '';
+    // year: 2027 = the posting names 2027 (title, or graduating/start in the description);
+    // 2027-or-unstated also keeps roles that name no year (hides only other years).
+    const year      = parseYearFilter(req.query.year);
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(200, Math.max(10, Number(req.query.pageSize) || 50));
 
@@ -57,6 +61,8 @@ router.get('/', async (req, res) => {
     if (visa === 'sponsors') where.push("sponsorship = 'sponsors'");
     if (visa === 'open') where.push("(sponsorship IS NULL OR sponsorship = 'sponsors')");
     if (visa === 'citizens') where.push("sponsorship = 'citizens_only'");
+    const byYear = yearCondition(year, p);
+    if (byYear) { where.push(byYear.sql); params.push(...byYear.params); p += byYear.params.length; }
     if (search) {
       where.push(`(title ILIKE $${p} OR company_name ILIKE $${p})`);
       params.push(`%${search}%`);
@@ -66,6 +72,7 @@ router.get('/', async (req, res) => {
     const sql = `
       SELECT r.id, r.role_type, r.region, r.tracks, r.title, r.company_name, r.company_url, r.location, r.apply_url, r.source, r.tier,
              r.salary_range, r.posted_at, r.scraped_at, r.sponsorship, r.sponsorship_quote, (r.jd_checked_at IS NOT NULL) AS jd_read,
+             ${YEARS_SELECT},
              -- The same job listed by another source (matched on company + title).
              ARRAY(
                SELECT DISTINCT o.source FROM scraped_roles o

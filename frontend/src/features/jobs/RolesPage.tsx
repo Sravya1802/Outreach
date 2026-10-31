@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, BellRing, Check, RefreshCw, Search, Sparkles, Zap } from 'lucide-react'
 import { qk } from '@/app/queryClient'
-import { api, type VisaFilter, type CatalogListing, type CatalogPage, type Field, type Tier } from '@/lib/api'
+import { api, type VisaFilter, type CatalogListing, type CatalogPage, type Field, type Tier, type YearFilter } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatNumber } from '@/lib/format'
 import {
@@ -23,6 +23,26 @@ function useDebounced<T>(value: T, ms: number): T {
     return () => window.clearTimeout(t)
   }, [value, ms])
   return v
+}
+
+const YEAR_OPTIONS: { value: YearFilter; label: string }[] = [
+  { value: '2027', label: 'Says 2027' },
+  { value: '2027-or-unstated', label: '2027 or not stated' },
+]
+const YEAR_KEY = 'snj.roles.year'
+
+function savedYear(): string | null {
+  try { return localStorage.getItem(YEAR_KEY) } catch { return null }
+}
+function saveYear(v: string) {
+  try { localStorage.setItem(YEAR_KEY, v) } catch { /* private window: the address still has it */ }
+}
+
+/** "2027", or "2026–27" when a posting takes either year. */
+function yearsLabel(years: string[]) {
+  const first = years[0] ?? ''
+  const last = years[years.length - 1] ?? ''
+  return first === last ? first : `${first}–${last.slice(2)}`
 }
 
 function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
@@ -48,6 +68,9 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
           {role.tier === 'quant' && <Badge tone="info">Quant</Badge>}
           {role.salary_range && <span className="font-mono text-success md:hidden">{role.salary_range}</span>}
           {!field && role.tracks?.includes('ai') && <Badge>AI/ML</Badge>}
+          {(role.grad_years ?? []).length > 0 && (
+            <span title="The posting names this year for graduating or starting"><Badge tone="accent">{yearsLabel(role.grad_years ?? [])}</Badge></span>
+          )}
           {visa && <span className="md:hidden" title={visaTitle}><Badge tone={visa.tone}>{visa.text}</Badge></span>}
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''}{posted ? ` · ${postedWords(posted)}` : ''}</span>
@@ -112,6 +135,9 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const visaParam = params.get('visa')
   const visa: VisaFilter | undefined = visaParam === 'sponsors' || visaParam === 'open' || visaParam === 'citizens' ? visaParam
     : visaParam === 'any' ? undefined : needsSponsorship ? 'open' : undefined
+  // Year: ?year= in the address, else the choice this viewer last made ('any' = no filter).
+  const yearParam = params.get('year') ?? savedYear()
+  const year: YearFilter | undefined = yearParam && YEAR_OPTIONS.some(o => o.value === yearParam) ? yearParam as YearFilter : undefined
   const fieldParam = params.get('field')
   const field: Field | undefined = fieldParam === 'swe' || fieldParam === 'ai' ? fieldParam : undefined
   const page = Math.max(0, Number(params.get('page')) || 0)
@@ -128,7 +154,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, page, pageSize }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, year, page, pageSize }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
   const counts = countsByList(sources.data ?? [], market, field)
@@ -182,7 +208,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const rows = listing.data?.rows ?? []
   const total = listing.data?.total ?? 0
   const catalogEmpty = sources.isSuccess && Object.values(counts).every(n => n === 0)
-  const filtered = Boolean(search || source || tier || field || hasPay || (visaParam && visaParam !== 'any'))
+  const filtered = Boolean(search || source || tier || field || hasPay || year || (visaParam && visaParam !== 'any'))
 
   return (
     <Page wide>
@@ -228,6 +254,10 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-subtle" />
           <Input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search titles and companies…" aria-label="Search roles" className="pl-8" />
         </div>
+        <Select value={year ?? 'any'} onChange={e => { saveYear(e.target.value); setParam('year', e.target.value) }} aria-label="Year" className="sm:w-48">
+          <option value="any">Any year</option>
+          {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
         <Select value={tier ?? ''} onChange={e => setParam('tier', e.target.value)} aria-label="Company tier" className="sm:w-40">
           <option value="">All companies</option>
           <option value="faang">FAANG+ only</option>

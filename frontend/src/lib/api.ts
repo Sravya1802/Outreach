@@ -263,6 +263,8 @@ export interface CatalogListing {
   sponsorship_quote: string | null
   /** The description has been read (so a null sponsorship means "doesn't say"). */
   jd_read: boolean
+  /** Years the posting names for graduating or starting (title, or the description in context). */
+  grad_years?: string[]
   /** Other sources listing the same job (same company + title). */
   also_on: string[]
 }
@@ -280,7 +282,10 @@ export interface CatalogPage {
 
 export interface CatalogSourceCount { source: string; role_type: RoleType; region: Region; n: number; swe: number; ai: number }
 
-export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; visa?: VisaFilter; page?: number; pageSize?: number }
+/** '2027' = names 2027; '2027-or-unstated' = names 2027 or no year at all. */
+export type YearFilter = `${number}` | `${number}-or-unstated`
+
+export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; visa?: VisaFilter; year?: YearFilter; page?: number; pageSize?: number }
 
 export interface AlertSubscription {
   subscribed: boolean

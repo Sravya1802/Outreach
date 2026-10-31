@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   metricSpans, hasMetric, fixDashes, bulletIssues, varyVerbs, equalizeBullets, experienceSections, sortNewestFirst,
-  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, placeholders, fillPlaceholders, keywordPlaces, boldTools, CHARS_PER_LINE, MIN_BULLET_CHARS,
+  orderSkills, orderCertifications, roleKind, applyRules, lintDoc, placeholders, fillPlaceholders, keywordPlaces, boldTools, CHARS_PER_LINE, MIN_BULLET_CHARS, showGpa,
 } from '../services/resumeRules.js';
 import { richText, checkPreamble, resumeTex, RESUME_PREAMBLE } from '../services/latex.js';
 
@@ -281,4 +281,16 @@ test('targets in a planned project: listed in order, filled with the real number
   assert.deepEqual(placeholders(bullets), ['1,000', '2 s']);
   assert.deepEqual(fillPlaceholders(bullets, ['1,200', '1.4 s']), ['Engineered a Spring Boot API screening 1,200 patient profiles in under 1.4 s.', 'Built a React UI for reviewing results.']);
   assert.deepEqual(placeholders(['no targets here']), []);
+});
+
+test('a GPA under 3.5 shows only when the job asks about GPA', () => {
+  assert.equal(showGpa('3.26', 'Build APIs in Java.'), false);
+  assert.equal(showGpa('3.26', 'Minimum GPA of 3.0 required.'), true);
+  assert.equal(showGpa('3.92', 'Build APIs in Java.'), true);
+  assert.equal(showGpa('GPA: 3.4/4.0', 'cumulative grade point average'), true);
+  assert.equal(showGpa('8.9/10', 'Build APIs'), true);
+  assert.equal(showGpa('', 'GPA 3.0'), false);
+  const doc = { experience: [], projects: [], skills: [], extras: [], education: [{ school: 'UIC', gpa: '3.26' }, { school: 'Jain', gpa: '3.92' }] };
+  assert.deepEqual(applyRules(doc, { jd: 'Java role' }).doc.education.map(e => e.gpa), ['', '3.92']);
+  assert.deepEqual(applyRules(doc, {}).doc.education.map(e => e.gpa), ['3.26', '3.92']);
 });

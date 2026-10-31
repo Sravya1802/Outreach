@@ -16,6 +16,7 @@
  *   • Bloomberg Market Concepts (and other finance certifications) first for
  *     finance roles, last otherwise
  *   • bold only metrics and the job's own tools
+ *   • a GPA under 3.5 shows only when the job asks about GPA
  *
  * Line lengths come from the template: a bullet line holds about 121
  * characters (measured on the 10pt template with 0.4in margins).
@@ -281,11 +282,22 @@ export function fillPlaceholders(bullets, values) {
   }));
 }
 
+// The user's rule: a modest GPA (their MS 3.26) stays off unless the posting asks for one.
+export const GPA_SHOW_FROM = 3.5;
+
+/** Whether an education entry's GPA goes on the page for this job description. */
+export function showGpa(gpa, jd) {
+  const n = Number((String(gpa ?? '').match(/\d+(?:\.\d+)?/) || [])[0]);
+  if (!Number.isFinite(n) || n <= 0) return Boolean(str(gpa));
+  if (n > 4.0 || n >= GPA_SHOW_FROM) return true;
+  return /\bGPA\b|grade point/i.test(String(jd ?? ''));
+}
+
 /**
  * Apply every fixable rule to a guarded doc. Returns the doc and a list of
  * what was changed or removed, for the change report.
  */
-export function applyRules(doc, { keywords = [], kind = { quant: false, finance: false } } = {}) {
+export function applyRules(doc, { keywords = [], kind = { quant: false, finance: false }, jd = null } = {}) {
   const removed = [];
   const fixed = [];
   const clean = (b) => {
@@ -318,6 +330,8 @@ export function applyRules(doc, { keywords = [], kind = { quant: false, finance:
       experience,
       projects,
       skills: orderSkills(doc.skills, keywords),
+      // Without a job description (re-renders of a finished doc) the education is already settled.
+      ...(jd == null ? {} : { education: list(doc.education).map(e => (showGpa(e.gpa, jd) ? e : { ...e, gpa: '' })) }),
       extras: orderCertifications(doc.extras, kind),
     },
     removed,

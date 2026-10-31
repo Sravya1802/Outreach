@@ -6,7 +6,7 @@
 //   keywords (ATS terms from a JD)      → Groq, so the resume writer never grades itself
 //   keywords and evaluate also fall back to Gemini Flash, so one provider's
 //   daily limit never blocks a resume
-//   resume, resume_parse, resume_edit,
+//   resume, resume_parse, resume_edit, resume_review,
 //   cover_letter                       → Claude Opus 5.5 only. If it's down
 //                                        the caller waits and retries; resume
 //                                        quality is never quietly downgraded.
@@ -39,6 +39,8 @@ export const ROUTES = {
   // A few bullets reworded into the job's words on a finished draft (~$0.05).
   resume_edit: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],
   cover_letter: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium' }],
+  // The hiring-manager read of each draft, which the revision then answers.
+  resume_review: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: 'low' }],
 };
 
 export class BudgetExceededError extends Error {
@@ -176,7 +178,7 @@ export async function complete({ task, system = '', user, json = false, schema, 
   if (!route) throw new Error(`Unknown AI task: ${task}`);
   const steps = route.filter(available);
   if (!steps.length) {
-    throw Object.assign(new Error(['resume', 'resume_parse', 'resume_edit', 'cover_letter'].includes(task)
+    throw Object.assign(new Error(['resume', 'resume_parse', 'resume_edit', 'resume_review', 'cover_letter'].includes(task)
       ? 'Resume writing needs the Claude API key, which isn’t set on the server.'
       : 'No AI provider key is set on the server.'), { status: 503 });
   }

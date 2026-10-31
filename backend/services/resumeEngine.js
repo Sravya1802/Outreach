@@ -87,10 +87,10 @@ Truth
 3. Numbers only as the material states them, in experience and project bullets alike, for every kind of role. Use every real number the material gives a project (scale, speed, accuracy, users, data size).
 
 Reframing
-4. Reframe experience and projects toward the job. Mirror its responsibilities in your own words, never copied.
+4. Reframe experience and projects toward the job. Mirror its responsibilities in your own words, never copied. Choose like the hiring manager for this job: within each section, the work closest to the job's daily tasks goes first, and stronger proof (a recognized result such as a hackathon placement, a real number, named tools) beats obscure work. A brief master bullet that matches the job well is still worth using; write it out with its real context. Write for a recruiter who has never heard of the candidate's teams or tools: say what a system does in plain words instead of its internal name or codename.
 5. experience: the jobs to show, by id. Keep every substantial job; leave out a short or unrelated internship when space is tight. Bullets per entry: 2 for most entries; the job that best proves this role (usually the main industry job) may have 3–4. Every other entry in the same section gets the same number (never cut the main job down to match a minor one). The page holds about 14–16 two-line bullets in all, so pick the strongest. Choose and order bullets by relevance. Current roles in present tense, past roles in past tense.
 6. projects: the 2–3 that best prove the job's requirements, from resume projects (source "resume", ref = project id), GitHub repos (source "github", ref = full_name) or projects the candidate built (source "planned", ref = id). The same number of bullets for each project. For a repo, write the bullets from its README/description only.
-7. skills: up to 6 groups of up to 8 items, the most job-relevant group first, only skills in the material.
+7. skills: up to 6 groups of up to 8 items, the most job-relevant group first, only skills in the material. Put each item in the group it belongs to (Debugging is a practice, not a database).
 8. summary: "" unless a summary adds job keywords the sections can't hold. If you write one: at most 2 lines (240 characters), facts from the material only.
 
 Bullets
@@ -121,6 +121,25 @@ Return JSON:
  "verdict": "apply" | "apply_with_referral" | "skip",
  "verdict_why": "one line"}
 Verdict: skip when a hard blocker makes an interview unlikely; apply_with_referral when the fit is real but callback_after is under 20; apply when callback_after is 20 or more.`;
+
+const REVIEW_SCHEMA = obj({
+  must_fix: { type: 'array', items: obj({ where: S, line: S, problem: S, fix: S }) },
+  weak: { type: 'array', items: obj({ where: S, line: S, problem: S, fix: S }) },
+  questions: SA,
+  strength: { type: 'integer' },
+  verdict: { type: 'string', enum: ['strong', 'fixable', 'weak'] },
+});
+
+// The second read a good career coach gives a draft: what a hiring manager for
+// this job would object to, and what the candidate's own material could do better.
+const REVIEW_SYSTEM = `You are the hiring manager for this job, reviewing a tailored resume before it goes out, the way a sharp career coach would. You also have the candidate's full material, so you can see what the resume left out. Be specific and blunt; quote the line you mean.
+
+must_fix: things that would hurt the candidate if sent. Claims the material doesn't support: a number changed, two separate facts merged into one bullet, wording upgraded beyond the material (built → shipped or in production, contributed → led, one-time → daily). Also anything a recruiter would reject on sight.
+weak: what keeps the page from being as strong as the material allows. The choice and order of evidence (is the work closest to this job first inside each section? is stronger evidence in the material left out, such as a relevant bullet, a recognized result or a real number?). Lines that read machine-written or bolt a keyword onto a sentence. Jargon or internal names a recruiter won't understand. Bullets with no tools or no result. Skills in the wrong group or padded. Space spent on things this job doesn't care about.
+questions: facts to confirm with the candidate that would make the resume stronger if true (e.g. "Did the monitoring system run on in-vehicle hardware?", "Did you measure its latency?"). Only facts the material leaves open.
+strength: 0–100, how strongly this page makes the case for this job compared with the best page the candidate's material could support. verdict: strong (send as is), fixable (the fixes below would make it strong) or weak (the material can't make a strong case for this job).
+
+Rules for every fix: use only facts in the candidate's material, never invent; say exactly what to write or move. The section order (Education, Research, Industry, Projects, Skills), one page, two-line bullets and the fonts are set by the candidate; don't comment on them. At most 6 must_fix and 8 weak, most important first; empty lists when there's nothing real.`;
 
 const LETTER_SYSTEM = `You write a short, specific cover letter for a student or new grad.
 - 3 paragraphs, 220–300 words total: why this company and role (from the job description), the two strongest pieces of evidence from the resume for its top requirements, and a plain closing line.
@@ -515,7 +534,7 @@ async function loadEvaluation(userId, evalId) {
 async function build(draft, ctx) {
   const { parsed, repos, planned, raw, keywords, kind, preamble, sourceText } = ctx;
   const guarded = guardDraft(draft, parsed, repos, `${raw}\n${confirmedLine(ctx.confirmed)}`, planned.filter(p => p.status === 'built'));
-  const ruled = applyRules(guarded.doc, { keywords, kind });
+  const ruled = applyRules(guarded.doc, { keywords, kind, jd: ctx.ev.job_description });
   return renderScored(ruled.doc, ctx, { removed: [...guarded.removed, ...ruled.removed], fixed: ruled.fixed });
 }
 
@@ -582,9 +601,42 @@ ${str(afterText).slice(0, 6000)}`,
   };
 }
 
+/** The hiring-manager review of a built page (Opus). Null when it can't run; the resume still goes on. */
+async function hiringReview(ctx, pass, userId) {
+  try {
+    const r = await complete({
+      task: 'resume_review',
+      system: `${REVIEW_SYSTEM}\n\n${candidateMaterial(ctx.parsed, ctx.repos, ctx.planned, ctx.confirmed)}`,
+      user: `JOB: ${ctx.title} at ${ctx.ev.company_name}\n\nJOB DESCRIPTION:\n${ctx.ev.job_description.slice(0, 7000)}\n\nTHE TAILORED RESUME (as an ATS reads it):\n${str(pass.text).slice(0, 8000)}`,
+      schema: REVIEW_SCHEMA,
+      maxTokens: 8000,
+      timeoutMs: 180_000,
+      userId,
+    });
+    const j = parseJson(r.text);
+    const items = (xs, n) => list(xs).map(x => ({ where: str(x.where), line: str(x.line), problem: str(x.problem), fix: str(x.fix) })).filter(x => x.problem).slice(0, n);
+    return {
+      mustFix: items(j.must_fix, 6),
+      weak: items(j.weak, 8),
+      questions: list(j.questions).map(str).filter(Boolean).slice(0, 5),
+      strength: Math.max(0, Math.min(100, Math.round(Number(j.strength) || 0))),
+      verdict: ['strong', 'fixable', 'weak'].includes(j.verdict) ? j.verdict : 'fixable',
+      model: r.model,
+      cost: r.costUsd,
+    };
+  } catch (err) {
+    console.warn('[resumeEngine] review failed:', err.message);
+    return null;
+  }
+}
+
+const reviewNote = (kind, x) => `Hiring-manager review, ${kind}: ${x.where}${x.line ? ` “${x.line}”` : ''}: ${x.problem} Fix: ${x.fix}`;
+
 /** What the revision pass is asked to fix. Empty when the draft meets every target. */
-function revisionNotes(pass, judged, sourceText) {
+function revisionNotes(pass, judged, sourceText, review = null) {
   const notes = [];
+  for (const x of list(review?.mustFix)) notes.push(reviewNote('must fix', x));
+  for (const x of list(review?.weak)) notes.push(reviewNote('weak', x));
   for (const x of pass.lint.filter(x => x.code !== 'short').slice(0, 15)) notes.push(`${x.where}: ${x.bullet ? `“${x.bullet}” ` : ''}${x.why}.`);
   const short = pass.lint.filter(x => x.code === 'short');
   if (short.length) notes.push(`These bullets are too short and leave a thin second line. Rewrite each to fill about 2 lines (175–230 characters) with real tools, scale and the result, keeping the facts: ${short.map(x => `“${x.bullet}” (${x.bullet.length})`).join('; ')}.`);
@@ -600,7 +652,16 @@ function revisionNotes(pass, judged, sourceText) {
   return notes;
 }
 
-const better = (a, b) => (b.score.score > a.score.score || (b.score.score === a.score.score && b.lint.length < a.lint.length) ? b : a);
+/**
+ * The revision answers the review and the checkers, so it wins unless it
+ * breaks what the first draft got right: one page, the ATS bar, the rules.
+ */
+export function better(a, b) {
+  if (a.pages === 1 && b.pages !== 1) return a;
+  if (atsPasses(a.score.score) ? !atsPasses(b.score.score) : b.score.score < a.score.score) return a;
+  if (b.lint.length > a.lint.length + 1) return a;
+  return b;
+}
 
 /** Which proposed project (if any) to show, saved as a suggestion. */
 async function handleProposal(userId, draft, ctx, final, tailoringId) {
@@ -735,11 +796,11 @@ async function recruiterCheck(ctx, pass, userId) {
     .catch(err => { console.warn('[resumeEngine] judge failed:', err.message); return null; });
 }
 
-/** A first draft → page, scores, recruiter check, and what a revision should fix ([] = none needed). */
-async function checkDraft(userId, ctx, draft) {
+/** A first draft → page, scores, recruiter check, hiring-manager review, and what a revision should fix ([] = none needed). */
+async function checkDraft(userId, ctx, draft, { review = true } = {}) {
   const pass = await build(draft, ctx);
-  const judged = await recruiterCheck(ctx, pass, userId);
-  return { pass, judged, notes: revisionNotes(pass, judged, ctx.sourceText), cost: judged?.cost || 0 };
+  const [judged, reviewed] = await Promise.all([recruiterCheck(ctx, pass, userId), review ? hiringReview(ctx, pass, userId) : null]);
+  return { pass, judged, review: reviewed, notes: revisionNotes(pass, judged, ctx.sourceText, reviewed), cost: (judged?.cost || 0) + (reviewed?.cost || 0) };
 }
 
 /** Keep the revision only if it's better; re-check it if so. */
@@ -751,7 +812,7 @@ async function takeRevision(userId, ctx, first, secondDraft) {
 }
 
 /** The project to build (if any), the PDF, and the row's fields. */
-async function finishTailoring(userId, ctx, { draft, pass, judged, model, revised, cost, tailoringId }) {
+async function finishTailoring(userId, ctx, { draft, pass, judged, review = null, model, revised, cost, tailoringId }) {
   const { ev } = ctx;
   // A project Opus says the fit needs goes on this resume, waiting to be built.
   const proposal = await handleProposal(userId, draft, ctx, pass, tailoringId).catch(err => { console.warn('[resumeEngine] proposal failed:', err.message); return null; });
@@ -775,6 +836,8 @@ async function finishTailoring(userId, ctx, { draft, pass, judged, model, revise
     changes: diffChanges(ctx.parsed, pass.doc, ctx.keywords, Object.fromEntries(list(draft.projects).flatMap(d => [[str(d.ref), str(d.why)], [str(d.name), str(d.why)]]))),
     projects: pass.doc.projects.map(p => ({ name: p.name, source: p.source, why: str(list(draft.projects).find(d => str(d.ref) === p.ref)?.why) })),
     proposedProject,
+    // What the hiring-manager review said about the first draft; the revision was asked to fix it.
+    review: review ? { mustFix: review.mustFix, weak: review.weak, questions: review.questions, strength: review.strength, verdict: review.verdict, of: revised ? 'first_draft' : 'this_draft' } : null,
     revised,
     model,
     judgeModel: judged?.model || null,
@@ -797,7 +860,7 @@ export async function tailor(userId, ev, tailoringId = null) {
   const first = await draftCall();
   const checked = await checkDraft(userId, ctx, first.draft);
   cost += checked.cost;
-  let state = { draft: first.draft, pass: checked.pass, judged: checked.judged, model: first.model, revised: false };
+  let state = { draft: first.draft, pass: checked.pass, judged: checked.judged, review: checked.review, model: first.model, revised: false };
   if (checked.notes.length) {
     const second = await draftCall(revisionSuffix(first.draft, checked.notes)).catch(err => { console.warn('[resumeEngine] revision failed:', err.message); return null; });
     if (second) {
@@ -920,16 +983,16 @@ async function moveOn(r, res) {
     const draft = parseJson(res.text);
     const checked = await checkDraft(r.user_id, ctx, draft);
     if (checked.notes.length) {
-      await setBatch(r.id, { ...b, phase: 'revise_queued', tries: 0, draft, notes: checked.notes, model: res.model, cost: cost + checked.cost });
+      await setBatch(r.id, { ...b, phase: 'revise_queued', tries: 0, draft, notes: checked.notes, review: checked.review, model: res.model, cost: cost + checked.cost });
       return;
     }
-    await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { draft, pass: checked.pass, judged: checked.judged, model: res.model, revised: false, cost: cost + checked.cost, tailoringId: r.id })), batch: null });
+    await finish(r.id, { ...(await finishTailoring(r.user_id, ctx, { draft, pass: checked.pass, judged: checked.judged, review: checked.review, model: res.model, revised: false, cost: cost + checked.cost, tailoringId: r.id })), batch: null });
     if (!b.quiet) await askAboutSkills(r.user_id, r.id).catch(() => null);
     return;
   }
   // The revision is back (or failed for good, in which case the first draft stands).
-  const first = await checkDraft(r.user_id, ctx, b.draft);
-  let state = { draft: b.draft, pass: first.pass, judged: first.judged, model: b.model, revised: false };
+  const first = await checkDraft(r.user_id, ctx, b.draft, { review: false });
+  let state = { draft: b.draft, pass: first.pass, judged: first.judged, review: b.review || null, model: b.model, revised: false };
   let extra = first.cost;
   if (res?.ok) {
     const t = await takeRevision(r.user_id, ctx, state, parseJson(res.text));

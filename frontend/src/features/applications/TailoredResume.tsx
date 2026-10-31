@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileCode, FileText, RefreshCw } from 'lucide-react'
-import { api, type ProposedProject, type Tailoring, type TailoringState } from '@/lib/api'
+import { api, type ProposedProject, type ResumeReview, type Tailoring, type TailoringState } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
@@ -195,6 +195,8 @@ function ResumeResult({ t, onDownload, onApprove, approving }: { t: Tailoring; o
       )}
 
       {gaps.length > 0 && <MissingSkills t={t} gaps={gaps} />}
+
+      {rep.review && <Review r={rep.review} />}
 
       {(rep.ruleIssues?.length ?? 0) > 0 && (
         <div>
@@ -400,5 +402,37 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
         <p className="mt-4 text-[14px] text-muted">{p.status === 'built' ? `Built and on this resume${p.addedAt ? ` (${timeAgo(p.addedAt)})` : ''}.` : 'You passed on it. It won’t be suggested again.'}</p>
       )}
     </section>
+  )
+}
+
+/** What the hiring-manager review said, and the facts it would like you to confirm. */
+function Review({ r }: { r: ResumeReview }) {
+  const issues = [...r.mustFix.map(x => ({ ...x, must: true })), ...r.weak.map(x => ({ ...x, must: false }))]
+  const fixedAlready = r.of === 'first_draft'
+  return (
+    <div>
+      <h4 className="mb-1 font-medium text-fg">Hiring-manager review <span className="font-normal text-subtle">· strength {r.strength}/100 {fixedAlready ? 'before the rewrite' : ''}</span></h4>
+      {issues.length > 0 && (
+        <>
+          <p className="mb-2 text-[13px] text-subtle">{fixedAlready ? 'Found in the first draft; the rewrite was asked to fix each one.' : 'Found in this draft.'}</p>
+          <ul className="space-y-2 text-[14px] leading-relaxed">
+            {issues.map((x, i) => (
+              <li key={i}>
+                <span className={cn('mr-1.5 text-[12px] font-medium uppercase', x.must ? 'text-danger' : 'text-muted')}>{x.must ? 'Must fix' : 'Weak'}</span>
+                <span className="text-muted">{x.where}:</span> <span className="text-fg">{x.problem}</span>
+                {x.fix && <span className="block text-[13px] text-subtle">Fix: {x.fix}</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {r.questions.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1 text-[14px] font-medium text-fg">Questions for you</p>
+          <ul className="space-y-1 text-[14px] text-muted">{r.questions.map((q, i) => <li key={i}>· {q}</li>)}</ul>
+          <p className="mt-1 text-[13px] text-subtle">If any of these is true, add it to your master resume and the next resume will use it.</p>
+        </div>
+      )}
+    </div>
   )
 }

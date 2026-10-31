@@ -624,6 +624,9 @@ export interface PlannedProject {
 }
 export interface ProjectsState { projects: PlannedProject[]; suggesting: boolean; lastRunAt: string | null; note: string | null }
 
+export interface ReviewItem { where: string; line: string; problem: string; fix: string }
+export interface ResumeReview { mustFix: ReviewItem[]; weak: ReviewItem[]; questions: string[]; strength: number; verdict: 'strong' | 'fixable' | 'weak'; of: 'first_draft' | 'this_draft' }
+
 export interface TailoringReport {
   notes?: string
   changes?: { section: string; before: string; after: string; why: string }[]
@@ -647,6 +650,8 @@ export interface TailoringReport {
   ruleIssues?: { where: string; bullet: string; code: string; why: string }[]
   fixed?: { what: string; now: string; why: string }[]
   proposedProject?: ProposedProject | null
+  /** Hiring-manager review (Opus) of the first draft; the revision was asked to fix it. */
+  review?: ResumeReview | null
   revised?: boolean
   /** The tailored resume's LaTeX source. */
   tex?: string

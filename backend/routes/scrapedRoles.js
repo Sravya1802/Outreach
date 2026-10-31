@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
     // "citizens only" (keeps roles that don't say); citizens = US citizens only.
     const visa      = ['sponsors', 'open', 'citizens'].includes(req.query.visa) ? req.query.visa : '';
     const page      = Math.max(0, Number(req.query.page) || 0);
-    const pageSize  = Math.min(100, Math.max(10, Number(req.query.pageSize) || 50));
+    const pageSize  = Math.min(200, Math.max(10, Number(req.query.pageSize) || 50));
 
     const where = ['is_active = 1', 'role_type = $1', 'region = $2'];
     const params = [role_type, region];

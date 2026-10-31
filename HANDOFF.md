@@ -1610,3 +1610,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
   - An unreadable link asks for the job description.
   - The CareerPuck Domino link became item `asking_referral`, with the title and company read from the posting, the Greenhouse embed URL, and the uploaded file attached.
   - The frontend chunk is live.
+
+### 2026-10-30 — Roles / Companies: 50 / 100 / 200 per page
+- `Pager` takes optional `onPageSize` (+ `sizes`), shows "Show N per page" and "Page X of Y". `lib/pageSize.ts` `usePageSize(list)`: `?per=` → localStorage `snj.pageSize.<list>` → 50; changing goes to page 1. Roles also has the pager above the list. Backend `/api/scraped-roles` cap 100 → 200 (VM 766f02a); companies route already allowed 200. Footnote "Track adds a role to Applications" → Evaluate.
+- Verified live (e2e): q=2027&tier=faang 50 → 200 shows all 163; fresh visit remembers 200; Next → 201–400 of 4,185; no phone overflow.

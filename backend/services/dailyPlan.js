@@ -656,7 +656,11 @@ export async function pickItem(userId, itemId, choice) {
     "UPDATE plan_items SET pick = $2, picked_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END, evaluation_id = $3, decision = 'pending', decided_at = NULL WHERE id = $1",
     [item.id, pick, evalId],
   );
-  if (pick === 'app' && !item.tailoring_id) {
+  // A draft from an earlier night (an older master resume and rules) is written again.
+  const old = item.tailoring_id
+    ? await one("SELECT 1 FROM resume_tailorings WHERE id = $1 AND created_at < NOW() - INTERVAL '1 day'", [item.tailoring_id])
+    : null;
+  if (pick === 'app' && (!item.tailoring_id || old)) {
     // Drafting starts now (batched); the tick retries if it can't.
     try {
       const t = await startTailoring(userId, evalId, 'resume', { batch: batched() });

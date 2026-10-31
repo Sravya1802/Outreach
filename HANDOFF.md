@@ -1614,3 +1614,20 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 ### 2026-10-30 — Roles / Companies: 50 / 100 / 200 per page
 - `Pager` takes optional `onPageSize` (+ `sizes`), shows "Show N per page" and "Page X of Y". `lib/pageSize.ts` `usePageSize(list)`: `?per=` → localStorage `snj.pageSize.<list>` → 50; changing goes to page 1. Roles also has the pager above the list. Backend `/api/scraped-roles` cap 100 → 200 (VM 766f02a); companies route already allowed 200. Footnote "Track adds a role to Applications" → Evaluate.
 - Verified live (e2e): q=2027&tier=faang 50 → 200 shows all 163; fresh visit remembers 200; Next → 201–400 of 4,185; no phone overflow.
+
+### 2026-10-30 — Roles: 2027 year filter + year tag
+- **What (user request):** "I need 2027 as a filter here since we need to apply for those mainly" (Jobs → Roles).
+- **Backend:**
+  - [gradYear.js](backend/services/gradYear.js): a role "names" a year when its title has it, or its description has it within 60 characters after graduating/start wording (grad*, class of, degree, start*, university, college, commenc*, complet*, summer/fall/winter/spring, cohort). A bare year elsewhere doesn't count.
+  - `GET /scraped-roles?year=2027` keeps roles that name 2027. `year=2027-or-unstated` also keeps roles that name no year, hiding only roles for other years.
+  - Each row returns `grad_years` (2025–2029). Patterns go in as bound parameters, never into the SQL text.
+- **Frontend** ([RolesPage.tsx](frontend/src/features/jobs/RolesPage.tsx)):
+  - A **Year** select (Any year / Says 2027 / 2027 or not stated), stored in `?year=` and remembered per viewer in localStorage `snj.roles.year`.
+  - An accent year tag next to the company ("2027", or "2026–27" when a posting takes either year).
+- **Live counts (USA):**
+  - New grad: 539 say 2027; 4,099 are 2027 or not stated (84 hidden as other-year only).
+  - Internships: 2,420 say 2027.
+  - Only 793 of 4,185 new-grad rows have a saved description, so most rows rely on the title.
+  - Queries take ~0.5 s (2 s the first time).
+- **Deploy:** `fccb00e` main, `e7e45ae` VM; 215 backend and 123 frontend tests green. The VM cherry-pick conflicted on `frontend/src/api.js` (UU, frontend-only and unused on the VM); resolved by keeping the VM's copy.
+- **Verified live (e2e, 1440 + 390 px):** Says 2027 → `?year=2027`, all 50 rows on page 1 are 2027 roles with the tag, the header shows "1–50 of 539", and the choice is remembered after reload; "2027 or not stated" loads; no page errors; no horizontal scroll.

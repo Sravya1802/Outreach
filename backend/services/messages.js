@@ -8,7 +8,7 @@
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { companyKey } from './linkedinConnections.js';
-import { companyRow, contactFor, me } from './referralFlow.js';
+import { FORMAL, candidateHighlights, companyRow, contactFor, me, noteFit, postingUrl, schoolName, signature, signed } from './referralFlow.js';
 import { marketFor, regionForMarket } from './markets.js';
 
 const PAGE = 25;
@@ -121,23 +121,15 @@ function person({ connection, contact }) {
   };
 }
 
-async function candidateHighlights(userId) {
-  const m = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
-  const p = m?.parsed;
-  if (!p) return '';
-  const exp = (p.experience || []).slice(0, 2).map(e => `${e.title} at ${e.company}: ${(e.bullets || [])[0] || ''}`);
-  const proj = (p.projects || []).slice(0, 2).map(x => `${x.name}: ${(x.bullets || [])[0] || ''}`);
-  const skills = (p.skills || []).flatMap(s => s.items || []).slice(0, 10).join(', ');
-  return [...exp, ...proj, skills && `Skills: ${skills}`].filter(Boolean).join('\n');
-}
-
-export function templateMessages({ personName, me: myName, school, company, role, isConnection }) {
+export function templateMessages({ personName, me: myName, school, sig, company, role, isConnection }) {
   const first = str(personName).split(/\s+/)[0] || 'there';
-  const who = `${myName || 'a student'}${school ? ` at ${school}` : ''}`;
-  const ask = role ? `I'm applying for the ${role.title} role and would really value a referral or a pointer to the right person.` : `I'd love to hear how you got into ${company} and what the team looks for in interns and new grads.`;
-  const note = `Hi ${first}, I'm ${who}. ${ask} Thank you!`.slice(0, 300);
-  const body = `Hi ${first},\n\nI'm ${who}${isConnection ? ', and we’re connected on LinkedIn' : ''}. ${ask}${role?.url ? `\n\nThe posting: ${role.url}` : ''}\n\nThanks so much for your time,\n${myName || ''}`.trim();
-  return { note, subject: role ? `Referral for ${role.title}?` : `Quick question about ${company}`, body };
+  const who = `${myName || 'a student'}${school ? `, a student at ${schoolName(school)}` : ''}`;
+  const ask = role
+    ? `I am applying for the ${role.title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person on the hiring team?`
+    : `I would appreciate the chance to learn how you joined ${company} and what the team looks for in interns and new graduates.`;
+  const note = noteFit(`Hello ${first}, I am ${who}. ${ask} Thank you.`);
+  const body = `Dear ${first},\n\nMy name is ${who}${isConnection ? ', and we are connected on LinkedIn' : ''}. ${ask}${role?.url ? `\n\nThe job posting is available here: ${postingUrl(role.url)}` : ''}\n\nThank you for your time and consideration.`;
+  return { note, subject: role ? `Referral request: ${role.title} at ${company}`.slice(0, 120) : `Question about ${company}`, body: signed(body, myName, sig) };
 }
 
 /** Draft (or redraft) one person's LinkedIn note + email and save it on their contact. */
@@ -152,7 +144,7 @@ export async function writeFor(userId, key, ref) {
     contactId = (await contactFor(userId, jobId, conn)).id;
   }
   const who = await me(userId);
-  const ctx = { personName: p.name, me: who.name, school: who.school, company: data.name, role: data.role, isConnection: p.isConnection };
+  const ctx = { personName: p.name, me: who.name, school: who.school, sig: signature(who), company: data.name, role: data.role, isConnection: p.isConnection };
   let draft;
   try {
     const r = await complete({
@@ -162,16 +154,17 @@ export async function writeFor(userId, key, ref) {
       userId,
       system: `You write personalized outreach from a student or new grad to one person at a company.
 Return JSON: {"note": "...", "subject": "...", "body": "..."}
-- note: a LinkedIn message under 280 characters. body: an email under 120 words. subject: under 60 characters.
-- Open with their first name. Mention one specific thing from STUDENT.background that fits their team or the role.
-- Use only facts given. Describe the student only with STUDENT (don't guess their year or level). Describe the other person only by THEIR TITLE; don't claim what they work on.
-- If ROLE is given: ask for a referral for it, or a pointer to the right person, and include the link in the email. If not: ask for 15 minutes about their team and how they hire interns/new grads.
-- ${p.isConnection ? 'They are already a LinkedIn connection: warm, direct.' : 'They don’t know the student: brief and respectful.'} No flattery, no "I hope this finds you well".`,
-      user: JSON.stringify({ to: p.name, theirTitle: p.title, company: data.name, ROLE: data.role, STUDENT: { name: who.name, school: who.school, background: await candidateHighlights(userId) } }),
+- note: a LinkedIn message under 250 characters, starting "Hello <first name>,", formal with no contractions, with no link and no mention of a résumé or attachment. body: an email under 120 words. subject: under 60 characters.
+- ${FORMAL}
+- Mention one specific thing from STUDENT.background (a project, internship or result, with a concrete detail) that fits the role.
+- Use only facts given. Describe the student only with STUDENT (don't guess their year or level). Describe the other person only by THEIR TITLE; don't claim what they work on or what their team focuses on.
+- If ROLE is given: ask whether they would be willing to refer the student, or direct them to the appropriate person, and give the link as a sentence ("The job posting is available here: <link>"). If not: ask for 15 minutes to learn about their team and how they hire interns and new graduates.
+- ${p.isConnection ? 'They are already a LinkedIn connection: you may mention that, in the same formal tone.' : 'They don’t know the student: brief and respectful.'}`,
+      user: JSON.stringify({ to: p.name, theirTitle: p.title, company: data.name, ROLE: data.role && { ...data.role, url: postingUrl(data.role.url) }, STUDENT: { name: who.name, major: who.major, school: who.school, background: await candidateHighlights(userId) } }),
     });
     const d = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
     if (!str(d.note) || !str(d.body)) throw new Error('empty');
-    draft = { note: str(d.note).slice(0, 300), subject: str(d.subject).slice(0, 120) || templateMessages(ctx).subject, body: str(d.body) };
+    draft = { note: noteFit(d.note), subject: str(d.subject).slice(0, 120) || templateMessages(ctx).subject, body: signed(d.body, who.name, ctx.sig) };
   } catch (err) {
     if (err.status === 402) throw err;
     draft = templateMessages(ctx);

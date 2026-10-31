@@ -48,21 +48,64 @@ const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
 const str = (v) => String(v ?? '').trim();
 const first = (name) => str(name).split(/\s+/)[0] || 'there';
+// "University of X" reads as "the University of X" mid-sentence.
+export const schoolName = (s) => (/^university\b/i.test(str(s)) ? `the ${str(s)}` : str(s));
 
 export function linkedinSearchUrl(company, school) {
   const q = [company, school].filter(Boolean).join(' ');
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(q)}&origin=GLOBAL_SEARCH_HEADER`;
 }
 
+/** The link to show a person: Greenhouse's embedded application form becomes the public job page. */
+export function postingUrl(url) {
+  try {
+    const u = new URL(str(url));
+    const board = u.searchParams.get('for');
+    const token = u.searchParams.get('token');
+    if (/(^|\.)greenhouse\.io$/i.test(u.hostname) && u.pathname.includes('/embed/job_app') && board && /^\d+$/.test(token || '')) {
+      return `https://job-boards.greenhouse.io/${encodeURIComponent(board)}/jobs/${token}`;
+    }
+  } catch { /* not a URL: shown as given */ }
+  return str(url);
+}
+
+/** House style for every email to a contact (the user wants formal, not chatty). */
+export const FORMAL = `Email style: formal business English. Open with "Dear <first name>," then a blank line. Full sentences, no contractions (write "I am", not "I'm"), no exclamation marks. No filler or flattery: never "I hope this finds you well", "I believe I can contribute immediately", "aligns with", "passionate", "excited" or "reach out". Write school names grammatically ("the University of ..."). End the body with "Thank you for your time and consideration." and no sign-off or name: the signature is added after.`;
+
+/** The sign-off under every email: name, degree and school, LinkedIn. */
+export function signature(who = {}) {
+  const study = who.degree && who.major ? `${who.degree} in ${who.major}` : str(who.degree || who.major);
+  return ['Best regards,', str(who.name), [study, str(who.school)].filter(Boolean).join(', '), str(who.linkedin)].filter(Boolean).join('\n');
+}
+
+// The model sometimes signs off anyway; the signature is ours. A period stuck
+// to the end of a link can break it in some mail apps, so it goes.
+const SIGN_OFF = /^(best|best regards|kind regards|warm regards|regards|sincerely|thanks|thank you),?$/i;
+export function signed(body, name, sig) {
+  const lines = str(body).replace(/(https?:\/\/\S+?)\.(?=\n|$)/g, '$1').split('\n');
+  const last = () => lines[lines.length - 1].trim();
+  while (lines.length && (!last() || SIGN_OFF.test(last()) || (name && last().toLowerCase() === str(name).toLowerCase()))) lines.pop();
+  return `${lines.join('\n')}\n\n${sig || signature({ name })}`.trim();
+}
+
+/** LinkedIn caps notes at 300 characters: cut at the last full sentence, not mid-word. */
+export function noteFit(note, max = 300) {
+  const s = str(note);
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.endsWith('.') || cut.endsWith('?') ? max - 1 : -1);
+  return end > 0 ? cut.slice(0, end + 1) : cut;
+}
+
 /** Plain template, used when the AI is unavailable and for the "search" case. */
-export function templateAsk({ personName, me, school, title, company, jobUrl, why, attached = false }) {
-  const hi = `Hi ${first(personName)},`;
-  const intro = `I'm ${me || 'a student'}${school ? ` at ${school}` : ''}, applying for the ${title} role at ${company}.`;
-  const fit = why ? ` ${why}` : '';
-  const note = `${hi} ${intro} Would you be open to referring me, or pointing me to the right person? Happy to send my resume. Thank you!`.slice(0, 300);
-  const resume = attached ? 'My resume is attached.' : 'I can send my resume and anything else that helps.';
-  const body = `${hi}\n\n${intro}${fit}\n\nWould you be open to referring me for it, or pointing me to the right person? ${resume} The posting: ${jobUrl}\n\nThank you for considering it,\n${me || ''}`.trim();
-  return { subject: `Referral for the ${title} role?`.slice(0, 120), body, note };
+export function templateAsk({ personName, me, school, major, sig, title, company, jobUrl, attached = false }) {
+  const student = major ? `a ${major} student` : 'a student';
+  // The role's match note (FIT) is written for the user, not for a stranger, so it stays out.
+  const intro = `My name is ${me || 'a student'}, and I am ${student}${school ? ` at ${schoolName(school)}` : ''}. I am applying for the ${title} position at ${company}.`;
+  const note = noteFit(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person? Thank you.`);
+  const resume = attached ? 'I have attached my résumé for your reference.' : 'I would be glad to send my résumé.';
+  const body = `Dear ${first(personName)},\n\n${intro}\n\nWould you be willing to refer me for this position, or direct me to the appropriate person on the hiring team? ${resume} The job posting is available here: ${postingUrl(jobUrl)}\n\nThank you for your time and consideration.`;
+  return { subject: `Referral request: ${title} at ${company}`.slice(0, 120), body: signed(body, me, sig), note };
 }
 
 async function draftAsk(userId, ctx) {
@@ -72,29 +115,47 @@ async function draftAsk(userId, ctx) {
       json: true,
       maxTokens: 900,
       userId,
-      system: `You write a short, polite referral request from a student to someone at a company.
+      system: `You write a formal referral request email from a student to someone at a company.
 Return JSON: {"subject": "...", "body": "...", "note": "..."}
-- body: under 110 words of plain text in 3–4 short paragraphs separated by a blank line. Greeting with their first name; who the student is (name, school) in one line; the role; one specific reason they fit (from FIT, never invented); the ask (refer me, or point me to the right person); ${ctx.attached ? 'one line saying their resume is attached' : 'an offer to send their resume'}; the job link; thanks, then the student's full name on its own line. No flattery, no "I hope this finds you well".
-- note: a LinkedIn connection note under 280 characters with the same ask.
-- subject: under 60 characters.
-- ${ctx.knows ? 'They are a LinkedIn connection of the student, so a warmer tone is fine.' : 'They don\'t know the student; keep it brief and respectful.'}`,
-      user: JSON.stringify({ to: ctx.personName, theirTitle: ctx.personTitle, student: ctx.me, school: ctx.school, role: ctx.title, company: ctx.company, jobLink: ctx.jobUrl, FIT: ctx.why }),
+- body: under 120 words of plain text: the greeting, then 3 short paragraphs separated by a blank line.
+  1. Who the student is and the exact role and company, e.g. "My name is <full name>, and I am a <MAJOR> student at <SCHOOL>. I am applying for the <role> position at <company>." No class year unless given.
+  2. One concrete reason they fit: a project, internship or result from BACKGROUND or FIT, with a specific detail, stated plainly. Never invent facts, never describe the company's or team's focus, and don't add a clause saying it "demonstrates" skills or "matches the role".
+  3. The ask: whether they would be willing to refer the student, or direct them to the appropriate person on the hiring team; ${ctx.attached ? '"I have attached my résumé for your reference."' : 'an offer to send the résumé'}; then, as the paragraph\'s last sentence, "The job posting is available here: <link>" (never a label like "Job link:").
+- ${FORMAL}
+- note: a LinkedIn connection note under 250 characters with the same ask, starting "Hello <first name>,", also formal with no contractions. No link and no mention of a résumé or attachment (a note can carry neither).
+- subject: under 60 characters, e.g. "Referral request: <role>".
+- ${ctx.knows ? 'They are a LinkedIn connection of the student: you may mention that, in the same formal tone.' : 'They don\'t know the student; keep it brief and respectful.'}`,
+      user: JSON.stringify({ to: ctx.personName, theirTitle: ctx.personTitle, student: ctx.me, MAJOR: ctx.major, SCHOOL: ctx.school, role: ctx.title, company: ctx.company, jobLink: postingUrl(ctx.jobUrl), FIT: ctx.why, BACKGROUND: ctx.background }),
     });
     const d = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
     if (!str(d.body) || !str(d.note)) throw new Error('empty draft');
-    return { subject: str(d.subject).slice(0, 120) || templateAsk(ctx).subject, body: str(d.body), note: str(d.note).slice(0, 300) };
+    return { subject: str(d.subject).slice(0, 120) || templateAsk(ctx).subject, body: signed(d.body, ctx.me, ctx.sig), note: noteFit(d.note) };
   } catch {
     return templateAsk(ctx);
   }
 }
 
 export async function me(userId) {
-  const p = await one('SELECT first_name, last_name, education_school FROM user_profile WHERE user_id = $1', [userId]);
+  const p = await one('SELECT first_name, last_name, education_school, education_degree, education_major, linkedin_url FROM user_profile WHERE user_id = $1', [userId]);
   const m = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
   return {
     name: [p?.first_name, p?.last_name].filter(Boolean).join(' ') || str(m?.parsed?.name),
     school: str(p?.education_school) || str(m?.parsed?.education?.[0]?.school),
+    degree: str(p?.education_degree),
+    major: str(p?.education_major),
+    linkedin: str(p?.linkedin_url),
   };
+}
+
+/** A few lines from the master resume (jobs, projects, skills) for the model to pick a fit from. */
+export async function candidateHighlights(userId) {
+  const m = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
+  const p = m?.parsed;
+  if (!p) return '';
+  const exp = (p.experience || []).slice(0, 2).map(e => `${e.title} at ${e.company}: ${(e.bullets || [])[0] || ''}`);
+  const proj = (p.projects || []).slice(0, 2).map(x => `${x.name}: ${(x.bullets || [])[0] || ''}`);
+  const skills = (p.skills || []).flatMap(s => s.items || []).slice(0, 10).join(', ');
+  return [...exp, ...proj, skills && `Skills: ${skills}`].filter(Boolean).join('\n');
 }
 
 /** The user's company row (jobs), created if needed, so contacts and outreach have a home. */
@@ -509,12 +570,15 @@ export async function askForReferral(userId, item, settings) {
   }
   const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
 
-  const base = { me: who.name, school: who.school, title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId) };
+  const base = {
+    me: who.name, school: who.school, major: who.major, sig: signature(who), background: people.length ? await candidateHighlights(userId) : '',
+    title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId),
+  };
   if (!people.length) {
     const t = templateAsk({ ...base, personName: '' });
     await run(
       "INSERT INTO referral_asks (user_id, plan_item_id, channel, linkedin_url, message, status) VALUES ($1, $2, 'search', $3, $4, 'to_send')",
-      [userId, item.id, linkedinSearchUrl(item.company_name, who.school), t.note.replace(/^Hi there, /, 'Hi, ')],
+      [userId, item.id, linkedinSearchUrl(item.company_name, who.school), t.note],
     );
   }
   for (const p of people) {
@@ -579,7 +643,7 @@ export async function addMissingNotes() {
   for (const r of rows) {
     if (!mine.has(r.user_id)) mine.set(r.user_id, await me(r.user_id));
     const who = mine.get(r.user_id);
-    const { note } = templateAsk({ personName: r.person_name, me: who.name, school: who.school, title: r.title, company: r.company_name, jobUrl: r.apply_url });
+    const { note } = templateAsk({ personName: r.person_name, me: who.name, school: who.school, major: who.major, title: r.title, company: r.company_name, jobUrl: r.apply_url });
     await insertNote(r.user_id, r.plan_item_id,
       { name: r.person_name, title: r.person_title, linkedin: r.linkedin_url, email: r.email, contactId: r.contact_id, connectionId: r.connection_id }, note);
   }

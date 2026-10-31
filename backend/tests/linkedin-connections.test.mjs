@@ -50,23 +50,56 @@ test('referral status line', async () => {
     { channel: 'email', person_name: 'Ana', status: 'scheduled' }, { channel: 'linkedin', person_name: 'Ana', status: 'marked_sent' },
   ], 'Fri'), 'Emailing Ana at their next morning. Applying Fri unless a referral comes first.');
   const t = templateAsk({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', why: '' });
-  assert.ok(t.note.length <= 300 && t.note.startsWith('Hi Ana,'));
-  assert.match(t.body, /The posting: https:\/\/x/);
-  assert.match(t.body, /I can send my resume/);
-  assert.match(templateAsk({ personName: 'Ana', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', attached: true }).body, /My resume is attached\. The posting/);
+  assert.ok(t.note.length <= 300 && t.note.startsWith('Hello Ana,'));
+  assert.ok(t.body.startsWith('Dear Ana,\n\n'));
+  assert.match(t.body, /The job posting is available here: https:\/\/x/);
+  assert.match(t.body, /I would be glad to send my résumé/);
+  assert.match(t.body, /consideration\.\n\nBest regards,\nSravya R$/);
+  assert.doesNotMatch(t.body + t.note, /\b(I'm|I'd|Hi)\b|!/);
+  assert.match(templateAsk({ personName: 'Ana', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', attached: true }).body, /attached my résumé for your reference\. The job posting/);
+  assert.ok(templateAsk({ personName: '', me: 'S', title: 'SWE', company: 'Ramp', jobUrl: 'https://x' }).note.startsWith('Hello, I am S'));
   assert.match(linkedinSearchUrl('Ramp', 'UIC'), /keywords=Ramp%20UIC/);
+});
+
+test('referral email: public job link, grammatical school name, our own signature', async () => {
+  const { postingUrl, schoolName, signature, signed, templateAsk } = await import('../services/referralFlow.js');
+  assert.equal(postingUrl('https://job-boards.greenhouse.io/embed/job_app?for=dominodatalab&token=7992556'), 'https://job-boards.greenhouse.io/dominodatalab/jobs/7992556');
+  assert.equal(postingUrl('https://boards.greenhouse.io/embed/job_app?for=acme&token=12'), 'https://job-boards.greenhouse.io/acme/jobs/12');
+  assert.equal(postingUrl('https://jobs.lever.co/x/1'), 'https://jobs.lever.co/x/1');
+  assert.equal(postingUrl('not a url'), 'not a url');
+  assert.equal(schoolName('University of Illinois at Chicago'), 'the University of Illinois at Chicago');
+  assert.equal(schoolName('UIC'), 'UIC');
+  const who = { name: 'Lakshmi Sravya Rachakonda', degree: 'B.S.', major: 'Computer Science', school: 'University of Illinois at Chicago', linkedin: 'https://linkedin.com/in/x' };
+  assert.equal(signature(who), 'Best regards,\nLakshmi Sravya Rachakonda\nB.S. in Computer Science, University of Illinois at Chicago\nhttps://linkedin.com/in/x');
+  assert.equal(signature({ name: 'A', major: 'Math' }), 'Best regards,\nA\nMath');
+  // A sign-off the model adds anyway is replaced, not doubled.
+  assert.equal(signed('Dear A,\n\nBody.\n\nThank you,\nLakshmi Sravya Rachakonda\n', who.name, 'Best regards,\nX'), 'Dear A,\n\nBody.\n\nBest regards,\nX');
+  assert.equal(signed('Dear A,\n\nThank you for your time and consideration.', 'N', 'SIG'), 'Dear A,\n\nThank you for your time and consideration.\n\nSIG');
+  assert.equal(signed('Here: https://x.io/jobs/7.\n\nThanks.', 'N', 'S'), 'Here: https://x.io/jobs/7\n\nThanks.\n\nS');
+  assert.equal(signed('See https://x.io/7. Then more.', 'N', 'S'), 'See https://x.io/7. Then more.\n\nS');
+  const { noteFit } = await import('../services/referralFlow.js');
+  assert.equal(noteFit('Short.'), 'Short.');
+  assert.equal(noteFit(`${'a'.repeat(200)}. Would you refer me? ${'b'.repeat(120)}`), `${'a'.repeat(200)}. Would you refer me?`);
+  const t = templateAsk({ personName: 'Murat K', me: who.name, school: who.school, major: who.major, sig: signature(who), title: 'Forward Deployed Engineer', company: 'Domino Data Lab', jobUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=dominodatalab&token=7992556', attached: true, why: 'Strong match on Python and SQL' });
+  assert.match(t.body, /a Computer Science student at the University of Illinois at Chicago/);
+  assert.doesNotMatch(t.body, /Strong match/); // the match note is for the user, not the recipient
+  assert.match(t.body, /available here: https:\/\/job-boards\.greenhouse\.io\/dominodatalab\/jobs\/7992556/);
+  assert.equal(t.subject, 'Referral request: Forward Deployed Engineer at Domino Data Lab');
 });
 
 test('message template: referral when there is a role, a short chat otherwise', async () => {
   const { templateMessages } = await import('../services/messages.js');
   const withRole = templateMessages({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', company: 'Ramp', role: { title: 'SWE Intern', url: 'https://jobs.ashbyhq.com/ramp/1' }, isConnection: true });
-  assert.ok(withRole.note.startsWith('Hi Ana,') && withRole.note.length <= 300);
-  assert.match(withRole.note, /SWE Intern role/);
-  assert.match(withRole.body, /we’re connected on LinkedIn/);
-  assert.match(withRole.body, /The posting: https:\/\/jobs\.ashbyhq\.com\/ramp\/1/);
+  assert.ok(withRole.note.startsWith('Hello Ana,') && withRole.note.length <= 300);
+  assert.match(withRole.note, /SWE Intern position/);
+  assert.ok(withRole.body.startsWith('Dear Ana,'));
+  assert.match(withRole.body, /we are connected on LinkedIn/);
+  assert.match(withRole.body, /The job posting is available here: https:\/\/jobs\.ashbyhq\.com\/ramp\/1/);
+  assert.match(withRole.body, /Best regards,\nSravya R$/);
+  assert.doesNotMatch(withRole.body + withRole.note, /\b(I'm|I'd|Hi)\b|’re|!/);
   const noRole = templateMessages({ personName: 'Bo', me: '', school: '', company: 'Stripe', role: null, isConnection: false });
-  assert.match(noRole.note, /how you got into Stripe/);
-  assert.equal(noRole.subject, 'Quick question about Stripe');
+  assert.match(noRole.note, /how you joined Stripe/);
+  assert.equal(noRole.subject, 'Question about Stripe');
 });
 
 test('referral targets: emails and LinkedIn notes go to different people, best first', async () => {

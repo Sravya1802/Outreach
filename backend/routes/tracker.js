@@ -1,10 +1,11 @@
-// Applications → Tracker: every application as a sheet the user can monitor
-// and edit (company, role, link, submitted, status, referral), plus a CSV
-// import of their own spreadsheet and a CSV download in the same columns.
+// Dashboard → Tracker: every role the user applied to, as a sheet they can
+// monitor and edit (company, role, link, submitted, status, referral), plus a
+// CSV import of their own spreadsheet and a CSV download in the same columns.
+// Roles not applied to stay out of it; they live on To apply and Evaluate.
 import { Router } from 'express';
 import { all, one, run } from '../db.js';
 import { parseId } from '../services/safePaths.js';
-import { sheetRows, toApplyStatus, toReferral, matchKey, isSent, referralFromPlan, toCsv, STATUS_LABEL } from '../services/trackerSheet.js';
+import { sheetRows, toApplyStatus, toReferral, matchKey, isSent, wasApplied, referralFromPlan, toCsv, STATUS_LABEL } from '../services/trackerSheet.js';
 
 const router = Router();
 
@@ -58,7 +59,7 @@ async function rowsFor(userId) {
     job_url: r.job_url,
     apply_status: STATUSES.includes(r.apply_status) ? r.apply_status : (isSent(r.apply_status) ? r.apply_status : 'not_started'),
     raw_status: r.apply_status,
-    submitted: isSent(r.apply_status),
+    submitted: wasApplied(r.apply_status, r.applied_at),
     status_label: STATUS_LABEL[r.apply_status] ?? '',
     referral: r.referral_status || referralFromPlan(r.plan_referral),
     referral_set: r.referral_status || null,
@@ -71,8 +72,10 @@ async function rowsFor(userId) {
   }));
 }
 
+const applied = async (userId) => (await rowsFor(userId)).filter(r => r.submitted);
+
 router.get('/', async (req, res) => {
-  try { res.json({ rows: await rowsFor(req.user.id), title: await titleFor(req.user.id) }); } catch (err) { fail(res, err); }
+  try { res.json({ rows: await applied(req.user.id), title: await titleFor(req.user.id) }); } catch (err) { fail(res, err); }
 });
 
 // The banner above the sheet ("2027 NEW GRAD ROLES APPLICATION").
@@ -154,7 +157,7 @@ export async function importSheet(userId, csv) {
     byKey.set(matchKey({ company: e.company_name, role: e.job_title, link: e.job_url }), e);
     byKey.set(matchKey({ company: e.company_name, role: e.job_title }), e);
   }
-  let added = 0, updated = 0, unchanged = 0;
+  let added = 0, updated = 0, unchanged = 0, notApplied = 0;
   const skipped = [];
   for (const r of rows) {
     if (!r.company || !r.role) { skipped.push(`${r.company || r.role}: needs both a company and a role`); continue; }
@@ -166,6 +169,7 @@ export async function importSheet(userId, csv) {
     if (hit) {
       const nextStatus = status === 'not_started' && isSent(hit.apply_status) ? hit.apply_status : status;
       const nextReferral = referral ?? hit.referral_status;
+      if (!isSent(nextStatus)) notApplied += 1;
       if (nextStatus === hit.apply_status && nextReferral === hit.referral_status) { unchanged += 1; continue; }
       await run(
         `UPDATE evaluations SET apply_status = $3, referral_status = $4,
@@ -179,6 +183,7 @@ export async function importSheet(userId, csv) {
       updated += 1;
       continue;
     }
+    if (!isSent(status)) notApplied += 1;
     const ins = (await run(
       `INSERT INTO evaluations (user_id, company_name, job_title, job_url, apply_mode, apply_status, applied_at, stage_changed_at, referral_status, source)
        VALUES ($1, $2, $3, $4, 'manual', $5, CASE WHEN $6 THEN NOW()::text END, NOW(), $7, 'sheet_import') RETURNING id`,
@@ -189,7 +194,7 @@ export async function importSheet(userId, csv) {
     byKey.set(matchKey({ company: r.company, role: r.role }), row);
     added += 1;
   }
-  return { total: rows.length, added, updated, unchanged, skipped };
+  return { total: rows.length, added, updated, unchanged, notApplied, skipped };
 }
 
 router.post('/import', async (req, res) => {
@@ -199,7 +204,7 @@ router.post('/import', async (req, res) => {
 // The tracker as a CSV in the sheet's columns (File → Import in Google Sheets).
 router.get('/export.csv', async (req, res) => {
   try {
-    const csv = toCsv(await rowsFor(req.user.id));
+    const csv = toCsv(await applied(req.user.id));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="applications-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);

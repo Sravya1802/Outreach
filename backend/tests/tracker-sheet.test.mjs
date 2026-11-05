@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCsv, sheetRows, toApplyStatus, toReferral, toCsv, matchKey, referralFromPlan } from '../services/trackerSheet.js';
+import { parseCsv, sheetRows, toApplyStatus, toReferral, toCsv, matchKey, referralFromPlan, wasApplied } from '../services/trackerSheet.js';
 
 // The shape of the user's own sheet: a title banner, then the header row.
 const SHEET = [
@@ -48,6 +48,17 @@ test('sheet words → statuses', () => {
   assert.equal(toReferral(''), null);
   assert.equal(referralFromPlan('submitted'), 'yes');
   assert.equal(referralFromPlan('none'), null);
+});
+
+test('only roles really applied to count as applied', () => {
+  assert.equal(wasApplied('submitted', '2026-10-27'), true);
+  assert.equal(wasApplied('interview', null), true);
+  assert.equal(wasApplied('rejected', '2026-10-27'), true);
+  assert.equal(wasApplied('rejected', null), false); // closed without applying
+  assert.equal(wasApplied('not_started', null), false);
+  assert.equal(wasApplied('queued', null), false);
+  assert.equal(wasApplied('in_progress', null), false);
+  assert.equal(wasApplied('needs_review', null), false);
 });
 
 test('download round-trips through the import', () => {

@@ -103,6 +103,8 @@ export const STATUS_LABEL = {
 export const REFERRAL_LABEL = { yes: 'Yes', no: 'No', not_required: 'Not Required', asked: 'Asked' };
 
 export const isSent = (applyStatus) => SENT.includes(applyStatus);
+/** Really applied: sent, and not a role closed without applying (rejected with no applied date). */
+export const wasApplied = (applyStatus, appliedAt) => isSent(applyStatus) && !(applyStatus === 'rejected' && !appliedAt);
 
 /**
  * A plan item's referral progress (from the referral flow) as the sheet's

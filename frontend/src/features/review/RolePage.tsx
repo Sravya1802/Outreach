@@ -7,7 +7,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, Button, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, atsOk, readReport } from './review'
+import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, readReport } from './review'
 
 type Panel = 'report' | 'comments' | 'outreach' | 'apply'
 
@@ -107,6 +107,7 @@ function CommentsPanel({ data, onDone }: { data: ReviewRole; onDone: () => void 
           <Field label="What should change?">
             {p => <Textarea {...p} value={body} onChange={e => setBody(e.target.value)} rows={4} />}
           </Field>
+          {data.role.status === 'approved' && <p className="text-[13px] text-subtle">This takes the role’s emails back out of Gmail Drafts and stops the wait. Approve the new version to start again.</p>}
           <Button type="submit" variant="primary" loading={send.isPending} disabled={!body.trim()}>Request revision</Button>
         </form>
       ) : <p className="text-[13px] text-subtle">This role can’t take a revision while it’s {STATUS_LABEL[data.role.status].toLowerCase()}.</p>}
@@ -121,6 +122,7 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
   const [note, setNote] = useState(d.linkedin_note ?? '')
   const changed = subject !== (d.email_subject ?? '') || body !== (d.email_body ?? '') || note !== (d.linkedin_note ?? '')
   const over = note.length > NOTE_LIMIT
+  const locked = d.status === 'approved' || d.status === 'sent'
   const save = useMutation({
     mutationFn: () => api.saveOutreachDraft(d.id, { email_subject: subject, email_body: body, linkedin_note: note }),
     onSuccess: () => { toast.success('Saved.'); onDone() },
@@ -137,19 +139,21 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
         <div className="flex items-center gap-2">
           <Badge tone={d.audience === 'engineer' ? 'info' : 'neutral'}>{d.audience === 'engineer' ? 'Engineer' : 'Recruiter'}</Badge>
           {d.status === 'edited' && <Badge tone="accent">Edited</Badge>}
+          {d.status === 'approved' && <Badge tone="info">In Outbox</Badge>}
         </div>
       </header>
       {d.email_body !== null || d.email ? (
         <>
-          <Field label="Subject">{p => <Input {...p} value={subject} onChange={e => setSubject(e.target.value)} />}</Field>
-          <Field label="Email">{p => <Textarea {...p} value={body} onChange={e => setBody(e.target.value)} rows={10} />}</Field>
+          <Field label="Subject">{p => <Input {...p} value={subject} disabled={locked} onChange={e => setSubject(e.target.value)} />}</Field>
+          <Field label="Email">{p => <Textarea {...p} value={body} disabled={locked} onChange={e => setBody(e.target.value)} rows={10} />}</Field>
         </>
       ) : <p className="text-[13px] text-subtle">No email address, so this person gets the LinkedIn note only.</p>}
       <Field label="LinkedIn note" error={over ? `${note.length}/${NOTE_LIMIT}, ${note.length - NOTE_LIMIT} over the limit` : null} hint={<span className="font-mono">{note.length}/{NOTE_LIMIT}</span>}>
-        {p => <Textarea {...p} value={note} onChange={e => setNote(e.target.value)} rows={4} />}
+        {p => <Textarea {...p} value={note} disabled={locked} onChange={e => setNote(e.target.value)} rows={4} />}
       </Field>
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" loading={save.isPending} disabled={!changed || over} onClick={() => save.mutate()}>Save</Button>
+        {locked ? <Link to="/people/outbox" className="self-center text-[13px] text-accent hover:underline">Edit it in Outbox</Link>
+          : <Button variant="primary" loading={save.isPending} disabled={!changed || over} onClick={() => save.mutate()}>Save</Button>}
         <Button variant="ghost" icon={<Copy className="size-4" />} disabled={!note} onClick={copy}>Copy note</Button>
         {d.linkedin_url && <a href={d.linkedin_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 self-center text-[13px] text-accent hover:underline">LinkedIn profile <ExternalLink className="size-3.5" /></a>}
       </div>
@@ -179,7 +183,11 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
   const toast = useToast()
   const approve = useMutation({
     mutationFn: () => api.approveRole(data.role.id),
-    onSuccess: () => { toast.success('Approved.'); onDone() },
+    onSuccess: (r) => {
+      toast.success(approvedLine(r))
+      if (r.skipped.length) toast.error(`Not drafted: ${r.skipped.map(s => `${s.name} (${s.reason})`).join(' ')}`)
+      onDone()
+    },
     onError: (e: Error) => toast.error(e.message),
   })
   const passed = latest?.check_status === 'passed'
@@ -193,7 +201,9 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {latest && !atsOk(latest.ats_after) && <p className="text-[14px] text-warning">ATS is {latest.ats_after ?? '?'}%, under your 90% rule. You can still approve it.</p>}
       {latest && !passed && <p className="text-[14px] text-danger">This version hasn’t passed its checks, so it can’t be approved.</p>}
       {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed} onClick={() => approve.mutate()}>Approve</Button>}
-      <p className="text-[13px] leading-relaxed text-subtle">Approving saves this version as final. Gmail drafts and applying aren’t connected to this queue yet, so nothing is sent or submitted from here.</p>
+      {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days for referrals.</p>}
+      {data.role.status === 'approved' && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}
+      {data.role.status === 'approved' && <Link to="/people/outbox" className="text-[14px] text-accent hover:underline">Open Outbox</Link>}
     </div>
   )
 }

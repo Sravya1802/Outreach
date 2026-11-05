@@ -977,8 +977,10 @@ export interface OutreachDraft {
   linkedin_url: string | null
 }
 
+export interface ApproveResult { emails: number; inGmail: number; notes: number; skipped: { name: string; reason: string }[] }
+
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage_note: string | null }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]
@@ -1155,7 +1157,7 @@ export const api = {
   reviewPdf: (versionId: string): Promise<Blob> => legacy.career.reviewPdf(versionId),
   requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),
   setReferralMode: (id: string, mode: ReferralMode): Promise<{ ok: boolean }> => legacy.career.setReferralMode(id, mode),
-  approveRole: (id: string): Promise<{ ok: boolean }> => legacy.career.approveRole(id),
+  approveRole: (id: string): Promise<ApproveResult> => legacy.career.approveRole(id),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

@@ -624,6 +624,71 @@ export async function askForReferral(userId, item, settings) {
   );
 }
 
+/**
+ * A role approved in the Review queue: each email a run wrote becomes a draft,
+ * here and in Gmail Drafts, and nothing sends until the user OKs it. Each note is
+ * theirs to send by hand. The wait starts now and restarts when an email goes out.
+ */
+export async function startApprovedAsks(userId, item, drafts, attachmentFileId, settings) {
+  const result = { emails: 0, inGmail: 0, notes: 0, skipped: [] };
+  for (const d of drafts) {
+    const person = {
+      name: d.name, title: d.title, email: d.email, contactId: d.contact_id, connectionId: null,
+      linkedin: d.linkedin_url || linkedinSearchUrl(`${d.name} ${item.company_name}`),
+    };
+    if (d.email_body) {
+      try {
+        const o = await scheduleEmail(userId, { contactId: d.contact_id, subject: d.email_subject, body: d.email_body, purpose: 'referral', draft: true, attachmentFileId });
+        await run(
+          `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, outbox_id, subject, message, status)
+           VALUES ($1, $2, 'email', $3, $4, $5, $6, $7, $8, $9, $10, 'draft')`,
+          [userId, item.id, person.name, person.title, person.linkedin, person.email, person.contactId, o.id, d.email_subject, d.email_body],
+        );
+        result.emails += 1;
+        if (o.in_gmail_drafts) result.inGmail += 1;
+      } catch (err) {
+        result.skipped.push({ name: d.name || 'Unknown contact', reason: err.message });
+      }
+    }
+    if (d.linkedin_note) {
+      await insertNote(userId, item.id, person, d.linkedin_note);
+      result.notes += 1;
+    }
+    await run("UPDATE outreach_drafts SET status = 'approved', updated_at = NOW() WHERE id = $1", [d.id]);
+  }
+  const tz = item.company_tz || settings.timezone;
+  const applyAt = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+  const asks = await liveAsks(item.id);
+  await run(
+    `UPDATE plan_items SET decision = 'approved', decided_at = NOW(), apply_mode = 'auto', stage = 'waiting_referral', needs_reason = NULL,
+            referral_status = CASE WHEN referral_status = 'none' AND $4 THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3
+      WHERE id = $1`,
+    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : `No referral ask is out. Applying ${describeDay(applyAt, tz)} unless you get a referral yourself.`, asks.length > 0],
+  );
+  return result;
+}
+
+/**
+ * A revision after approval: the role's emails carry the old resume, so they come
+ * back and the role leaves the wait. Too late once an email has been OK'd.
+ */
+export async function withdrawApprovedAsks(userId, planItemId) {
+  const item = await one('SELECT stage FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  if (item?.stage !== 'waiting_referral') throw Object.assign(new Error('This role has moved on, so its resume can’t change now.'), { status: 409 });
+  const emails = await all(
+    "SELECT a.outbox_id, o.status FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND a.user_id = $2 AND o.status <> 'cancelled'",
+    [planItemId, userId],
+  );
+  if (emails.some(e => e.status !== 'draft')) throw Object.assign(new Error('You already OK’d an email for this role, so its resume can’t change now.'), { status: 409 });
+  for (const e of emails) await cancelScheduled(userId, e.outbox_id, 'You asked for a new version of the resume');
+  await run('DELETE FROM referral_asks WHERE plan_item_id = $1 AND user_id = $2', [planItemId, userId]);
+  await run("UPDATE outreach_drafts SET status = 'draft', updated_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND status = 'approved'", [planItemId, userId]);
+  await run(
+    "UPDATE plan_items SET decision = 'expired', stage = 'proposed', stage_note = NULL, referral_status = 'none', wait_until = NULL, apply_after = NULL WHERE id = $1",
+    [planItemId],
+  );
+}
+
 async function insertNote(userId, planItemId, p, note) {
   await run(
     `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, connection_id, message, status)
@@ -814,6 +879,12 @@ export async function advanceReferrals(userId, settings) {
       await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [item.id, `${r.person_name} replied. Read it in Gmail, then tell us: referral link, they submitted you, or no.`]);
     }
     if (item.apply_after && new Date(item.apply_after) <= new Date()) {
+      // The wait is for people to answer, so it can't run out on an email that hasn't left.
+      const unsent = await one("SELECT 1 AS x FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND o.status IN ('draft', 'scheduled', 'sending') LIMIT 1", [item.id]);
+      if (unsent) {
+        await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [item.id, 'Waiting for your OK on this role’s emails in People → Outbox. Applying 2 business days after they go out, or discard them to apply without a referral.']);
+        continue;
+      }
       await run("UPDATE plan_items SET stage = 'ready_to_apply', stage_note = 'No referral came through in time. Applying now, in the company’s morning.' WHERE id = $1", [item.id]);
     }
   }

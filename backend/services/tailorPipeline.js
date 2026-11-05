@@ -8,12 +8,17 @@
  *     rule is flagged and can't be approved; one that won't compile has no PDF.
  *   reviewQueue / lastRun / reviewRole: what the Review queue and Role pages show.
  *   requestRevision, setReferralMode, editDraft, approveRole: the user's actions.
- *     Approving only records the decision for now: Gmail drafts and applying
- *     aren't connected to this queue yet, so nothing leaves the app from here.
+ *     Approving makes the version final, puts the emails in Gmail Drafts with the
+ *     PDF attached and starts the referral wait. Nothing sends from here: each
+ *     email waits for the user's OK in Outbox, and applying waits for the referrals.
+ *   markApplied (cron): a role applied to from any path moves to Applied.
  */
 import { all, one, run, tx } from '../db.js';
+import { connectionFor } from './gmail.js';
 import { compileTex } from './latex.js';
+import { me, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
+import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
 import { downloadVersionPdf, uploadVersionPdf } from './resumeStorage.js';
 
@@ -96,6 +101,14 @@ export async function checkNewVersions(limit = 10) {
   }
 }
 
+/** A role can be applied to from To apply as well, so this catches every path. */
+export async function markApplied() {
+  await run(
+    `UPDATE tailor_jobs j SET status = 'applied', updated_at = NOW() FROM plan_items pi
+      WHERE pi.id = j.plan_item_id AND j.status = 'approved' AND pi.stage IN ('applied', 'referred')`,
+  );
+}
+
 /** Every role in the queue, with its latest version. place is its turn among the waiting roles, in claim_tailor_jobs' order. */
 export async function reviewQueue(userId) {
   return all(
@@ -123,7 +136,7 @@ export async function lastRun(userId) {
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id WHERE j.user_id = $1 AND j.plan_item_id = $2`,
     [userId, planItemId],
   );
@@ -161,6 +174,7 @@ export async function requestRevision(userId, planItemId, body) {
   if (!['ready', 'revision_requested', 'approved'].includes(job.status)) throw fail(409, 'This role can’t be revised now.');
   const latest = await one('SELECT id FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]);
   if (!latest) throw fail(409, 'There’s no resume to revise yet.');
+  if (job.status === 'approved') await withdrawApprovedAsks(userId, planItemId);
   await tx(async (t) => {
     await t.query('INSERT INTO resume_comments (user_id, plan_item_id, version_id, body) VALUES ($1, $2, $3, $4)', [userId, planItemId, latest.id, text]);
     await t.query('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
@@ -181,22 +195,50 @@ export async function editDraft(userId, draftId, { email_subject, email_body, li
   const draft = await one('SELECT status FROM outreach_drafts WHERE user_id = $1 AND id = $2', [userId, draftId]);
   if (!draft) throw fail(404, 'That draft is gone.');
   if (draft.status === 'sent') throw fail(409, 'That one has already gone out.');
+  if (draft.status === 'approved') throw fail(409, 'This email is in your Outbox now. Edit it there.');
   await run(
     "UPDATE outreach_drafts SET email_subject = $3, email_body = $4, linkedin_note = $5, status = 'edited', updated_at = NOW() WHERE user_id = $1 AND id = $2",
     [userId, draftId, String(email_subject ?? '').trim() || null, String(email_body ?? '').trim() || null, note || null],
   );
 }
 
-/** Marks the latest version final. A flagged or uncompiled version can't be approved. */
+/**
+ * The user's yes. A flagged or uncompiled version can't be approved, and every email
+ * carries the PDF, so nothing is drafted until it's saved. Nothing sends from here.
+ */
 export async function approveRole(userId, planItemId) {
   const job = await one('SELECT status FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review can be approved.');
   const latest = await one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]);
   if (!latest?.pdf_path || latest.check_status !== 'passed') throw fail(409, 'This resume hasn’t passed its checks.');
-  await tx(async (t) => {
-    await t.query('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-    await t.query('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
-    await t.query("UPDATE tailor_jobs SET status = 'approved', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
-  });
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  if (item.decision === 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) throw fail(409, 'This role has already moved on in To apply.');
+  const drafts = await all(
+    `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
+       FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
+      WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
+    [userId, planItemId],
+  );
+  if (drafts.some(d => d.email_body) && !(await connectionFor(userId))) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
+
+  // Two clicks at once: only one gets past this.
+  const claimed = await one("UPDATE tailor_jobs SET status = 'approved', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'ready' RETURNING id", [userId, planItemId]);
+  if (!claimed) throw fail(409, 'Only a role ready for review can be approved.');
+  try {
+    const pdf = await downloadVersionPdf(latest.pdf_path).catch(() => { throw fail(502, 'Couldn’t get the resume PDF, so nothing was drafted. Try again in a minute.'); });
+    const { evaluationFor, getSettings } = await import('./dailyPlan.js');
+    const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
+    await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
+    const file = await saveForEvaluation(userId, evaluationId, pdf, resumeFileName((await me(userId)).name), 'tailored');
+    const result = await startApprovedAsks(userId, item, drafts, file.id, await getSettings(userId));
+    await tx(async (t) => {
+      await t.query('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+      await t.query('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
+    });
+    return result;
+  } catch (err) {
+    await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
+    throw err;
+  }
 }

@@ -55,8 +55,7 @@ router.put('/:id/mode', withId(async (req, res, id) => {
 }));
 
 router.post('/:id/approve', withId(async (req, res, id) => {
-  await approveRole(req.user.id, id);
-  res.json({ ok: true });
+  res.json(await approveRole(req.user.id, id));
 }));
 
 export default router;

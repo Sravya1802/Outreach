@@ -604,7 +604,7 @@ export async function addOwnJob(userId, { url, company, title, jobDescription, r
 }
 
 /** The evaluation (application row) a plan item's resume and application hang off. */
-async function evaluationFor(userId, item) {
+export async function evaluationFor(userId, item) {
   return (await run(
     `INSERT INTO evaluations (user_id, job_url, job_title, company_name, job_description, score, source, apply_mode, apply_status)
      VALUES ($1, $2, $3, $4, $5, $6, 'daily_plan', 'auto', 'not_started') RETURNING id`,

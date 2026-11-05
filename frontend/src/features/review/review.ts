@@ -1,4 +1,4 @@
-import type { PipelineRun, ReferralMode, ReviewRow, ReviewStatus } from '@/lib/api'
+import type { ApproveResult, PipelineRun, ReferralMode, ReviewRow, ReviewStatus } from '@/lib/api'
 import { timeAgo } from '@/lib/format'
 
 export type ReviewTab = 'ready' | 'revising' | 'working' | 'waiting' | 'approved' | 'applied' | 'closed'
@@ -60,6 +60,14 @@ export function runLine(run: PipelineRun | null, now = Date.now()) {
   if (!run.finished_at) return `Run ${run.id} started ${timeAgo(run.started_at, now)} and never finished. Its roles go back in line on the next run.`
   const failed = run.roles_failed ? `, ${run.roles_failed} failed` : ''
   return `Run ${run.id} finished ${timeAgo(run.finished_at, now)}: ${run.roles_done} ${run.roles_done === 1 ? 'role' : 'roles'} done${failed}.`
+}
+
+/** What Approve did, for the toast. */
+export function approvedLine({ emails, inGmail }: ApproveResult) {
+  if (!emails) return 'Approved. This role has no emails to draft.'
+  const count = emails === 1 ? '1 email' : `${emails} emails`
+  if (inGmail < emails) return `Approved. ${count} in Outbox, but ${emails - inGmail} didn’t reach Gmail Drafts. OK each one in Outbox.`
+  return `Approved. ${count} in Gmail Drafts. OK each one in Outbox to send it.`
 }
 
 /** The rule is above 90, so 90 itself is under it. */

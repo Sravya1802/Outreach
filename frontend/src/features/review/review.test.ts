@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { atsOk, backlog, isRunning, readReport, reviewTab, runLine } from './review'
+import { approvedLine, atsOk, backlog, isRunning, readReport, reviewTab, runLine } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -49,6 +49,20 @@ describe('runLine', () => {
     const stuck = { ...run, started_at: '2026-11-05T09:00:00Z' }
     expect(isRunning(stuck, now)).toBe(false)
     expect(runLine(stuck, now)).toBe('Run 5 started 3h ago and never finished. Its roles go back in line on the next run.')
+  })
+})
+
+describe('approvedLine', () => {
+  const result = { emails: 2, inGmail: 2, notes: 2, skipped: [] }
+  it('says where the emails went', () => {
+    expect(approvedLine(result)).toBe('Approved. 2 emails in Gmail Drafts. OK each one in Outbox to send it.')
+    expect(approvedLine({ ...result, emails: 1, inGmail: 1 })).toBe('Approved. 1 email in Gmail Drafts. OK each one in Outbox to send it.')
+  })
+  it('says when Gmail missed one', () => {
+    expect(approvedLine({ ...result, inGmail: 1 })).toBe('Approved. 2 emails in Outbox, but 1 didn’t reach Gmail Drafts. OK each one in Outbox.')
+  })
+  it('says when there is nothing to draft', () => {
+    expect(approvedLine({ ...result, emails: 0, inGmail: 0 })).toBe('Approved. This role has no emails to draft.')
   })
 })
 

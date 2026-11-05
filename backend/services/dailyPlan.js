@@ -933,14 +933,14 @@ export async function overview(userId) {
       ORDER BY pi.decided_at DESC LIMIT 100`,
     [userId],
   );
-  // Top roles from earlier lists that were never answered. Still approvable for MISSED_DAYS.
+  // Roles from earlier lists that were never answered. Still pickable for MISSED_DAYS.
   const missed = await all(
     `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score,
             pi.reason, pi.decision, pi.decided_at, pi.stage, pi.stage_note, p.plan_date::text AS plan_date, t.ats_score
        FROM plan_items pi JOIN daily_plans p ON p.id = pi.plan_id LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
-      WHERE pi.user_id = $1 AND pi.decision = 'expired' AND pi.tier = 'top' AND pi.created_at > NOW() - make_interval(days => $2)
+      WHERE pi.user_id = $1 AND pi.decision = 'expired' AND pi.tier IN ('top', 'worth') AND pi.created_at > NOW() - make_interval(days => $2)
         AND ($3::bigint IS NULL OR pi.plan_id <> $3)
-      ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 150`,
+      ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 1000`,
     [userId, MISSED_DAYS, plan?.id ?? null],
   );
   // People the user knows at each company (LinkedIn connections export).

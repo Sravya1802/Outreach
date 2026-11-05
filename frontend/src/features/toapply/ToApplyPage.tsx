@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Send } from 'lucide-react'
@@ -12,7 +12,8 @@ import { latestListDate } from '@/features/resumes/resumes'
 import { SkillGapsPanel } from './SkillGapsPanel'
 import { AddOwnJob } from './AddOwnJob'
 import {
-  CATEGORY_LABEL, LEVEL_LABEL, NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally,
+
+  dedupeJobs,  CATEGORY_LABEL, LEVEL_LABEL, NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally,
   type JobState, type RoleCategory, type RoleFilters, type RoleLevel, type ToApplyFilter,
 } from './toApply'
 
@@ -82,7 +83,7 @@ function RoleFilterBar({ all, rf }: { all: ResumeJob[]; rf: ReturnType<typeof us
 }
 
 /** "AI / ML · New grad · 2027 · FAANG+ · Tech & Software · Seattle, WA" under the role. */
-function roleTags(j: ResumeJob): string {
+function roleTags(j: ResumeJob & { also?: number }): string {
   const lv = roleLevel(j)
   const cat = roleCategory(j)
   return [
@@ -92,6 +93,7 @@ function roleTags(j: ResumeJob): string {
     j.company_tier === 'faang' ? 'FAANG+' : j.company_tier === 'quant' ? 'Quant' : null,
     j.industry,
     j.location && j.location.length > 48 ? `${j.location.slice(0, 46)}…` : j.location,
+    j.also ? `+${j.also} more` : null,
   ].filter(Boolean).join(' · ')
 }
 
@@ -136,7 +138,7 @@ export default function ToApplyPage() {
   })
   const queueRoles = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue })
   const inQueue = new Set((queueRoles.data?.roles ?? []).map(r => String(r.id)))
-  const everything = jobs.data ?? []
+  const everything = useMemo(() => dedupeJobs(jobs.data ?? []), [jobs.data])
   const latest = latestListDate(everything)
   const s = q.trim().toLowerCase()
   // The dropdowns narrow everything, so the counts on To do / Missed follow them.

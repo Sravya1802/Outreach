@@ -107,14 +107,28 @@ export function noteFit(note, max = 300) {
   return end > 0 ? cut.slice(0, end + 1) : cut;
 }
 
+export const NOTE_END = 'Would love to tell you more about my skillsets';
+
+/** Fits the note in with the closing line every LinkedIn note ends on. */
+export function closedNote(note) {
+  const body = str(note).replace(/\s*Would love to tell you more about my skillsets\.?$/i, '');
+  return `${noteFit(body, 300 - NOTE_END.length - 1)} ${NOTE_END}`.trim();
+}
+
+const squash = (s) => str(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** A company page saved as a contact: "Eye Appoint" at EyeAppoint. */
+export const isCompanyPage = (name, company) => Boolean(squash(name)) && squash(name) === squash(company);
+
 /** Plain template, used when the AI is unavailable and for the "search" case. */
-export function templateAsk({ personName, me, school, major, sig, title, company, jobUrl, attached = false }) {
+export function templateAsk({ personName: found, me, school, major, sig, title, company, jobUrl, attached = false }) {
+  const personName = isCompanyPage(found, company) ? '' : found;
   const student = major ? `a ${major} student` : 'a student';
   // The role's match note (FIT) is written for the user, not for a stranger, so it stays out.
   const intro = `My name is ${me || 'a student'}, and I am ${student}${school ? ` at ${schoolName(school)}` : ''}. I am applying for the ${title} position at ${company}.`;
-  const note = noteFit(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person? Thank you.`);
+  const note = closedNote(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person? Thank you.`);
   const resume = attached ? 'I have attached my résumé for your reference.' : 'I would be glad to send my résumé.';
-  const body = `Dear ${first(personName)},\n\n${intro}\n\nWould you be willing to refer me for this position, or direct me to the appropriate person on the hiring team? ${resume} The job posting is available here: ${postingUrl(jobUrl)}\n\nThank you for your time and consideration.`;
+  const body = `Dear ${str(personName) ? first(personName) : 'Hiring Team'},\n\n${intro}\n\nWould you be willing to refer me for this position, or direct me to the appropriate person on the hiring team? ${resume} The job posting is available here: ${postingUrl(jobUrl)}\n\nThank you for your time and consideration.`;
   return { subject: `Referral request: ${title} at ${company}`.slice(0, 120), body: signed(body, me, sig), note };
 }
 
@@ -173,7 +187,7 @@ export async function candidateHighlights(userId) {
 export async function companyRow(userId, name, location) {
   const found = await one('SELECT id FROM jobs WHERE user_id = $1 AND lower(name) = lower($2) LIMIT 1', [userId, name]);
   if (found) return found.id;
-  return (await run('INSERT INTO jobs (user_id, name, location, category) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id', [userId, name, location, 'daily_plan'])).rows[0]?.id
+  return (await run('INSERT INTO jobs (user_id, name, location) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id', [userId, name, location])).rows[0]?.id
     || (await one('SELECT id FROM jobs WHERE user_id = $1 AND lower(name) = lower($2) LIMIT 1', [userId, name]))?.id;
 }
 

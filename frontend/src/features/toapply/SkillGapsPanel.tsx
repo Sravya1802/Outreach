@@ -5,9 +5,9 @@ import { qk } from '@/app/queryClient'
 import { Button, Card, useToast } from '@/ui'
 
 /**
- * The skills holding unsent resumes under 90%, across every draft. Tick the
- * ones you know: they're added to every resume missing them and each is
- * re-scored. Nothing is ever added that you didn't tick.
+ * The skills your earlier resumes were missing. Tick the ones you know: they go
+ * in your master corrections, so runs can use them where a role asks. No written
+ * resume changes by itself; a comment on it does that, one resume at a time.
  */
 export function SkillGapsPanel() {
   const qc = useQueryClient()
@@ -29,7 +29,7 @@ export function SkillGapsPanel() {
   const add = useMutation({
     mutationFn: () => api.approveSkillGaps(picked),
     onSuccess: (r) => {
-      toast.success(r.resumes ? `Adding ${r.skills.join(', ')} to ${r.resumes} resume${r.resumes === 1 ? '' : 's'} and re-scoring each.` : `Saved ${r.skills.join(', ')} for your next resumes.`)
+      toast.success(`Saved ${r.skills.join(', ')}. Your next resumes can use them.`)
       setPicked([])
       void qc.invalidateQueries({ queryKey: qk.skillGaps })
     },
@@ -41,9 +41,9 @@ export function SkillGapsPanel() {
 
   return (
     <Card className="p-4">
-      <h2 className="font-medium text-fg">Skills holding your resumes under 90%</h2>
+      <h2 className="font-medium text-fg">Skills your earlier resumes were missing</h2>
       <p className="mt-1 text-[13px] text-muted">
-        {d.underBar} of {d.unsent} unsent resumes are under the bar. These are the job skills nothing you’ve shared shows. Tick the ones you’ve really used and could talk about in an interview: they’re added to every resume missing them, and to your next ones.
+        These are job skills nothing you’ve shared shows. Tick the ones you’ve really used and could talk about in an interview. They go in your master corrections for your next resumes. To add one to a written resume, comment on that resume.
       </p>
       {running && updating ? (
         <p className="mt-3 text-[14px] text-fg">Adding {updating.skills.join(', ')}: {updating.done} of {updating.total} resumes re-scored…</p>
@@ -61,7 +61,7 @@ export function SkillGapsPanel() {
             ))}
           </ul>
           <Button className="mt-3" size="sm" disabled={!picked.length} loading={add.isPending} onClick={() => add.mutate()}>
-            {picked.length ? `I know these ${picked.length}: add them` : 'Tick the ones you know'}
+            {picked.length ? `I know these ${picked.length}: save them` : 'Tick the ones you know'}
           </Button>
         </>
       )}

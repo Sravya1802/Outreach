@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DATABASE_URL ||= 'postgresql://test:test@localhost:5432/test';
-const { checkResume, isQuantRole, keywordCheck, readCorrections, withCorrections } = await import('../services/tailorPipeline.js');
+const { checkOutreach, checkResume, isQuantRole, keywordCheck, readCorrections, withCorrections } = await import('../services/tailorPipeline.js');
 const { reviewMessage, runMessage } = await import('../services/whatsapp.js');
 
 test('resume check: a clean one-page resume passes', () => {
@@ -72,4 +72,40 @@ test('the app writes no resumes and no AI emails unless switched back on', async
   assert.equal(await draftPicked('u'), 0);
   const ask = await draftAsk('u', { personName: 'Ana Lee', me: 'Sam Roe', school: 'UIC', major: 'CS', sig: 'Sam', title: 'SWE', company: 'Ramp', jobUrl: '' });
   assert.match(ask.body, /Ana|Dear|Hello/);
+});
+
+test('fit score: another field or a clearance title can not score as a fit', async () => {
+  const { capScore } = await import('../services/dailyPlan.js');
+  assert.equal(capScore(9.4, 'Mechanical Engineer'), 4);
+  assert.equal(capScore(7, 'Survey Specialist I - Corpus Christi'), 4);
+  assert.equal(capScore(8, 'Software Engineer 1 with Security Clearance'), 3);
+  assert.equal(capScore(9.4, 'Mechanical Data Analyst – Python'), 9.4);
+  assert.equal(capScore(9.1, 'Embedded Software Engineer'), 9.1);
+  assert.equal(capScore(2, 'Mechanical Engineer'), 2);
+});
+
+test('locations: a wrong state is put right, and real places are left alone', async () => {
+  const { fixLocation } = await import('../services/locations.js');
+  assert.equal(fixLocation('Poughkeepsie, AR', 'Entry Level'), 'Poughkeepsie, NY');
+  assert.equal(fixLocation('Santa Clara, TX'), 'Santa Clara, CA');
+  assert.equal(fixLocation('Dayton, MN', 'Engineer - Dayton, OH - 2027'), 'Dayton, OH');
+  assert.equal(fixLocation('Arlington, TX'), 'Arlington, TX');
+  assert.equal(fixLocation('Remote'), 'Remote');
+  assert.equal(fixLocation(null), null);
+});
+
+test('outreach check: the rules that stop an approve', async () => {
+  const { NOTE_END, closedNote, isCompanyPage, templateAsk } = await import('../services/referralFlow.js');
+  const good = { email_body: 'Dear Ana,', linkedin_note: `Hello Ana. ${NOTE_END}`, name: 'Ana Lee', company: 'IBM' };
+  assert.deepEqual(checkOutreach(good), []);
+  assert.match(checkOutreach({ ...good, email_body: 'Cut latency to 83ns.' })[0], /83ns/);
+  assert.deepEqual(checkOutreach({ ...good, email_body: 'Cut latency to 83ns.', quant: true }), []);
+  assert.match(checkOutreach({ ...good, linkedin_note: 'Hello Ana.' })[0], /doesn't end/);
+  assert.match(checkOutreach({ ...good, name: 'Eye Appoint', company: 'EyeAppoint' })[0], /company page/);
+  assert.match(checkOutreach({ ...good, linkedin_note: `${'a'.repeat(300)} ${NOTE_END}` })[0], /characters/);
+  assert.ok(isCompanyPage('Eye Appoint', 'EyeAppoint') && !isCompanyPage('Ana Lee', 'IBM'));
+  const long = closedNote(`${'a'.repeat(200)}. ${'b'.repeat(200)}`);
+  assert.ok(long.length <= 300 && long.endsWith(NOTE_END));
+  const t = templateAsk({ personName: 'Eye Appoint', me: 'Sam', title: 'SWE', company: 'EyeAppoint', jobUrl: '' });
+  assert.ok(t.body.startsWith('Dear Hiring Team,') && t.note.startsWith('Hello,') && t.note.endsWith(NOTE_END));
 });

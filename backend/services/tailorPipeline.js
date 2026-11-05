@@ -20,7 +20,7 @@
 import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { compileTex } from './latex.js';
-import { me, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, isCompanyPage, me, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -58,6 +58,19 @@ export function checkResume({ text, pages, quant = false }) {
   if (DAILY_500GB.test(flat)) errors.push('It calls the 500GB dataset daily. It was one dataset.');
   const latency = quant ? null : flat.match(LATENCY);
   if (latency) errors.push(`It cites ${latency[0]} on a role that isn't quant.`);
+  return errors;
+}
+
+/** What's wrong with one email and note, in words the user reads; empty when they pass. */
+export function checkOutreach({ email_body, linkedin_note, name, company, quant = false }) {
+  const errors = [];
+  const email = String(email_body ?? '').replace(/\s+/g, ' ');
+  const note = String(linkedin_note ?? '').trim();
+  const latency = quant ? null : email.match(LATENCY);
+  if (latency) errors.push(`The email cites ${latency[0]} on a role that isn't quant.`);
+  if (isCompanyPage(name, company)) errors.push(`${name} is a company page, not a person.`);
+  if (note.length > NOTE_LIMIT) errors.push(`The LinkedIn note is ${note.length} characters. The limit is ${NOTE_LIMIT}.`);
+  if (note && !note.replace(/\.$/, '').endsWith(NOTE_END)) errors.push(`The LinkedIn note doesn't end with "${NOTE_END}".`);
   return errors;
 }
 
@@ -203,6 +216,15 @@ export async function runConfig(userId) {
   return { version: c.version, created_at: c.created_at, master_latex: c.master_latex, email_template: c.email_template, linkedin_rules: c.linkedin_rules, corrections: readCorrections(c.standing_rules) };
 }
 
+/** Adds lines to the corrections, skipping any already there. Does nothing before the runs are set up. */
+export async function addCorrections(userId, lines) {
+  const c = await latestConfig(userId);
+  if (!c) return;
+  const have = readCorrections(c.standing_rules);
+  const next = [...have, ...lines.filter(l => !have.includes(l))];
+  if (next.length > have.length) await saveRunConfig(userId, { corrections: next });
+}
+
 /** Saves as the next version, so a run mid-way keeps what it read and nothing is lost. */
 export async function saveRunConfig(userId, { email_template, linkedin_rules, corrections }) {
   const c = await latestConfig(userId);
@@ -277,7 +299,9 @@ export async function reviewRole(userId, planItemId) {
       [userId, planItemId],
     ),
   ]);
-  return { role, versions, comments, outreach };
+  const posting = await one('SELECT job_description FROM plan_items WHERE id = $1', [planItemId]);
+  const quant = isQuantRole({ title: role.title, company: role.company_name, description: posting?.job_description });
+  return { role, versions, comments, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
 
 /** A version's PDF, if it's the user's and it compiled. */
@@ -343,6 +367,11 @@ export async function approveRole(userId, planItemId) {
       WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
     [userId, planItemId],
   );
+  const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
+  for (const d of drafts) {
+    const [problem] = checkOutreach({ ...d, company: item.company_name, quant });
+    if (problem) throw fail(409, `${d.name || 'A contact'}: ${problem} Fix it on the Outreach tab first.`);
+  }
   if (drafts.some(d => d.email_body) && !(await connectionFor(userId))) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
 
   // Two clicks at once: only one gets past this.

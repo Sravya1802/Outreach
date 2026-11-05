@@ -142,6 +142,9 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
           {d.status === 'approved' && <Badge tone="info">In Outbox</Badge>}
         </div>
       </header>
+      {d.problems.length > 0 && (
+        <ul className="list-disc rounded-[4px] bg-danger-soft py-2 pr-3 pl-7 text-[14px] text-fg">{d.problems.map(x => <li key={x}>{x}</li>)}</ul>
+      )}
       {d.email_body !== null || d.email ? (
         <>
           <Field label="Subject">{p => <Input {...p} value={subject} disabled={locked} onChange={e => setSubject(e.target.value)} />}</Field>

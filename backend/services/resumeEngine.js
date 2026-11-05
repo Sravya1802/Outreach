@@ -364,13 +364,15 @@ async function unsentTailorings(userId) {
 }
 
 // "Agile", "Agile methodology" and "Agile methodologies" are one skill to ask about.
-const gapKey = (term) => canonicalTerm(term).replace(/ (methodolog\w*|principles|practices)$/, '');
+const gapKey = (term) => canonicalTerm(term).replace(/ (methodolog\w*|principles|practices)$/, '').replace(/(\w{3,})s$/, '$1');
+// A requirement to meet, not a skill anyone can tick.
+const NOT_A_SKILL = /[<>=]|\b(gpa|years?|degree|bachelor|master|ph\.?d|citizen\w*|clearance|sponsorship|authorized)\b/i;
 
 /** Hard skills a draft is missing, from what the candidate's material doesn't show. */
 function hardGaps(t) {
   const soft = new Set(list(t.ats.keywords).filter(k => k.kind === 'soft').map(k => k.term));
   // A degree requirement is met by the education section, not a skill to confirm.
-  return list(t.ats.missingYouDont).filter(m => !soft.has(m.term) && !/^(bachelor|master|ph\.?d)/i.test(str(m.term)));
+  return list(t.ats.missingYouDont).filter(m => !soft.has(m.term) && !NOT_A_SKILL.test(str(m.term)));
 }
 
 const skillUpdates = new Map();
@@ -405,6 +407,13 @@ export async function skillGaps(userId) {
   return { skills, unsent: rows.length, underBar: rows.filter(t => !atsPasses(t.ats.score)).length, updating: skillUpdates.get(userId) || null };
 }
 
+/** Runs read the corrections, so a confirmed skill goes there. No written resume changes by itself. */
+async function rememberSkills(userId, skills) {
+  await addConfirmedSkills(userId, skills);
+  const { addCorrections } = await import('./tailorPipeline.js');
+  await addCorrections(userId, skills.map(s => `Confirmed skill, usable where a role asks for it: ${s}`));
+}
+
 /**
  * "I know these": remember the skills, then add them to every unsent resume
  * missing them and re-score each one (in the background; one at a time).
@@ -412,6 +421,7 @@ export async function skillGaps(userId) {
 export async function approveSkillsEverywhere(userId, terms) {
   const clean = list(terms).map(str).filter(Boolean).slice(0, 30);
   if (!clean.length) throw Object.assign(new Error('Pick at least one skill'), { status: 400 });
+  if (!inAppTailoring()) { await rememberSkills(userId, clean); return { resumes: 0, skills: clean }; }
   if (skillUpdates.get(userId)?.running) throw Object.assign(new Error('Still adding the last skills you picked. Try again in a minute.'), { status: 409 });
   const keys = new Set(clean.map(gapKey));
   const rows = await unsentTailorings(userId);
@@ -434,6 +444,7 @@ export async function approveSkillsEverywhere(userId, terms) {
 export async function approveSkills(userId, tailoringId, terms) {
   const clean = list(terms).map(str).filter(Boolean).slice(0, 20);
   if (!clean.length) throw Object.assign(new Error('Pick at least one skill'), { status: 400 });
+  if (!inAppTailoring()) { await rememberSkills(userId, clean); return null; }
   await addConfirmedSkills(userId, clean);
   return rerenderWithProject(userId, tailoringId, { terms: clean }, 'skills');
 }

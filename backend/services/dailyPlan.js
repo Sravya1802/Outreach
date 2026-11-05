@@ -22,6 +22,7 @@ import { looksLikeAgency } from './staffing.js';
 import { partsIn, timezoneFor, isValidTz, nextSendSlot } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring, reviewReason } from './resumeEngine.js';
+import { fixLocation } from './locations.js';
 import { inAppTailoring } from './features.js';
 import { advanceReferrals, asksFor, maybeSendSummary, prepareContacts } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
@@ -213,6 +214,16 @@ export function blendScore(p) {
   return Math.round(Math.min(blended, level === 0 ? 6.5 : 10) * 10) / 10;
 }
 
+const OTHER_FIELD = /\b(mechanical|civil|structural|electrical|chemical|hvac|survey\w*|nurs(e|ing)|accountant|technician|sales|marketing|recruiter|paralegal|teacher|pharmacist)\b/i;
+const OUR_FIELD = /\b(software|data|ml|machine learning|ai|developer|programmer|firmware|embedded|analyst|automation|controls|systems)\b/i;
+
+/** The model is generous to a title in another field or a cleared role if the JD mentions code, so those are capped here. */
+export function capScore(score, title) {
+  const t = String(title ?? '');
+  if (/\bclearance\b/i.test(t)) return Math.min(score, 3);
+  return OTHER_FIELD.test(t) && !OUR_FIELD.test(t) ? Math.min(score, 4) : score;
+}
+
 async function scoreOne({ userId, summary, profile, role, jd }) {
   const prefs = `Wants: ${profile.target_job_type || 'intern or new grad'} roles${profile.preferred_locations ? `, prefers ${profile.preferred_locations}` : ''}.`;
   const r = await complete({
@@ -224,7 +235,7 @@ async function scoreOne({ userId, summary, profile, role, jd }) {
     user: `CANDIDATE\n${summary}\n${prefs}\n\nJOB: ${role.title} at ${role.company_name} (${role.location || 'location not given'})\n${jd.slice(0, 6000)}`,
   });
   const parsed = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
-  return { score: blendScore(parsed), why: String(parsed.why || '').slice(0, 200), cost: r.costUsd };
+  return { score: capScore(blendScore(parsed), role.title), why: String(parsed.why || '').slice(0, 200), cost: r.costUsd };
 }
 
 /** The posting's job description: the listing's own if it is one, else read from the page. { text, closed } */
@@ -285,7 +296,8 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
     let scoredCount = 0;
     let cost = 0;
     const toScore = [];
-    for (const role of candidates) {
+    for (const found of candidates) {
+      const role = { ...found, location: fixLocation(found.location, found.title) };
       const base = { role, company_tz: timezoneFor(role.location) || null };
       if (recentCompanies.has(lc(role.company_name))) { rows.push({ ...base, tier: 'excluded', reason: `You applied to ${role.company_name} in the last ${COMPANY_COOLDOWN_DAYS} days` }); continue; }
       if (sponsor && ['citizens_only', 'no_sponsorship'].includes(role.sponsorship)) {
@@ -653,7 +665,10 @@ export async function bulkItems(userId, ids, action) {
     );
     const r = await run(
       `INSERT INTO tailor_jobs (user_id, plan_item_id, scraped_role_id)
-       SELECT user_id, id, scraped_role_id FROM plan_items WHERE user_id = $1 AND id = ANY($2) AND decision IN ('pending', 'expired', 'skipped')
+       SELECT pi.user_id, pi.id, pi.scraped_role_id FROM plan_items pi
+        WHERE pi.user_id = $1 AND pi.id = ANY($2) AND pi.decision IN ('pending', 'expired', 'skipped')
+          AND NOT EXISTS (SELECT 1 FROM tailor_jobs j JOIN plan_items q ON q.id = j.plan_item_id
+                           WHERE j.user_id = pi.user_id AND lower(trim(q.company_name)) = lower(trim(pi.company_name)) AND lower(trim(q.title)) = lower(trim(pi.title)))
        ON CONFLICT (plan_item_id) DO NOTHING`,
       [userId, list],
     );

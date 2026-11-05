@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResumeJob } from '@/lib/api'
+import { dedupeJobs } from './toApply'
 import { NO_FILTERS, dayLabel, isMissed, jobState, matchesRoleFilters, matchesToApply, roleCategory, roleLevel, sortToApply, stateLabel, tally } from './toApply'
 
 const job = (p: Partial<ResumeJob>): ResumeJob => ({
@@ -69,3 +70,16 @@ describe('role filters', () => {
     expect(tally(['2027', '2026', '2027', null])).toEqual([{ value: '2027', n: 2 }, { value: '2026', n: 1 }])
   })
 })
+
+describe('dedupeJobs', () => {
+  const job = (o: Partial<ResumeJob>) => ({ company_name: 'IBM', job_title: 'Entry Level', list_date: null, apply_status: null, ...o }) as ResumeJob
+  it('folds copies of a role into one row, keeping the one from a list', () => {
+    const rows = dedupeJobs([job({ id: 1 }), job({ id: 2, list_date: '2026-11-01' }), job({ id: 3, job_title: 'Data Intern' })])
+    expect(rows.map(r => r.id)).toEqual([2, 3])
+    expect(rows[0]?.also).toBe(1)
+  })
+  it('keeps the applied copy over a listed one', () => {
+    expect(dedupeJobs([job({ id: 1, list_date: '2026-11-01' }), job({ id: 2, apply_status: 'submitted', applied_at: 'x' })])[0]?.id).toBe(2)
+  })
+})
+

@@ -982,6 +982,8 @@ export interface OutreachDraft {
   title: string | null
   email: string | null
   linkedin_url: string | null
+  /** What breaks your outreach rules; Approve refuses until they're fixed. */
+  problems: string[]
 }
 
 export interface ApproveResult { emails: number; inGmail: number; notes: number; skipped: { name: string; reason: string }[] }

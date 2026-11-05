@@ -716,7 +716,7 @@ async function addSkillsReply(userId, picks) {
   try {
     const t = await approveSkills(userId, ask.tailoringId, terms);
     const score = t?.ats_score != null ? ` The resume now scores ${t.ats_score}% on the ATS check${t.status === 'ready' ? ' and is ready to send' : ''}.` : '';
-    return `Added ${terms.join(', ')} to your ${ask.company} resume, and they’ll be used on your next ones.${score}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on that list.` : ''}`;
+    return `${t ? `Added ${terms.join(', ')} to your ${ask.company} resume, and they’ll be used on your next ones.` : `Saved ${terms.join(', ')}. Your next resumes can use them.`}${score}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on that list.` : ''}`;
   } catch (err) {
     return `Couldn’t add them: ${err.message}`;
   }

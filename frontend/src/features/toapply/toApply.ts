@@ -55,6 +55,19 @@ export function matchesToApply(j: ResumeJob, f: ToApplyFilter, latestList: strin
   }
 }
 
+/** One row per role: the applied copy if there is one, else the one from a list. "Not from a list" copies and other locations fold in. */
+export function dedupeJobs<T extends ResumeJob>(jobs: T[]): (T & { also: number })[] {
+  const score = (j: T) => (isApplied(j) ? 2 : 0) + (j.list_date ? 1 : 0)
+  const rows = new Map<string, T & { also: number }>()
+  for (const j of jobs) {
+    const key = `${j.company_name}|${j.job_title}`.trim().toLowerCase()
+    const had = rows.get(key)
+    if (!had) rows.set(key, { ...j, also: 0 })
+    else rows.set(key, score(j) > score(had) ? { ...j, also: had.also + 1 } : { ...had, also: had.also + 1 })
+  }
+  return [...rows.values()]
+}
+
 /** Newest list first; within a day, what needs you first, then by fit. */
 export function sortToApply(jobs: ResumeJob[]): ResumeJob[] {
   const rank: Record<JobState, number> = { review: 0, needs: 1, open: 2, working: 3, applying: 4, applied: 5, skipped: 6 }

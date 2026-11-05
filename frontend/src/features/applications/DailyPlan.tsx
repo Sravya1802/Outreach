@@ -335,7 +335,7 @@ export function MissedRoles({ data }: { data: DailyPlanOverview }) {
   return (
     <section aria-labelledby="missed-h">
       <h2 id="missed-h" className="font-display text-[22px] font-semibold text-fg">Missed roles <span className="font-sans text-[15px] font-normal text-subtle">· {missed.length}</span></h2>
-      <p className="mb-1 text-[13px] text-subtle">Top roles from earlier lists you didn’t pick. You can still pick them for 14 days after their list.</p>
+      <p className="mb-1 text-[13px] text-subtle">Roles from earlier lists you didn’t pick. You can still pick them for 14 days after their list.</p>
       <ul className="border-t border-rule">
         {shown.map(m => (
           <li key={m.id} className="grid grid-cols-[52px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-3 sm:grid-cols-[52px_minmax(0,1fr)_auto]">

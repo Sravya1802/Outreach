@@ -23,6 +23,9 @@ const CITIZENS_ONLY = [
   /\bTS\/SCI\b/i,
 ];
 
+// "May be required for certain positions", "Preferred: US citizenship" and export-licence routes don't rule anyone out.
+const MAYBE = /\b(may be|some positions|certain positions|preferred|either|contingent|export license|where the applicant)\b/i;
+
 const NO_SPONSORSHIP = [
   /\b(?:not|unable to|cannot|can't|won't|will not|do not|does not|don't|doesn't|are not able to|is not able to)\b[^.]{0,40}\b(?:sponsor|sponsorship)\b/i,
   /\bwithout (?:the need for |requiring |needing )?(?:current or future |now or in the future,? |any )?(?:employer |company )?(?:visa |immigration |work )?sponsorship\b/i,
@@ -74,7 +77,10 @@ export function classifySponsorship(text) {
   for (const [status, patterns] of [['citizens_only', CITIZENS_ONLY], ['no_sponsorship', NO_SPONSORSHIP], ['sponsors', SPONSORS]]) {
     for (const re of patterns) {
       const m = re.exec(t);
-      if (m) return { status, quote: sentenceAround(t, m.index) };
+      if (!m) continue;
+      const quote = sentenceAround(t, m.index);
+      if (status === 'citizens_only' && MAYBE.test(quote)) continue;
+      return { status, quote };
     }
   }
   return { status: null, quote: null };

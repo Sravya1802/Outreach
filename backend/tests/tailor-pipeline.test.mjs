@@ -125,5 +125,9 @@ test('sponsorship: citizen-only wording is caught, and equal-opportunity lines a
     'Without regard to race, religion, color, national origin, citizenship, sex or age.',
     'regardless of age, color, national origin, citizenship status, disability.',
     'skills, experience, security clearances, licensure and certifications.',
+    'U.S. Citizenship may be required for certain positions.',
+    'Preferred: US Citizenship',
+    'Secret clearance is preferred.',
+    'Employment is contingent on either verifying the U.S. Person status or obtaining any necessary export license.',
   ]) assert.equal(status(t), null, t);
 });

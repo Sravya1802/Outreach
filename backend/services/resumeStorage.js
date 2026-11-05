@@ -193,6 +193,18 @@ export async function downloadTailoredPdf(userId, evalId, filename) {
   return downloadToTemp(BUCKETS.tailored, objectPath);
 }
 
+// ── Chat-run resumes: resumes/{plan_item_id}/v{n}.pdf ───────────────────────
+
+export async function uploadVersionPdf(planItemId, version, buffer) {
+  const objectPath = `${planItemId}/v${version}.pdf`;
+  await uploadBytes(BUCKETS.resume, objectPath, buffer);
+  return `${BUCKETS.resume}/${objectPath}`;
+}
+
+export async function downloadVersionPdf(pdfPath) {
+  return downloadBytes(BUCKETS.resume, pdfPath.slice(BUCKETS.resume.length + 1));
+}
+
 /**
  * A short-lived link to one stored object, so a browser can open the PDF
  * directly (iPad Safari blocks downloads that start after a network wait).

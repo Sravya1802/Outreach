@@ -37,10 +37,12 @@ import gmailRouter from './routes/gmail.js';
 import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
 import trackerRouter from './routes/tracker.js';
+import reviewRouter from './routes/review.js';
 import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
+import { checkNewVersions } from './services/tailorPipeline.js';
 import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
@@ -139,6 +141,7 @@ app.use('/api/daily-plan', dailyPlanRouter);
 app.use('/api/messages', messagesRouter);
 app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/tracker', trackerRouter);
+app.use('/api/review', reviewRouter);
 
 
 // ── Last refresh time endpoint ────────────────────────────────────────────────
@@ -523,6 +526,13 @@ cron.schedule('*/2 * * * *', async () => {
     const r = await runOutbox();
     if (r.sent) console.log(`[outbox] sent ${r.sent} of ${r.due} due`);
   } catch (err) { console.error('[outbox] pass failed:', err.message); }
+}, CRON_OPTS);
+// Claude chat runs: compile and check the resumes they've written.
+cron.schedule('*/2 * * * *', async () => {
+  try {
+    const n = await checkNewVersions();
+    if (n) console.log(`[review] checked ${n} resume versions`);
+  } catch (err) { console.error('[review] check pass failed:', err.message); }
 }, CRON_OPTS);
 // Daily plan: build lists an hour before each user's list time, email at list time, move approved roles on.
 cron.schedule('*/5 * * * *', async () => {

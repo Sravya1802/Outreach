@@ -213,7 +213,7 @@ export async function plannedProjects(userId) {
   return all("SELECT * FROM planned_projects WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30", [userId]);
 }
 
-async function pdfText(pdf) {
+export async function pdfText(pdf) {
   const { PDFParse } = await import('pdf-parse');
   const parser = new PDFParse({ verbosity: -1, data: pdf });
   await parser.load();

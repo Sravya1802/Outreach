@@ -108,7 +108,7 @@ export function templateAsk({ personName, me, school, major, sig, title, company
   return { subject: `Referral request: ${title} at ${company}`.slice(0, 120), body: signed(body, me, sig), note };
 }
 
-async function draftAsk(userId, ctx) {
+export async function draftAsk(userId, ctx) {
   try {
     const r = await complete({
       task: 'email',

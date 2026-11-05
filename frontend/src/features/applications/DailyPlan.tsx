@@ -244,7 +244,7 @@ export function ItemRow({ item, others = [], queued, select }: { item: PlanItem;
   return (
     <li className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-4 sm:grid-cols-[64px_minmax(0,1fr)_auto]">
       <span className={cn('flex items-center gap-2 self-start font-mono text-[18px]', score != null && score >= 9 ? 'text-success' : 'text-warning')}>
-        {select && !queued && <input type="checkbox" className="size-4 accent-accent" checked={select.on} onChange={e => select.toggle(e.target.checked)} aria-label={`Select ${item.company_name} · ${item.title}`} />}
+        {select && !queued && <input type="checkbox" className="size-4 shrink-0 accent-accent" checked={select.on} onChange={e => select.toggle(e.target.checked)} aria-label={`Select ${item.company_name} · ${item.title}`} />}
         {score?.toFixed(1) ?? '—'}
       </span>
       <div className="min-w-0">
@@ -425,7 +425,7 @@ export function MissedRoles({ data, queue }: { data: DailyPlanOverview; queue: Q
           return (
           <li key={m.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-3 sm:grid-cols-[64px_minmax(0,1fr)_auto]">
             <span className={cn('flex items-center gap-2 self-start font-mono text-[18px]', (num(m.score) ?? 0) >= 9 ? 'text-success' : 'text-warning')}>
-              {!queued && <input type="checkbox" className="size-4 accent-accent" checked={bulk.isPicked(m.id)} onChange={e => bulk.toggle(m.id, e.target.checked)} aria-label={`Select ${m.company_name} · ${m.title}`} />}
+              {!queued && <input type="checkbox" className="size-4 shrink-0 accent-accent" checked={bulk.isPicked(m.id)} onChange={e => bulk.toggle(m.id, e.target.checked)} aria-label={`Select ${m.company_name} · ${m.title}`} />}
               {num(m.score)?.toFixed(1) ?? '—'}
             </span>
             <div className="min-w-0">

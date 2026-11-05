@@ -145,7 +145,7 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
           <Field label="Email">{p => <Textarea {...p} value={body} onChange={e => setBody(e.target.value)} rows={10} />}</Field>
         </>
       ) : <p className="text-[13px] text-subtle">No email address, so this person gets the LinkedIn note only.</p>}
-      <Field label="LinkedIn note" error={over ? `${note.length - NOTE_LIMIT} over the limit` : null} hint={<span className={cn('font-mono', over && 'text-danger')}>{note.length}/{NOTE_LIMIT}</span>}>
+      <Field label="LinkedIn note" error={over ? `${note.length}/${NOTE_LIMIT}, ${note.length - NOTE_LIMIT} over the limit` : null} hint={<span className="font-mono">{note.length}/{NOTE_LIMIT}</span>}>
         {p => <Textarea {...p} value={note} onChange={e => setNote(e.target.value)} rows={4} />}
       </Field>
       <div className="flex flex-wrap gap-2">

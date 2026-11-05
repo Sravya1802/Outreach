@@ -25,7 +25,7 @@ test('OAuth state is bound to the user, signed and expiring', () => {
   const [body, sig] = st.split('.')
   const forged = Buffer.from(JSON.stringify({ u: 'attacker', n: 'x', e: now + 60_000 })).toString('base64url')
   assert.equal(verifyState(`${forged}.${sig}`, { now, env }), null, 'body swap')
-  assert.equal(verifyState(`${body}.x${sig.slice(1)}`, { now, env }), null, 'bad signature')
+  assert.equal(verifyState(`${body}.${sig[0] === 'x' ? 'y' : 'x'}${sig.slice(1)}`, { now, env }), null, 'bad signature')
   assert.equal(verifyState('', { now, env }), null)
   assert.equal(verifyState('garbage', { now, env }), null)
 })

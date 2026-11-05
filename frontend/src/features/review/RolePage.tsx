@@ -285,7 +285,7 @@ export default function RolePage() {
               <ModeSelect data={d} onDone={refresh} />
               {d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}
               {d.outreach.map(o => <DraftCard key={o.id} d={o} onDone={refresh} />)}
-              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Nothing is emailed until Gmail drafts are connected and you approve.</p>}
+              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approving puts the emails in Gmail Drafts, and each one still needs your OK in Outbox.</p>}
             </div>
           )}
           {panel === 'apply' && <ApplyPanel data={d} latest={latest} onDone={refresh} />}

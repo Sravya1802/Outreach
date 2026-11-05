@@ -1760,3 +1760,17 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Not done, not screens:** section 8 (in-app tailoring and auto-reword behind a flag, Groq email writing off), section 11 items 3 (fit scores), 4 (duplicate roles already in the queue), 5 (location and industry parsing), 6 (rest of the outreach cleanup), 7 (skill ticks). `/to-apply` was kept, not removed, because it holds AddOwnJob, skill gaps and I applied.
 - **All 8 of the user's built projects have no repo link**, so they read as No working link until a link is added.
 
+## 2026-11-05 — Spec sections 8 and 11 finished
+
+- **Flags (`backend/services/features.js`), both off unless set to `on`:** `IN_APP_TAILORING` gates `start` (resume kind), `draftPicked`, `rerenderWithProject`, `/tailored-resume/:id` and the nightly pipeline. `IN_APP_EMAILS` gates `draftAsk`, Messages drafts and `generateOutreach` (static template instead; LinkedIn and WaaS answer 409). The WhatsApp assistant still uses Groq; it writes no outreach. Cover letters stay, by hand only.
+- **Old paths go to the queue:** `pickItem('app')`, `decide('approved')` and `sendReviewed` call `bulkItems('queue')`. Queueing resets a role stuck on `needs_you`/`resume`, and won't add a second row for the same company and title. Buttons read Add to queue; Earlier resumes has one main button.
+- **Fit scores:** the list scores were already spread out; the "all 9+" in the spec was the evaluated roles, which are the top picks. `capScore` caps other-field titles at 4 and clearance titles at 3. 4 existing rows changed, including Reward AI Mechanical Engineer 9.4 to 4.
+- **Sponsorship detector** missed "must be a (i) U.S. citizen", "Be a US Citizen", "U.S. citizen or permanent resident", US person status and Secret U.S. Security Clearance. Added, with `MAYBE` skipping soft wording (preferred, may be required, either, contingent, export license). `sentenceAround` can return a long sentence, so a stray soft word lets a role through; it errs toward showing. 76 roles hidden from lists; 34 restored after the soft-wording pass.
+- **6 Ready roles are citizens-only:** SpaceX x3, Iridium, Ankura, Unissant. Badged, left out of Select all, not closed.
+- **Outreach:** `checkOutreach` blocks Approve on latency numbers in a non-quant email, a company-page contact, a note over 300 or missing the closing line; Role page lists the problems. `closedNote` adds the closing line to template notes.
+- **Skills:** `gapKey` merges plurals, `NOT_A_SKILL` drops GPA and similar. Ticking a skill adds a line to corrections and changes no written resume.
+- **Data fixed, backups on the VM** at `~/backfill-2026-11-05.json` and `~/backfill-2026-11-05-sponsorship.json`: 4 scores, 6 plan and 12 scraped locations, 8 `jobs.category = daily_plan` set to NULL, `referral_asks` 22 "Hi Eye Appoint," to "Hello,".
+- **`fixLocation`** is a short city list plus city-and-state in the title; real ambiguous cities are left alone.
+- **Verified:** backend 236, frontend 147 on local and VM; live browser pass on e2e, 13 of 14, the miss was a test assumption. QA rows removed.
+- **Open:** direct Apply for me on the Job page can still send an old app-made resume after its confirm dialog. Outbox drafts 11 and 12 (IBM, role 1460) cite 83ns and 36K on a non-quant role; `checkOutreach` doesn't cover Outbox OKs. All 7 flagged resumes cite 83ns, including Garmin and Panasonic at v2, so the run keeps writing it for embedded roles.
+

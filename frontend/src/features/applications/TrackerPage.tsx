@@ -16,8 +16,9 @@ const MAX_CSV_BYTES = 3 * 1024 * 1024
 const cell = 'border border-line px-3 py-2 align-middle'
 const head = 'border border-line bg-raised px-3 py-2 text-left text-[12px] font-medium tracking-wide text-subtle uppercase'
 const rownum = 'border border-line bg-raised px-2 text-center font-mono text-[11px] text-subtle'
+const APPLIED_OPTIONS = STATUS_OPTIONS.filter(o => o.value !== 'not_started')
 
-/** Dashboard → Tracker: every application, in a sheet that looks like your own. */
+/** Dashboard → Tracker: every role you applied to, in a sheet that looks like your own. */
 export default function TrackerPage() {
   const qc = useQueryClient()
   const toast = useToast()
@@ -34,15 +35,18 @@ export default function TrackerPage() {
   const update = useMutation({
     mutationFn: ({ id, body }: { id: number; body: Parameters<typeof api.trackerUpdate>[1] }) => api.trackerUpdate(id, body),
     onSuccess: (row) => {
-      qc.setQueryData<{ rows: TrackerRow[]; title: string }>(qk.tracker, old => old && { ...old, rows: old.rows.map(r => (r.id === row.id ? row : r)) })
+      // Marked not applied: it leaves the sheet.
+      qc.setQueryData<{ rows: TrackerRow[]; title: string }>(qk.tracker, old => old && { ...old, rows: row.submitted ? old.rows.map(r => (r.id === row.id ? row : r)) : old.rows.filter(r => r.id !== row.id) })
+      if (!row.submitted) toast.success(`${row.company_name} is marked not applied, so it’s off the Tracker.`)
       void qc.invalidateQueries({ queryKey: qk.pipeline })
+      void qc.invalidateQueries({ queryKey: qk.resumeJobs })
     },
     onError: (e: Error) => { toast.error(e.message); refresh() },
   })
   const imported = useMutation({
     mutationFn: api.trackerImport,
     onSuccess: (r) => {
-      toast.success(`Imported ${r.total} rows: ${r.added} added, ${r.updated} updated${r.unchanged ? `, ${r.unchanged} already up to date` : ''}${r.skipped.length ? `, ${r.skipped.length} skipped` : ''}.`)
+      toast.success(`Imported ${r.total} rows: ${r.added} added, ${r.updated} updated${r.unchanged ? `, ${r.unchanged} already up to date` : ''}${r.skipped.length ? `, ${r.skipped.length} skipped` : ''}.${r.notApplied ? ` ${r.notApplied} aren’t marked applied, so they stay off the Tracker.` : ''}`)
       refresh()
     },
     onError: (e: Error) => toast.error(e.message),
@@ -74,7 +78,7 @@ export default function TrackerPage() {
           <p className="mt-1 text-[14px] text-muted">
             {all.length
               ? `${c.applied} applied · ${c.waiting} waiting · ${c.active} in progress · ${c.offers} offers · ${c.rejected} rejected · ${c.referred} referred`
-              : 'Every application in one sheet. Import yours, or add rows; roles the app applies to show up on their own.'}
+              : 'Every role you’ve applied to, in one sheet. Import yours, or add rows; roles you or the app apply to show up on their own.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -276,7 +280,7 @@ function NewRow({ n, onAdded }: { n: number; onAdded: () => void }) {
       <td className={cell}><input aria-label="New row: link" placeholder="Link" value={link} onChange={e => setLink(e.target.value)} onKeyDown={keys} inputMode="url" className={input} /></td>
       <td className={cell} />
       <td className={cell}>
-        {(company || role) && <Chip label="New row: application status" tone={statusTone(status)} value={status} options={STATUS_OPTIONS} onChange={v => setStatus(v as TrackerStatus)} />}
+        {(company || role) && <Chip label="New row: application status" tone={statusTone(status)} value={status} options={APPLIED_OPTIONS} onChange={v => setStatus(v as TrackerStatus)} />}
       </td>
       <td className={cell}>
         {company.trim() && role.trim() && (

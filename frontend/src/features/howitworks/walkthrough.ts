@@ -26,7 +26,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     when: 'Open it to see how the search is going, or to update where an application stands.',
     tabs: {
       '/dashboard': 'Applications per week and where each one stands, fit scores, outreach emails, referrals and this month’s cost.',
-      '/dashboard/tracker': 'Every application as a sheet: company, role, link, submitted, status and referral. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
+      '/dashboard/tracker': 'Every role you’ve applied to, as a sheet: company, role, link, status and referral. Roles you haven’t applied to stay on To apply. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
     },
   },
   jobs: {

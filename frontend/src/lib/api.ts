@@ -736,7 +736,7 @@ export interface TrackerRow {
   ats: number | null
   callback: number | null
 }
-export interface TrackerImport { total: number; added: number; updated: number; unchanged: number; skipped: string[] }
+export interface TrackerImport { total: number; added: number; updated: number; unchanged: number; notApplied?: number; skipped: string[] }
 
 export interface TailoringState { resume: Tailoring | null; cover_letter: Tailoring | null; coverLetterRequested: boolean }
 /** One row of Resumes → By job. */

@@ -32,24 +32,20 @@ export const PILL: Record<PillTone, string> = {
 export const statusTone = (s: TrackerStatus) => STATUS_OPTIONS.find(o => o.value === s)?.tone ?? 'none'
 export const referralTone = (r: TrackerReferral | null) => REFERRAL_OPTIONS.find(o => o.value === (r ?? ''))?.tone ?? 'none'
 
-export type TrackerFilter = 'all' | 'applied' | 'waiting' | 'active' | 'rejected' | 'not_applied'
+export type TrackerFilter = 'all' | 'waiting' | 'active' | 'rejected'
 
 export const FILTERS: { value: TrackerFilter; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'applied', label: 'Applied' },
   { value: 'waiting', label: 'Waiting' },
   { value: 'active', label: 'In progress' },
   { value: 'rejected', label: 'Rejected' },
-  { value: 'not_applied', label: 'Not applied' },
 ]
 
-export function matchesFilter(r: Pick<TrackerRow, 'apply_status' | 'submitted'>, f: TrackerFilter): boolean {
+export function matchesFilter(r: Pick<TrackerRow, 'apply_status'>, f: TrackerFilter): boolean {
   switch (f) {
-    case 'applied': return r.submitted
     case 'waiting': return r.apply_status === 'submitted'
     case 'active': return ['responded', 'interview', 'offer'].includes(r.apply_status)
     case 'rejected': return r.apply_status === 'rejected'
-    case 'not_applied': return !r.submitted
     default: return true
   }
 }
@@ -69,7 +65,6 @@ export function trackerCounts(rows: Pick<TrackerRow, 'apply_status' | 'submitted
     offers: n(r => r.apply_status === 'offer'),
     rejected: n(r => r.apply_status === 'rejected'),
     referred: n(r => r.referral === 'yes'),
-    notApplied: n(r => !r.submitted),
   }
 }
 

@@ -13,11 +13,12 @@ describe('tracker sheet', () => {
     expect(referralTone(null)).toBe('none')
   })
   it('filters and counts', () => {
-    const rows = [row('submitted'), row('rejected', 'yes'), row('responded', 'yes'), row('not_started')]
-    expect(rows.filter(r => matchesFilter(r, 'applied'))).toHaveLength(3)
+    const rows = [row('submitted'), row('rejected', 'yes'), row('responded', 'yes')]
+    expect(rows.filter(r => matchesFilter(r, 'all'))).toHaveLength(3)
+    expect(rows.filter(r => matchesFilter(r, 'waiting'))).toHaveLength(1)
     expect(rows.filter(r => matchesFilter(r, 'active'))).toHaveLength(1)
-    expect(rows.filter(r => matchesFilter(r, 'not_applied'))).toHaveLength(1)
-    expect(trackerCounts(rows)).toEqual({ applied: 3, waiting: 1, active: 1, offers: 0, rejected: 1, referred: 2, notApplied: 1 })
+    expect(rows.filter(r => matchesFilter(r, 'rejected'))).toHaveLength(1)
+    expect(trackerCounts(rows)).toEqual({ applied: 3, waiting: 1, active: 1, offers: 0, rejected: 1, referred: 2 })
   })
   it('search and link labels', () => {
     expect(matchesQuery(row('submitted'), 'optiv')).toBe(true)

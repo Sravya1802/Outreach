@@ -1,10 +1,13 @@
-import type { ReferralMode, ReviewRow, ReviewStatus } from '@/lib/api'
+import type { PipelineRun, ReferralMode, ReviewRow, ReviewStatus } from '@/lib/api'
+import { timeAgo } from '@/lib/format'
 
-export type ReviewTab = 'ready' | 'revising' | 'approved' | 'applied' | 'closed'
+export type ReviewTab = 'ready' | 'revising' | 'working' | 'waiting' | 'approved' | 'applied' | 'closed'
 
 export const TABS: { value: ReviewTab; label: string }[] = [
-  { value: 'ready', label: 'Ready for review' },
+  { value: 'ready', label: 'Ready for you' },
   { value: 'revising', label: 'Revising' },
+  { value: 'working', label: 'Run working now' },
+  { value: 'waiting', label: 'Waiting for a run' },
   { value: 'approved', label: 'Approved' },
   { value: 'applied', label: 'Applied' },
   { value: 'closed', label: 'Closed' },
@@ -29,18 +32,34 @@ export const MODE_LABEL: Record<ReferralMode, string> = {
 
 export const NOTE_LIMIT = 300
 
-/** The tab a role sits in; null while it waits for its first run. */
-export function reviewTab(r: Pick<ReviewRow, 'status' | 'open_comments'>): ReviewTab | null {
-  if (r.status === 'ready') return 'ready'
-  if (r.status === 'revision_requested' || (r.status === 'in_progress' && r.open_comments > 0)) return 'revising'
-  if (r.status === 'approved' || r.status === 'applied' || r.status === 'closed') return r.status
-  return null
+/** The tab a role sits in. A role a run is revising stays in Revising. */
+export function reviewTab(r: Pick<ReviewRow, 'status' | 'open_comments'>): ReviewTab {
+  if (r.status === 'queued') return 'waiting'
+  if (r.status === 'in_progress') return r.open_comments > 0 ? 'revising' : 'working'
+  if (r.status === 'revision_requested') return 'revising'
+  return r.status
 }
 
 /** The backlog bar: a role is done once a run has written it or closed it. */
 export function backlog(rows: Pick<ReviewRow, 'status' | 'open_comments'>[]) {
-  const done = rows.filter(r => reviewTab(r) !== null).length
+  const done = rows.filter(r => !['working', 'waiting'].includes(reviewTab(r))).length
   return { done, total: rows.length, percent: rows.length ? Math.round((done / rows.length) * 100) : 0 }
+}
+
+// claim_tailor_jobs gives up on a run after this long and puts its roles back in line.
+const RUN_STOPPED_MS = 2 * 60 * 60 * 1000
+
+/** A run with no finish time isn't running if it has outlived the 2 hours. */
+export const isRunning = (run: PipelineRun | null, now = Date.now()) =>
+  !!run && !run.finished_at && now - new Date(run.started_at).getTime() < RUN_STOPPED_MS
+
+/** One line on the latest run, so an empty Run working now tile isn't a mystery. */
+export function runLine(run: PipelineRun | null, now = Date.now()) {
+  if (!run) return 'No run has started yet.'
+  if (isRunning(run, now)) return `Run ${run.id} started ${timeAgo(run.started_at, now)}.`
+  if (!run.finished_at) return `Run ${run.id} started ${timeAgo(run.started_at, now)} and never finished. Its roles go back in line on the next run.`
+  const failed = run.roles_failed ? `, ${run.roles_failed} failed` : ''
+  return `Run ${run.id} finished ${timeAgo(run.finished_at, now)}: ${run.roles_done} ${run.roles_done === 1 ? 'role' : 'roles'} done${failed}.`
 }
 
 /** The rule is above 90, so 90 itself is under it. */

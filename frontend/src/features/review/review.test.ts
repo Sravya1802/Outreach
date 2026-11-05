@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { atsOk, backlog, readReport, reviewTab } from './review'
+import { atsOk, backlog, isRunning, readReport, reviewTab, runLine } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -12,19 +12,43 @@ describe('reviewTab', () => {
   it('keeps a role in Revising while a run answers its comments', () => {
     expect(reviewTab({ status: 'in_progress', open_comments: 2 })).toBe('revising')
   })
-  it('leaves out roles still waiting for their first run', () => {
-    expect(reviewTab({ status: 'queued', open_comments: 0 })).toBeNull()
-    expect(reviewTab({ status: 'in_progress', open_comments: 0 })).toBeNull()
+  it('shows roles before their first resume', () => {
+    expect(reviewTab({ status: 'queued', open_comments: 0 })).toBe('waiting')
+    expect(reviewTab({ status: 'in_progress', open_comments: 0 })).toBe('working')
   })
 })
 
 describe('backlog', () => {
   it('counts written and closed roles as done', () => {
-    const row = (status: 'queued' | 'ready' | 'closed') => ({ status, open_comments: 0 })
-    expect(backlog([row('ready'), row('closed'), row('queued'), row('queued')])).toEqual({ done: 2, total: 4, percent: 50 })
+    const row = (status: 'queued' | 'in_progress' | 'ready' | 'closed') => ({ status, open_comments: 0 })
+    expect(backlog([row('ready'), row('closed'), row('queued'), row('in_progress')])).toEqual({ done: 2, total: 4, percent: 50 })
   })
   it('is empty without roles', () => {
     expect(backlog([])).toEqual({ done: 0, total: 0, percent: 0 })
+  })
+})
+
+describe('runLine', () => {
+  const now = Date.parse('2026-11-05T12:00:00Z')
+  const run = { id: '5', started_at: '2026-11-05T11:50:00Z', finished_at: null, roles_done: 0, roles_failed: 0 }
+  it('says when no run has happened', () => {
+    expect(runLine(null, now)).toBe('No run has started yet.')
+    expect(isRunning(null, now)).toBe(false)
+  })
+  it('shows a run still going', () => {
+    expect(runLine(run, now)).toBe('Run 5 started 10m ago.')
+    expect(isRunning(run, now)).toBe(true)
+  })
+  it('shows how a finished run went', () => {
+    const done = { ...run, finished_at: '2026-11-05T11:30:00Z', roles_done: 12 }
+    expect(runLine(done, now)).toBe('Run 5 finished 30m ago: 12 roles done.')
+    expect(runLine({ ...done, roles_done: 1, roles_failed: 2 }, now)).toBe('Run 5 finished 30m ago: 1 role done, 2 failed.')
+    expect(isRunning(done, now)).toBe(false)
+  })
+  it('stops calling a run active after the 2 hours', () => {
+    const stuck = { ...run, started_at: '2026-11-05T09:00:00Z' }
+    expect(isRunning(stuck, now)).toBe(false)
+    expect(runLine(stuck, now)).toBe('Run 5 started 3h ago and never finished. Its roles go back in line on the next run.')
   })
 })
 

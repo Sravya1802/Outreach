@@ -43,7 +43,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     what: 'Every job the app wrote a resume for, and whether it’s been applied to.',
     when: 'Open it each day to catch anything you missed, and to read the resumes you chose to review.',
     tabs: {
-      '/review': 'Resumes and outreach from your Claude chat runs. Open a role to read the PDF and report, ask for a revision or approve it.',
+      '/review': 'Resumes and outreach from your Claude chat runs. The tiles show the whole queue, from roles waiting for a run to roles you applied to. Open a role to read the PDF and report, ask for a revision or approve it.',
       '/to-apply': 'Newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. Approve with Apply for me (the app goes all the way) or I’ll review (it waits for you to read the resume, then Send it or apply yourself).',
     },
   },

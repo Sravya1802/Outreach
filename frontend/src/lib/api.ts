@@ -908,6 +908,12 @@ export interface ReviewRow {
   status: ReviewStatus
   referral_mode: ReferralMode
   updated_at: string
+  locked_at: string | null
+  /** The run working on it. */
+  run: string | null
+  posted_at: string | null
+  /** Its turn among the waiting roles; null once a run has taken it. */
+  place: number | null
   company_name: string
   title: string
   location: string | null
@@ -920,6 +926,16 @@ export interface ReviewRow {
   open_comments: number
   outreach: number
 }
+
+export interface PipelineRun {
+  id: string
+  started_at: string
+  finished_at: string | null
+  roles_done: number
+  roles_failed: number
+}
+
+export interface ReviewQueue { roles: ReviewRow[]; lastRun: PipelineRun | null }
 
 export interface ResumeVersion {
   id: string
@@ -1131,7 +1147,10 @@ export const api = {
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   /** The PDF's bytes, for the in-site viewer. */
   resumeFileBlob: (id: number | string): Promise<Blob> => legacy.career.resumeFileBlob(id),
-  reviewQueue: async (): Promise<ReviewRow[]> => (await legacy.career.reviewQueue()).roles ?? [],
+  reviewQueue: async (): Promise<ReviewQueue> => {
+    const d = await legacy.career.reviewQueue()
+    return { roles: d.roles ?? [], lastRun: d.lastRun ?? null }
+  },
   reviewRole: (id: string): Promise<ReviewRole> => legacy.career.reviewRole(id),
   reviewPdf: (versionId: string): Promise<Blob> => legacy.career.reviewPdf(versionId),
   requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),

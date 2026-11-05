@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import {
-  approveRole, editDraft, requestRevision, reviewQueue, reviewRole, setReferralMode, versionPdf,
+  approveRole, editDraft, lastRun, requestRevision, reviewQueue, reviewRole, setReferralMode, versionPdf,
 } from '../services/tailorPipeline.js';
 
 const router = Router();
@@ -21,7 +21,10 @@ const withId = (fn) => async (req, res) => {
 };
 
 router.get('/', async (req, res) => {
-  try { res.json({ roles: await reviewQueue(req.user.id) }); } catch (err) { fail(res, err); }
+  try {
+    const [roles, run] = await Promise.all([reviewQueue(req.user.id), lastRun(req.user.id)]);
+    res.json({ roles, lastRun: run ?? null });
+  } catch (err) { fail(res, err); }
 });
 
 router.get('/versions/:id/pdf', withId(async (req, res, id) => {

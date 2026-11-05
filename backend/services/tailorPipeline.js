@@ -6,7 +6,7 @@
  *   checkNewVersions (cron): compiles each new resume_versions row, saves the PDF
  *     at resumes/{plan_item_id}/v{n}.pdf and checks it. A version that breaks a
  *     rule is flagged and can't be approved; one that won't compile has no PDF.
- *   reviewQueue / reviewRole: what the Review queue and Role pages show.
+ *   reviewQueue / lastRun / reviewRole: what the Review queue and Role pages show.
  *   requestRevision, setReferralMode, editDraft, approveRole: the user's actions.
  *     Approving only records the decision for now: Gmail drafts and applying
  *     aren't connected to this queue yet, so nothing leaves the app from here.
@@ -96,19 +96,28 @@ export async function checkNewVersions(limit = 10) {
   }
 }
 
-/** Every role in the queue, with its latest version. */
+/** Every role in the queue, with its latest version. place is its turn among the waiting roles, in claim_tailor_jobs' order. */
 export async function reviewQueue(userId) {
   return all(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.updated_at, pi.company_name, pi.title, pi.location, pi.score,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.updated_at, j.locked_at, j.locked_by_run AS run,
+            COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score,
+            CASE WHEN j.status = 'queued'
+                 THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility,
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
             (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
        LEFT JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
       WHERE j.user_id = $1
-      ORDER BY j.updated_at DESC, j.id DESC`,
+      ORDER BY place NULLS LAST, j.updated_at DESC, j.id DESC`,
     [userId],
   );
+}
+
+/** The latest run, finished or not. */
+export async function lastRun(userId) {
+  return one('SELECT id, started_at, finished_at, roles_done, roles_failed FROM pipeline_runs WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [userId]);
 }
 
 /** One role: the versions (newest first), the comments and the outreach. */

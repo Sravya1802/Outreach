@@ -559,13 +559,14 @@ cron.schedule('*/10 * * * *', async () => {
   } catch (err) { console.error('[replies] pass failed:', err.message); }
 }, CRON_OPTS);
 
-// ── Cron: daily multi-source scraped-roles refresh (06:15 UTC) ───────────────
+// ── Cron: multi-source scraped-roles refresh (06:15 and 18:15 UTC) ───────────
+// The 18:15 run gives the afternoon update new roles to announce.
 // Hits every supported source (Greenhouse / Lever / Ashby / LinkedIn /
 // Wellfound / ai_jobs / Jobspresso / Remote Rocketship / InternshipDaily) and
 // upserts into public.scraped_roles. Shared across all users; kill switch
 // `MULTI_SCRAPE_DISABLED` (separate from NIGHTLY_CRON_DISABLED so you can
 // pause auto-apply without losing fresh role discovery).
-cron.schedule('15 6 * * *', async () => {
+cron.schedule('15 6,18 * * *', async () => {
   if (process.env.MULTI_SCRAPE_DISABLED) {
     console.log('[multi-scrape] skipped — MULTI_SCRAPE_DISABLED is set');
     return;
@@ -575,7 +576,7 @@ cron.schedule('15 6 * * *', async () => {
     return;
   }
   try {
-    console.log('[multi-scrape] starting daily multi-source role scrape');
+    console.log('[multi-scrape] starting multi-source role scrape');
     const summary = await scrapeAllSourcesAndPersist();
     const perSrc = Object.entries(summary.perSource)
       .map(([k, v]) => `${k}=intern:${v.intern}/grad:${v.new_grad}`)

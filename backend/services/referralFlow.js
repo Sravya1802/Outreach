@@ -6,13 +6,13 @@
  *      (prepareContacts → findPeopleFor): work emails (contactFinder) and
  *      LinkedIn profiles beyond the user's own connections (Apollo, Apify,
  *      Google), within the monthly lookup allowance. They land in People.
- *   1. Ask for a referral. Who: people the user knows there (LinkedIn
- *      connections export) first, then recruiters, then engineers.
- *      Up to 20 get an email draft with the tailored resume attached, waiting
+ *   1. Ask for a referral. Who: the best 2 recruiters there, any the user
+ *      knows (LinkedIn connections export) first, then early-career ones.
+ *      They get an email draft with the tailored resume attached, waiting
  *      for the user's OK (People → Contacts or Outbox, also in Gmail Drafts);
  *      once approved it goes at the recipient's next 8–11 AM weekday slot.
- *      Each of them also gets a LinkedIn note, and up to 2 others get a note
- *      only; the user sends notes themselves (copy + open profile).
+ *      Each of them also gets a LinkedIn note, and a recruiter with no email
+ *      gets a note only; the user sends notes themselves (copy + open profile).
  *      Nobody found → a LinkedIn search link + a note.
  *   2. Wait `referralWaitDays` business days. The user reports what happened:
  *      a link or code / "they submitted me" / "they said no". Email replies
@@ -35,9 +35,9 @@ import { isRecruiterTitle } from './contactRules.js';
 import { markAppliedYourself } from './resumeFiles.js';
 
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
-// 15–20 email drafts per approved role, each to a different person there (the user's call).
-const MAX_EMAILS_PER_ROLE = 20;
-const MAX_NOTES_PER_ROLE = 2;
+// The best 2 recruiters per role (the user's call): Gmail sends 20 a day, and more
+// from a personal address risks the spam folder.
+const MAX_PEOPLE_PER_ROLE = 2;
 // Prospeo people search: recruiters and engineers in the US, 1 credit per 25 people.
 const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recruiter', 'campus recruiter', 'talent acquisition'];
 const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
@@ -445,11 +445,11 @@ export async function prepareContacts(userId) {
   return item.company_name;
 }
 
-/** Sort for asking: people the user knows, then recruiters, then engineers, then the rest (leaders last: they rarely refer). */
+/** Sort for asking: people the user knows, then early-career recruiters, other recruiters, engineers, then the rest (leaders last: they rarely refer). */
 function askRank(p) {
   const t = String(p.title || '');
   if (p.knows) return 0;
-  if (isRecruiterTitle(t)) return 1;
+  if (isRecruiterTitle(t)) return /\b(university|campus|early careers?|new grad|technical)\b/i.test(t) ? 0.5 : 1;
   if (/\b(vp|vice president|director|head of|chief|cto|ceo|founder|co-founder|president)\b/i.test(t)) return 3;
   if (/\b(engineer|engineering|developer|software|scientist|swe|sde)\b/i.test(t)) return 2;
   return 3;
@@ -467,13 +467,13 @@ export function rankForAsk(pool) {
     .map(x => x.p);
 }
 
-/** Who gets an email and who gets a LinkedIn note (different people), best first; a found address beats a guessed one. */
-export function pickTargets(pool, { canEmail = true, maxEmails = MAX_EMAILS_PER_ROLE, maxNotes = MAX_NOTES_PER_ROLE } = {}) {
-  const ranked = rankForAsk(pool);
+/** The recruiters asked, best first: an email where there's an address (a found one beats a guess), else a LinkedIn note. */
+export function pickTargets(pool, { canEmail = true, maxPeople = MAX_PEOPLE_PER_ROLE } = {}) {
+  const ranked = rankForAsk(pool).filter(p => isRecruiterTitle(p.title));
   const email = canEmail
-    ? ranked.filter(p => p.email).sort((a, b) => askRank(a) - askRank(b) || Number(Boolean(a.guessed)) - Number(Boolean(b.guessed))).slice(0, maxEmails)
+    ? ranked.filter(p => p.email).sort((a, b) => askRank(a) - askRank(b) || Number(Boolean(a.guessed)) - Number(Boolean(b.guessed))).slice(0, maxPeople)
     : [];
-  const note = ranked.filter(p => !email.includes(p) && isProfile(p.linkedin)).slice(0, maxNotes);
+  const note = ranked.filter(p => !email.includes(p) && isProfile(p.linkedin)).slice(0, maxPeople - email.length);
   return { email, note };
 }
 
@@ -538,7 +538,7 @@ export async function askForReferral(userId, item, settings) {
   const saved = await all(
     `SELECT c.* FROM job_contacts c JOIN jobs j ON j.id = c.job_id
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')
-      ORDER BY (c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') DESC, c.seniority_score DESC NULLS LAST LIMIT 20`,
+      ORDER BY (c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') DESC, c.seniority_score DESC NULLS LAST LIMIT 200`,
     [userId, item.company_name],
   );
   for (const c of saved) {
@@ -560,13 +560,12 @@ export async function askForReferral(userId, item, settings) {
     || (b.linkedin && p.linkedin && b.linkedin === String(p.linkedin).toLowerCase()));
   for (let i = pool.length - 1; i >= 0; i--) if (askedBefore(pool[i])) pool.splice(i, 1);
   let targets = pickTargets(pool, { canEmail: Boolean(gmail) });
-  // Fewer than 2 recruiters/engineers (or people the user knows) have a found email: look up theirs
-  // (a guessed one gets checked first), at most 2 lookups.
+  // Fewer than 2 recruiters have a found email: look up theirs (a guessed one gets checked first), at most 2 lookups.
   if (gmail) {
-    const best = rankForAsk(pool).filter(p => askRank(p) <= 2);
+    const best = rankForAsk(pool).filter(p => isRecruiterTitle(p.title));
     let tries = 0;
     for (const p of best) {
-      if (tries >= 2 || best.filter(x => x.email && !x.guessed).length >= MAX_EMAILS_PER_ROLE) break;
+      if (tries >= 2 || best.filter(x => x.email && !x.guessed).length >= MAX_PEOPLE_PER_ROLE) break;
       if ((p.email && !p.guessed) || !p.contactId) continue;
       tries += 1;
       const found = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });

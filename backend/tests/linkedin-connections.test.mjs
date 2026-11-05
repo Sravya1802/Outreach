@@ -102,45 +102,43 @@ test('message template: referral when there is a role, a short chat otherwise', 
   assert.equal(noRole.subject, 'Question about Stripe');
 });
 
-test('referral targets: emails and LinkedIn notes go to different people, best first', async () => {
+test('referral targets: the best 2 recruiters and nobody else', async () => {
   const { pickTargets } = await import('../services/referralFlow.js');
   const li = (n) => `https://www.linkedin.com/in/${n}`;
-  const pool = [
+  const others = [
     { name: 'VP', title: 'VP Engineering', email: 'vp@x.com', linkedin: li('vp') },
-    { name: 'Eng', title: 'Software Engineer', email: null, linkedin: li('eng') },
-    { name: 'Rec', title: 'Technical Recruiter', email: 'rec@x.com', linkedin: li('rec') },
+    { name: 'Eng', title: 'Software Engineer', email: 'eng@x.com', linkedin: li('eng') },
     { name: 'Friend', title: 'Product Manager', email: null, linkedin: li('friend'), knows: true },
-    { name: 'NoLink', title: 'Software Engineer', email: null, linkedin: null },
-    { name: 'Eng2', title: 'Backend Developer', email: 'eng2@x.com', linkedin: 'https://www.linkedin.com/search/results/people/?keywords=x' },
   ];
-  const t = pickTargets(pool, { maxEmails: 2 });
-  assert.deepEqual(t.email.map(p => p.name), ['Rec', 'Eng2']);
-  // Default: up to 20 emails a role, everyone with an address (leaders last).
-  assert.deepEqual(pickTargets(pool).email.map(p => p.name), ['Rec', 'Eng2', 'VP']);
-  assert.deepEqual(t.note.map(p => p.name), ['Friend', 'Eng']);
-  // No Gmail: nobody is emailed, so the best LinkedIn profiles get notes.
-  assert.deepEqual(pickTargets(pool, { canEmail: false }).note.map(p => p.name), ['Friend', 'Rec']);
+  const rec = (name, title, email) => ({ name, title, email, linkedin: li(name) });
+  // Early-career recruiters come before the rest, and a company's size changes nothing.
+  const many = [...others, rec('Rec', 'Recruiter', 'rec@x.com'), rec('Rec2', 'Talent Acquisition Partner', 'rec2@x.com'), rec('Uni', 'University Recruiter', 'uni@x.com')];
+  for (let i = 0; i < 60; i++) many.push(rec(`R${i}`, 'Recruiter', `r${i}@x.com`));
+  const t = pickTargets(many);
+  assert.deepEqual(t.email.map(p => p.name), ['Uni', 'Rec']);
+  assert.deepEqual(t.note, []);
+  // A recruiter with no address gets a note, inside the same 2.
+  const one = pickTargets([...others, rec('Rec', 'Recruiter', 'rec@x.com'), rec('NoMail', 'Recruiter', null), rec('NoMail2', 'Recruiter', null)]);
+  assert.deepEqual(one.email.map(p => p.name), ['Rec']);
+  assert.deepEqual(one.note.map(p => p.name), ['NoMail']);
+  // No Gmail: nobody is emailed, so the best recruiters get notes.
+  assert.deepEqual(pickTargets(many, { canEmail: false }).note.map(p => p.name), ['Uni', 'Rec']);
+  // A recruiter the user knows goes first; no recruiters means nobody.
+  assert.equal(pickTargets([...many, { ...rec('Pal', 'Recruiter', 'pal@x.com'), knows: true }]).email[0].name, 'Pal');
+  assert.deepEqual(pickTargets(others), { email: [], note: [] });
   assert.deepEqual(pickTargets([]), { email: [], note: [] });
-  // The CEO, founders and people who left aren't asked, unless the user knows them.
-  const top = [
-    { name: 'Ceo', title: 'Co-Founder / CEO', email: 'ceo@x.com', linkedin: li('ceo') },
-    { name: 'Ex', title: 'Founder | ex-Plaid engineer', email: null, linkedin: li('ex') },
-    { name: 'Pal', title: 'CTO', email: null, linkedin: li('pal'), knows: true },
-    { name: 'Swe', title: 'Senior Software Engineer', email: null, linkedin: li('swe') },
-  ];
-  const t2 = pickTargets(top);
-  assert.deepEqual(t2.email.map(p => p.name), []);
-  assert.deepEqual(t2.note.map(p => p.name), ['Pal', 'Swe']);
+  // People who've left aren't asked, unless the user knows them.
+  assert.deepEqual(pickTargets([rec('Ex', 'Recruiter | ex-Plaid', 'ex@x.com')]), { email: [], note: [] });
 });
 
 test('referral targets: a found address beats a guessed one in the same rank', async () => {
   const { pickTargets } = await import('../services/referralFlow.js');
   const pool = [
-    { name: 'Guess', title: 'Software Engineer', email: 'guess@x.com', guessed: true },
-    { name: 'Found', title: 'Software Engineer', email: 'found@x.com' },
-    { name: 'RecGuess', title: 'Recruiter', email: 'rec@x.com', guessed: true },
+    { name: 'Guess', title: 'Recruiter', email: 'guess@x.com', guessed: true },
+    { name: 'Found', title: 'Recruiter', email: 'found@x.com' },
+    { name: 'UniGuess', title: 'University Recruiter', email: 'uni@x.com', guessed: true },
   ];
-  assert.deepEqual(pickTargets(pool, { maxEmails: 2 }).email.map(p => p.name), ['RecGuess', 'Found']);
+  assert.deepEqual(pickTargets(pool).email.map(p => p.name), ['UniGuess', 'Found']);
 });
 
 test('referral note: a long list names two people and counts the rest', async () => {

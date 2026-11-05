@@ -63,3 +63,13 @@ test('run message and 9 PM digest say what is ready, and only what applies', () 
   assert.doesNotMatch(quiet, /unreviewed|due to apply|Outbox/);
   assert.ok(full.params.body[0].length < 700 && !full.params.body[0].includes('\n'));
 });
+
+test('the app writes no resumes and no AI emails unless switched back on', async () => {
+  const { start } = await import('../services/resumeEngine.js');
+  const { draftPicked } = await import('../services/dailyPlan.js');
+  const { draftAsk } = await import('../services/referralFlow.js');
+  await assert.rejects(start('u', 1, 'resume'), /no longer writes resumes/);
+  assert.equal(await draftPicked('u'), 0);
+  const ask = await draftAsk('u', { personName: 'Ana Lee', me: 'Sam Roe', school: 'UIC', major: 'CS', sig: 'Sam', title: 'SWE', company: 'Ramp', jobUrl: '' });
+  assert.match(ask.body, /Ana|Dear|Hello/);
+});

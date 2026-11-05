@@ -23,6 +23,7 @@
  *   4. A morning summary email, once a day, when anything happened.
  */
 
+import { inAppEmails } from './features.js';
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { connectionsAt, companyKey } from './linkedinConnections.js';
@@ -118,6 +119,7 @@ export function templateAsk({ personName, me, school, major, sig, title, company
 }
 
 export async function draftAsk(userId, ctx) {
+  if (!inAppEmails()) return templateAsk(ctx);
   try {
     const r = await complete({
       task: 'email',

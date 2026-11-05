@@ -22,6 +22,7 @@ import { looksLikeAgency } from './staffing.js';
 import { partsIn, timezoneFor, isValidTz, nextSendSlot } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring, reviewReason } from './resumeEngine.js';
+import { inAppTailoring } from './features.js';
 import { advanceReferrals, asksFor, maybeSendSummary, prepareContacts } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
 import { notify as whatsappNotify, sendPickList, eveningMessage, pickListMessage, numberedTop } from './whatsapp.js';
@@ -483,6 +484,11 @@ export async function decide(userId, itemId, decision, mode = 'auto') {
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
   if (item.decision === 'expired' && decision === 'pending') return item;
+  // A yes goes to the queue: a run writes the resume, and the role is approved in the Review queue.
+  if (decision === 'approved' && item.decision !== 'approved' && !inAppTailoring()) {
+    await bulkItems(userId, [item.id], 'queue');
+    return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+  }
   if (item.decision === 'approved' && decision !== 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) {
     throw Object.assign(new Error('This role is already past the resume step.'), { status: 409 });
   }
@@ -523,6 +529,11 @@ export async function hasApplyMode() {
 export async function sendReviewed(userId, itemId) {
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
+  // An app-made resume never goes out as it is: a run writes it again from the corrected master.
+  if (!inAppTailoring()) {
+    await bulkItems(userId, [item.id], 'queue');
+    return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+  }
   if (item.decision !== 'approved' || item.stage !== 'needs_you' || item.needs_reason !== 'resume' || !item.tailoring_id) {
     throw Object.assign(new Error('This role isn’t waiting on its resume.'), { status: 409 });
   }
@@ -607,6 +618,7 @@ export async function evaluationFor(userId, item) {
 
 /** Start a (batched) resume for every role picked for the app that has none yet. Idempotent. */
 export async function draftPicked(userId) {
+  if (!inAppTailoring()) return 0;
   const items = await all("SELECT * FROM plan_items WHERE user_id = $1 AND pick = 'app' AND decision IN ('pending', 'approved') AND tailoring_id IS NULL ORDER BY picked_at", [userId]);
   let started = 0;
   for (const it of items) {
@@ -633,9 +645,15 @@ export async function bulkItems(userId, ids, action) {
   const list = (Array.isArray(ids) ? ids : []).map(Number).filter(Number.isSafeInteger);
   if (!list.length) throw Object.assign(new Error('Pick at least one role.'), { status: 400 });
   if (action === 'queue') {
+    // A role stuck on an old app-made resume starts over.
+    await run(
+      `UPDATE plan_items SET decision = 'expired', decided_at = NULL, stage = 'proposed', stage_note = NULL, needs_reason = NULL
+        WHERE user_id = $1 AND id = ANY($2) AND decision = 'approved' AND stage = 'needs_you' AND needs_reason = 'resume'`,
+      [userId, list],
+    );
     const r = await run(
       `INSERT INTO tailor_jobs (user_id, plan_item_id, scraped_role_id)
-       SELECT user_id, id, scraped_role_id FROM plan_items WHERE user_id = $1 AND id = ANY($2) AND decision IN ('pending', 'expired')
+       SELECT user_id, id, scraped_role_id FROM plan_items WHERE user_id = $1 AND id = ANY($2) AND decision IN ('pending', 'expired', 'skipped')
        ON CONFLICT (plan_item_id) DO NOTHING`,
       [userId, list],
     );
@@ -666,6 +684,10 @@ export async function pickItem(userId, itemId, choice) {
   if (choice === 'skip') {
     await run("UPDATE plan_items SET decision = 'skipped', decided_at = NOW(), pick = NULL, picked_at = NULL WHERE id = $1", [item.id]);
     return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
+  }
+  if (choice === 'app' && !inAppTailoring()) {
+    await bulkItems(userId, [item.id], 'queue');
+    return item;
   }
   const pick = choice === 'none' ? null : choice;
   // A picked role gets its application row now (no AI), so uploads and "I applied" have somewhere to land.

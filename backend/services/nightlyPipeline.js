@@ -12,6 +12,7 @@
  * identical between manual + scheduled runs.
  */
 
+import { inAppTailoring } from './features.js';
 import { one, all, run } from '../db.js';
 import { evaluateJob, fetchJobFromUrl } from './jobEvaluator.js';
 import { runQueueOnce } from './autoApplier.js';
@@ -28,6 +29,9 @@ const DEFAULTS = {
 export async function runNightlyPipelineForUser(userId, cfgOverrides = {}) {
   const startedAt = new Date().toISOString();
   const cfg = { ...DEFAULTS, ...cfgOverrides };
+
+  // Every application needs the user's approval in the Review queue now.
+  if (!inAppTailoring()) return { startedAt, finishedAt: new Date().toISOString(), error: 'Applications go through the Review queue now', cfg };
 
   // Honor the soft pause — same gate as POST /auto-apply/run. Without this the
   // 07:00 UTC cron would happily submit applications for users who paused via

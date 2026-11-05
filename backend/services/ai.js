@@ -1,4 +1,5 @@
 import { complete } from './llm.js';
+import { inAppEmails } from './features.js';
 import { cleanOutreachTemplate } from './outreachTemplates.js';
 import { describeSender, MissingSenderProfileError } from './senderProfile.js';
 
@@ -317,6 +318,7 @@ Make paragraph 1 specific to ${companyName}. Choose background based on company 
 export async function generateWaaSMessage({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender }) {
   requireSender(sender);
   const { system, user } = buildWaaSPrompt({ companyName, companyDescription, industry, ycBatch, contactName, extraContext, sender });
+  if (!inAppEmails()) throw Object.assign(new Error('Outreach is written by your Claude runs now.'), { status: 409 });
   try {
     return parseJSON((await complete({ task: 'email', system, user, json: true, maxTokens: 3000 })).text);
   } catch (err) {
@@ -346,7 +348,7 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
   const user = built.user;
 
   try {
-    return parseJSON((await complete({ task: 'email', system, user, json: true, maxTokens: 3000 })).text);
+    if (inAppEmails()) return parseJSON((await complete({ task: 'email', system, user, json: true, maxTokens: 3000 })).text);
   } catch (err) {
     if (err.name === 'BudgetExceededError') throw err;
     console.error(`[ai] ${err.message}`);
@@ -361,6 +363,7 @@ export async function generateOutreach({ type, recipientName, recipientTitle, co
     if (templateResult) return templateResult;
   }
 
+  if (!inAppEmails()) throw Object.assign(new Error('Outreach is written by your Claude runs now.'), { status: 409 });
   // Every provider failed (LinkedIn has no static fallback): say so rather
   // than return a placeholder the user might send.
   throw new Error('Couldn’t write the message right now. Try again in a minute.');

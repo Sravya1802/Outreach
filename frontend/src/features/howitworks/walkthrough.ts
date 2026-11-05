@@ -44,7 +44,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     when: 'Open it each day to catch anything you missed, and to read the resumes you chose to review.',
     tabs: {
       '/review': 'Resumes and outreach from your Claude chat runs. The tiles show the whole queue, from roles waiting for a run to roles you applied to. Open a role to read the PDF and report, ask for a revision or approve it.',
-      '/to-apply': 'Resumes the app wrote itself before the Claude runs, newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. Approve with Apply for me (the app goes all the way) or I’ll review (it waits for you to read the resume, then Send it or apply yourself).',
+      '/to-apply': 'Resumes the app wrote itself before the Claude runs, newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. None of these resumes goes out as it is: Add to queue and a Claude run writes a new one for you to approve.',
     },
   },
   resumes: {

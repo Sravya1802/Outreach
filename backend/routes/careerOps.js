@@ -28,6 +28,7 @@ import { isMarket } from '../services/markets.js';
 import { mostRecent, normalizeExperiences } from '../services/experiences.js';
 import { saveMaster, currentMaster, saveForEvaluation, fileForUser, fileBytes, fileLink, filesForEvaluation, resumeHistory, deleteMasterVersion, markAppliedYourself } from '../services/resumeFiles.js';
 import { parsedMaster } from '../services/resumeEngine.js';
+import { inAppTailoring } from '../services/features.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Uploads land here only until they're copied to Supabase Storage
@@ -1084,6 +1085,8 @@ router.post('/tailored-resume/:id', async (req, res) => {
     const candidateName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim()
       || fallbackFromFilename
       || 'Candidate';
+
+    if (!inAppTailoring()) return res.status(409).json({ error: 'The app no longer writes resumes. Add this role to the queue and the next Claude run writes it.' });
 
     console.log(`[careerOps] Generating tailored resume for ${row.company_name} - ${row.job_title} (candidate: ${candidateName})`);
 

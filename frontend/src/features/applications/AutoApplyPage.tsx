@@ -60,7 +60,7 @@ export default function AutoApplyPage() {
 
   return (
     <Page wide>
-      <PageHeader title="Auto-apply" description="Each morning you get the day’s roles that fit you. Pick App drafts and the app writes the resume, ready in the evening for you to approve; once approved it asks for a referral and applies. Pick I’ll draft my own and you get an evening reminder; upload your resume for the app to apply, or mark it applied." />
+      <PageHeader title="Auto-apply" description="Each morning you get the day’s roles that fit you. Add one to the queue and the next Claude run writes the resume and outreach for you to approve in the Review queue. Pick I’ll draft my own and you get an evening reminder; upload your resume for the app to apply, or mark it applied." />
 
       <div className="space-y-10">
         <DailyPlanSections />

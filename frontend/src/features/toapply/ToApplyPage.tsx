@@ -2,13 +2,12 @@ import { Fragment, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, Send } from 'lucide-react'
-import { api, type ApplyMode, type ResumeJob } from '@/lib/api'
+import { api, type ResumeJob } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
-import { Badge, Button, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Select, Skeleton, useToast, type Tone } from '@/ui'
+import { Badge, Button, ButtonLink, EmptyState, ErrorState, Input, Page, PageHeader, Segmented, Select, Skeleton, useToast, type Tone } from '@/ui'
 import { PdfDialog } from '@/features/profile/PdfViewer'
 import { ManualApply } from '@/features/applications/ManualApply'
-import { ApproveButtons } from '@/features/applications/DailyPlan'
 import { latestListDate } from '@/features/resumes/resumes'
 import { SkillGapsPanel } from './SkillGapsPanel'
 import { AddOwnJob } from './AddOwnJob'
@@ -97,18 +96,13 @@ function roleTags(j: ResumeJob): string {
 }
 
 /** The buttons a role needs right now. */
-function Actions({ j, onView }: { j: ResumeJob; onView: () => void }) {
+function Actions({ j, onView, queued }: { j: ResumeJob; onView: () => void; queued: boolean }) {
   const qc = useQueryClient()
   const toast = useToast()
   const refresh = () => { for (const k of [qk.resumeJobs, qk.dailyPlan, qk.resumeHistory, qk.pipeline]) void qc.invalidateQueries({ queryKey: k }) }
-  const approve = useMutation({
-    mutationFn: (mode: ApplyMode) => api.decidePlanItem(j.plan_item_id as number, 'approved', mode),
-    onSuccess: (_d, mode) => { toast.success(mode === 'review' ? `Approved ${j.company_name}. Its resume will wait here for you to read.` : `Approved ${j.company_name}. The app takes it from here.`); refresh() },
-    onError: (e: Error) => toast.error(e.message),
-  })
-  const send = useMutation({
-    mutationFn: () => api.sendPlanItem(j.plan_item_id as number),
-    onSuccess: () => { toast.success(`Sending ${j.company_name}: a referral ask first if you know someone, then the app applies.`); refresh() },
+  const queue = useMutation({
+    mutationFn: () => api.bulkPlanItems([j.plan_item_id as number], 'queue'),
+    onSuccess: () => { toast.success(`Added ${j.company_name} to the queue. The next run writes a new resume from your corrected master.`); refresh(); void qc.invalidateQueries({ queryKey: qk.review }) },
     onError: (e: Error) => toast.error(e.message),
   })
   const s = jobState(j)
@@ -121,11 +115,10 @@ function Actions({ j, onView }: { j: ResumeJob; onView: () => void }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
       {view}
-      {s === 'review' && j.plan_item_id != null && (
-        <Button size="sm" variant="primary" icon={<Send className="size-3.5" />} loading={send.isPending} onClick={() => send.mutate()}
-          title="You’ve read it: the app asks for a referral if it can, then applies">Send it</Button>
+      {queued ? <ButtonLink size="sm" variant="ghost" to={`/review/${j.plan_item_id}`}>In the queue</ButtonLink> : hasMain && (
+        <Button size="sm" variant="primary" icon={<Send className="size-3.5" />} loading={queue.isPending} onClick={() => queue.mutate()}
+          title="This resume was written before your master was corrected. A run writes a new one for you to approve.">Add to queue</Button>
       )}
-      {(s === 'open' || s === 'skipped') && j.plan_item_id != null && <ApproveButtons busy={approve.isPending} onApprove={mode => approve.mutate(mode)} />}
       {s === 'working' ? null : manual}
     </div>
   )
@@ -141,6 +134,8 @@ export default function ToApplyPage() {
     queryKey: qk.resumeJobs, queryFn: api.resumeJobs,
     refetchInterval: query => ((query.state.data ?? []).some(j => j.resume?.status === 'running' || ['queued', 'in_progress'].includes(String(j.apply_status))) ? 60_000 : false),
   })
+  const queueRoles = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue })
+  const inQueue = new Set((queueRoles.data?.roles ?? []).map(r => String(r.id)))
   const everything = jobs.data ?? []
   const latest = latestListDate(everything)
   const s = q.trim().toLowerCase()
@@ -160,7 +155,7 @@ export default function ToApplyPage() {
   return (
     <Page wide>
       <PageHeader title="Earlier resumes"
-        description="Resumes the app wrote itself before the Claude runs, newest list first. New work is in the Review queue. Apply for me: the app takes it from approval to applying. I’ll review: it stops once the resume is written so you can read it." />
+        description="Resumes the app wrote itself before the Claude runs, newest list first. They predate your corrected master, so none goes out as it is: Add to queue and a run writes a new one for you to approve." />
       <div className="mb-4"><AddOwnJob /></div>
       {jobs.error ? <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} /> : jobs.isLoading ? <Skeleton className="h-72" /> : everything.length === 0 ? (
         <EmptyState title="No resumes yet" description="Each evening the top roles get a resume written before the list arrives. They’ll show up here." />
@@ -219,7 +214,7 @@ export default function ToApplyPage() {
                           {j.stage_note && (st === 'review' || st === 'needs' || st === 'working') && <p className="mt-1 max-w-80 text-[12px] leading-snug text-muted">{j.stage_note}</p>}
                         </td>
                         <td className={cell}>
-                          <Actions j={j} onView={() => fileId != null && setViewing({ id: fileId, filename, company: j.company_name })} />
+                          <Actions j={j} queued={inQueue.has(String(j.plan_item_id))} onView={() => fileId != null && setViewing({ id: fileId, filename, company: j.company_name })} />
                         </td>
                       </tr>
                     </Fragment>

@@ -661,7 +661,7 @@ export async function handleInbound(from, text) {
       try { await pickItem(userId, it.id, choice); done.push(it); } catch { /* already approved, too old */ }
     }
     const lines = done.map(i => `• ${i.num}) ${i.company_name} · ${i.title}`);
-    const what = choice === 'app' ? 'The app drafts these; they’re ready tonight for you to approve:' : 'You’re writing these; I’ll remind you tonight:';
+    const what = choice === 'app' ? 'Added to the queue; the next run writes these for you to approve:' : 'You’re writing these; I’ll remind you tonight:';
     return reply(userId, phone, `${done.length ? `${what}\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on today’s list.` : ''}`);
   }
   const picks = c.picks === 'all' ? items.map((_, n) => n + 1) : c.picks;
@@ -676,7 +676,7 @@ export async function handleInbound(from, text) {
       done.push(it);
     } catch { /* already past the resume step, etc. */ }
   }
-  const verb = c.cmd === 'yes' ? 'Approved' : 'Skipped';
+  const verb = c.cmd === 'yes' ? 'Added to the queue' : 'Skipped';
   const lines = done.map(i => `• ${i.company_name} · ${i.title}`);
   return reply(userId, phone, `${done.length ? `${verb}:\n${lines.join('\n')}` : 'Nothing changed.'}${bad.length ? `\n\nThere’s no number ${bad.join(', ')} on today’s list.` : ''}${c.cmd === 'yes' && done.length ? '\n\nApproved roles go ahead: referral ask, then the application.' : ''}`);
 }

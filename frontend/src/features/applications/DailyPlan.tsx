@@ -41,7 +41,7 @@ export function EveningListSettings({ data }: { data: DailyPlanOverview }) {
           <h2 id="evening-h" className="font-display text-[22px] font-semibold text-fg">Your daily roles</h2>
           <p className="mt-1 max-w-2xl text-[14px] text-muted">
             At {hourLabel(s.morningHour)} {tzLabel(s.timezone)} time the day’s new roles are scored against your resume and sent to you, with an update at {hourLabel(s.updateHour)}.
-            Pick each one: <b className="font-medium text-fg">App drafts</b> (the resume is ready by {hourLabel(s.listHour)} and waits for your approval) or <b className="font-medium text-fg">I’ll draft my own</b> (you get a reminder at {hourLabel(s.listHour)}).
+            Pick each one: <b className="font-medium text-fg">Add to queue</b> (the next Claude run writes the resume, and it waits in the Review queue for your approval) or <b className="font-medium text-fg">I’ll draft my own</b> (you get a reminder at {hourLabel(s.listHour)}).
             Roles you don’t pick cost nothing. {s.referralFirst ? `For each approved role, we ask for a referral first and apply ${s.referralWaitDays} business days later if none comes.` : 'Each approved role is applied to the next morning.'}
             {!data.settings.enabled && ' Turning this on lets Scout’n’Jobs submit applications for the roles you approve, and only those.'}
           </p>
@@ -191,7 +191,7 @@ function BulkBar<T extends { id: number }>({ bulk }: { bulk: ReturnType<typeof u
 function useItemActions() {
   const qc = useQueryClient()
   const toast = useToast()
-  const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
+  const refresh = () => { void qc.invalidateQueries({ queryKey: qk.dailyPlan }); void qc.invalidateQueries({ queryKey: qk.review }) }
   const fail = (e: Error) => toast.error(e.message)
   return {
     pick: useMutation({
@@ -201,7 +201,7 @@ function useItemActions() {
         if (pick !== 'none' && others.length) await api.bulkPlanItems(others, 'skip')
         return r
       },
-      onSuccess: (_d, v) => { if (v.pick === 'app') toast.success('The app is drafting it now. It’s ready tonight for you to approve.'); refresh() },
+      onSuccess: (_d, v) => { if (v.pick === 'app') toast.success('Added to the queue. The next run writes it for you to approve.'); refresh() },
       onError: fail,
     }),
     decide: useMutation({
@@ -266,7 +266,7 @@ export function ItemRow({ item, others = [], queued, select }: { item: PlanItem;
         {open && !item.pick && !queued && (
           <>
             <Button size="sm" variant="primary" loading={a.pick.isPending && a.pick.variables?.pick === 'app'} disabled={busy} onClick={() => pick('app')}
-              title="The app writes the resume now. It waits for your approval tonight; nothing goes out before.">App drafts</Button>
+              title="The next Claude run writes the resume. It waits in the Review queue; nothing goes out before you approve it.">Add to queue</Button>
             <Button size="sm" disabled={busy} onClick={() => pick('self')}
               title="You write this resume yourself. You get a reminder tonight.">I’ll draft my own</Button>
             <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busy} onClick={() => pick('skip')}>Skip</Button>
@@ -372,7 +372,7 @@ export function TodaysRoles({ data, queue }: { data: DailyPlanOverview; queue: Q
       ) : (
         <>
           <div role="tablist" aria-label="Today’s roles" className="flex flex-wrap gap-1 border-b border-line">
-            {GROUPS.map(g => (
+            {GROUPS.filter(g => g.id !== 'app' || counts.app > 0).map(g => (
               <button key={g.id} type="button" role="tab" aria-selected={group === g.id} onClick={() => setChosen(g.id)}
                 className={cn('-mb-px border-b-2 px-3 py-2 text-[14px]', group === g.id ? 'border-accent font-medium text-fg' : 'border-transparent text-muted hover:text-fg')}>
                 {g.label} <span className="font-mono text-[13px] text-subtle">{counts[g.id]}</span>
@@ -383,7 +383,7 @@ export function TodaysRoles({ data, queue }: { data: DailyPlanOverview; queue: Q
           {shown.length ? <ul>{shown.map(({ item: i, others }) => <ItemRow key={i.id} item={i} others={others} queued={queue.get(String(i.id))} select={group === 'pick' ? { on: bulk.isPicked(i.id), toggle: on => bulk.toggle(i.id, on) } : undefined} />)}</ul> : (
             <p className="py-4 text-[14px] text-muted">
               {group === 'pick' ? 'Nothing left to pick. New roles arrive tomorrow morning, with an update in the afternoon.'
-                : group === 'app' ? 'No roles for the app yet. Pick App drafts on a role and its resume is ready tonight.'
+                : group === 'app' ? 'Nothing here. New picks go to the Review queue.'
                   : group === 'self' ? 'No roles of your own yet. Pick I’ll draft my own on a role and you get a reminder tonight.'
                     : 'Nothing skipped.'}
             </p>
@@ -405,7 +405,7 @@ export function MissedRoles({ data, queue }: { data: DailyPlanOverview; queue: Q
       if (others.length) await api.bulkPlanItems(others, 'skip')
       return r
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.dailyPlan }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.dailyPlan }); void qc.invalidateQueries({ queryKey: qk.review }) },
     onError: (e: Error) => toast.error(e.message),
   })
   const missed = useMemo(() => groupRoles(data.missed ?? []), [data.missed])
@@ -439,7 +439,7 @@ export function MissedRoles({ data, queue }: { data: DailyPlanOverview; queue: Q
               {m.evaluation_id && <ButtonLink to={`/resumes/job/${m.evaluation_id}`} size="sm" variant="ghost">{m.ats_score != null ? `Resume · ATS ${m.ats_score}%` : 'Resume'}</ButtonLink>}
               {queued ? <QueueBadge row={queued} /> : (
                 <>
-                  <Button size="sm" variant="primary" loading={busyId === m.id && pick.variables?.pick === 'app'} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'app', others: ids })}>App drafts</Button>
+                  <Button size="sm" variant="primary" loading={busyId === m.id && pick.variables?.pick === 'app'} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'app', others: ids })}>Add to queue</Button>
                   <Button size="sm" disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'self', others: ids })}>I’ll draft my own</Button>
                   <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'skip', others: ids })}>Skip</Button>
                 </>

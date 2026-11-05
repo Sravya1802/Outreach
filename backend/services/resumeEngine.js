@@ -24,6 +24,7 @@
 
 import { all, one, run } from '../db.js';
 import { complete, submitBatch, collectBatch } from './llm.js';
+import { inAppTailoring } from './features.js';
 import { currentMaster, saveForEvaluation, saveCoverLetter, resumeFileName, coverLetterFileName } from './resumeFiles.js';
 import { companyTiers, tierFor, industryFor } from './companyTier.js';
 import { atsScore, normalizeKeywords, splitMissing, hasTerm, atsPasses, keepProjectOnPage, canonicalTerm, ATS_TARGET, CALLBACK_TARGET } from './ats.js';
@@ -1113,6 +1114,7 @@ const running = new Set();
  * or the one already running for this role.
  */
 export async function start(userId, evalId, kind = 'resume', { batch = false, quiet = false } = {}) {
+  if (kind === 'resume' && !inAppTailoring()) throw Object.assign(new Error('The app no longer writes resumes. Add this role to the queue and the next Claude run writes it.'), { status: 409 });
   const ev = await loadEvaluation(userId, evalId);
   const busy = await one(
     `SELECT * FROM resume_tailorings WHERE user_id = $1 AND evaluation_id = $2 AND kind = $3 AND status = 'running'
@@ -1372,6 +1374,7 @@ export async function dismissProject(userId, projectId) {
  * dates filled in) or taken off, then re-score and re-check it.
  */
 async function rerenderWithProject(userId, tailoringId, project, mode, { recheck = true } = {}) {
+  if (!inAppTailoring()) return null;
   const t = await one("SELECT * FROM resume_tailorings WHERE id = $1 AND user_id = $2 AND kind = 'resume' AND status IN ('ready', 'needs_review')", [tailoringId, userId]);
   if (!t?.report?.doc) return null;
   const ev = await loadEvaluation(userId, t.evaluation_id);

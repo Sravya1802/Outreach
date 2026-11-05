@@ -5,6 +5,7 @@
  * and saved on the contact (job_contacts.generated_*).
  */
 
+import { inAppEmails } from './features.js';
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { companyKey } from './linkedinConnections.js';
@@ -147,6 +148,7 @@ export async function writeFor(userId, key, ref) {
   const ctx = { personName: p.name, me: who.name, school: who.school, sig: signature(who), company: data.name, role: data.role, isConnection: p.isConnection };
   let draft;
   try {
+    if (!inAppEmails()) throw new Error('off');
     const r = await complete({
       task: 'email',
       json: true,

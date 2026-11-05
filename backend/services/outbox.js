@@ -140,6 +140,14 @@ export async function approveDraft(userId, id, { when = 'best' } = {}) {
     }
     if (copy && draftHash(copy.subject, copy.text) !== row.gmail_draft_hash && str(copy.text)) edit = copy;
   }
+  // A role's email keeps to the outreach rules, with any Gmail edits counted.
+  const role = await one('SELECT pi.title, pi.company_name, pi.job_description FROM referral_asks a JOIN plan_items pi ON pi.id = a.plan_item_id WHERE a.outbox_id = $1 LIMIT 1', [row.id]);
+  if (role) {
+    const { checkOutreach, isQuantRole } = await import('./tailorPipeline.js');
+    const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
+    const [problem] = checkOutreach({ email_body: edit ? edit.text : row.body, name: row.to_name, company: role.company_name, quant });
+    if (problem) throw Object.assign(new Error(`${problem} Edit it first.`), { status: 409 });
+  }
   const sendAfter = when === 'now' ? new Date() : nextSendSlot(row.recipient_tz);
   const updated = (await run(
     `UPDATE email_outbox SET status = 'scheduled', subject = $3, body = $4, body_html = $5, send_after = $6, approved_at = NOW(), error = NULL

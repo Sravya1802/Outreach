@@ -1267,6 +1267,15 @@ export async function resumeGate(userId, evalId) {
   // The user's own upload for this role goes as-is.
   const mine = await one("SELECT 1 FROM evaluations e JOIN resume_files f ON f.id = e.resume_file_id WHERE e.id = $1 AND e.user_id = $2 AND f.kind = 'uploaded'", [evalId, userId]);
   if (mine) return { ok: true, uploaded: true };
+  // Only a resume approved in the Review queue goes out. An app-made one predates the corrected master.
+  if (!inAppTailoring()) {
+    const approved = await one(
+      `SELECT 1 FROM plan_items pi JOIN tailor_jobs j ON j.plan_item_id = pi.id
+        WHERE pi.user_id = $1 AND pi.evaluation_id = $2 AND j.status IN ('approved', 'applied')`,
+      [userId, evalId],
+    );
+    return approved ? { ok: true } : { ok: false, reason: 'Only a resume you approved in the Review queue can go out. Add this role to the queue, or upload your own.' };
+  }
   const t = await one(
     `SELECT status, ats_score, approved_at, report->>'verdict' AS verdict, report->>'verdictWhy' AS verdict_why,
             report->'proposedProject'->>'name' AS project_name, report->'proposedProject'->>'status' AS project_status

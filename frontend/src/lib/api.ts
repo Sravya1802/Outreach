@@ -590,6 +590,8 @@ export interface OutboxItem {
   in_gmail_drafts?: boolean
   attachment_file_id?: number | null
   attachment_name?: string | null
+  /** The resume version attached, for a role approved from the Review queue. */
+  resume_version?: number | null
 }
 export interface ReplyItem {
   id: number
@@ -654,11 +656,14 @@ export interface PlannedProject {
   covers: string[]
   why: string | null
   plan: string[]
-  status: 'suggested' | 'built' | 'dismissed'
+  /** unverified = marked built, but its GitHub link hasn't opened. */
+  status: 'suggested' | 'built' | 'unverified' | 'dismissed'
   origin: 'role' | 'weekly'
   /** Weekly ones: how many listed roles ask for what it adds. */
   demand: { roles: number; of: number; keywords: { term: string; roles: number }[]; examples: string[] } | null
   repo_url: string | null
+  /** When the app last opened its GitHub link. Without one it can't go on a resume. */
+  repo_verified_at: string | null
   start_date: string | null
   end_date: string | null
   created_at: string
@@ -797,7 +802,7 @@ export interface ResumeJob {
 /** The LaTeX preamble resumes are built in. */
 export interface ResumeTemplate { custom: boolean; preamble: string; updatedAt: string | null }
 
-export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null; file?: ResumeFile | null; inCloud?: boolean }
+export interface ResumeStatus { hasResume: boolean; name?: string | null; date?: string | null; textPreview?: string | null; text?: string | null; file?: ResumeFile | null; inCloud?: boolean }
 
 /** Raw apply_status values the backend writes. */
 export type ApplyStatus = 'not_started' | 'opened' | 'queued' | 'in_progress' | 'submitted' | 'responded' | 'interview' | 'offer' | 'rejected'
@@ -925,6 +930,8 @@ export interface ReviewRow {
   eligibility: string | null
   open_comments: number
   outreach: number
+  /** Who can refer the user there. */
+  referrer: string | null
 }
 
 export interface PipelineRun {
@@ -979,8 +986,19 @@ export interface OutreachDraft {
 
 export interface ApproveResult { emails: number; inGmail: number; notes: number; skipped: { name: string; reason: string }[] }
 
+export interface PipelineSummary {
+  runs: PipelineRun[]
+  queue: { waiting: number; ready: number; flagged: number; approved: number }
+  /** An estimate: the latest run's start plus 5 hours. */
+  nextRunAt: string | null
+  window: { hours: number; done: number; failed: number }
+}
+export interface CompanyQueueRole { id: string; status: ReviewStatus; title: string; location: string | null; version: number | null; is_final: boolean | null; ats_after: number | null }
+export interface RunConfig { version: number; created_at: string; master_latex: string | null; email_template: string | null; linkedin_rules: string | null; corrections: string[] }
+export interface Referrer { id: string; company_name: string; contact_name: string; note: string | null; roles: number }
+
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage_note: string | null }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; referrer: string | null; referrer_note: string | null }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]
@@ -1090,6 +1108,7 @@ export const api = {
   /** Review mode: you read the resume; the app moves the role on (referral, then applying). */
   sendPlanItem: (id: number): Promise<PlanItem> => legacy.dailyPlan.send(id),
   approveAllPlan: (planId: number): Promise<{ approved: number }> => legacy.dailyPlan.approveAll(planId),
+  bulkPlanItems: (ids: number[], action: 'queue' | 'skip'): Promise<{ changed: number }> => legacy.dailyPlan.bulk(ids, action),
   referralAction: (id: number, action: ReferralAction, link?: string): Promise<unknown> => legacy.dailyPlan.referral(id, { action, link }),
   markAskSent: (id: number): Promise<unknown> => legacy.dailyPlan.askSent(id),
   connections: (): Promise<ConnectionsSummary> => legacy.dailyPlan.connections(),
@@ -1144,6 +1163,8 @@ export const api = {
   /** You built a suggested project and pushed it; it's added to the resume it was suggested for. */
   markProjectBuilt: (id: number, body: { repo_url: string; start: string; end: string; values?: string[] }): Promise<{ project: unknown; tailoring: Tailoring | null }> => legacy.career.markProjectBuilt(id, body),
   dismissProject: (id: number): Promise<{ project: unknown }> => legacy.career.dismissProject(id),
+  verifyProject: (id: number, repoUrl: string): Promise<{ project: unknown }> => legacy.career.verifyProject(id, repoUrl),
+  unbuildProject: (id: number): Promise<{ project: unknown }> => legacy.career.unbuildProject(id),
   plannedProjects: (): Promise<ProjectsState> => legacy.career.plannedProjects(),
   suggestProjects: (): Promise<{ suggesting: boolean }> => legacy.career.suggestProjects(),
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
@@ -1154,6 +1175,13 @@ export const api = {
     return { roles: d.roles ?? [], lastRun: d.lastRun ?? null }
   },
   reviewRole: (id: string): Promise<ReviewRole> => legacy.career.reviewRole(id),
+  reviewRuns: (): Promise<PipelineSummary> => legacy.career.reviewRuns(),
+  reviewCompany: async (name: string): Promise<CompanyQueueRole[]> => (await legacy.career.reviewCompany(name)).roles ?? [],
+  runConfig: async (): Promise<RunConfig | null> => (await legacy.career.runConfig()).config ?? null,
+  saveRunConfig: async (body: Partial<Pick<RunConfig, 'email_template' | 'linkedin_rules' | 'corrections'>>): Promise<RunConfig> => (await legacy.career.saveRunConfig(body)).config,
+  referrers: async (): Promise<Referrer[]> => (await legacy.career.referrers()).referrers ?? [],
+  addReferrer: (body: { company_name: string; contact_name: string; note: string }): Promise<{ moved: number }> => legacy.career.addReferrer(body),
+  removeReferrer: (id: string): Promise<{ ok: boolean }> => legacy.career.removeReferrer(id),
   reviewPdf: (versionId: string): Promise<Blob> => legacy.career.reviewPdf(versionId),
   requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),
   setReferralMode: (id: string, mode: ReferralMode): Promise<{ ok: boolean }> => legacy.career.setReferralMode(id, mode),

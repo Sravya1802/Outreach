@@ -104,6 +104,16 @@ export const WHATSAPP_TEMPLATES = {
     footer: APP,
     button: { text: 'View projects', path: '/profile/projects' },
   },
+  review: {
+    name: 'snj_review_update',
+    header: { text: 'Review update · {{1}}', example: '12 resumes' },
+    body: {
+      text: 'Your resume queue:\n{{1}}\n\nNothing is sent or applied until you approve it. Details are on your account.',
+      example: ['12 resumes ready for review'],
+    },
+    footer: APP,
+    button: { text: 'Open review queue', path: '/review' },
+  },
   skills: {
     name: 'snj_missing_skills',
     header: { text: 'Skills to check · {{1}}', example: 'Stripe' },
@@ -158,7 +168,7 @@ export function templateDefinition(kind) {
   return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: false, components };
 }
 
-const PREF_FOR = { list: 'list', picks: 'list', evening: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };
+const PREF_FOR = { list: 'list', picks: 'list', evening: 'list', review: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };
 
 const cfg = () => ({
   token: process.env.WHATSAPP_TOKEN,
@@ -484,6 +494,27 @@ export function eveningMessage({ ready = [], drafting = [], own = [], label }) {
     plain: text.replace(/\*/g, ''),
     subject: `${subject} · ${label}`,
   };
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** After a run: how many resumes it left for review. */
+export function runMessage({ roles_done: done, roles_failed: failed = 0 }) {
+  const line = [`${plural(done, 'resume')} ready for review`, failed ? `${failed} failed` : ''].filter(Boolean).join(', ');
+  const text = `*${line}*\n\nNothing is sent or applied until you approve it.\n\n${SITE}/review`;
+  return { params: { header: plural(done, 'resume'), body: [line] }, text, plain: text.replace(/\*/g, ''), subject: line };
+}
+
+/** The 9 PM digest: what's ready, what's going tomorrow and what has sat for over a day. */
+export function reviewMessage({ ready = 0, unreviewed = 0, tomorrow = 0, emails = 0 }) {
+  const lines = [
+    `${plural(ready, 'role')} ready for review`,
+    unreviewed ? `${unreviewed} of them unreviewed for over a day` : '',
+    tomorrow ? `${plural(tomorrow, 'approved role')} due to apply by tomorrow` : '',
+    emails ? `${plural(emails, 'email')} waiting for your OK in Outbox` : '',
+  ].filter(Boolean);
+  const text = `*Tonight’s review*\n\n${lines.map(l => `• ${l}`).join('\n')}\n\n${SITE}/review`;
+  return { params: { header: plural(ready, 'role'), body: [lines.join(' · ')] }, text, plain: text.replace(/\*/g, ''), subject: lines[0] };
 }
 
 // ── Inbound ─────────────────────────────────────────────────────────────────

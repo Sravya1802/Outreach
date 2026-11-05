@@ -11,7 +11,7 @@ import { appCouldNotSend, appliedLabel, autoSite, isApplying } from './applied'
  * How to apply to one role: the app does it (Apply for me, on sites it can
  * submit to), or you do (Apply opens the employer's form, then I applied).
  */
-export function ManualApply({ evalId, company, jobUrl, applied, appliedAt, applyStatus, compact = false, className }: {
+export function ManualApply({ evalId, company, jobUrl, applied, appliedAt, applyStatus, compact = false, minor = false, className }: {
   evalId: number
   company?: string
   jobUrl: string | null | undefined
@@ -20,6 +20,8 @@ export function ManualApply({ evalId, company, jobUrl, applied, appliedAt, apply
   /** evaluations.apply_status, to show the app's progress. */
   applyStatus?: string | null
   compact?: boolean
+  /** The row has its own main button: no second Apply for me, and Apply stays quiet. */
+  minor?: boolean
   className?: string
 }) {
   const qc = useQueryClient()
@@ -59,7 +61,7 @@ export function ManualApply({ evalId, company, jobUrl, applied, appliedAt, apply
   }
   return (
     <span className={cn('inline-flex items-center gap-1.5', compact ? 'flex-nowrap' : 'flex-wrap', className)} onClick={stop}>
-      {site && (
+      {site && !minor && (
         <button type="button" onClick={() => setConfirm(true)} title={`The app fills in the ${site} form and submits it`}
           className={cn('inline-flex items-center rounded-[4px] bg-accent font-semibold whitespace-nowrap text-on-accent hover:bg-accent-hover', small)}>
           Apply for me
@@ -68,7 +70,7 @@ export function ManualApply({ evalId, company, jobUrl, applied, appliedAt, apply
       {jobUrl && (
         <a href={jobUrl} target="_blank" rel="noreferrer" onClick={stop} title="Open the employer’s application and apply yourself"
           className={cn('inline-flex items-center gap-1 rounded-[4px] font-semibold whitespace-nowrap',
-            site ? 'border border-line-strong text-fg hover:bg-hover' : 'bg-accent text-on-accent hover:bg-accent-hover', small)}>
+            site || minor ? 'border border-line-strong text-fg hover:bg-hover' : 'bg-accent text-on-accent hover:bg-accent-hover', small)}>
           Apply <ExternalLink className="size-3" aria-hidden="true" />
         </a>
       )}

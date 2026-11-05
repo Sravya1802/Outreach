@@ -52,7 +52,7 @@ export const SECTIONS: NavSection[] = [
     owns: ['/to-apply'],
     tabs: [
       { label: 'Review queue', to: '/review', keywords: 'claude chat runs resumes ready revising comments revision versions outreach approve' },
-      { label: 'To apply', to: '/to-apply', keywords: 'missed apply review send it approved resumes written not applied follow through' },
+      { label: 'Earlier resumes', to: '/to-apply', keywords: 'to apply missed apply review send it approved resumes written not applied follow through' },
     ],
   },
   {
@@ -69,6 +69,7 @@ export const SECTIONS: NavSection[] = [
     tabs: [
       { label: 'Messages', to: '/people/messages', keywords: 'linkedin notes connections personalized email copy send referral' },
       { label: 'Contacts', to: '/people/contacts', keywords: 'outreach referrals emails messages crm' },
+      { label: 'My referrers', to: '/people/referrers', keywords: 'referral friend contact who can refer me amazon meta microsoft ask' },
       { label: 'Templates', to: '/people/templates', keywords: 'outreach email linkedin dm referral ask' },
       { label: 'Outbox', to: '/people/outbox', keywords: 'outreach gmail scheduled sent follow-ups replies' },
     ],

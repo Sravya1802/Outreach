@@ -11,7 +11,8 @@ import { ItemRow } from '@/features/applications/DailyPlan'
 import { num } from '@/features/applications/plan'
 import { marketPhrase } from '@/lib/markets'
 import { cn } from '@/lib/cn'
-import { formatNumber, greeting, nameFromEmail, percent } from '@/lib/format'
+import { formatNumber, greeting, nameFromEmail, percent, timeAgo } from '@/lib/format'
+import { nextRunLine } from '@/features/review/review'
 import { Button, ButtonLink, ErrorState, Page, Skeleton, Spinner, StatusDot, useToast } from '@/ui'
 import { STATE_TONE } from '@/features/integrations/overview'
 import { useIntegrations } from '@/features/integrations/useIntegrations'
@@ -201,16 +202,48 @@ function TopPicks() {
   )
 }
 
+/** The Claude chat runs: the last one, the next one and what's left. Hidden until there's been a run. */
+function Runs() {
+  const q = useQuery({ queryKey: qk.reviewRuns, queryFn: api.reviewRuns, refetchInterval: 60_000 })
+  const d = q.data
+  const last = d?.runs[0]
+  if (q.isLoading || q.isError || !d || !last) return null
+  const rows: [string, ReactNode][] = [
+    ['Last run', timeAgo(last.finished_at ?? last.started_at)],
+    ['Next run', nextRunLine(d.nextRunAt)],
+    [`Done in the last ${d.window.hours} hours`, formatNumber(d.window.done)],
+    ['Queue left', formatNumber(d.queue.waiting)],
+    ['Resumes ready', formatNumber(d.queue.ready)],
+    ['Failures', <span className={d.window.failed ? 'text-danger' : undefined}>{d.window.failed}</span>],
+  ]
+  return (
+    <section aria-labelledby="runs-h">
+      <SectionTitle action={<Link to="/review" className="text-[14px] text-accent hover:underline">Review queue</Link>}>
+        <span id="runs-h">Claude runs</span>
+      </SectionTitle>
+      <dl className="divide-y divide-line">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-baseline justify-between py-2 text-[14px]">
+            <dt className="text-muted">{label}</dt>
+            <dd className="font-mono text-fg">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 function Pipeline() {
   const metrics = useJobMetrics()
   const f = metrics.data?.applyFunnel
   const s = metrics.data?.summary
   const rows = [
     { label: 'Evaluated', n: f?.evaluated ?? 0 },
-    { label: 'Applied', n: f?.applied ?? 0 },
-    { label: 'Heard back', n: f?.responded ?? 0 },
-    { label: 'Interviewing', n: f?.interview ?? 0 },
-    { label: 'Offers', n: f?.offer ?? 0 },
+    { label: 'Applied', n: f?.applied ?? 0, of: f?.evaluated ?? 0 },
+    { label: 'Replies', n: f?.responded ?? 0, of: f?.applied ?? 0 },
+    { label: 'Rejections', n: f?.rejected ?? 0, of: f?.applied ?? 0 },
+    { label: 'Interviewing', n: f?.interview ?? 0, of: f?.applied ?? 0 },
+    { label: 'Offers', n: f?.offer ?? 0, of: f?.interview ?? 0 },
   ]
   return (
     <section aria-labelledby="pipe-h">
@@ -219,18 +252,15 @@ function Pipeline() {
       </SectionTitle>
       {metrics.isError ? <ErrorState compact error={metrics.error} onRetry={() => void metrics.refetch()} /> : metrics.isLoading ? <Skeleton className="mt-2 h-32" /> : (
         <dl className="divide-y divide-line">
-          {rows.map((r, i) => {
-            const prev = i > 0 ? (rows[i - 1]?.n ?? 0) : 0
-            return (
-              <div key={r.label} className="flex items-baseline justify-between py-2 text-[14px]">
-                <dt className="text-muted">{r.label}</dt>
-                <dd className="font-mono text-fg">
-                  {formatNumber(r.n)}
-                  {i > 0 && prev > 0 && <span className="ml-2 text-[12px] text-subtle">{percent(r.n, prev)}%</span>}
-                </dd>
-              </div>
-            )
-          })}
+          {rows.map(r => (
+            <div key={r.label} className="flex items-baseline justify-between py-2 text-[14px]">
+              <dt className="text-muted">{r.label}</dt>
+              <dd className="font-mono text-fg">
+                {formatNumber(r.n)}
+                {r.of ? <span className="ml-2 text-[12px] text-subtle">{percent(r.n, r.of)}%</span> : null}
+              </dd>
+            </div>
+          ))}
           <div className="flex items-baseline justify-between py-2 text-[14px]">
             <dt className="text-muted">Email replies</dt>
             <dd className="font-mono text-fg">{s?.responseRate ?? 0}%<span className="ml-2 text-[12px] text-subtle">{formatNumber(s?.outreachReplied)} of {formatNumber(s?.outreachSent)}</span></dd>
@@ -336,6 +366,7 @@ export default function HomePage() {
             <TopPicks />
           </div>
           <div className="space-y-10">
+            <Runs />
             <Pipeline />
             <Accounts />
           </div>

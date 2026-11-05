@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approvedLine, atsOk, backlog, isRunning, readReport, reviewTab, runLine } from './review'
+import { approvedLine, atsOk, backlog, bulkLine, canApprove, isRunning, nextRunLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -90,5 +90,33 @@ describe('readReport', () => {
     for (const bad of [null, undefined, 'x', { gaps: 'not a list', keyword_table: 7, scores: 3 }]) {
       expect(readReport(bad)).toMatchObject({ needs: [], gaps: [], changes: [], keywords: [], verdict: null })
     }
+  })
+})
+
+describe('bulk approve', () => {
+  const row = { status: 'ready' as const, check_status: 'passed' as const, ats_after: 94, eligibility: null }
+  it('takes a passed resume that is ready', () => {
+    expect(canApprove(row)).toBe(true)
+    expect(canApprove({ ...row, check_status: 'flagged' })).toBe(false)
+    expect(canApprove({ ...row, status: 'approved' })).toBe(false)
+  })
+  it('leaves anything under the ATS rule or with an eligibility question out of Select all', () => {
+    expect(safeToBulk(row)).toBe(true)
+    expect(safeToBulk({ ...row, ats_after: 90 })).toBe(false)
+    expect(safeToBulk({ ...row, eligibility: 'US citizens only' })).toBe(false)
+  })
+  it('says how it went', () => {
+    const r = { emails: 2, inGmail: 2, notes: 2, skipped: [] }
+    expect(bulkLine([r, r], 0)).toBe('Approved 2 roles. 4 emails in Gmail Drafts, each waiting for your OK in Outbox.')
+    expect(bulkLine([{ ...r, emails: 0 }], 1)).toBe('Approved 1 role. 1 couldn’t be approved.')
+  })
+})
+
+describe('nextRunLine', () => {
+  const now = Date.parse('2026-11-05T12:00:00Z')
+  it('says when one is due', () => {
+    expect(nextRunLine(null, now)).toBe('Not scheduled')
+    expect(nextRunLine('2026-11-05T11:00:00Z', now)).toBe('Due now')
+    expect(nextRunLine('2026-11-05T15:05:00Z', now)).toMatch(/^About \d/)
   })
 })

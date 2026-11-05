@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ExternalLink, FileUp, X } from 'lucide-react'
-import { api, type DailyPlanOverview, type DailyPlanSettings, type PlanItem, type PlanPick, type ApplyMode } from '@/lib/api'
+import { api, type DailyPlanOverview, type DailyPlanSettings, type PlanItem, type PlanPick, type ApplyMode, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ButtonLink, ErrorState, Field, Input, Select, Skeleton, Spinner, useToast } from '@/ui'
-import { SPONSOR_TEXT, STAGE_LABEL, TIMEZONES, hourLabel, num, tzLabel } from './plan'
+import { STATUS_LABEL } from '@/features/review/review'
+import { SPONSOR_TEXT, STAGE_LABEL, TIMEZONES, groupRoles, hourLabel, num, placesLine, tzLabel, type RoleGroup } from './plan'
 import { useDailyPlan } from './useDailyPlan'
 import { ReferralPanel } from './Referrals'
 
@@ -122,6 +123,70 @@ export function ApproveButtons({ busy, onApprove }: { busy: boolean; onApprove: 
   )
 }
 
+type QueueMap = Map<string, ReviewRow>
+
+/** Where each listed role stands in the Claude queue, by plan item id. */
+function useQueueMap(): QueueMap {
+  const q = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue })
+  return useMemo(() => new Map((q.data?.roles ?? []).map(r => [String(r.id), r])), [q.data])
+}
+
+function QueueBadge({ row }: { row: ReviewRow }) {
+  return <Link to={`/review/${row.id}`}><Badge tone="info">{STATUS_LABEL[row.status]}{row.version != null ? ` · v${row.version}` : ''}</Badge></Link>
+}
+
+/** Ticks on a list of roles, and sending them to the queue or skipping them. Costs nothing: no resume is written here. */
+function useBulk<T extends { id: number }>(groups: RoleGroup<T>[], queue: QueueMap) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const open = groups.filter(g => !queue.has(String(g.item.id)))
+  const chosen = open.filter(g => picked.has(g.item.id))
+  const act = useMutation({
+    mutationFn: async (action: 'queue' | 'skip') => {
+      const others = chosen.flatMap(g => g.others.map(o => o.id))
+      const main = chosen.map(g => g.item.id)
+      // One resume per role: the other locations are set aside, whichever way it goes.
+      const r = await api.bulkPlanItems(main, action)
+      if (others.length) await api.bulkPlanItems(others, 'skip')
+      return { action, changed: r.changed }
+    },
+    onSuccess: ({ action, changed }) => {
+      toast.success(action === 'queue' ? `Added ${changed} to the queue. The next run writes them.` : `Skipped ${changed}.`)
+      setPicked(new Set())
+      void qc.invalidateQueries({ queryKey: qk.dailyPlan })
+      void qc.invalidateQueries({ queryKey: qk.review })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  return {
+    open, chosen, act,
+    isPicked: (id: number) => picked.has(id),
+    toggle: (id: number, on: boolean) => setPicked(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n }),
+    setAll: (on: boolean) => setPicked(on ? new Set(open.map(g => g.item.id)) : new Set()),
+  }
+}
+
+function BulkBar<T extends { id: number }>({ bulk }: { bulk: ReturnType<typeof useBulk<T>> }) {
+  if (!bulk.open.length) return null
+  const n = bulk.chosen.length
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-2">
+      <label className="inline-flex items-center gap-2 text-[14px] text-fg">
+        <input type="checkbox" className="size-4 accent-accent" checked={n === bulk.open.length} onChange={e => bulk.setAll(e.target.checked)} />
+        Select all {bulk.open.length}
+      </label>
+      {n > 0 && (
+        <>
+          <Button size="sm" variant="primary" loading={bulk.act.isPending && bulk.act.variables === 'queue'} disabled={bulk.act.isPending} onClick={() => bulk.act.mutate('queue')}
+            title="The next Claude run writes the resume and outreach. Nothing goes out without your approval.">Add {n} to the queue</Button>
+          <Button size="sm" variant="ghost" loading={bulk.act.isPending && bulk.act.variables === 'skip'} disabled={bulk.act.isPending} onClick={() => bulk.act.mutate('skip')}>Skip {n}</Button>
+        </>
+      )}
+    </div>
+  )
+}
+
 /** One listed role's actions: pick, approve, undo, upload your own, I applied. Refreshes the list. */
 function useItemActions() {
   const qc = useQueryClient()
@@ -130,7 +195,12 @@ function useItemActions() {
   const fail = (e: Error) => toast.error(e.message)
   return {
     pick: useMutation({
-      mutationFn: ({ id, pick }: { id: number; pick: PlanPick | 'skip' | 'none' }) => api.pickPlanItem(id, pick),
+      // A choice on a role covers it everywhere: its other locations are set aside.
+      mutationFn: async ({ id, pick, others = [] }: { id: number; pick: PlanPick | 'skip' | 'none'; others?: number[] }) => {
+        const r = await api.pickPlanItem(id, pick)
+        if (pick !== 'none' && others.length) await api.bulkPlanItems(others, 'skip')
+        return r
+      },
       onSuccess: (_d, v) => { if (v.pick === 'app') toast.success('The app is drafting it now. It’s ready tonight for you to approve.'); refresh() },
       onError: fail,
     }),
@@ -163,23 +233,26 @@ function DraftState({ item }: { item: PlanItem }) {
   return <span className="text-muted"><Spinner size={12} className="mr-1.5 align-[-1px]" />Drafting. Ready tonight.</span>
 }
 
-export function ItemRow({ item }: { item: PlanItem }) {
+export function ItemRow({ item, others = [], queued, select }: { item: PlanItem; others?: PlanItem[]; queued?: ReviewRow; select?: { on: boolean; toggle: (on: boolean) => void } }) {
   const a = useItemActions()
   const file = useRef<HTMLInputElement>(null)
   const busy = [a.pick, a.decide, a.upload].some(m => m.isPending) || a.applied.isPending
   const score = num(item.score)
   const sponsor = item.sponsorship ? SPONSOR_TEXT[item.sponsorship] : null
   const open = item.decision === 'pending' || item.decision === 'expired'
-  const pick = (p: PlanPick | 'skip' | 'none') => a.pick.mutate({ id: item.id, pick: p })
+  const pick = (p: PlanPick | 'skip' | 'none') => a.pick.mutate({ id: item.id, pick: p, others: others.map(o => o.id) })
   return (
-    <li className="grid grid-cols-[52px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-4 sm:grid-cols-[52px_minmax(0,1fr)_auto]">
-      <span className={cn('font-mono text-[18px]', score != null && score >= 9 ? 'text-success' : 'text-warning')}>{score?.toFixed(1) ?? '—'}</span>
+    <li className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-4 sm:grid-cols-[64px_minmax(0,1fr)_auto]">
+      <span className={cn('flex items-center gap-2 self-start font-mono text-[18px]', score != null && score >= 9 ? 'text-success' : 'text-warning')}>
+        {select && !queued && <input type="checkbox" className="size-4 accent-accent" checked={select.on} onChange={e => select.toggle(e.target.checked)} aria-label={`Select ${item.company_name} · ${item.title}`} />}
+        {score?.toFixed(1) ?? '—'}
+      </span>
       <div className="min-w-0">
         <p className="text-[15px]">
           <PostingTitle company={item.company_name} title={item.title} url={item.apply_url} />
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] text-subtle">
-          {[item.plan_date ? `From ${shortDay(item.plan_date)}` : null, item.location, item.pay].filter(Boolean).join(' · ')}
+          {[item.plan_date ? `From ${shortDay(item.plan_date)}` : null, placesLine(item.location, others), item.pay].filter(Boolean).join(' · ')}
           {sponsor && <span className={sponsor.tone === 'success' ? 'text-success' : 'text-danger'}>{sponsor.text}</span>}
           {item.connections > 0 && <span className="text-accent">You know {item.connections} {item.connections === 1 ? 'person' : 'people'} here</span>}
           <PeopleFound n={item.people} withEmail={item.people_email} companyId={item.company_id} />
@@ -189,7 +262,8 @@ export function ItemRow({ item }: { item: PlanItem }) {
         {!item.pick && item.reason && <p className="mt-1 text-[14px] text-muted">{item.reason}</p>}
       </div>
       <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3 sm:justify-end">
-        {open && !item.pick && (
+        {queued && <QueueBadge row={queued} />}
+        {open && !item.pick && !queued && (
           <>
             <Button size="sm" variant="primary" loading={a.pick.isPending && a.pick.variables?.pick === 'app'} disabled={busy} onClick={() => pick('app')}
               title="The app writes the resume now. It waits for your approval tonight; nothing goes out before.">App drafts</Button>
@@ -240,7 +314,7 @@ const groupOf = (i: PlanItem): Group | null =>
       : i.pick === 'app' ? 'app' : i.pick === 'self' ? 'self' : 'pick'
 
 /** Today's roles: pick each one, then approve the app's drafts and finish your own. */
-export function TodaysRoles({ data }: { data: DailyPlanOverview }) {
+export function TodaysRoles({ data, queue }: { data: DailyPlanOverview; queue: QueueMap }) {
   const qc = useQueryClient()
   const toast = useToast()
   const refresh = () => void qc.invalidateQueries({ queryKey: qk.dailyPlan })
@@ -262,7 +336,8 @@ export function TodaysRoles({ data }: { data: DailyPlanOverview }) {
   const counts = Object.fromEntries(GROUPS.map(g => [g.id, by(g.id).length])) as Record<Group, number>
   const [chosen, setChosen] = useState<Group | null>(null)
   const group = chosen ?? (counts.pick ? 'pick' : counts.app ? 'app' : counts.self ? 'self' : 'pick')
-  const shown = by(group)
+  const shown = groupRoles(by(group))
+  const bulk = useBulk(group === 'pick' ? shown : [], queue)
   const readyDrafts = data.items.filter(i => groupOf(i) === 'app' && (i.t_status === 'ready' || i.t_status === 'needs_review')).length
   const day = plan ? new Date(`${String(plan.plan_date).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' }) : ''
 
@@ -304,7 +379,8 @@ export function TodaysRoles({ data }: { data: DailyPlanOverview }) {
               </button>
             ))}
           </div>
-          {shown.length ? <ul>{shown.map(i => <ItemRow key={i.id} item={i} />)}</ul> : (
+          <BulkBar bulk={bulk} />
+          {shown.length ? <ul>{shown.map(({ item: i, others }) => <ItemRow key={i.id} item={i} others={others} queued={queue.get(String(i.id))} select={group === 'pick' ? { on: bulk.isPicked(i.id), toggle: on => bulk.toggle(i.id, on) } : undefined} />)}</ul> : (
             <p className="py-4 text-[14px] text-muted">
               {group === 'pick' ? 'Nothing left to pick. New roles arrive tomorrow morning, with an update in the afternoon.'
                 : group === 'app' ? 'No roles for the app yet. Pick App drafts on a role and its resume is ready tonight.'
@@ -318,43 +394,60 @@ export function TodaysRoles({ data }: { data: DailyPlanOverview }) {
   )
 }
 
-/** Top roles from earlier lists that were never answered. They stay approvable for 14 days. */
-export function MissedRoles({ data }: { data: DailyPlanOverview }) {
+/** Roles from earlier lists that were never answered. They stay here until they're picked or skipped. */
+export function MissedRoles({ data, queue }: { data: DailyPlanOverview; queue: QueueMap }) {
   const qc = useQueryClient()
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const pick = useMutation({
-    mutationFn: ({ id, pick }: { id: number; pick: PlanPick | 'skip' }) => api.pickPlanItem(id, pick),
+    mutationFn: async ({ id, pick, others }: { id: number; pick: PlanPick | 'skip'; others: number[] }) => {
+      const r = await api.pickPlanItem(id, pick)
+      if (others.length) await api.bulkPlanItems(others, 'skip')
+      return r
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.dailyPlan }),
     onError: (e: Error) => toast.error(e.message),
   })
-  const missed = data.missed ?? []
+  const missed = useMemo(() => groupRoles(data.missed ?? []), [data.missed])
+  const bulk = useBulk(missed, queue)
   if (!missed.length) return null
   const busyId = pick.isPending ? pick.variables?.id : null
   const shown = open ? missed : missed.slice(0, 10)
   return (
     <section aria-labelledby="missed-h">
       <h2 id="missed-h" className="font-display text-[22px] font-semibold text-fg">Missed roles <span className="font-sans text-[15px] font-normal text-subtle">· {missed.length}</span></h2>
-      <p className="mb-1 text-[13px] text-subtle">Roles from earlier lists you didn’t pick. You can still pick them for 14 days after their list.</p>
+      <p className="mb-1 text-[13px] text-subtle">Roles from earlier lists you didn’t pick, best fit first. They stay here until you pick or skip them.</p>
+      <BulkBar bulk={bulk} />
       <ul className="border-t border-rule">
-        {shown.map(m => (
-          <li key={m.id} className="grid grid-cols-[52px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-3 sm:grid-cols-[52px_minmax(0,1fr)_auto]">
-            <span className={cn('font-mono text-[18px]', (num(m.score) ?? 0) >= 9 ? 'text-success' : 'text-warning')}>{num(m.score)?.toFixed(1) ?? '—'}</span>
+        {shown.map(({ item: m, others }) => {
+          const queued = queue.get(String(m.id))
+          const ids = others.map(o => o.id)
+          return (
+          <li key={m.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-4 gap-y-2 border-b border-line py-3 sm:grid-cols-[64px_minmax(0,1fr)_auto]">
+            <span className={cn('flex items-center gap-2 self-start font-mono text-[18px]', (num(m.score) ?? 0) >= 9 ? 'text-success' : 'text-warning')}>
+              {!queued && <input type="checkbox" className="size-4 accent-accent" checked={bulk.isPicked(m.id)} onChange={e => bulk.toggle(m.id, e.target.checked)} aria-label={`Select ${m.company_name} · ${m.title}`} />}
+              {num(m.score)?.toFixed(1) ?? '—'}
+            </span>
             <div className="min-w-0">
               <p className="text-[15px]"><PostingTitle company={m.company_name} title={m.title} url={m.apply_url} /></p>
               <p className="mt-0.5 text-[13px] text-subtle">
-                {[`From ${new Date(`${m.plan_date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`, m.location].filter(Boolean).join(' · ')}
+                {[`From ${new Date(`${m.plan_date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`, placesLine(m.location, others)].filter(Boolean).join(' · ')}
                 {m.connections > 0 && <span className="ml-2 text-accent">You know {m.connections} here</span>}
               </p>
             </div>
             <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-3">
               {m.evaluation_id && <ButtonLink to={`/resumes/job/${m.evaluation_id}`} size="sm" variant="ghost">{m.ats_score != null ? `Resume · ATS ${m.ats_score}%` : 'Resume'}</ButtonLink>}
-              <Button size="sm" variant="primary" loading={busyId === m.id && pick.variables?.pick === 'app'} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'app' })}>App drafts</Button>
-              <Button size="sm" disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'self' })}>I’ll draft my own</Button>
-              <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'skip' })}>Skip</Button>
+              {queued ? <QueueBadge row={queued} /> : (
+                <>
+                  <Button size="sm" variant="primary" loading={busyId === m.id && pick.variables?.pick === 'app'} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'app', others: ids })}>App drafts</Button>
+                  <Button size="sm" disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'self', others: ids })}>I’ll draft my own</Button>
+                  <Button size="sm" variant="ghost" icon={<X className="size-3.5" />} disabled={busyId === m.id} onClick={() => pick.mutate({ id: m.id, pick: 'skip', others: ids })}>Skip</Button>
+                </>
+              )}
             </div>
           </li>
-        ))}
+          )
+        })}
       </ul>
       {missed.length > 10 && <Button className="mt-3" variant="ghost" size="sm" onClick={() => setOpen(v => !v)}>{open ? 'Show fewer' : `Show all ${missed.length}`}</Button>}
     </section>
@@ -394,13 +487,14 @@ export function InProgress({ data }: { data: DailyPlanOverview }) {
 
 export function DailyPlanSections() {
   const q = useDailyPlan()
+  const queue = useQueueMap()
   if (q.error) return <ErrorState error={q.error} onRetry={() => q.refetch()} />
   if (q.isLoading || !q.data) return <Skeleton className="h-64" />
   return (
     <div className="space-y-10">
       <EveningListSettings data={q.data} />
-      <TodaysRoles data={q.data} />
-      <MissedRoles data={q.data} />
+      <TodaysRoles data={q.data} queue={queue} />
+      <MissedRoles data={q.data} queue={queue} />
       <InProgress data={q.data} />
     </div>
   )

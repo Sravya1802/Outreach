@@ -29,6 +29,7 @@ const TrackerPage = lazyWithRetry(() => import('@/features/applications/TrackerP
 const ProjectsPage = lazyWithRetry(() => import('@/features/profile/ProjectsPage'), 'ProjectsPage')
 const ResumesPage = lazyWithRetry(() => import('@/features/resumes/ResumesPage'), 'ResumesPage')
 const ToApplyPage = lazyWithRetry(() => import('@/features/toapply/ToApplyPage'), 'ToApplyPage')
+const ReferrersPage = lazyWithRetry(() => import('@/features/outreach/ReferrersPage'), 'ReferrersPage')
 const ReviewPage = lazyWithRetry(() => import('@/features/review/ReviewPage'), 'ReviewPage')
 const RolePage = lazyWithRetry(() => import('@/features/review/RolePage'), 'RolePage')
 const AppliedPage = lazyWithRetry(() => import('@/features/resumes/AppliedPage'), 'AppliedPage')
@@ -107,6 +108,7 @@ function SignedInRoutes() {
 
         <Route path="/people" element={<Navigate to="/people/contacts" replace />} />
         <Route path="/people/contacts" element={<ContactsPage />} />
+        <Route path="/people/referrers" element={<ReferrersPage />} />
         <Route path="/people/templates" element={<TemplatesPage />} />
         <Route path="/people/outbox" element={<OutboxPage />} />
         <Route path="/people/messages" element={<MessagesPage />} />

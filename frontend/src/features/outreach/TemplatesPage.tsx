@@ -3,12 +3,45 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { api, type OutreachTemplates, type TemplateVariant } from '@/lib/api'
 import { qk } from '@/app/queryClient'
+import { cn } from '@/lib/cn'
 import { Button, ConfirmDialog, ErrorState, Field, Input, Page, PageHeader, Skeleton, Textarea, useToast } from '@/ui'
 
 const KINDS = [
   { kind: 'email', title: 'Cold email', hint: 'The style the AI follows for first emails. Keep it short; it rewrites the details per person.' },
   { kind: 'linkedin', title: 'LinkedIn message', hint: 'Connection notes have a 300-character limit, so keep this one brief.' },
 ] as const
+
+const LINKEDIN_LIMIT = 300
+
+/** What the Claude chat runs follow. Each save is a new config version, read by the next run. */
+function RunRules() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const q = useQuery({ queryKey: qk.runConfig, queryFn: api.runConfig })
+  const [email, setEmail] = useState<string | null>(null)
+  const [rules, setRules] = useState<string | null>(null)
+  const save = useMutation({
+    mutationFn: () => api.saveRunConfig({ email_template: email ?? undefined, linkedin_rules: rules ?? undefined }),
+    onSuccess: c => { qc.setQueryData(qk.runConfig, c); setEmail(null); setRules(null); toast.success('Saved. The next run follows these.') },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+  if (q.isLoading) return <Skeleton className="h-40" />
+  const c = q.data
+  if (!c) return null
+  const dirty = (email != null && email !== c.email_template) || (rules != null && rules !== c.linkedin_rules)
+  return (
+    <section aria-labelledby="run-h" className="space-y-4 border-t border-rule pt-5">
+      <div>
+        <h2 id="run-h" className="font-display text-[22px] font-semibold text-fg">What your Claude runs follow</h2>
+        <p className="mt-1 text-[14px] text-muted">The formal referral email and the LinkedIn rules every run reads. Emails a run has already written stay as they are; edit those by hand.</p>
+      </div>
+      <Field label="Formal email template">{f => <Textarea {...f} rows={12} value={email ?? c.email_template ?? ''} onChange={e => setEmail(e.target.value)} className="font-mono text-[13px]" />}</Field>
+      <Field label="LinkedIn rules">{f => <Textarea {...f} rows={5} value={rules ?? c.linkedin_rules ?? ''} onChange={e => setRules(e.target.value)} className="font-mono text-[13px]" />}</Field>
+      <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>Save for the next run</Button>
+    </section>
+  )
+}
 
 const newId = () => `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
@@ -20,6 +53,7 @@ export default function TemplatesPage() {
   const [confirmReset, setConfirmReset] = useState(false)
   const t = draft ?? q.data?.templates
   const dirty = draft != null && JSON.stringify(draft) !== JSON.stringify(q.data?.templates)
+  const overLimit = (t?.linkedin.length ?? 0) > LINKEDIN_LIMIT
 
   const edit = (patch: Partial<OutreachTemplates>) => t && setDraft({ ...t, ...patch })
   const editVariant = (id: string, patch: Partial<TemplateVariant>) => t && edit({ variants: t.variants.map(v => (v.id === id ? { ...v, ...patch } : v)) })
@@ -43,11 +77,12 @@ export default function TemplatesPage() {
       <PageHeader
         title="Email templates"
         description="The tone and shape the AI follows when it writes to someone. It always rewrites the specifics for each person and company."
-        actions={<Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>Save</Button>}
+        actions={<Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || overLimit}>Save</Button>}
       />
 
       {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !t ? <Skeleton className="h-72" /> : (
         <div className="space-y-12">
+          <RunRules />
           {KINDS.map(k => {
             const variants = t.variants.filter(v => v.kind === k.kind)
             return (
@@ -57,7 +92,7 @@ export default function TemplatesPage() {
                 <Field label="Main template">
                   {f => <Textarea {...f} rows={9} value={t[k.kind]} onChange={e => edit({ [k.kind]: e.target.value })} className="font-mono text-[13px]" />}
                 </Field>
-                {k.kind === 'linkedin' && <p className="mt-1 text-[12px] text-subtle">{t.linkedin.length} characters</p>}
+                {k.kind === 'linkedin' && <p className={cn('mt-1 text-[12px]', overLimit ? 'text-danger' : 'text-subtle')}>{t.linkedin.length}/{LINKEDIN_LIMIT}{overLimit && `, ${t.linkedin.length - LINKEDIN_LIMIT} over the limit`}</p>}
 
                 <div className="mt-6 space-y-4">
                   {variants.map(v => (
@@ -82,7 +117,7 @@ export default function TemplatesPage() {
           })}
 
           <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
-            <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>Save</Button>
+            <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || overLimit}>Save</Button>
             {dirty && <Button variant="ghost" onClick={() => setDraft(null)}>Discard changes</Button>}
             <Button variant="ghost" className="ml-auto" onClick={() => setConfirmReset(true)}>Reset to defaults</Button>
           </div>

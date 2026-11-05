@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Copy, ExternalLink, Mail, Send, Trash2, UserSearch } from 'lucide-react'
+import { STATUS_LABEL } from '@/features/review/review'
 import { api, type CompanyContact, type CompanyDetail, type CompanyRole, type CompanyStatus, type PeopleEvent } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
@@ -231,6 +232,28 @@ function People({ company, contacts }: { company: CompanyDetail; contacts: Compa
   )
 }
 
+/** This company's roles in the Review queue, with the resume version each one uses. */
+function QueueRoles({ company }: { company: string }) {
+  const q = useQuery({ queryKey: qk.reviewCompany(company), queryFn: () => api.reviewCompany(company) })
+  const list = q.data ?? []
+  if (!list.length) return null
+  return (
+    <section aria-labelledby="queue-h" className="space-y-2">
+      <h2 id="queue-h" className="font-display text-[24px] font-semibold text-fg">In your review queue <span className="font-sans text-[15px] font-normal text-subtle">· {list.length}</span></h2>
+      <ul className="border-t border-line">
+        {list.map(r => (
+          <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 border-b border-line py-3">
+            <Link to={`/review/${r.id}`} className="truncate text-[14px] font-medium text-fg hover:text-accent">{r.title}</Link>
+            <span className="font-mono text-[13px] text-muted">{r.version == null ? 'No resume yet' : `Resume v${r.version}${r.is_final ? ' (final)' : ''}`}</span>
+            <span className="truncate text-[13px] text-muted">{[STATUS_LABEL[r.status], r.location].filter(Boolean).join(' · ')}</span>
+            <span className="text-[12px] text-subtle">{r.ats_after == null ? '' : `ATS ${r.ats_after}%`}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function Roles({ company, initial }: { company: CompanyDetail; initial: CompanyRole[] }) {
   const qc = useQueryClient()
   const toast = useToast()
@@ -336,6 +359,7 @@ export default function CompanyPage() {
       </header>
       <div className="grid gap-12 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <People company={company} contacts={contacts} />
+        <QueueRoles company={company.name} />
         <Roles company={company} initial={q.data.roles} />
       </div>
     </Page>

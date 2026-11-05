@@ -38,12 +38,13 @@ const FOLLOW_UP = 'followup'
 function FunnelStrip({ f }: { f: Funnel }) {
   const stats = [
     { label: 'Applied', value: String(f.applied), sub: null },
-    { label: 'Heard back', value: `${percent(f.heardBack, f.applied)}%`, sub: `${f.heardBack} of ${f.applied}` },
+    { label: 'Replies', value: `${percent(f.replies, f.applied)}%`, sub: `${f.replies} of ${f.applied}` },
+    { label: 'Rejections', value: `${percent(f.rejections, f.applied)}%`, sub: `${f.rejections} of ${f.applied}` },
     { label: 'Interviews', value: `${percent(f.interviews, f.applied)}%`, sub: `${f.interviews} of ${f.applied}` },
     { label: 'Offers', value: String(f.offers), sub: null },
   ]
   return (
-    <dl className="mb-6 grid grid-cols-2 border-y border-rule sm:grid-cols-4">
+    <dl className="mb-6 grid grid-cols-2 border-y border-rule sm:grid-cols-5">
       {stats.map((st, i) => (
         <div key={st.label} className={cn('py-3', i % 2 === 1 && 'pl-4 sm:pl-0', i > 0 && 'sm:border-l sm:border-line sm:pl-5', i > 1 && 'border-t border-line sm:border-t-0')}>
           <dt className="text-[13px] text-muted">{st.label}</dt>

@@ -26,7 +26,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     when: 'Open it to see how the search is going, or to update where an application stands.',
     tabs: {
       '/dashboard': 'Applications per week and where each one stands, fit scores, outreach emails, referrals and this month’s cost.',
-      '/dashboard/tracker': 'Every role you’ve applied to, as a sheet: company, role, link, status and referral. Roles you haven’t applied to stay on To apply. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
+      '/dashboard/tracker': 'Every role you’ve applied to, as a sheet: company, role, link, status and referral. Roles you haven’t applied to stay in the Review queue. Change a status as you hear back, import your own spreadsheet as a CSV, or download it.',
     },
   },
   jobs: {
@@ -36,7 +36,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/jobs/roles': 'Internship and new-grad openings in your country, refreshed every morning. Search, filter, open the posting, or turn on email alerts.',
       '/jobs/companies': 'Companies grouped by industry. Find new ones, and open one to see its roles and the people you’ve found there.',
       '/jobs/evaluate': 'Paste a job link or description and get a fit score out of 10 against your resume, with the reasons.',
-      '/jobs/auto-apply': 'Your evening list. Approve the roles you want and each gets a tailored resume, a referral ask, then an application. You also set the score cutoff and how many a day here.',
+      '/jobs/auto-apply': 'Your daily list and every role you missed. Pick roles one by one, or tick many and add them to the Claude queue. Each role shows where it stands in the queue. You also set the score cutoff and how many a day here.',
     },
   },
   toapply: {
@@ -44,7 +44,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     when: 'Open it each day to catch anything you missed, and to read the resumes you chose to review.',
     tabs: {
       '/review': 'Resumes and outreach from your Claude chat runs. The tiles show the whole queue, from roles waiting for a run to roles you applied to. Open a role to read the PDF and report, ask for a revision or approve it.',
-      '/to-apply': 'Newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. Approve with Apply for me (the app goes all the way) or I’ll review (it waits for you to read the resume, then Send it or apply yourself).',
+      '/to-apply': 'Resumes the app wrote itself before the Claude runs, newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. Approve with Apply for me (the app goes all the way) or I’ll review (it waits for you to read the resume, then Send it or apply yourself).',
     },
   },
   resumes: {
@@ -62,7 +62,8 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     tabs: {
       '/people/messages': 'Every company where you know someone. Each person gets a LinkedIn note and an email written for them. Copy, send, and mark as sent.',
       '/people/contacts': 'Everyone you’ve found at the companies you track, with an email address when one was found.',
-      '/people/templates': 'The tone and shape the AI follows when it writes to someone. It still rewrites the details for each person.',
+      '/people/referrers': 'The people you can ask yourself. Roles at these companies skip recruiter emails and show who to ask.',
+      '/people/templates': 'What your Claude runs follow for emails and LinkedIn notes, and the tone the app’s own drafts use.',
       '/people/outbox': 'Emails scheduled from your Gmail, their follow-ups, and the replies that came back. Needs Gmail connected.',
     },
   },

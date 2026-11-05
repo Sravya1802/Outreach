@@ -469,9 +469,6 @@ export async function emailPlan(userId, planId) {
 
 // ── Decisions ───────────────────────────────────────────────────────────────
 
-/** How long a top role from an earlier list can still be approved. */
-export const MISSED_DAYS = 14;
-
 /**
  * Approve / skip / undo one role. Approving creates its evaluation; the tick starts the resume.
  * mode: 'auto' (the app goes on to apply) or 'review' (it stops once the resume is written).
@@ -485,11 +482,7 @@ export async function decide(userId, itemId, decision, mode = 'auto') {
   if (!['approved', 'skipped', 'pending'].includes(decision)) throw Object.assign(new Error('Bad decision'), { status: 400 });
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
-  if (item.decision === 'expired') {
-    // A role from an earlier list can still be approved or skipped for MISSED_DAYS.
-    if (Date.now() - new Date(item.created_at).getTime() > MISSED_DAYS * 86400_000) throw Object.assign(new Error('This role’s list is too old. Find it in Jobs if you still want it.'), { status: 409 });
-    if (decision === 'pending') return item;
-  }
+  if (item.decision === 'expired' && decision === 'pending') return item;
   if (item.decision === 'approved' && decision !== 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) {
     throw Object.assign(new Error('This role is already past the resume step.'), { status: 409 });
   }
@@ -633,6 +626,34 @@ export async function draftPicked(userId) {
 const PICKS = ['app', 'self', 'skip', 'none'];
 
 /**
+ * Many listed roles at once. 'queue' hands them to the Claude chat runs; 'skip' sets
+ * them aside. Neither spends anything, and a role already approved is left alone.
+ */
+export async function bulkItems(userId, ids, action) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter(Number.isSafeInteger);
+  if (!list.length) throw Object.assign(new Error('Pick at least one role.'), { status: 400 });
+  if (action === 'queue') {
+    const r = await run(
+      `INSERT INTO tailor_jobs (user_id, plan_item_id, scraped_role_id)
+       SELECT user_id, id, scraped_role_id FROM plan_items WHERE user_id = $1 AND id = ANY($2) AND decision IN ('pending', 'expired')
+       ON CONFLICT (plan_item_id) DO NOTHING`,
+      [userId, list],
+    );
+    return { changed: r.rowCount };
+  }
+  if (action === 'skip') {
+    const r = await run(
+      `UPDATE plan_items pi SET decision = 'skipped', decided_at = NOW(), pick = NULL, picked_at = NULL
+        WHERE pi.user_id = $1 AND pi.id = ANY($2) AND pi.decision IN ('pending', 'expired')
+          AND NOT EXISTS (SELECT 1 FROM tailor_jobs j WHERE j.plan_item_id = pi.id)`,
+      [userId, list],
+    );
+    return { changed: r.rowCount };
+  }
+  throw Object.assign(new Error('Bad action'), { status: 400 });
+}
+
+/**
  * The user's call on one listed role: 'app' (the app drafts it now and waits
  * for Approve), 'self' (they write the resume; reminded at list time), 'skip',
  * or 'none' (undecided again). Only 'app' spends anything, on its draft.
@@ -642,9 +663,6 @@ export async function pickItem(userId, itemId, choice) {
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [itemId, userId]);
   if (!item) throw Object.assign(new Error('Not found'), { status: 404 });
   if (item.decision === 'approved') throw Object.assign(new Error('This role is already approved.'), { status: 409 });
-  if (item.decision === 'expired' && Date.now() - new Date(item.created_at).getTime() > MISSED_DAYS * 86400_000) {
-    throw Object.assign(new Error('This role’s list is too old. Find it in Jobs if you still want it.'), { status: 409 });
-  }
   if (choice === 'skip') {
     await run("UPDATE plan_items SET decision = 'skipped', decided_at = NOW(), pick = NULL, picked_at = NULL WHERE id = $1", [item.id]);
     return one('SELECT * FROM plan_items WHERE id = $1', [item.id]);
@@ -842,6 +860,19 @@ export async function sendEvening(userId, plan) {
 
 // ── Cron entry point ────────────────────────────────────────────────────────
 
+const DIGEST_HOUR = 21;
+
+/** The 9 PM review digest, once per local day. */
+async function maybeSendDigest(userId, s, now) {
+  if (localHour(s.timezone, now) < DIGEST_HOUR) return;
+  const date = localDate(s.timezone, now);
+  const last = await one("SELECT value FROM meta WHERE user_id = $1 AND key = 'review_digest_date'", [userId]);
+  if (last?.value === date) return;
+  await run("INSERT INTO meta (user_id, key, value) VALUES ($1, 'review_digest_date', $2) ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value", [userId, date]);
+  const { sendReviewDigest } = await import('./tailorPipeline.js');
+  await sendReviewDigest(userId).catch(err => console.warn('[daily-plan] digest:', err.message));
+}
+
 let ticking = false;
 /** Every few minutes: build lists an hour before list time, email them at list time, advance approved roles. */
 export async function tick(now = new Date()) {
@@ -894,6 +925,7 @@ export async function tick(now = new Date()) {
         await advanceReferrals(u.user_id, s);
         await notifyNeedsYou(u.user_id).catch(err => console.warn('[daily-plan] whatsapp needs:', err.message));
         if (s.enabled) await maybeSendSummary(u.user_id, s, now);
+        if (s.enabled) await maybeSendDigest(u.user_id, s, now);
         done.advanced += 1;
       } catch (err) {
         console.warn(`[daily-plan] ${String(u.user_id).slice(0, 8)}: ${err.message}`);
@@ -933,15 +965,15 @@ export async function overview(userId) {
       ORDER BY pi.decided_at DESC LIMIT 100`,
     [userId],
   );
-  // Roles from earlier lists that were never answered. Still pickable for MISSED_DAYS.
+  // Roles from earlier lists that were never answered, whatever their tier or age.
   const missed = await all(
     `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score,
             pi.reason, pi.decision, pi.decided_at, pi.stage, pi.stage_note, p.plan_date::text AS plan_date, t.ats_score
        FROM plan_items pi JOIN daily_plans p ON p.id = pi.plan_id LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
-      WHERE pi.user_id = $1 AND pi.decision = 'expired' AND pi.tier IN ('top', 'worth') AND pi.created_at > NOW() - make_interval(days => $2)
-        AND ($3::bigint IS NULL OR pi.plan_id <> $3)
-      ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 1000`,
-    [userId, MISSED_DAYS, plan?.id ?? null],
+      WHERE pi.user_id = $1 AND pi.pick IS NULL AND pi.decision IN ('expired', 'pending') AND pi.tier <> 'excluded'
+        AND ($2::bigint IS NULL OR pi.plan_id <> $2)
+      ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 1500`,
+    [userId, plan?.id ?? null],
   );
   // People the user knows at each company (LinkedIn connections export).
   const keys = [...new Set([...items, ...picked, ...active].map(i => companyKey(i.company_name)).filter(Boolean))];

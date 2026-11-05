@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { groupRoles, placesLine } from './plan'
 import { applyNote, followUpDays, funnel, matchesSearch, nextStepDue, parseTime } from './pipeline'
 
 const NOW = new Date('2026-10-14T12:00:00Z').getTime()
@@ -43,7 +44,7 @@ describe('funnel', () => {
       { apply_status: 'offer', applied_at: 'x' },
       { apply_status: 'rejected', applied_at: 'x' },
       { apply_status: 'rejected', applied_at: null },
-    ])).toEqual({ applied: 5, heardBack: 4, interviews: 2, offers: 1 })
+    ])).toEqual({ applied: 5, replies: 3, rejections: 1, interviews: 2, offers: 1 })
   })
 })
 
@@ -60,5 +61,19 @@ describe('search and apply notes', () => {
     expect(applyNote({ apply_mode: 'manual', apply_status: 'interview', apply_error: null })?.text).toBe('Applied by hand')
     expect(applyNote({ apply_mode: 'auto', apply_status: 'not_started', apply_error: 'Login needed' })).toEqual({ text: 'Auto-apply stopped: Login needed', tone: 'danger' })
     expect(applyNote({ apply_mode: 'auto', apply_status: 'not_started', apply_error: null })).toBeNull()
+  })
+})
+
+describe('groupRoles', () => {
+  const role = (id: number, title: string, location: string | null) => ({ id, company_name: 'IBM', title, location })
+  it('makes one row of a role at several locations', () => {
+    const g = groupRoles([role(1, 'Entry Level', 'Austin, TX'), role(2, 'entry level ', 'Boston, MA'), role(3, 'Data Intern', 'Austin, TX')])
+    expect(g.map(x => x.item.id)).toEqual([1, 3])
+    expect(g[0]?.others.map(o => o.id)).toEqual([2])
+  })
+  it('counts the other places once', () => {
+    expect(placesLine('Austin, TX', [])).toBe('Austin, TX')
+    expect(placesLine('Austin, TX', [{ location: 'Boston, MA' }, { location: 'Boston, MA' }, { location: 'Austin, TX' }])).toBe('Austin, TX + 1 more')
+    expect(placesLine(null, [{ location: 'Boston, MA' }])).toBe('1 location')
   })
 })

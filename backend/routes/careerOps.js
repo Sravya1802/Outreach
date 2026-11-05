@@ -69,7 +69,7 @@ router.get('/resume', async (req, res) => {
     const name = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_name']))?.value;
     const date = (await one("SELECT value FROM meta WHERE key = $2 AND user_id = $1", [req.user.id, 'user_resume_date']))?.value;
     const file = await currentMaster(req.user.id);
-    res.json({ hasResume: !!text, name, date, textPreview: text?.slice(0, 300), file, inCloud: !!file });
+    res.json({ hasResume: !!text, name, date, textPreview: text?.slice(0, 300), text: text || null, file, inCloud: !!file });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

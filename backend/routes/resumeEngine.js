@@ -5,7 +5,7 @@ import { one, run } from '../db.js';
 import { parseId } from '../services/safePaths.js';
 import {
   approve, coverLetterRequested, latest, parsedMaster, start,
-  templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject,
+  templateInfo, saveTemplate, resetTemplate, listProjects, markProjectBuilt, dismissProject, unbuildProject, verifyProject,
   approveSkills, confirmedSkills, removeConfirmedSkill, resumesByJob, useTailored, skillGaps, approveSkillsEverywhere,
 } from '../services/resumeEngine.js';
 import { suggestProjects, isSuggesting } from '../services/projectIdeas.js';
@@ -158,6 +158,18 @@ router.post('/projects/:id/built', async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Bad id' });
   const { repo_url: repoUrl, start: from, end: to, values } = req.body || {};
   try { res.json(await markProjectBuilt(req.user.id, id, { repoUrl, start: from, end: to, values: Array.isArray(values) ? values : [] })); } catch (err) { fail(res, err); }
+});
+
+router.post('/projects/:id/verify', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json({ project: await verifyProject(req.user.id, id, req.body?.repo_url) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/projects/:id/unbuild', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json({ project: await unbuildProject(req.user.id, id) }); } catch (err) { fail(res, err); }
 });
 
 router.post('/projects/:id/dismiss', async (req, res) => {

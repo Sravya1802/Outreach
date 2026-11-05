@@ -169,10 +169,11 @@ export default function DashboardPage() {
 
       {pipeline.error ? <ErrorState error={pipeline.error} onRetry={() => void pipeline.refetch()} /> : (
         <div className="space-y-4">
-          {loading ? <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">{[0, 1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24" />)}</div> : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {loading ? <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">{[0, 1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-24" />)}</div> : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
               <Stat label="Applied" value={formatNumber(f.applied)} sub={`${formatNumber(rows.length)} roles evaluated`} />
-              <Stat label="Heard back" value={`${percent(f.heardBack, f.applied)}%`} sub={`${f.heardBack} of ${f.applied}`} />
+              <Stat label="Replies" value={`${percent(f.replies, f.applied)}%`} sub={`${f.replies} of ${f.applied}`} />
+              <Stat label="Rejections" value={`${percent(f.rejections, f.applied)}%`} sub={`${f.rejections} of ${f.applied}`} />
               <Stat label="Interviews" value={formatNumber(f.interviews)} sub={f.applied ? `${percent(f.interviews, f.applied)}% of applications` : undefined} />
               <Stat label="Offers" value={formatNumber(f.offers)} />
               <Stat label="Emails sent" value={formatNumber(s?.outreachSent)} sub={`${formatNumber(s?.contactsWithEmail)} contacts with email`} />
@@ -193,7 +194,8 @@ export default function DashboardPage() {
                 <BarList rows={[
                   { label: 'Evaluated', value: rows.length },
                   { label: 'Applied', value: f.applied },
-                  { label: 'Heard back', value: f.heardBack, note: f.applied ? `${percent(f.heardBack, f.applied)}%` : undefined },
+                  { label: 'Replies', value: f.replies, note: f.applied ? `${percent(f.replies, f.applied)}%` : undefined },
+                  { label: 'Rejections', value: f.rejections, note: f.applied ? `${percent(f.rejections, f.applied)}%` : undefined },
                   { label: 'Interviewing', value: f.interviews, note: f.applied ? `${percent(f.interviews, f.applied)}%` : undefined },
                   { label: 'Offers', value: f.offers },
                 ]} />

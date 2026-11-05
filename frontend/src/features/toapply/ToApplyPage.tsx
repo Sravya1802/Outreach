@@ -116,7 +116,8 @@ function Actions({ j, onView }: { j: ResumeJob; onView: () => void }) {
   const view = fileId != null && (
     <Button size="sm" variant="ghost" icon={<Eye className="size-3.5" />} onClick={onView} aria-label={`View the resume for ${j.company_name}`}>View</Button>
   )
-  const manual = <ManualApply evalId={j.id} company={j.company_name} jobUrl={j.job_url} applied={s === 'applied'} appliedAt={j.applied_at} applyStatus={j.apply_status} compact />
+  const hasMain = j.plan_item_id != null && (s === 'review' || s === 'open' || s === 'skipped')
+  const manual = <ManualApply evalId={j.id} company={j.company_name} jobUrl={j.job_url} applied={s === 'applied'} appliedAt={j.applied_at} applyStatus={j.apply_status} compact minor={hasMain} />
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
       {view}
@@ -158,8 +159,8 @@ export default function ToApplyPage() {
 
   return (
     <Page wide>
-      <PageHeader title="To apply"
-        description="Every job the app wrote a resume for, newest list first. Apply for me: the app takes it from approval to applying. I’ll review: it stops once the resume is written so you can read it, then Send it or apply yourself." />
+      <PageHeader title="Earlier resumes"
+        description="Resumes the app wrote itself before the Claude runs, newest list first. New work is in the Review queue. Apply for me: the app takes it from approval to applying. I’ll review: it stops once the resume is written so you can read it." />
       <div className="mb-4"><AddOwnJob /></div>
       {jobs.error ? <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} /> : jobs.isLoading ? <Skeleton className="h-72" /> : everything.length === 0 ? (
         <EmptyState title="No resumes yet" description="Each evening the top roles get a resume written before the list arrives. They’ll show up here." />

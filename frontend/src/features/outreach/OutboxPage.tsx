@@ -218,7 +218,7 @@ function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdi
         <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2 text-[13px]">
           {item.attachment_file_id ? (
             <button type="button" onClick={() => download.mutate()} className="inline-flex min-w-0 items-center gap-1.5 text-accent hover:underline" title="Download the attached resume">
-              <Paperclip className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{item.attachment_name || 'resume.pdf'}</span>
+              <Paperclip className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{item.attachment_name || 'resume.pdf'}{item.resume_version ? ` · Resume v${item.resume_version}` : ''}</span>
             </button>
           ) : <span className="text-subtle">No resume attached</span>}
           <span className="text-subtle">{item.in_gmail_drafts ? 'Also in your Gmail Drafts' : 'Not in Gmail Drafts (Gmail couldn’t be reached)'}</span>

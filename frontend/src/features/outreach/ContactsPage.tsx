@@ -264,7 +264,7 @@ function EmailPane({ email, companyKey, onEdit, onDiscard }: { email: OutboxItem
         {email.attachment_file_id ? (
           <p className="mt-2 border-t border-line pt-2 text-[12px]">
             <button type="button" onClick={() => download.mutate()} className="inline-flex min-w-0 items-center gap-1.5 text-accent hover:underline" title="Download the attached resume">
-              <Paperclip className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{email.attachment_name || 'resume.pdf'}</span>
+              <Paperclip className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{email.attachment_name || 'resume.pdf'}{email.resume_version ? ` · Resume v${email.resume_version}` : ''}</span>
             </button>
           </p>
         ) : null}

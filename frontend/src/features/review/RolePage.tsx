@@ -179,6 +179,29 @@ function ModeSelect({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
   )
 }
 
+/** My contact: the user asks their own person, and says here how it went. */
+function MyContact({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
+  const toast = useToast()
+  const [link, setLink] = useState('')
+  const id = Number(data.role.id)
+  const act = useMutation({
+    mutationFn: (action: 'submitted' | 'link') => api.referralAction(id, action, link.trim()),
+    onSuccess: () => { toast.success('Saved.'); setLink(''); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  if (!['waiting_referral', 'needs_you', 'ready_to_apply'].includes(data.role.stage ?? '')) return null
+  return (
+    <form className="space-y-2 border-t border-line pt-3" onSubmit={e => { e.preventDefault(); act.mutate('link') }}>
+      <p className="text-[14px] text-fg">Did they refer you?</p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" loading={act.isPending && act.variables === 'submitted'} onClick={() => act.mutate('submitted')}>Referral submitted</Button>
+        <Input value={link} onChange={e => setLink(e.target.value)} placeholder="Referral link or code" aria-label="Referral link or code" className="sm:w-64!" />
+        <Button type="submit" disabled={!link.trim()} loading={act.isPending && act.variables === 'link'}>Got a link</Button>
+      </div>
+    </form>
+  )
+}
+
 function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: ResumeVersion | undefined; onDone: () => void }) {
   const toast = useToast()
   const approve = useMutation({
@@ -198,12 +221,19 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
         <dt className="text-subtle">Referral mode</dt><dd className="text-fg">{MODE_LABEL[data.role.referral_mode]}</dd>
         <dt className="text-subtle">Resume</dt><dd className="text-fg">{latest ? `v${latest.version}${latest.is_final ? ' (final)' : ''}` : 'Not written yet'}</dd>
       </dl>
+      {data.role.referrer && (
+        <p className="rounded-[4px] bg-accent-soft px-3 py-2 text-[14px] text-fg">Ask {data.role.referrer}{data.role.referrer_note ? `. ${data.role.referrer_note}` : ''}</p>
+      )}
       {latest && !atsOk(latest.ats_after) && <p className="text-[14px] text-warning">ATS is {latest.ats_after ?? '?'}%, under your 90% rule. You can still approve it.</p>}
       {latest && !passed && <p className="text-[14px] text-danger">This version hasn’t passed its checks, so it can’t be approved.</p>}
       {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed} onClick={() => approve.mutate()}>Approve</Button>}
-      {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days for referrals.</p>}
+      {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
+        ? 'Approving makes this version final. This role’s mode emails nobody, and applying waits 2 business days.'
+        : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days for referrals.'}</p>}
       {data.role.status === 'approved' && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}
+      {data.role.status === 'approved' && data.role.apply_after && <p className="text-[14px] text-muted">Scheduled to apply {new Date(data.role.apply_after).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}.</p>}
       {data.role.status === 'approved' && <Link to="/people/outbox" className="text-[14px] text-accent hover:underline">Open Outbox</Link>}
+      {data.role.status === 'approved' && data.role.referral_mode === 'my_contact' && <MyContact data={data} onDone={onDone} />}
     </div>
   )
 }

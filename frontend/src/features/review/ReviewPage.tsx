@@ -1,12 +1,12 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { api, type ReviewRow } from '@/lib/api'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
-import { Badge, ButtonLink, EmptyState, ErrorState, Input, Page, PageHeader, Skeleton } from '@/ui'
-import { TABS, atsOk, backlog, isRunning, reviewTab, runLine, type ReviewTab } from './review'
+import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
+import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, reviewTab, runLine, safeToBulk, type ReviewTab } from './review'
 
 const head = 'border-b border-line px-3 py-2 font-medium'
 const cell = 'border-b border-line px-3 py-3 align-top'
@@ -24,15 +24,21 @@ function RoleName({ r }: { r: ReviewRow }) {
 
 const fit = (r: ReviewRow) => (r.score == null ? blank : Number(r.score).toFixed(1))
 
-function Row({ r }: { r: ReviewRow }) {
+function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (on: boolean) => void }) {
   return (
     <tr>
+      {onPick && (
+        <td className={cn(cell, 'w-8 pr-0')}>
+          {canApprove(r) && <input type="checkbox" className="mt-1 size-4 accent-accent" checked={picked} onChange={e => onPick(e.target.checked)} aria-label={`Select ${r.company_name} · ${r.title}`} />}
+        </td>
+      )}
       <td className={cell}>
         <RoleName r={r} />
         <div className="mt-1 flex flex-wrap gap-1.5 empty:hidden">
           {r.version != null && r.check_status === null && <Badge tone="info">Checking</Badge>}
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
+          {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
         </div>
       </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
@@ -77,7 +83,33 @@ export default function ReviewPage() {
   const rows = all.filter(r => reviewTab(r) === tab && (!s || r.company_name.toLowerCase().includes(s)))
   const { done, total, percent } = backlog(all)
   const line = LINE_COLUMNS[tab]
-  const columns = line ?? COLUMNS
+  const bulk = tab === 'ready'
+  const columns = line ?? (bulk ? ['Select', ...COLUMNS] : COLUMNS)
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+  const [progress, setProgress] = useState<number | null>(null)
+  const chosen = rows.filter(r => picked.has(r.id) && canApprove(r))
+  const safe = rows.filter(safeToBulk)
+  const allSafe = safe.length > 0 && safe.every(r => picked.has(r.id))
+  const pick = (id: string, on: boolean) => setPicked(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n })
+
+  // One at a time: each one uploads a PDF and writes to Gmail, and one failure shouldn't stop the rest.
+  async function approveChosen() {
+    setConfirming(false)
+    const done: ApproveResult[] = []
+    const failed: string[] = []
+    for (const [i, r] of chosen.entries()) {
+      setProgress(i + 1)
+      try { done.push(await api.approveRole(r.id)) } catch (e) { failed.push(`${r.company_name}: ${(e as Error).message}`) }
+    }
+    setProgress(null)
+    setPicked(new Set())
+    void qc.invalidateQueries({ queryKey: qk.review })
+    if (done.length) toast.success(bulkLine(done, failed.length))
+    if (failed.length) toast.error(failed.slice(0, 3).join(' '))
+  }
 
   return (
     <Page wide>
@@ -103,20 +135,42 @@ export default function ReviewPage() {
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           </div>
-          <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="sm:w-56!" />
+          <div className="flex flex-wrap items-center gap-3">
+            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="sm:w-56!" />
+            {bulk && safe.length > 0 && (
+              <label className="inline-flex items-center gap-2 text-[14px] text-fg">
+                <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}
+                  onChange={e => setPicked(e.target.checked ? new Set(safe.map(r => r.id)) : new Set())} />
+                Select all {safe.length} above 90% ATS
+              </label>
+            )}
+            {bulk && chosen.length > 0 && (
+              <Button variant="primary" className="ml-auto" loading={progress != null} onClick={() => setConfirming(true)}>
+                {progress != null ? `Approving ${progress} of ${chosen.length}` : `Approve ${chosen.length}`}
+              </Button>
+            )}
+          </div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
             <table className={cn('w-full border-collapse text-[14px] text-fg', !line && 'min-w-[860px]')}>
               <thead>
                 <tr className="bg-raised text-left text-[12px] font-medium tracking-wide text-subtle uppercase">
-                  {columns.map(c => <th key={c} className={head}>{c || <span className="sr-only">Open</span>}</th>)}
+                  {columns.map(c => <th key={c} className={head}>{c === 'Select' ? <span className="sr-only">Select</span> : c || <span className="sr-only">Open</span>}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} />))}
+                {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
                 {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>
+          <ConfirmDialog
+            open={confirming}
+            title={`Approve ${chosen.length} ${chosen.length === 1 ? 'role' : 'roles'}?`}
+            description="Each resume becomes final and its emails go to Gmail Drafts with the PDF attached. Nothing sends until you OK each email in People → Outbox, and applying waits 2 business days for referrals."
+            confirmLabel="Approve"
+            onConfirm={() => void approveChosen()}
+            onCancel={() => setConfirming(false)}
+          />
         </div>
       )}
     </Page>

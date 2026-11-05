@@ -9,6 +9,12 @@ export const KIND_LABEL: Record<ResumeFile['kind'], string> = {
 }
 
 /** "48 KB", "1.2 MB". */
+const STALE_DAYS = 14
+
+/** A master older than 2 weeks may be missing recent work. */
+export const isStale = (at: string | null | undefined, now = Date.now()) =>
+  Boolean(at) && now - new Date(at as string).getTime() > STALE_DAYS * 86_400_000
+
 export function formatBytes(n: number | null | undefined): string {
   if (!n || n < 0) return ''
   if (n < 1024) return `${n} B`

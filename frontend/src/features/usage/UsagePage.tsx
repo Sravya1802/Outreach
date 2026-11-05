@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, Card, CardHeader, ErrorState, Page, PageHeader, Skeleton, StatusDot, type Tone } from '@/ui'
 import { AiSpendCard } from './AiSpendCard'
+import { RunsCard } from './RunsCard'
 
 const stateTone: Record<string, Tone> = { ok: 'success', warn: 'warning', down: 'danger', off: 'neutral' }
 const stateLabel: Record<string, string> = { ok: 'Working', warn: 'Attention', down: 'Unavailable', off: 'Not set up' }
@@ -45,6 +46,7 @@ export default function UsagePage() {
     <PageHeader title="Usage" description="What you’ve spent on AI and lookups this month, and whether each service the app depends on is working." />
     <div className="space-y-4">
     <AiSpendCard />
+    <RunsCard />
     <UsageCard />
     <Card>
       <CardHeader

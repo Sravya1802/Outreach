@@ -24,8 +24,7 @@ Tone reference (do NOT copy these placeholders literally — fill them with comp
   linkedin: `Hi {{first_name}}, {{specific_hook_about_their_team}}. {{ONE_credential_that_matches}}. {{clear_ask}}?
 
 ---
-Tone reference (do NOT copy placeholders — under 280 chars, ONE hook + ONE credential + ONE ask):
-- "Saw your team just launched [product]. I built [related project from your resume]. Open to a quick chat about how your team hires interns?"`,
+Under 280 characters: ONE hook, ONE credential, ONE ask. Skills forward. End with: Would love to tell you more about my skillsets`,
 }
 
 function cleanTemplate(value, fallback) {

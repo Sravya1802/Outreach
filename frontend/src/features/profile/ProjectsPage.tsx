@@ -4,7 +4,7 @@ import { ExternalLink, Sparkles } from 'lucide-react'
 import { api, type PlannedProject } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
-import { Button, EmptyState, ErrorState, Field, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
+import { Badge, Button, EmptyState, ErrorState, Field, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
 
 /** Profile → Projects: projects to build, picked from what your listed roles keep asking for. */
 export default function ProjectsPage() {
@@ -24,13 +24,13 @@ export default function ProjectsPage() {
   const d = state.data
   const busy = suggest.isPending || Boolean(d?.suggesting)
   const toBuild = (d?.projects ?? []).filter(p => p.status === 'suggested')
-  const built = (d?.projects ?? []).filter(p => p.status === 'built')
+  const built = (d?.projects ?? []).filter(p => p.status === 'built' || p.status === 'unverified')
 
   return (
     <Page>
       <PageHeader
         title="Projects to build"
-        description="Picked from the skills your recent evening-list roles keep asking for that your resume and GitHub don’t show yet. Build one and mark it built (a GitHub link is optional); from then on every tailored resume can use it."
+        description="Picked from the skills your recent evening-list roles keep asking for that your resume and GitHub don’t show yet. Build one, push it to GitHub and mark it built. A project can go on a resume only once its GitHub link opens."
         actions={<Button variant="primary" icon={<Sparkles className="size-4" />} loading={busy} onClick={() => suggest.mutate()}>{busy ? 'Reading your roles…' : 'Suggest from my roles'}</Button>}
       />
       {state.error ? <ErrorState error={state.error} onRetry={() => void state.refetch()} /> : state.isLoading ? <Skeleton className="h-60" /> : (
@@ -54,20 +54,46 @@ export default function ProjectsPage() {
             <section aria-labelledby="built-h">
               <h2 id="built-h" className="mb-2 font-display text-[20px] font-semibold text-fg">Built</h2>
               <ul className="border-t border-line">
-                {built.map(p => (
-                  <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-3 text-[14px]">
-                    <span className="font-medium text-fg">{p.name}</span>
-                    <span className="text-subtle">{[p.start_date, p.end_date].filter(Boolean).join(' – ')}</span>
-                    {p.repo_url && <a href={p.repo_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">{p.repo_url.replace(/^https:\/\/github\.com\//, '')}<ExternalLink className="size-3" aria-hidden="true" /></a>}
-                    <span className="basis-full text-[13px] text-muted">Your tailored resumes can use it where a role asks for {p.covers.slice(0, 4).join(', ') || 'what it shows'}.</span>
-                  </li>
-                ))}
+                {built.map(p => <BuiltRow key={p.id} p={p} />)}
               </ul>
             </section>
           )}
         </div>
       )}
     </Page>
+  )
+}
+
+/** A built project: verified with a working link, or kept off resumes until it has one. */
+function BuiltRow({ p }: { p: PlannedProject }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [repo, setRepo] = useState(p.repo_url ?? '')
+  const refresh = () => void qc.invalidateQueries({ queryKey: qk.projects })
+  const verify = useMutation({
+    mutationFn: () => api.verifyProject(p.id, repo.trim()),
+    onSuccess: () => { toast.success('Link works. Resumes can use this project now.'); refresh() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const unbuild = useMutation({ mutationFn: () => api.unbuildProject(p.id), onSuccess: refresh, onError: (e: Error) => toast.error(e.message) })
+  const verified = p.status === 'built'
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-3 text-[14px]">
+      <span className="font-medium text-fg">{p.name}</span>
+      <span className="text-subtle">{[p.start_date, p.end_date].filter(Boolean).join(' – ')}</span>
+      <Badge tone={verified ? 'success' : 'warning'}>{verified ? 'Verified' : 'No working link'}</Badge>
+      {p.repo_url && <a href={p.repo_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">{p.repo_url.replace(/^https:\/\/github\.com\//, '')}<ExternalLink className="size-3" aria-hidden="true" /></a>}
+      {verified ? (
+        <span className="basis-full text-[13px] text-muted">Your tailored resumes can use it where a role asks for {p.covers.slice(0, 4).join(', ') || 'what it shows'}.</span>
+      ) : (
+        <form className="flex basis-full flex-wrap items-center gap-2 pt-1" onSubmit={e => { e.preventDefault(); verify.mutate() }}>
+          <span className="basis-full text-[13px] text-muted">Not used on resumes until its GitHub link opens.</span>
+          <Input value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" aria-label={`GitHub link for ${p.name}`} className="sm:w-80!" required />
+          <Button type="submit" size="sm" loading={verify.isPending}>Check link</Button>
+          <Button type="button" size="sm" variant="ghost" loading={unbuild.isPending} onClick={() => unbuild.mutate()}>I didn’t build it</Button>
+        </form>
+      )}
+    </li>
   )
 }
 
@@ -114,9 +140,9 @@ function IdeaCard({ p }: { p: PlannedProject }) {
         </details>
       )}
       <form className="mt-5 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); built.mutate() }}>
-        <p className="text-[13px] text-muted">Built it? Add the dates to show on your resume. The GitHub link is optional.</p>
+        <p className="text-[13px] text-muted">Built it? Add its GitHub link and the dates to show on your resume. The repo has to be public.</p>
         <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-          <Field label="GitHub repo (optional)">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" />}</Field>
+          <Field label="GitHub repo">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" required />}</Field>
           <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
           <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
         </div>

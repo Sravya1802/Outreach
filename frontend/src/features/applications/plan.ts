@@ -41,3 +41,24 @@ export const SPONSOR_TEXT: Record<string, { text: string; tone: 'success' | 'dan
 }
 
 export const num = (v: string | number | null | undefined): number | null => (v == null || v === '' ? null : Number(v))
+
+export interface RoleGroup<T> { item: T; others: T[] }
+
+/** One role at several locations is one row: the first listed, with the rest beside it. */
+export function groupRoles<T extends { company_name: string; title: string }>(items: T[]): RoleGroup<T>[] {
+  const groups = new Map<string, RoleGroup<T>>()
+  for (const item of items) {
+    const key = `${item.company_name}|${item.title}`.trim().toLowerCase()
+    const g = groups.get(key)
+    if (g) g.others.push(item)
+    else groups.set(key, { item, others: [] })
+  }
+  return [...groups.values()]
+}
+
+/** "Austin, TX + 2 more". */
+export function placesLine(location: string | null | undefined, others: { location?: string | null }[]) {
+  const places = new Set(others.map(o => o.location).filter((l): l is string => Boolean(l) && l !== location))
+  if (!places.size) return location ?? null
+  return location ? `${location} + ${places.size} more` : `${places.size} ${places.size === 1 ? 'location' : 'locations'}`
+}

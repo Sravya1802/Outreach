@@ -46,16 +46,17 @@ export function nextStepDue(date: string | null | undefined, today: Date = new D
   return { state: diff < 0 ? 'overdue' : diff === 0 ? 'today' : diff <= 3 ? 'soon' : 'later', label }
 }
 
-export interface Funnel { applied: number; heardBack: number; interviews: number; offers: number }
+export interface Funnel { applied: number; replies: number; rejections: number; interviews: number; offers: number }
 
-/** A Closed role counts as applied (and as heard back) only if it was ever applied to. */
+/** A Closed role counts as applied (and as a rejection) only if it was ever applied to. Replies are real ones: a rejection isn't one. */
 export function funnel(items: Pick<EvaluationSummary, 'apply_status' | 'applied_at'>[]): Funnel {
-  const f: Funnel = { applied: 0, heardBack: 0, interviews: 0, offers: 0 }
+  const f: Funnel = { applied: 0, replies: 0, rejections: 0, interviews: 0, offers: 0 }
   for (const r of items) {
     const s = stageFor(r.apply_status)
     if (s === 'evaluated' || (s === 'rejected' && !r.applied_at)) continue
     f.applied++
-    if (s !== 'applied') f.heardBack++
+    if (s === 'rejected') f.rejections++
+    else if (s !== 'applied') f.replies++
     if (s === 'interview' || s === 'offer') f.interviews++
     if (s === 'offer') f.offers++
   }

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DATABASE_URL ||= 'postgresql://test:test@localhost:5432/test';
-const { checkResume, isQuantRole, keywordCheck } = await import('../services/tailorPipeline.js');
+const { checkResume, isQuantRole, keywordCheck, readCorrections, withCorrections } = await import('../services/tailorPipeline.js');
+const { reviewMessage, runMessage } = await import('../services/whatsapp.js');
 
 test('resume check: a clean one-page resume passes', () => {
   assert.deepEqual(checkResume({ text: 'Master of Science in Computer Science\nB.Tech in AI | GPA 3.92\nJan 2024 – May 2026', pages: 1 }), []);
@@ -36,4 +37,29 @@ test('keyword check: spacing and case do not matter, and either side of a slash 
   const table = [{ keyword: 'Python' }, { keyword: 'TypeScript / React' }, { keyword: 'CI/CD' }, { keyword: 'Legal domain' }, {}];
   assert.deepEqual(keywordCheck('PYTHON, react\nand CI / CD', table), { found: 3, total: 4, missing: ['Legal domain'] });
   assert.deepEqual(keywordCheck('x', null), { found: 0, total: 0, missing: [] });
+});
+
+test('corrections: added to the standing rules, read back, replaced and removed', () => {
+  const rules = 'Run steps\n1. Read the config.';
+  const one = withCorrections(rules, ['Title is Graduate Research Assistant', 'No MS GPA']);
+  assert.ok(one.startsWith(rules));
+  assert.deepEqual(readCorrections(one), ['Title is Graduate Research Assistant', 'No MS GPA']);
+  const two = withCorrections(one, ['Only this']);
+  assert.deepEqual(readCorrections(two), ['Only this']);
+  assert.equal(two.match(/Master resume corrections/g).length, 1);
+  assert.equal(withCorrections(two, []), rules);
+  assert.deepEqual(readCorrections(rules), []);
+});
+
+test('run message and 9 PM digest say what is ready, and only what applies', () => {
+  assert.equal(runMessage({ roles_done: 12, roles_failed: 0 }).subject, '12 resumes ready for review');
+  assert.equal(runMessage({ roles_done: 1, roles_failed: 2 }).subject, '1 resume ready for review, 2 failed');
+  const full = reviewMessage({ ready: 144, unreviewed: 30, tomorrow: 2, emails: 4 });
+  assert.match(full.text, /144 roles ready for review/);
+  assert.match(full.text, /30 of them unreviewed for over a day/);
+  assert.match(full.text, /2 approved roles due to apply by tomorrow/);
+  assert.match(full.text, /4 emails waiting for your OK in Outbox/);
+  const quiet = reviewMessage({ ready: 1 }).text;
+  assert.doesNotMatch(quiet, /unreviewed|due to apply|Outbox/);
+  assert.ok(full.params.body[0].length < 700 && !full.params.body[0].includes('\n'));
 });

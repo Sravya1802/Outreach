@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from 'react'
+import { useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Cloud, Download, Eye, FileText, Trash2, Upload } from 'lucide-react'
@@ -6,12 +6,61 @@ import { api, type ResumeFile } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { timeAgo } from '@/lib/format'
 import { cn } from '@/lib/cn'
-import { Button, ConfirmDialog, ErrorState, Page, PageHeader, Skeleton, useToast } from '@/ui'
-import { formatBytes } from './resumeFiles'
+import { Button, ConfirmDialog, ErrorState, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
+import { formatBytes, isStale } from './resumeFiles'
 import { ResumeTemplate } from './ResumeTemplate'
 import { PdfDialog } from './PdfViewer'
 
 const MAX_BYTES = 10 * 1024 * 1024
+
+/** The master the Claude chat runs read, and the corrections they apply on top of it. */
+function RunMaster() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const q = useQuery({ queryKey: qk.runConfig, queryFn: api.runConfig })
+  const [text, setText] = useState('')
+  const save = useMutation({
+    mutationFn: (corrections: string[]) => api.saveRunConfig({ corrections }),
+    onSuccess: c => { qc.setQueryData(qk.runConfig, c); setText('') },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+  if (q.isLoading) return <Skeleton className="h-32" />
+  const c = q.data
+  if (!c) return null
+  const add = (e: FormEvent) => { e.preventDefault(); if (text.trim()) save.mutate([...c.corrections, text.trim()]) }
+  return (
+    <section aria-labelledby="run-master-h" className="space-y-3">
+      <div>
+        <h2 id="run-master-h" className="font-display text-[20px] font-semibold text-fg">What your Claude runs read</h2>
+        <p className="text-[13px] text-muted">Version {c.version}, saved {timeAgo(c.created_at)}. This is separate from the PDF above.</p>
+      </div>
+      {isStale(c.created_at) && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg">This is over 2 weeks old. Check it still has your latest work.</p>}
+      {c.master_latex && (
+        <details className="rounded-[4px] border border-line bg-surface p-3">
+          <summary className="cursor-pointer text-[14px] text-accent">Show the full master</summary>
+          <pre className="mt-3 max-h-96 overflow-auto font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-muted">{c.master_latex}</pre>
+        </details>
+      )}
+      <h3 className="pt-1 text-[14px] font-medium text-fg">Corrections</h3>
+      <p className="text-[13px] text-muted">Every run reads these and they win over the master. Resumes already written change only through a revision.</p>
+      {c.corrections.length > 0 && (
+        <ul className="border-t border-line">
+          {c.corrections.map((x, i) => (
+            <li key={`${i}-${x}`} className="flex items-start gap-3 border-b border-line py-2 text-[14px] text-fg">
+              <span className="min-w-0 flex-1">{x}</span>
+              <Button size="sm" variant="ghost" aria-label={`Remove correction: ${x}`} icon={<Trash2 className="size-3.5" />} disabled={save.isPending} onClick={() => save.mutate(c.corrections.filter((_, j) => j !== i))} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="flex flex-wrap gap-2" onSubmit={add}>
+        <Input value={text} onChange={e => setText(e.target.value)} placeholder="The Cancer Center title is Graduate Research Assistant" aria-label="New correction" maxLength={500} className="min-w-0 flex-1" />
+        <Button type="submit" loading={save.isPending} disabled={!text.trim()}>Add</Button>
+      </form>
+    </section>
+  )
+}
 
 export default function ResumePage() {
   const qc = useQueryClient()
@@ -98,6 +147,8 @@ export default function ResumePage() {
             </section>
           )}
 
+          {r?.hasResume && isStale(r.file?.created_at || r.date) && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg">This PDF is over 2 weeks old. Replace it if your resume has changed.</p>}
+
           <label
             onDragOver={e => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
@@ -111,6 +162,8 @@ export default function ResumePage() {
           </label>
 
           <p className="text-[14px] text-muted">Which resume went to which job is under <Link to="/resumes/applied" className="text-accent hover:underline">Resumes → Applied</Link>.</p>
+
+          <RunMaster />
 
           <ResumeTemplate />
 
@@ -146,10 +199,10 @@ export default function ResumePage() {
             busy={remove.isPending}
           />
 
-          {r?.textPreview && (
+          {(r?.text || r?.textPreview) && (
             <section aria-labelledby="read-h">
               <h2 id="read-h" className="mb-2 font-display text-[20px] font-semibold text-fg">What we read from it</h2>
-              <p className="rounded-[4px] border border-line bg-surface p-4 font-mono text-[12px] leading-relaxed whitespace-pre-line text-muted">{r.textPreview}…</p>
+              <p className="max-h-96 overflow-auto rounded-[4px] border border-line bg-surface p-4 font-mono text-[12px] leading-relaxed whitespace-pre-line text-muted">{r.text ?? r.textPreview}</p>
               <p className="mt-2 text-[13px] text-subtle">If this looks garbled, your PDF may be an image. Export it again from Word, Google Docs or LaTeX so the text can be selected.</p>
             </section>
           )}

@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import multer from 'multer';
-import { addOwnJob, approveAllTop, buildPlan, decide, emailPlan, getSettings, overview, ownResumeForItem, pickItem, saveSettings, sendReviewed } from '../services/dailyPlan.js';
+import { addOwnJob, approveAllTop, buildPlan, bulkItems, decide, emailPlan, getSettings, overview, ownResumeForItem, pickItem, saveSettings, sendReviewed } from '../services/dailyPlan.js';
 import { markAskSent, referralAction, referralStats } from '../services/referralFlow.js';
 import { clearConnections, connectionsSummary, importConnections } from '../services/linkedinConnections.js';
 
@@ -66,6 +66,10 @@ router.post('/own-job', (req, res) => {
 });
 
 // App drafts / I'll draft my own / Skip (or 'none' to undo).
+router.post('/items/bulk', async (req, res) => {
+  try { res.json(await bulkItems(req.user.id, req.body?.ids, req.body?.action)); } catch (err) { fail(res, err); }
+});
+
 router.post('/items/:id/pick', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad id' });

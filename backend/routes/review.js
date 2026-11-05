@@ -2,8 +2,9 @@
 // user's revision requests, edits and approvals.
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
+import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  approveRole, editDraft, lastRun, requestRevision, reviewQueue, reviewRole, setReferralMode, versionPdf,
+  approveRole, companyQueue, editDraft, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf,
 } from '../services/tailorPipeline.js';
 
 const router = Router();
@@ -26,6 +27,35 @@ router.get('/', async (req, res) => {
     res.json({ roles, lastRun: run ?? null });
   } catch (err) { fail(res, err); }
 });
+
+router.get('/runs', async (req, res) => {
+  try { res.json(await runSummary(req.user.id)); } catch (err) { fail(res, err); }
+});
+
+router.get('/company', async (req, res) => {
+  try { res.json({ roles: await companyQueue(req.user.id, req.query.name) }); } catch (err) { fail(res, err); }
+});
+
+router.get('/config', async (req, res) => {
+  try { res.json({ config: await runConfig(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+router.put('/config', async (req, res) => {
+  try { res.json({ config: await saveRunConfig(req.user.id, req.body || {}) }); } catch (err) { fail(res, err); }
+});
+
+router.get('/referrers', async (req, res) => {
+  try { res.json({ referrers: await listReferrers(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/referrers', async (req, res) => {
+  try { res.json(await addReferrer(req.user.id, req.body || {})); } catch (err) { fail(res, err); }
+});
+
+router.delete('/referrers/:id', withId(async (req, res, id) => {
+  await removeReferrer(req.user.id, id);
+  res.json({ ok: true });
+}));
 
 router.get('/versions/:id/pdf', withId(async (req, res, id) => {
   const pdf = await versionPdf(req.user.id, id);

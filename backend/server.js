@@ -42,7 +42,7 @@ import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
-import { checkNewVersions, markApplied } from './services/tailorPipeline.js';
+import { checkNewVersions, markApplied, notifyRuns } from './services/tailorPipeline.js';
 import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
 import { runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
@@ -533,6 +533,7 @@ cron.schedule('*/2 * * * *', async () => {
     const n = await checkNewVersions();
     if (n) console.log(`[review] checked ${n} resume versions`);
     await markApplied();
+    await notifyRuns();
   } catch (err) { console.error('[review] check pass failed:', err.message); }
 }, CRON_OPTS);
 // Daily plan: build lists an hour before each user's list time, email at list time, move approved roles on.

@@ -100,7 +100,7 @@ Bullets
 12. Sound like a new grad with the candidate's real years of experience, not a senior engineer. It should read like a person wrote it.
 
 Weak fit
-13. proposed_project: when you judge the fit needs it (required job skills the candidate has no basis for, or no project that proves what the role hires for), add ONE new project the candidate will build and push to GitHub to close those gaps. It goes on this resume, and the resume isn't sent until they've built it. If a project under PLANNED PROJECTS already covers them, set reuse_id to its id instead. A new one: needed true, name ("Name | Subtitle"), tech (the tools it uses, in the job's spelling), bullets (as many as the other projects; each one a strong verb + what the finished project does + tools + a measurable target the candidate will hit and check while building, written in square brackets, like "screens [1,000] synthetic patient profiles against trial criteria in under [2 s]"; about 2 lines each), covers (the job keywords it adds), why (the gap it closes) and plan (5–8 concrete build steps, one of them saying how to measure each bracketed target, the last one about what the README shows). Never suggest one listed as dismissed. Otherwise needed false, reuse_id "" and empty fields.
+13. proposed_project: always needed false, reuse_id "" and empty fields. Never propose a new project.
 
 Scores
 14. The ATS match must end up above 90% (aim for 95%): every required skill the candidate truly has appears at least once, in the job's spelling. Never inflate or invent to get there.
@@ -209,8 +209,10 @@ export async function includedRepos(userId) {
   );
 }
 
+// A built project goes on a resume only once its GitHub link has opened.
 export async function plannedProjects(userId) {
-  return all("SELECT * FROM planned_projects WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30", [userId]);
+  const rows = await all("SELECT * FROM planned_projects WHERE user_id = $1 ORDER BY (status = 'built') DESC, created_at DESC LIMIT 30", [userId]);
+  return rows.map(p => (p.status === 'built' && !p.repo_verified_at ? { ...p, status: 'unverified' } : p));
 }
 
 export async function pdfText(pdf) {
@@ -662,8 +664,12 @@ export function better(a, b) {
   return b;
 }
 
+// Tailoring stopped suggesting projects on 2026-11-04. Suggest from my roles still does, when asked.
+const SUGGEST_PROJECTS = false;
+
 /** Which proposed project (if any) to show, saved as a suggestion. */
 async function handleProposal(userId, draft, ctx, final, tailoringId) {
+  if (!SUGGEST_PROJECTS) return null;
   const p = draft.proposed_project || {};
   const { planned, sourceText, keywords } = ctx;
   if (str(p.reuse_id)) {
@@ -1306,9 +1312,9 @@ async function tailoringsWith(userId, projectId) {
 export async function markProjectBuilt(userId, projectId, { repoUrl, start, end, values = [] }) {
   const p = await one('SELECT * FROM planned_projects WHERE id = $1 AND user_id = $2', [projectId, userId]);
   if (!p) throw Object.assign(new Error('Project not found'), { status: 404 });
-  // The dates are required; the link is optional, but if given it has to be right.
+  // A project counts as built only with a working GitHub link.
   const url = str(repoUrl).replace(/\.git$/, '').replace(/\/$/, '');
-  if (url && !REPO_URL.test(url)) throw Object.assign(new Error('Paste the repo’s GitHub link, like https://github.com/you/project, or leave it empty.'), { status: 400 });
+  if (!REPO_URL.test(url)) throw Object.assign(new Error('Paste the repo’s GitHub link, like https://github.com/you/project.'), { status: 400 });
   if (!str(start) || !str(end)) throw Object.assign(new Error('Add the start and end dates, like “Jun 2026” and “Aug 2026” or “Present”.'), { status: 400 });
   const bad = checkDates(start, end);
   if (bad) throw Object.assign(new Error(bad), { status: 400 });
@@ -1319,11 +1325,11 @@ export async function markProjectBuilt(userId, projectId, { repoUrl, start, end,
     throw Object.assign(new Error(`Fill in your real number for each target (${targets.join(', ')}).`), { status: 400 });
   }
   const bullets = targets.length ? fillPlaceholders(p.bullets, given) : list(p.bullets);
-  if (url && !(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it (and make it public), or leave the link empty.'), { status: 400 });
+  if (!(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it and make it public, then try again.'), { status: 400 });
   const built = (await run(
-    `UPDATE planned_projects SET status = 'built', repo_url = $3, start_date = $4, end_date = $5, bullets = $6, built_at = NOW(), updated_at = NOW()
+    `UPDATE planned_projects SET status = 'built', repo_url = $3, start_date = $4, end_date = $5, bullets = $6, built_at = NOW(), repo_verified_at = NOW(), updated_at = NOW()
       WHERE id = $1 AND user_id = $2 RETURNING *`,
-    [projectId, userId, url || null, str(start), str(end), JSON.stringify(bullets)],
+    [projectId, userId, url, str(start), str(end), JSON.stringify(bullets)],
   )).rows[0];
   let tailoring = null;
   for (const t of await tailoringsWith(userId, projectId)) {
@@ -1334,6 +1340,23 @@ export async function markProjectBuilt(userId, projectId, { repoUrl, start, end,
 }
 
 /** Not building it: take it off every resume that lists it and never suggest it again. */
+/** A project marked built before the link rule: add its link, and it can go on resumes again. */
+export async function verifyProject(userId, projectId, repoUrl) {
+  const url = str(repoUrl).replace(/\.git$/, '').replace(/\/$/, '');
+  if (!REPO_URL.test(url)) throw Object.assign(new Error('Paste the repo’s GitHub link, like https://github.com/you/project.'), { status: 400 });
+  if (!(await repoExists(url))) throw Object.assign(new Error('That repo isn’t public on GitHub yet. Push it and make it public, then try again.'), { status: 400 });
+  const r = await run("UPDATE planned_projects SET repo_url = $3, repo_verified_at = NOW(), updated_at = NOW() WHERE id = $1 AND user_id = $2 AND status = 'built' RETURNING *", [projectId, userId, url]);
+  if (!r.rows[0]) throw Object.assign(new Error('Project not found'), { status: 404 });
+  return r.rows[0];
+}
+
+/** Takes back "I built it". Resumes already written keep their text; the next ones won't use it. */
+export async function unbuildProject(userId, projectId) {
+  const r = await run("UPDATE planned_projects SET status = 'dismissed', repo_verified_at = NULL, updated_at = NOW() WHERE id = $1 AND user_id = $2 AND status = 'built' RETURNING *", [projectId, userId]);
+  if (!r.rows[0]) throw Object.assign(new Error('Project not found'), { status: 404 });
+  return r.rows[0];
+}
+
 export async function dismissProject(userId, projectId) {
   const r = await run("UPDATE planned_projects SET status = 'dismissed', updated_at = NOW() WHERE id = $1 AND user_id = $2 AND status = 'suggested' RETURNING *", [projectId, userId]);
   const p = r.rows[0];

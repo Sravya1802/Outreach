@@ -73,6 +73,28 @@ export function approvedLine({ emails, inGmail }: ApproveResult) {
 /** The rule is above 90, so 90 itself is under it. */
 export const atsOk = (n: number | null | undefined) => n != null && n > 90
 
+/** A role Approve can take. */
+export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status'>) => r.status === 'ready' && r.check_status === 'passed'
+
+/** What Select all takes: nothing under the ATS rule or with an eligibility question goes in unread. */
+export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'ats_after' | 'eligibility'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility
+
+/** How a bulk approve went, for the toast. */
+export function bulkLine(done: ApproveResult[], failed: number) {
+  const emails = done.reduce((n, r) => n + r.emails, 0)
+  const roles = done.length === 1 ? '1 role' : `${done.length} roles`
+  const mail = emails === 1 ? '1 email' : `${emails} emails`
+  return `Approved ${roles}.${emails ? ` ${mail} in Gmail Drafts, each waiting for your OK in Outbox.` : ''}${failed ? ` ${failed} couldn’t be approved.` : ''}`
+}
+
+/** "About 3:05 PM", or Due now once the time has passed. */
+export function nextRunLine(at: string | null, now = Date.now()) {
+  if (!at) return 'Not scheduled'
+  const t = new Date(at)
+  if (t.getTime() <= now) return 'Due now'
+  return `About ${t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+}
+
 const strings = (x: unknown) => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string' && s.trim() !== '') : [])
 const text = (x: unknown) => (typeof x === 'string' && x.trim() ? x : null)
 

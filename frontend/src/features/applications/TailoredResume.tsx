@@ -373,11 +373,11 @@ function ProposedProjectCard({ p }: { p: ProposedProject }) {
       {p.status === 'suggested' ? (
         <form className="mt-4 space-y-3" onSubmit={e => { e.preventDefault(); built.mutate() }}>
           <p className="text-[13px] text-muted">
-            Build it from the plan, then add the dates to show and press “I built it”. The GitHub link is optional.
+            Build it from the plan, push it to a public GitHub repo, then add the link and dates and press “I built it”.
             {onPage ? ' Until then this resume waits for you; it’s never sent with a project you haven’t built.' : ' This resume can go out without it meanwhile.'}
           </p>
           <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-            <Field label="GitHub repo (optional)">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" />}</Field>
+            <Field label="GitHub repo">{f => <Input {...f} value={repo} onChange={e => setRepo(e.target.value)} placeholder="https://github.com/you/project" inputMode="url" required />}</Field>
             <Field label="Start">{f => <Input {...f} value={from} onChange={e => setFrom(e.target.value)} placeholder="Jun 2026" required />}</Field>
             <Field label="End">{f => <Input {...f} value={to} onChange={e => setTo(e.target.value)} placeholder="Aug 2026 or Present" required />}</Field>
           </div>

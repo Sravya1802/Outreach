@@ -12,18 +12,26 @@
  *     PDF attached and starts the referral wait. Nothing sends from here: each
  *     email waits for the user's OK in Outbox, and applying waits for the referrals.
  *   markApplied (cron): a role applied to from any path moves to Applied.
+ *   runSummary, companyQueue: the Home, Usage and Company pages.
+ *   runConfig, saveRunConfig: what a run reads. Every save is a new tailoring_config
+ *     version; corrections live in standing_rules because every run reads those.
+ *   notifyRuns (cron), sendReviewDigest: the message after a run and the 9 PM digest.
  */
 import { all, one, run, tx } from '../db.js';
-import { connectionFor } from './gmail.js';
+import { connectionFor, sendToSelf } from './gmail.js';
 import { compileTex } from './latex.js';
 import { me, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
 import { downloadVersionPdf, uploadVersionPdf } from './resumeStorage.js';
+import { notify, reviewMessage, runMessage } from './whatsapp.js';
 
 export const REFERRAL_MODES = ['recruiters', 'recruiters_engineers', 'my_contact', 'none'];
 const NOTE_LIMIT = 300;
+const RUN_EVERY_HOURS = 5;
+const NO_EMAILS = ['my_contact', 'none'];
+const CORRECTIONS = 'Master resume corrections\nThese win over master_latex where the two disagree.\n';
 
 const LATENCY = /\b\d+(?:\.\d+)?\s?(?:ns|µs|μs)\b|\b\d+K\+?\s+orders\b/i;
 const DAILY_500GB = /500\s?GB[^.]{0,120}\bdaily\b|\bdaily\b[^.]{0,120}500\s?GB/i;
@@ -116,12 +124,13 @@ export async function reviewQueue(userId) {
             COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score,
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
-            v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility,
+            v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
             (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
        LEFT JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
+       LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
       WHERE j.user_id = $1
       ORDER BY place NULLS LAST, j.updated_at DESC, j.id DESC`,
     [userId],
@@ -133,11 +142,124 @@ export async function lastRun(userId) {
   return one('SELECT id, started_at, finished_at, roles_done, roles_failed FROM pipeline_runs WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [userId]);
 }
 
+/** The recent runs and where the queue stands. A run comes every 5 hours, so the next time is an estimate. */
+export async function runSummary(userId, now = Date.now()) {
+  const [runs, queue] = await Promise.all([
+    all('SELECT id, started_at, finished_at, roles_done, roles_failed FROM pipeline_runs WHERE user_id = $1 ORDER BY id DESC LIMIT 20', [userId]),
+    one(
+      `SELECT COUNT(*) FILTER (WHERE j.status = 'queued')::int AS waiting,
+              COUNT(*) FILTER (WHERE j.status = 'ready')::int AS ready,
+              COUNT(*) FILTER (WHERE j.status = 'ready' AND v.check_status = 'flagged')::int AS flagged,
+              COUNT(*) FILTER (WHERE j.status = 'approved')::int AS approved
+         FROM tailor_jobs j
+         LEFT JOIN LATERAL (SELECT check_status FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
+        WHERE j.user_id = $1`,
+      [userId],
+    ),
+  ]);
+  const hours = RUN_EVERY_HOURS * 3600_000;
+  const recent = runs.filter(r => now - new Date(r.started_at).getTime() < hours);
+  return {
+    runs,
+    queue,
+    nextRunAt: runs[0] ? new Date(new Date(runs[0].started_at).getTime() + hours).toISOString() : null,
+    window: { hours: RUN_EVERY_HOURS, done: recent.reduce((n, r) => n + r.roles_done, 0), failed: recent.reduce((n, r) => n + r.roles_failed, 0) },
+  };
+}
+
+/** A company's roles in the queue, with the resume version each one uses: the final one, else the latest. */
+export async function companyQueue(userId, company) {
+  return all(
+    `SELECT j.plan_item_id AS id, j.status, pi.title, pi.location, v.version, v.is_final, v.ats_after
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.is_final DESC, x.version DESC LIMIT 1) v ON TRUE
+      WHERE j.user_id = $1 AND lower(trim(pi.company_name)) = lower(trim($2))
+      ORDER BY pi.title, pi.location`,
+    [userId, String(company ?? '')],
+  );
+}
+
+/** The corrections in a run's standing rules. */
+export function readCorrections(rules) {
+  const at = String(rules ?? '').indexOf(CORRECTIONS);
+  if (at < 0) return [];
+  return String(rules).slice(at + CORRECTIONS.length).split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).trim()).filter(Boolean);
+}
+
+/** Standing rules with these corrections in place of the old ones. */
+export function withCorrections(rules, corrections) {
+  const text = String(rules ?? '');
+  const at = text.indexOf(CORRECTIONS);
+  const base = (at < 0 ? text : text.slice(0, at)).trimEnd();
+  return corrections.length ? `${base}\n\n${CORRECTIONS}${corrections.map(c => `- ${c}`).join('\n')}` : base;
+}
+
+const latestConfig = (userId) => one('SELECT * FROM tailoring_config WHERE user_id = $1 ORDER BY version DESC LIMIT 1', [userId]);
+
+/** What the next run reads, for the Master resume and Templates pages. */
+export async function runConfig(userId) {
+  const c = await latestConfig(userId);
+  if (!c) return null;
+  return { version: c.version, created_at: c.created_at, master_latex: c.master_latex, email_template: c.email_template, linkedin_rules: c.linkedin_rules, corrections: readCorrections(c.standing_rules) };
+}
+
+/** Saves as the next version, so a run mid-way keeps what it read and nothing is lost. */
+export async function saveRunConfig(userId, { email_template, linkedin_rules, corrections }) {
+  const c = await latestConfig(userId);
+  if (!c) throw fail(409, 'Your runs aren’t set up yet.');
+  const email = email_template === undefined ? c.email_template : String(email_template).trim();
+  const rules = linkedin_rules === undefined ? c.linkedin_rules : String(linkedin_rules).trim();
+  if (!email || !rules) throw fail(400, 'A run needs both the email template and the LinkedIn rules.');
+  let standing = c.standing_rules;
+  if (corrections !== undefined) {
+    if (!Array.isArray(corrections)) throw fail(400, 'Bad corrections.');
+    const list = corrections.map(x => String(x ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (list.length > 50 || list.some(x => x.length > 500)) throw fail(400, 'Keep it to 50 corrections of 500 characters each.');
+    standing = withCorrections(c.standing_rules, list);
+  }
+  await run(
+    `INSERT INTO tailoring_config (user_id, version, system_prompt, master_latex, standing_rules, email_template, linkedin_rules)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [userId, c.version + 1, c.system_prompt, c.master_latex, standing, email, rules],
+  );
+  return runConfig(userId);
+}
+
+/** Every 2 minutes: a finished run that wrote something gets one message. */
+export async function notifyRuns() {
+  const runs = (await run("UPDATE pipeline_runs SET notified_at = NOW() WHERE finished_at IS NOT NULL AND notified_at IS NULL RETURNING user_id, roles_done, roles_failed")).rows;
+  for (const r of runs.filter(x => x.roles_done > 0 || x.roles_failed > 0)) await tell(r.user_id, runMessage(r));
+}
+
+/** Gmail to the user's own address and WhatsApp. Neither stops the other. */
+async function tell(userId, m) {
+  await sendToSelf(userId, { subject: `[Scout’n’Jobs] ${m.subject}`, text: m.plain }).catch(err => console.warn('[review] email to self:', err.message));
+  await notify(userId, 'review', m).catch(err => console.warn('[review] whatsapp:', err.message));
+}
+
+/** The 9 PM digest. Quiet when nothing in the queue needs the user. */
+export async function sendReviewDigest(userId) {
+  const d = await one(
+    `SELECT COUNT(*) FILTER (WHERE j.status = 'ready')::int AS ready,
+            COUNT(*) FILTER (WHERE j.status = 'ready' AND j.updated_at < NOW() - INTERVAL '1 day')::int AS unreviewed,
+            COUNT(*) FILTER (WHERE j.status = 'approved' AND pi.apply_after < NOW() + INTERVAL '1 day')::int AS tomorrow,
+            (SELECT COUNT(*)::int FROM email_outbox o WHERE o.user_id = $1 AND o.status = 'draft' AND o.purpose = 'referral') AS emails
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id WHERE j.user_id = $1`,
+    [userId],
+  );
+  if (!d.ready && !d.tomorrow && !d.emails) return { skipped: 'nothing' };
+  await tell(userId, reviewMessage(d));
+  return d;
+}
+
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage_note
-       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id WHERE j.user_id = $1 AND j.plan_item_id = $2`,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after,
+            r.contact_name AS referrer, r.note AS referrer_note
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
+      WHERE j.user_id = $1 AND j.plan_item_id = $2`,
     [userId, planItemId],
   );
   if (!role) return null;
@@ -207,14 +329,15 @@ export async function editDraft(userId, draftId, { email_subject, email_body, li
  * carries the PDF, so nothing is drafted until it's saved. Nothing sends from here.
  */
 export async function approveRole(userId, planItemId) {
-  const job = await one('SELECT status FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review can be approved.');
   const latest = await one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]);
   if (!latest?.pdf_path || latest.check_status !== 'passed') throw fail(409, 'This resume hasn’t passed its checks.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   if (item.decision === 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) throw fail(409, 'This role has already moved on in To apply.');
-  const drafts = await all(
+  // My contact and None email nobody, even if a run wrote drafts before the mode changed.
+  const drafts = NO_EMAILS.includes(job.referral_mode) ? [] : await all(
     `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
        FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
       WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,

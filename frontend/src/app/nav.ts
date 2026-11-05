@@ -48,8 +48,12 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'toapply', label: 'To apply', icon: ListChecks, to: '/to-apply',
-    tabs: [{ label: 'To apply', to: '/to-apply', keywords: 'missed apply review send it approved resumes written not applied follow through' }],
+    id: 'toapply', label: 'To apply', icon: ListChecks, to: '/review',
+    owns: ['/to-apply'],
+    tabs: [
+      { label: 'Review queue', to: '/review', keywords: 'claude chat runs resumes ready revising comments revision versions outreach approve' },
+      { label: 'To apply', to: '/to-apply', keywords: 'missed apply review send it approved resumes written not applied follow through' },
+    ],
   },
   {
     id: 'resumes', label: 'Resumes', icon: FileText, to: '/resumes',

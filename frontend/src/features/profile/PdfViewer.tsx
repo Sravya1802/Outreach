@@ -9,7 +9,7 @@ import { useOpenPdfTab } from './openPdfTab'
 const ZOOMS = [0.75, 1, 1.25, 1.5, 2]
 
 /** Every page of a stored PDF, drawn right on the page. */
-export function PdfPages({ fileId, filename, zoom = 1 }: { fileId: number | string; filename: string; zoom?: number }) {
+export function PdfPages({ fileId, filename, zoom = 1, load }: { fileId: number | string; filename: string; zoom?: number; load?: () => Promise<Blob> }) {
   const box = useRef<HTMLDivElement>(null)
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null)
   const [error, setError] = useState<Error | null>(null)
@@ -20,14 +20,14 @@ export function PdfPages({ fileId, filename, zoom = 1 }: { fileId: number | stri
     let cancelled = false
     let loaded: PDFDocumentProxy | null = null
     ;(async () => {
-      const [pdfjs, blob] = await Promise.all([loadPdfjs(), api.resumeFileBlob(fileId)])
+      const [pdfjs, blob] = await Promise.all([loadPdfjs(), load ? load() : api.resumeFileBlob(fileId)])
       const task = pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) })
       loaded = await task.promise
       if (cancelled) { void loaded.destroy(); return }
       setDoc(loaded)
     })().catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e : new Error('Couldn’t open that PDF')) })
     return () => { cancelled = true; void loaded?.destroy() }
-  }, [fileId, attempt])
+  }, [fileId, attempt, load])
 
   useLayoutEffect(() => {
     const el = box.current

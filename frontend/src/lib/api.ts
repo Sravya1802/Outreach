@@ -898,6 +898,76 @@ export interface ParsedResume {
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
+// ── Review queue (what the Claude chat runs wrote) ───────────────────────────
+
+export type ReviewStatus = 'queued' | 'in_progress' | 'ready' | 'revision_requested' | 'approved' | 'applied' | 'closed'
+export type ReferralMode = 'recruiters' | 'recruiters_engineers' | 'my_contact' | 'none'
+
+export interface ReviewRow {
+  id: string
+  status: ReviewStatus
+  referral_mode: ReferralMode
+  updated_at: string
+  company_name: string
+  title: string
+  location: string | null
+  score: string | number | null
+  version: number | null
+  ats_after: number | null
+  callback_after: number | null
+  check_status: 'passed' | 'flagged' | null
+  eligibility: string | null
+  open_comments: number
+  outreach: number
+}
+
+export interface ResumeVersion {
+  id: string
+  version: number
+  ats_before: number | null
+  ats_after: number | null
+  callback_before: number | null
+  callback_after: number | null
+  report: unknown
+  change_log: string | null
+  is_final: boolean
+  pages: number | null
+  check_status: 'passed' | 'flagged' | null
+  check_errors: string[]
+  keywords: { found: number; total: number; missing: string[] } | null
+  has_pdf: boolean
+  created_at: string
+}
+
+export interface ReviewComment {
+  id: string
+  version_id: string
+  body: string
+  status: 'open' | 'addressed'
+  addressed_in_version: number | null
+  created_at: string
+}
+
+export interface OutreachDraft {
+  id: string
+  audience: 'recruiter' | 'engineer'
+  email_subject: string | null
+  email_body: string | null
+  linkedin_note: string | null
+  status: 'draft' | 'edited' | 'approved' | 'sent'
+  name: string | null
+  title: string | null
+  email: string | null
+  linkedin_url: string | null
+}
+
+export interface ReviewRole {
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null }
+  versions: ResumeVersion[]
+  comments: ReviewComment[]
+  outreach: OutreachDraft[]
+}
+
 export const api = {
   health: (): Promise<Health> => legacy.health(),
   stats: (): Promise<Stats> => legacy.stats(),
@@ -1061,6 +1131,13 @@ export const api = {
   downloadResumeFile: (id: number, filename: string): Promise<void> => legacy.career.downloadResumeFile(id, filename),
   /** The PDF's bytes, for the in-site viewer. */
   resumeFileBlob: (id: number | string): Promise<Blob> => legacy.career.resumeFileBlob(id),
+  reviewQueue: async (): Promise<ReviewRow[]> => (await legacy.career.reviewQueue()).roles ?? [],
+  reviewRole: (id: string): Promise<ReviewRole> => legacy.career.reviewRole(id),
+  reviewPdf: (versionId: string): Promise<Blob> => legacy.career.reviewPdf(versionId),
+  requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),
+  setReferralMode: (id: string, mode: ReferralMode): Promise<{ ok: boolean }> => legacy.career.setReferralMode(id, mode),
+  approveRole: (id: string): Promise<{ ok: boolean }> => legacy.career.approveRole(id),
+  saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),
   /** An earlier master version; the server refuses the current one and any an application uses. */

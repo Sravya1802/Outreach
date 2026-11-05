@@ -495,6 +495,13 @@ export const api = {
     deleteResumeFile: (id) => apiCall(`/career/resume/files/${id}`, { method: 'DELETE' }),
     downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
     resumeFileBlob: (id) => fetchAuthenticatedBlob(`/career/resume/files/${id}/download`),
+    reviewQueue: () => apiCall('/review'),
+    reviewRole: (id) => apiCall(`/review/${id}`),
+    reviewPdf: (versionId) => fetchAuthenticatedBlob(`/review/versions/${versionId}/pdf`),
+    requestRevision: (id, body) => apiCall(`/review/${id}/revision`, { method: 'POST', body: { body } }),
+    setReferralMode: (id, mode) => apiCall(`/review/${id}/mode`, { method: 'PUT', body: { mode } }),
+    approveRole: (id) => apiCall(`/review/${id}/approve`, { method: 'POST' }),
+    saveOutreachDraft: (id, patch) => apiCall(`/review/outreach/${id}`, { method: 'PATCH', body: patch }),
     resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),
     // Upload a custom resume PDF for a specific evaluation. Backend writes

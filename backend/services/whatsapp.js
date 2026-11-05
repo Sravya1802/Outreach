@@ -30,6 +30,9 @@ const APP = 'Scout’n’Jobs';
 
 // Each template: a bold header (one variable at most), a body, a small
 // footer and a button that opens the site. Body numbering restarts at {{1}}.
+// Keep these plain status notices: Meta files anything friendlier as Marketing,
+// and drops those without warning (131049). A category can't change once
+// approved, so new wording goes in under a new name.
 export const WHATSAPP_TEMPLATES = {
   list: {
     name: 'snj_daily_list',
@@ -42,24 +45,24 @@ export const WHATSAPP_TEMPLATES = {
     button: { text: 'Review and approve', path: '/applications/auto-apply' },
   },
   picks: {
-    name: 'snj_pick_list',
-    header: { text: 'Roles to pick · {{1}}', example: 'Fri, Oct 31' },
+    name: 'snj_role_update',
+    header: { text: 'Role update · {{1}}', example: 'Fri, Oct 31' },
     body: {
-      text: 'Hello,\n{{1}} roles match you:\n{{2}}\n\nPick each one on Scout’n’Jobs: App drafts, I’ll draft my own, or Skip. Or reply APP 1 3 or MINE 2. The app’s drafts are ready tonight and wait for your approval.\n\nGood luck! ;)',
+      text: 'Your job search found {{1}} matching roles:\n{{2}}\n\nChoose App drafts, I’ll draft my own, or Skip for each one on your account, or reply APP 1 3 or MINE 2. Drafts wait for your approval.',
       example: ['3', '1) Ramp · SWE Intern · 9.4  2) Stripe · Data Intern · 9.1  3) Figma · SWE Intern · 9.0'],
     },
     footer: APP,
-    button: { text: 'Pick today’s roles', path: '/jobs/auto-apply' },
+    button: { text: 'View my roles', path: '/jobs/auto-apply' },
   },
   evening: {
-    name: 'snj_evening_check',
-    header: { text: 'Tonight · {{1}}', example: 'Fri, Oct 31' },
+    name: 'snj_evening_status',
+    header: { text: 'Status update · {{1}}', example: 'Fri, Oct 31' },
     body: {
-      text: 'Hello,\nDrafts ready to approve: {{1}}\nYour own resumes to finish: {{2}}\n\nApprove the drafts you like. For your own, upload the PDF so the app applies, or mark it applied.\n\nGood luck! ;)',
+      text: 'Your application status:\nDrafts ready for approval: {{1}}\nYour own resumes still open: {{2}}\n\nNothing is sent until you approve it. Upload your own PDF, or mark a role applied, on your account.',
       example: ['Ramp, Stripe', 'Amazon, Microsoft'],
     },
     footer: APP,
-    button: { text: 'Open tonight’s roles', path: '/jobs/auto-apply' },
+    button: { text: 'View my roles', path: '/jobs/auto-apply' },
   },
   reply: {
     name: 'snj_reply_alert',
@@ -72,34 +75,34 @@ export const WHATSAPP_TEMPLATES = {
     button: { text: 'See all replies', path: '/people/outbox' },
   },
   needs: {
-    name: 'snj_needs_you',
-    header: { text: 'Needs you · {{1}}', example: '2 roles' },
+    name: 'snj_application_hold',
+    header: { text: 'Application update · {{1}}', example: '2 roles' },
     body: {
-      text: 'Hello,\nThese approved roles are waiting on you:\n{{1}}\n\nOpen Scout’n’Jobs to take care of them.\n\nGood luck! ;)',
+      text: 'These applications you approved are on hold until you respond:\n{{1}}\n\nDetails are on your account.',
       example: ['Ramp: resume scored 84%  ·  Stripe: enter your referral code'],
     },
     footer: APP,
-    button: { text: 'Open my roles', path: '/applications/auto-apply' },
+    button: { text: 'View my applications', path: '/applications/auto-apply' },
   },
   summary: {
-    name: 'snj_morning_summary',
-    header: { text: 'Today’s summary', example: null },
+    name: 'snj_daily_status',
+    header: { text: 'Application status', example: null },
     body: {
-      text: 'Hello,\n{{1}} applied · {{2}} need you · {{3}} LinkedIn notes to send.\n\nOpen Scout’n’Jobs for the details.\n\nGood luck! ;)',
+      text: 'Your application status today:\n{{1}} applied · {{2}} need your input · {{3}} LinkedIn notes to send.\n\nDetails are on your account.',
       example: ['2', '1', '3'],
     },
     footer: APP,
-    button: { text: 'See the details', path: '/applications/auto-apply' },
+    button: { text: 'View details', path: '/applications/auto-apply' },
   },
   projects: {
-    name: 'snj_project_ideas',
-    header: { text: 'Projects to build · {{1}}', example: '3 new' },
+    name: 'snj_resume_update',
+    header: { text: 'Resume update · {{1}}', example: '3 new' },
     body: {
-      text: 'Hello,\nYour listed roles keep asking for skills your resume doesn’t show yet. These projects would cover them:\n{{1}}\n\nOpen Scout’n’Jobs for each build plan.\n\nGood luck! ;)',
+      text: 'Your listed roles ask for skills your resume doesn’t show yet. These projects cover them:\n{{1}}\n\nBuild plans are on your account.',
       example: ['1) TrialMatch API · C#, .NET, CI/CD · 19 of 30 roles  2) PacketSentry · C, cybersecurity · 19 of 30 roles'],
     },
     footer: APP,
-    button: { text: 'See the projects', path: '/profile/projects' },
+    button: { text: 'View projects', path: '/profile/projects' },
   },
   skills: {
     name: 'snj_missing_skills',
@@ -152,7 +155,7 @@ export function templateDefinition(kind) {
   components.push({ type: 'BODY', text: t.body.text, example: { body_text: [t.body.example] } });
   if (t.footer) components.push({ type: 'FOOTER', text: t.footer });
   components.push({ type: 'BUTTONS', buttons: [{ type: 'URL', text: t.button.text, url: `${SITE}${t.button.path}` }] });
-  return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: true, components };
+  return { name: process.env[`WHATSAPP_TEMPLATE_${kind.toUpperCase()}`] || t.name, language: cfg().lang, category: 'UTILITY', allow_category_change: false, components };
 }
 
 const PREF_FOR = { list: 'list', picks: 'list', evening: 'list', reply: 'replies', needs: 'needs', summary: 'summary', projects: 'projects', skills: 'skills' };

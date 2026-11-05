@@ -88,6 +88,15 @@ export function signed(body, name, sig) {
   return `${lines.join('\n')}\n\n${sig || signature({ name })}`.trim();
 }
 
+// The prompt bans a closing claim about what a project shows, but the model
+// often adds one anyway, so it's cut here. Its non-breaking hyphens go too.
+export function plainFit(body) {
+  return str(body)
+    .replace(/,\s+(demonstrating|showcasing|highlighting|showing)\b[^.\n]*\./gi, '.')
+    .replace(/\s+This (experience )?(demonstrates|shows|highlights)\b[^.\n]*\./gi, '')
+    .replace(/\u2011/g, '-');
+}
+
 /** LinkedIn caps notes at 300 characters: cut at the last full sentence, not mid-word. */
 export function noteFit(note, max = 300) {
   const s = str(note);
@@ -129,7 +138,7 @@ Return JSON: {"subject": "...", "body": "...", "note": "..."}
     });
     const d = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
     if (!str(d.body) || !str(d.note)) throw new Error('empty draft');
-    return { subject: str(d.subject).slice(0, 120) || templateAsk(ctx).subject, body: signed(d.body, ctx.me, ctx.sig), note: noteFit(d.note) };
+    return { subject: str(d.subject).slice(0, 120) || templateAsk(ctx).subject, body: signed(plainFit(d.body), ctx.me, ctx.sig), note: noteFit(d.note) };
   } catch {
     return templateAsk(ctx);
   }

@@ -148,3 +148,13 @@ test('referral note: a long list names two people and counts the rest', async ()
   const asks = ['Ana', 'Bo', 'Cy', 'Di', 'Ed'].map(n => ({ channel: 'email', person_name: n, status: 'draft' }));
   assert.equal(referralNote(asks, 'Fri'), 'Your emails to Ana, Bo and 3 others are waiting for your OK in People → Contacts. Applying Fri unless a referral comes first.');
 });
+
+test('referral email: a closing claim about what a project shows is cut, the facts stay', async () => {
+  const { plainFit } = await import('../services/referralFlow.js');
+  assert.equal(
+    plainFit('I built a low‑latency engine in C++17 at 83 ns p50, demonstrating the skills required for the role.\n\nWould you refer me?'),
+    'I built a low-latency engine in C++17 at 83 ns p50.\n\nWould you refer me?',
+  );
+  assert.equal(plainFit('I built an engine. This experience demonstrates my ability to deliver.\n\nThank you.'), 'I built an engine.\n\nThank you.');
+  assert.equal(plainFit('I built an engine for the demonstrating team.'), 'I built an engine for the demonstrating team.');
+});

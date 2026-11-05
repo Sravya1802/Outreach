@@ -9,7 +9,11 @@
 const US = String.raw`(?:U\.?\s?S\.?|United States|American)`;
 
 const CITIZENS_ONLY = [
-  new RegExp(String.raw`\bmust be (?:a |an )?${US} citizens?\b`, 'i'),
+  new RegExp(String.raw`\b(?:must )?be (?:a |an )?(?:\(i\) )?${US} citizens?\b`, 'i'),
+  new RegExp(String.raw`\b${US} citizens? or (?:national|(?:lawful )?permanent resident)`, 'i'),
+  new RegExp(String.raw`\b${US} citizenship\b(?! status)`, 'i'),
+  new RegExp(String.raw`\b${US} person status\b`, 'i'),
+  /\b(?:top )?secret\s+(?:U\.?\s?S\.?\s+)?(?:security\s+)?clearance\b/i,
   new RegExp(String.raw`\b${US} citizenship (?:is )?(?:required|mandatory)\b`, 'i'),
   new RegExp(String.raw`\b(?:requires?|requiring) ${US} citizenship\b`, 'i'),
   new RegExp(String.raw`\b(?:open|available) (?:only )?to ${US} citizens(?: only)?\b`, 'i'),

@@ -134,7 +134,7 @@ export async function markApplied() {
 export async function reviewQueue(userId) {
   return all(
     `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.updated_at, j.locked_at, j.locked_by_run AS run,
-            COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score,
+            COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship,
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
@@ -277,7 +277,7 @@ export async function sendReviewDigest(userId) {
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))

@@ -94,7 +94,7 @@ describe('readReport', () => {
 })
 
 describe('bulk approve', () => {
-  const row = { status: 'ready' as const, check_status: 'passed' as const, ats_after: 94, eligibility: null }
+  const row = { status: 'ready' as const, check_status: 'passed' as const, ats_after: 94, eligibility: null, sponsorship: null }
   it('takes a passed resume that is ready', () => {
     expect(canApprove(row)).toBe(true)
     expect(canApprove({ ...row, check_status: 'flagged' })).toBe(false)
@@ -104,6 +104,8 @@ describe('bulk approve', () => {
     expect(safeToBulk(row)).toBe(true)
     expect(safeToBulk({ ...row, ats_after: 90 })).toBe(false)
     expect(safeToBulk({ ...row, eligibility: 'US citizens only' })).toBe(false)
+    expect(safeToBulk({ ...row, sponsorship: 'citizens_only' })).toBe(false)
+    expect(safeToBulk({ ...row, sponsorship: 'sponsors' })).toBe(true)
   })
   it('says how it went', () => {
     const r = { emails: 2, inGmail: 2, notes: 2, skipped: [] }

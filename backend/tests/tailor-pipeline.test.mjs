@@ -109,3 +109,21 @@ test('outreach check: the rules that stop an approve', async () => {
   const t = templateAsk({ personName: 'Eye Appoint', me: 'Sam', title: 'SWE', company: 'EyeAppoint', jobUrl: '' });
   assert.ok(t.body.startsWith('Dear Hiring Team,') && t.note.startsWith('Hello,') && t.note.endsWith(NOTE_END));
 });
+
+test('sponsorship: citizen-only wording is caught, and equal-opportunity lines are not', async () => {
+  const { classifySponsorship } = await import('../services/sponsorship.js');
+  const status = (t) => classifySponsorship(t).status;
+  for (const t of [
+    'To conform to U.S. Government export regulations, applicant must be a (i) U.S. citizen or national, (ii) U.S. lawful, permanent resident.',
+    'We’ll also need you to: Be a US Citizen with no dual citizenship.',
+    'This role requires permanent authorization to work in the U.S. (i.e. U.S. citizen or permanent resident).',
+    'All applicants must be able to obtain/maintain an active Secret U.S. Security Clearance.',
+    'U.S. citizenship. Ability to obtain a clearance.',
+    'As such, US person status is required.',
+  ]) assert.equal(status(t), 'citizens_only', t);
+  for (const t of [
+    'Without regard to race, religion, color, national origin, citizenship, sex or age.',
+    'regardless of age, color, national origin, citizenship status, disability.',
+    'skills, experience, security clearances, licensure and certifications.',
+  ]) assert.equal(status(t), null, t);
+});

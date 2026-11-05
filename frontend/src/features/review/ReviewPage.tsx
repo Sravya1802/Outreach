@@ -6,7 +6,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
-import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, reviewTab, runLine, safeToBulk, type ReviewTab } from './review'
+import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, reviewTab, runLine, safeToBulk, visaLine, type ReviewTab } from './review'
 
 const head = 'border-b border-line px-3 py-2 font-medium'
 const cell = 'border-b border-line px-3 py-3 align-top'
@@ -38,6 +38,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.version != null && r.check_status === null && <Badge tone="info">Checking</Badge>}
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
+          {visaLine(r.sponsorship) && <Badge tone="danger">{visaLine(r.sponsorship)}</Badge>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
         </div>
       </td>

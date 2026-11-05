@@ -7,7 +7,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, Button, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, readReport } from './review'
+import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, readReport, visaLine } from './review'
 
 type Panel = 'report' | 'comments' | 'outreach' | 'apply'
 
@@ -227,6 +227,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {data.role.referrer && (
         <p className="rounded-[4px] bg-accent-soft px-3 py-2 text-[14px] text-fg">Ask {data.role.referrer}{data.role.referrer_note ? `. ${data.role.referrer_note}` : ''}</p>
       )}
+      {visaLine(data.role.sponsorship) && <p className="text-[14px] text-danger">The posting says {visaLine(data.role.sponsorship)}. Check this before you approve it.</p>}
       {latest && !atsOk(latest.ats_after) && <p className="text-[14px] text-warning">ATS is {latest.ats_after ?? '?'}%, under your 90% rule. You can still approve it.</p>}
       {latest && !passed && <p className="text-[14px] text-danger">This version hasn’t passed its checks, so it can’t be approved.</p>}
       {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed} onClick={() => approve.mutate()}>Approve</Button>}

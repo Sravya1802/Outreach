@@ -932,6 +932,7 @@ export interface ReviewRow {
   outreach: number
   /** Who can refer the user there. */
   referrer: string | null
+  sponsorship: string | null
 }
 
 export interface PipelineRun {
@@ -1000,7 +1001,7 @@ export interface RunConfig { version: number; created_at: string; master_latex: 
 export interface Referrer { id: string; company_name: string; contact_name: string; note: string | null; roles: number }
 
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; referrer: string | null; referrer_note: string | null }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]

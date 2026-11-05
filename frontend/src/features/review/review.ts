@@ -73,11 +73,14 @@ export function approvedLine({ emails, inGmail }: ApproveResult) {
 /** The rule is above 90, so 90 itself is under it. */
 export const atsOk = (n: number | null | undefined) => n != null && n > 90
 
+/** Says so when the posting rules out someone who needs sponsorship. */
+export const visaLine = (s: string | null | undefined) => (s === 'citizens_only' ? 'US citizens only' : s === 'no_sponsorship' ? 'Won’t sponsor' : null)
+
 /** A role Approve can take. */
 export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status'>) => r.status === 'ready' && r.check_status === 'passed'
 
 /** What Select all takes: nothing under the ATS rule or with an eligibility question goes in unread. */
-export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'ats_after' | 'eligibility'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility
+export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
 
 /** How a bulk approve went, for the toast. */
 export function bulkLine(done: ApproveResult[], failed: number) {

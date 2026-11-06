@@ -7,9 +7,9 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, needsOutreach, readReport, visaLine } from './review'
+import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
-type Panel = 'report' | 'comments' | 'outreach' | 'apply'
+type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
 const STATUS_TONE: Record<ReviewRole['role']['status'], Tone> = {
   queued: 'neutral', in_progress: 'info', ready: 'accent', revision_requested: 'warning', approved: 'success', applied: 'success', closed: 'neutral',
@@ -75,6 +75,44 @@ function ReportPanel({ v }: { v: ResumeVersion }) {
       <List title="Changes made" items={r.changes} />
       {r.nextChange && <section><h3 className={heading}>One more change that would help</h3><p className="text-[14px] leading-relaxed text-muted">{r.nextChange}</p></section>}
       {r.posting && <section><h3 className={heading}>Posting check</h3><p className="text-[14px] leading-relaxed text-muted">{r.posting}</p></section>}
+    </div>
+  )
+}
+
+const KEYWORD: Record<KeywordState, { label: string; mark: string }> = {
+  found: { label: 'On your resume', mark: 'bg-success-soft text-success' },
+  missing: { label: 'Missing from your resume', mark: 'bg-danger-soft text-danger' },
+  unchecked: { label: 'Not checked', mark: 'bg-raised text-fg' },
+}
+
+function Mark({ state, children }: { state: KeywordState; children: string }) {
+  return <mark title={KEYWORD[state].label} className={cn('rounded-[3px] px-0.5 font-medium', KEYWORD[state].mark)}>{children}</mark>
+}
+
+function PostingPanel({ data, v }: { data: ReviewRole; v: ResumeVersion | undefined }) {
+  const text = cleanPosting(data.role.job_description)
+  const keywords = keywordStates(v ? readReport(v.report).keywords : [], v?.keywords)
+  const { parts, placed } = markPosting(text, keywords)
+  const elsewhere = keywords.filter(k => !placed.has(k.keyword))
+  const states = (Object.keys(KEYWORD) as KeywordState[]).filter(s => keywords.some(k => k.state === s))
+  const url = data.role.apply_url
+  return (
+    <div className="space-y-3">
+      {url && /^https?:/i.test(url) && <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[14px] text-accent hover:underline">Open posting <ExternalLink className="size-3.5" /></a>}
+      {states.length > 0 && (
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-muted">
+          {states.map(s => <span key={s}><Mark state={s}>{KEYWORD[s].label}</Mark> {keywords.filter(k => k.state === s).length}</span>)}
+          {v && <span className="text-subtle">From v{v.version}</span>}
+        </p>
+      )}
+      {elsewhere.length > 0 && (
+        <p className="text-[13px] leading-relaxed text-muted">
+          Not word for word in this text: {elsewhere.map((k, i) => <span key={k.keyword}>{i > 0 && ', '}<Mark state={k.state}>{k.keyword}</Mark></span>)}
+        </p>
+      )}
+      {text
+        ? <div className={cn(box, 'text-[14px] leading-relaxed break-words whitespace-pre-wrap text-fg')}>{parts.map((p, i) => ('state' in p ? <Mark key={i} state={p.state}>{p.text}</Mark> : p.text))}</div>
+        : <p className="text-[14px] text-muted">This role has no saved job description.</p>}
     </div>
   )
 }
@@ -331,6 +369,7 @@ export default function RolePage() {
   const openComments = d.comments.filter(c => c.status === 'open').length
   const panels = [
     { value: 'report' as const, label: 'Report' },
+    { value: 'posting' as const, label: 'Job description' },
     { value: 'comments' as const, label: openComments ? `Comments · ${openComments}` : 'Comments' },
     { value: 'outreach' as const, label: d.outreach.length ? `Outreach · ${d.outreach.length}` : 'Outreach' },
     { value: 'apply' as const, label: 'Apply' },
@@ -357,6 +396,7 @@ export default function RolePage() {
         <div className="min-w-0">
           <div className="mb-4 max-w-full overflow-x-auto"><Segmented value={panel} onChange={setPanel} options={panels} label="Section" /></div>
           {panel === 'report' && (current ? <ReportPanel v={current} /> : <p className="text-[14px] text-muted">The report comes with the resume.</p>)}
+          {panel === 'posting' && <PostingPanel data={d} v={current} />}
           {panel === 'comments' && <CommentsPanel data={d} onDone={refresh} />}
           {panel === 'outreach' && (
             <div className="space-y-4">

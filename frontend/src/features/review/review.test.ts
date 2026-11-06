@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approvedLine, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -86,6 +86,9 @@ describe('readReport', () => {
     expect(r.eligibility).toBe('No sponsorship')
     expect(r.atsReason).toBe('Covers the core skills')
   })
+  it('reads a keyword table written as an object', () => {
+    expect(readReport({ keyword_table: { AWS: 'Summary, Skills', Kafka: '' } }).keywords).toEqual([{ keyword: 'AWS', where: 'Summary, Skills' }, { keyword: 'Kafka', where: null }])
+  })
   it('survives a missing or odd report', () => {
     for (const bad of [null, undefined, 'x', { gaps: 'not a list', keyword_table: 7, scores: 3 }]) {
       expect(readReport(bad)).toMatchObject({ needs: [], gaps: [], changes: [], keywords: [], verdict: null })
@@ -132,5 +135,81 @@ describe('nextRunLine', () => {
     expect(nextRunLine(null, now)).toBe('Not scheduled')
     expect(nextRunLine('2026-11-05T11:00:00Z', now)).toBe('Due now')
     expect(nextRunLine('2026-11-05T15:05:00Z', now)).toMatch(/^About \d/)
+  })
+})
+
+describe('cleanPosting', () => {
+  it('keeps plain text and its line breaks as they are', () => {
+    expect(cleanPosting('Title\n\nLine one\nLine two')).toBe('Title\n\nLine one\nLine two')
+  })
+  it('turns tags into text with breaks', () => {
+    expect(cleanPosting('<h3>About</h3>\n<p>We <strong>build</strong> tools</p>\n<p>One<br/>Two</p>')).toBe('About\n\nWe build tools\n\nOne\nTwo')
+    expect(cleanPosting('<ul>\n<li>Python</li>\n<li><span>Go</span></li>\n</ul>')).toBe('• Python\n• Go')
+  })
+  it('drops scripts and styles with what is inside them', () => {
+    expect(cleanPosting('<style>p { color: red }</style>Hi<script>alert(1)</script>')).toBe('Hi')
+  })
+  it('decodes entities once, and leaves ones it doesn’t know', () => {
+    expect(cleanPosting('R&amp;D &mdash; &#8217;x&#x2019; &amp;lt; &nope; &#99999999;')).toBe('R&D — ’x’ &lt; &nope; &#99999999;')
+  })
+  it('leaves a less-than that isn’t a tag', () => {
+    expect(cleanPosting('Teams < 10 people, C++ > 3 years')).toBe('Teams < 10 people, C++ > 3 years')
+  })
+  it('survives no posting', () => {
+    expect(cleanPosting(null)).toBe('')
+    expect(cleanPosting(undefined)).toBe('')
+  })
+})
+
+describe('keywordStates', () => {
+  const list = [{ keyword: 'Python' }, { keyword: 'Kafka' }]
+  it('uses the PDF check', () => {
+    expect(keywordStates(list, { total: 2, missing: ['Kafka'] })).toEqual([{ keyword: 'Python', state: 'found' }, { keyword: 'Kafka', state: 'missing' }])
+  })
+  it('never calls a keyword found when nothing was checked', () => {
+    for (const check of [null, undefined, { total: 0, missing: [] }]) {
+      expect(keywordStates(list, check).map(k => k.state)).toEqual(['unchecked', 'unchecked'])
+    }
+  })
+})
+
+describe('markPosting', () => {
+  const marked = (text: string, ...keywords: string[]) =>
+    markPosting(text, keywords.map(keyword => ({ keyword, state: 'found' as const }))).parts.filter(p => 'state' in p).map(p => p.text)
+
+  it('puts the text back together with its states', () => {
+    const { parts, placed } = markPosting('Python and Kafka.', [{ keyword: 'Python', state: 'found' }, { keyword: 'Kafka', state: 'missing' }, { keyword: 'Legal domain', state: 'missing' }])
+    expect(parts).toEqual([{ text: 'Python', state: 'found' }, { text: ' and ' }, { text: 'Kafka', state: 'missing' }, { text: '.' }])
+    expect([...placed]).toEqual(['Python', 'Kafka'])
+  })
+  it('matches whole words only', () => {
+    expect(marked('JavaScript and Javanese', 'Java')).toEqual([])
+    expect(marked('C++ and C# not C', 'C')).toEqual(['C'])
+    expect(marked('C++ and C#', 'C++', 'C#')).toEqual(['C++', 'C#'])
+  })
+  it('splits "A / B" and brackets but not CI/CD', () => {
+    expect(marked('Azure then GCP', 'AWS / Azure / GCP')).toEqual(['Azure', 'GCP'])
+    expect(marked('unit testing with Google Test', 'Unit testing (Google Test)')).toEqual(['unit testing', 'Google Test'])
+    expect(marked('our CI/CD, a CI tool', 'CI/CD')).toEqual(['CI/CD'])
+  })
+  it('lets the longer term win', () => {
+    expect(marked('Apache Spark and Spark', 'Spark', 'Apache Spark')).toEqual(['Apache Spark', 'Spark'])
+  })
+  it('matches across case, hyphens, spaces and plurals', () => {
+    expect(marked('end-to-end', 'End to end')).toEqual(['end-to-end'])
+    expect(marked('python', 'Python')).toEqual(['python'])
+    expect(marked('an LLM and some APIs', 'LLMs', 'API')).toEqual(['LLM', 'APIs'])
+  })
+  it('needs the case to match on short terms', () => {
+    expect(marked('we go to Go', 'Go')).toEqual(['Go'])
+    expect(marked('a rag and RAG', 'RAG')).toEqual(['RAG'])
+    expect(marked('use git', 'Git')).toEqual(['git'])
+  })
+  it('treats regex characters as text', () => {
+    expect(marked('Node.js, Nodexjs', 'Node.js')).toEqual(['Node.js'])
+  })
+  it('handles no keywords and no text', () => {
+    expect(markPosting('Hello', []).parts).toEqual([{ text: 'Hello' }])
+    expect(markPosting('', [{ keyword: 'Python', state: 'found' }]).parts).toEqual([])
   })
 })

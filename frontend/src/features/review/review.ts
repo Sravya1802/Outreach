@@ -111,8 +111,12 @@ const text = (x: unknown) => (typeof x === 'string' && x.trim() ? x : null)
 export function readReport(report: unknown) {
   const r = (report && typeof report === 'object' ? report : {}) as Record<string, unknown>
   const scores = (r.scores && typeof r.scores === 'object' ? r.scores : {}) as Record<string, unknown>
-  const keywords = (Array.isArray(r.keyword_table) ? r.keyword_table : [])
-    .map((k: { keyword?: unknown; where?: unknown } | null) => ({ keyword: text(k?.keyword), where: text(k?.where) }))
+  const table = r.keyword_table
+  // Written as [{ keyword, where }] or as { keyword: where }.
+  const rows: { keyword?: unknown; where?: unknown }[] = Array.isArray(table) ? table
+    : table && typeof table === 'object' ? Object.entries(table).map(([keyword, where]) => ({ keyword, where })) : []
+  const keywords = rows
+    .map(k => ({ keyword: text(k?.keyword), where: text(k?.where) }))
     .filter((k): k is { keyword: string; where: string | null } => k.keyword !== null)
   return {
     needs: strings(r.top_5_hiring_needs),
@@ -126,4 +130,74 @@ export function readReport(report: unknown) {
     atsReason: text(scores.ats_reason),
     callbackReason: text(scores.callback_reason),
   }
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', bull: '•', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“' }
+
+function entity(whole: string, name: string) {
+  if (name[0] !== '#') return ENTITIES[name.toLowerCase()] ?? whole
+  const n = /^#x/i.test(name) ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10)
+  return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole
+}
+
+/** A posting as plain text: most are already, some are scraped HTML. Line breaks stay; block tags become them. */
+export function cleanPosting(raw: string | null | undefined) {
+  return (raw ?? '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\s*<li\b[^>]*>\s*/gi, '\n• ')
+    .replace(/<br\b[^>]*>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|ul|ol)\s*>/gi, '\n\n')
+    .replace(/<\/?[a-z][^>]*>/gi, '')
+    .replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, entity)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+export type KeywordState = 'found' | 'missing' | 'unchecked'
+
+/** Whether the PDF has a keyword. A version with no check to go on stays unchecked, never found. */
+export function keywordStates(keywords: { keyword: string }[], check: { total: number; missing: string[] } | null | undefined) {
+  const state = (k: string): KeywordState => (!check?.total ? 'unchecked' : check.missing.includes(k) ? 'missing' : 'found')
+  return keywords.map(k => ({ keyword: k.keyword, state: state(k.keyword) }))
+}
+
+/** What to look for in the text: "A / B" and "A (B)" are two things, "CI/CD" is one. */
+const termsOf = (keyword: string) => keyword.split(/\s+\/\s+|\s*[()]\s*/).map(t => t.trim()).filter(Boolean)
+
+/** Spaces and hyphens match each other and a plural matches its singular. */
+function termPattern(term: string) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[\s-]+/g, '[\\s-]+')
+  return term.length > 2 && /[a-z]$/i.test(term) ? `${escaped.replace(/(?<=[a-z]{2})s$/i, '')}s?` : escaped
+}
+
+const exactCase = (term: string) => term.length <= 2 || /^[A-Z]{3,4}$/.test(term)
+
+export type PostingPart = { text: string } | { text: string; state: KeywordState }
+
+/**
+ * The text cut up around each keyword. Longer terms win, so "Apache Spark" isn't
+ * marked as "Spark". Two letters and acronyms must match case, so "Go" skips "go".
+ * `placed` is the keywords the text really has; the rest need saying some other way.
+ */
+export function markPosting(text: string, keywords: { keyword: string; state: KeywordState }[]) {
+  const terms = keywords
+    .flatMap(k => termsOf(k.keyword).map(term => ({ term, keyword: k.keyword, state: k.state })))
+    .sort((a, b) => b.term.length - a.term.length)
+  if (!terms.length) return { parts: text ? [{ text }] : [], placed: new Set<string>() }
+  const find = new RegExp(`(?<![\\p{L}\\p{N}+#])(?:${terms.map(t => `(${termPattern(t.term)})`).join('|')})(?![\\p{L}\\p{N}+#])`, 'giu')
+  const parts: PostingPart[] = []
+  const placed = new Set<string>()
+  let at = 0
+  for (const m of text.matchAll(find)) {
+    const hit = terms[m.slice(1).findIndex(g => g !== undefined)]
+    if (!hit || (exactCase(hit.term) && !m[0].startsWith(hit.term))) continue
+    if (m.index > at) parts.push({ text: text.slice(at, m.index) })
+    parts.push({ text: m[0], state: hit.state })
+    placed.add(hit.keyword)
+    at = m.index + m[0].length
+  }
+  if (at < text.length) parts.push({ text: text.slice(at) })
+  return { parts, placed }
 }

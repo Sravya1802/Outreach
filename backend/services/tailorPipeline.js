@@ -76,17 +76,48 @@ export function checkOutreach({ email_body, linkedin_note, name, company, quant 
   return errors;
 }
 
-const squash = (s) => String(s).toLowerCase().replace(/[^a-z0-9+#]/g, '');
-
 /** A run writes the table as [{ keyword, where }] or as { keyword: where }. */
 const keywordList = (table) => (Array.isArray(table) ? table.map(k => String(k?.keyword || '')) : Object.keys(table && typeof table === 'object' ? table : {})).filter(Boolean);
 
-/** How many of the report's keywords are in the text; "A / B" counts if either is. */
+/** "A / B" is two things to find; "CI/CD" is one. */
+const keywordTerms = (table) => [...new Set(keywordList(table).flatMap(k => k.split(/\s+\/\s+/)).map(t => t.trim()).filter(Boolean))];
+
+/** The words run together, so "CI / CD" and a line-end "micro-services" still match, with where each word starts and ends. */
+function wordMap(text) {
+  let flat = '';
+  const starts = new Set();
+  const ends = new Set();
+  for (const [word] of String(text).matchAll(/[A-Za-z0-9+#]+/g)) {
+    starts.add(flat.length);
+    flat += word;
+    ends.add(flat.length);
+  }
+  return { flat, lower: flat.toLowerCase(), starts, ends };
+}
+
+/** Whole words only, so "Java" isn't found in "JavaScript". Two letters and acronyms must match case, so "Go" isn't "go". */
+function hasTerm({ flat, lower, starts, ends }, term) {
+  const key = term.replace(/[^A-Za-z0-9+#]/g, '');
+  if (!key) return false;
+  const exact = key.length <= 2 || /^[A-Z]{3,4}$/.test(key);
+  const base = exact ? key : key.toLowerCase();
+  // A plural matches its singular, and the other way round.
+  const forms = key.length <= 2 ? [base] : [base, `${base}s`, ...(key.endsWith('s') ? [base.slice(0, -1)] : [])];
+  const hay = exact ? flat : lower;
+  return forms.some((form) => {
+    for (let at = hay.indexOf(form); at !== -1; at = hay.indexOf(form, at + 1)) {
+      if (starts.has(at) && ends.has(at + form.length)) return true;
+    }
+    return false;
+  });
+}
+
+/** Which of the report's keywords are in the text, each side of "A / B" on its own. */
 export function keywordCheck(text, table) {
-  const flat = squash(text);
-  const list = keywordList(table);
-  const missing = list.filter(k => !k.split(/\s*\/\s*/).some(part => flat.includes(squash(part))));
-  return { found: list.length - missing.length, total: list.length, missing };
+  const words = wordMap(text);
+  const terms = keywordTerms(table);
+  const present = terms.filter(t => hasTerm(words, t));
+  return { found: present.length, total: terms.length, present, missing: terms.filter(t => !present.includes(t)) };
 }
 
 async function checkVersion(v) {
@@ -283,10 +314,10 @@ export async function sendReviewDigest(userId) {
   return d;
 }
 
-/** Versions checked before keywordCheck read { keyword: where } saved 0 of 0, so check those against the PDF here. */
+/** A saved check with no `present` list came from the old rules, so check that version against the PDF here. */
 async function withKeywords({ pdf_path, ...v }) {
   const table = v.report?.keyword_table;
-  if (!pdf_path || v.keywords?.total || !keywordList(table).length) return v;
+  if (!pdf_path || Array.isArray(v.keywords?.present) || !keywordList(table).length) return v;
   const keywords = await downloadVersionPdf(pdf_path).then(pdfText).then(text => keywordCheck(text, table)).catch(() => null);
   return { ...v, keywords };
 }

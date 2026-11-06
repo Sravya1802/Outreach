@@ -33,15 +33,45 @@ test('quant role: a trading firm with a plain title counts, a data analyst does 
   assert.equal(isQuantRole({ title: 'Quant Developer' }), true);
 });
 
-test('keyword check: spacing and case do not matter, and either side of a slash counts', () => {
-  const table = [{ keyword: 'Python' }, { keyword: 'TypeScript / React' }, { keyword: 'CI/CD' }, { keyword: 'Legal domain' }, {}];
-  assert.deepEqual(keywordCheck('PYTHON, react\nand CI / CD', table), { found: 3, total: 4, missing: ['Legal domain'] });
-  assert.deepEqual(keywordCheck('x', null), { found: 0, total: 0, missing: [] });
+test('keyword check: spacing and case do not matter', () => {
+  const table = [{ keyword: 'Python' }, { keyword: 'CI/CD' }, { keyword: 'Legal domain' }, {}];
+  assert.deepEqual(keywordCheck('PYTHON, react\nand CI / CD', table), { found: 2, total: 3, present: ['Python', 'CI/CD'], missing: ['Legal domain'] });
+  assert.deepEqual(keywordCheck('x', null), { found: 0, total: 0, present: [], missing: [] });
 });
 
 test('keyword check: reads a table written as { keyword: where }', () => {
-  assert.deepEqual(keywordCheck('Python and AWS', { Python: 'Skills', 'AWS / GCP': 'Skills', Kafka: 'Projects' }), { found: 2, total: 3, missing: ['Kafka'] });
-  assert.deepEqual(keywordCheck('x', 'not a table'), { found: 0, total: 0, missing: [] });
+  assert.deepEqual(keywordCheck('Python and Kubernetes', { Python: 'Skills', Kafka: 'Projects' }), { found: 1, total: 2, present: ['Python'], missing: ['Kafka'] });
+  assert.deepEqual(keywordCheck('x', 'not a table'), { found: 0, total: 0, present: [], missing: [] });
+});
+
+test('keyword check: whole words only', () => {
+  const missing = (text, keyword) => keywordCheck(text, { [keyword]: 'Skills' }).missing.length === 1;
+  assert.equal(missing('JavaScript and TypeScript', 'Java'), true);
+  assert.equal(missing('Java and JavaScript', 'Java'), false);
+  assert.equal(missing('Google Cloud', 'Go'), true);
+  assert.equal(missing('we go fast', 'Go'), true);
+  assert.equal(missing('Go, Rust', 'Go'), false);
+  assert.equal(missing('C++ and C#', 'C'), true);
+  assert.equal(missing('C++ and C#', 'C++'), false);
+  assert.equal(missing('C++ and C#', 'C#'), false);
+  assert.equal(missing('NoSQL stores', 'SQL'), true);
+  assert.equal(missing('a rag', 'RAG'), true);
+});
+
+test('keyword check: a whole word survives line ends, hyphens and plurals', () => {
+  const found = (text, keyword) => keywordCheck(text, { [keyword]: 'Skills' }).found === 1;
+  assert.equal(found('built micro-\nservices', 'Microservices'), true);
+  assert.equal(found('distributed\nsystems', 'Distributed systems'), true);
+  assert.equal(found('end-to-end', 'End to end'), true);
+  assert.equal(found('REST APIs', 'API'), true);
+  assert.equal(found('an LLM', 'LLMs'), true);
+  assert.equal(found('Node.js', 'NodeJS'), true);
+});
+
+test('keyword check: each side of "A / B" stands alone, and "CI/CD" does not split', () => {
+  assert.deepEqual(keywordCheck('AWS only', [{ keyword: 'AWS / Azure / GCP' }]), { found: 1, total: 3, present: ['AWS'], missing: ['Azure', 'GCP'] });
+  assert.deepEqual(keywordCheck('CI pipelines', [{ keyword: 'CI/CD' }]), { found: 0, total: 1, present: [], missing: ['CI/CD'] });
+  assert.equal(keywordCheck('Python', [{ keyword: 'Python' }, { keyword: 'Python / Go' }]).total, 2);
 });
 
 test('corrections: added to the standing rules, read back, replaced and removed', () => {

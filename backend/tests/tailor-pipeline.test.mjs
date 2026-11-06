@@ -39,6 +39,11 @@ test('keyword check: spacing and case do not matter, and either side of a slash 
   assert.deepEqual(keywordCheck('x', null), { found: 0, total: 0, missing: [] });
 });
 
+test('keyword check: reads a table written as { keyword: where }', () => {
+  assert.deepEqual(keywordCheck('Python and AWS', { Python: 'Skills', 'AWS / GCP': 'Skills', Kafka: 'Projects' }), { found: 2, total: 3, missing: ['Kafka'] });
+  assert.deepEqual(keywordCheck('x', 'not a table'), { found: 0, total: 0, missing: [] });
+});
+
 test('corrections: added to the standing rules, read back, replaced and removed', () => {
   const rules = 'Run steps\n1. Read the config.';
   const one = withCorrections(rules, ['Title is Graduate Research Assistant', 'No MS GPA']);

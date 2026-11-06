@@ -78,10 +78,13 @@ export function checkOutreach({ email_body, linkedin_note, name, company, quant 
 
 const squash = (s) => String(s).toLowerCase().replace(/[^a-z0-9+#]/g, '');
 
+/** A run writes the table as [{ keyword, where }] or as { keyword: where }. */
+const keywordList = (table) => (Array.isArray(table) ? table.map(k => String(k?.keyword || '')) : Object.keys(table && typeof table === 'object' ? table : {})).filter(Boolean);
+
 /** How many of the report's keywords are in the text; "A / B" counts if either is. */
 export function keywordCheck(text, table) {
   const flat = squash(text);
-  const list = (Array.isArray(table) ? table : []).map(k => String(k?.keyword || '')).filter(Boolean);
+  const list = keywordList(table);
   const missing = list.filter(k => !k.split(/\s*\/\s*/).some(part => flat.includes(squash(part))));
   return { found: list.length - missing.length, total: list.length, missing };
 }
@@ -280,10 +283,18 @@ export async function sendReviewDigest(userId) {
   return d;
 }
 
+/** Versions checked before keywordCheck read { keyword: where } saved 0 of 0, so check those against the PDF here. */
+async function withKeywords({ pdf_path, ...v }) {
+  const table = v.report?.keyword_table;
+  if (!pdf_path || v.keywords?.total || !keywordList(table).length) return v;
+  const keywords = await downloadVersionPdf(pdf_path).then(pdfText).then(text => keywordCheck(text, table)).catch(() => null);
+  return { ...v, keywords };
+}
+
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
@@ -294,7 +305,7 @@ export async function reviewRole(userId, planItemId) {
   const [versions, comments, outreach] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,
-              keywords, pdf_path IS NOT NULL AS has_pdf, created_at
+              keywords, pdf_path, pdf_path IS NOT NULL AS has_pdf, created_at
          FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC`,
       [userId, planItemId],
     ),
@@ -305,9 +316,8 @@ export async function reviewRole(userId, planItemId) {
       [userId, planItemId],
     ),
   ]);
-  const posting = await one('SELECT job_description FROM plan_items WHERE id = $1', [planItemId]);
-  const quant = isQuantRole({ title: role.title, company: role.company_name, description: posting?.job_description });
-  return { role, versions, comments, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
+  const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
+  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
 
 /** A version's PDF, if it's the user's and it compiled. */

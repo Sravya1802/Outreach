@@ -1782,3 +1782,15 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Effect:** approving such a role drafts no email and no note, and it applies automatically after 2 business days ("No referral ask is out"). The bulk approve dialog still says its emails go to Gmail Drafts.
 - **Not changed yet:** waiting on the user's choice of fix. No real role has been approved, so nothing has gone out this way.
 - **Live state:** 144 Ready (all passed), 9 Closed; 111 above 90 ATS, 33 at or under; 28 eligibility flags, 6 visa; Select all takes 92. Runs 14 and 15 did 0 roles because the queue is empty.
+
+## 2026-11-06 — Role page: Job description tab
+
+- **Built:** a Job description tab next to Report on `/review/:id`. Open posting link at the top of the tab, `plan_items.job_description` cleaned by `cleanPosting` (tags out, block tags and `<br>` become line breaks, entities decoded; rendered as text, never as HTML), keywords marked by `markPosting` for the version picked on the left. Keywords not word for word in the posting are listed above the text, so a red one can't vanish.
+- **Found: `keyword_table` has two shapes.** 134 of 144 latest versions wrote `{ keyword: where }`, the other 10 `[{ keyword, where }]`. Both `readReport` and `keywordCheck` read only the array, so those 134 showed no keywords on Report and saved `keywords` as 0 of 0 with nothing missing. Both now read either shape, so the Report tab shows those keywords too.
+- **Old versions:** their saved 0 of 0 was left alone (no database writes). `withKeywords` in `reviewRole` checks them against the PDF each time the page opens, and a failed download shows grey Not checked, never green. `pdf_path` stays off the API response.
+- **Files:** `backend/services/tailorPipeline.js`, `frontend/src/features/review/{RolePage.tsx,review.ts,review.test.ts}`, `frontend/src/lib/api.ts`.
+- **Commits:** `8f49ba4` (VM `1c17b8d`), `fa0b98e`. No migration.
+- **Verified:** backend 238, frontend 166, typecheck, build. Browser checks with a fixture role API on local and on scoutnjobs.vercel.app, dark and light, desktop and phone width.
+- **Not verified:** `reviewRole` on a real role in the live app, including the PDF re-check. e2e owns no roles, and the local `DATABASE_URL` password is stale. The sweep over all roles from the VM was blocked by the permission check. `withKeywords` is read through only: both PDF paths pass a Buffer to `pdfText`. The first real page open is the test; watch for slow loads on old versions.
+- **Data limits, not changed:** 99 of 144 postings have 3 or fewer line breaks because the scrape lost them, so they read as one block. 11 are cut at the 8,000 character cap. `keywordCheck` matches substrings, so "Java" counts as found on a resume with only JavaScript, and "A / B" is green if either is present. An estimate from the LaTeX has about 46 of 985 keywords missing across 29 of the 134 old-shape roles.
+- **Shared worktree:** another session committed `10ed5cb` here while this was in progress. Stage by path.

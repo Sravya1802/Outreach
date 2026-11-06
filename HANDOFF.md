@@ -1806,3 +1806,14 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Lookups:** 28 roles searched, best fit first. Stopped by a floor of 15 Hunter left. 13 roles have recruiters and `outreach_due`; Virtusa has LinkedIn only. 15 had no recruiter. Left: Hunter 14 of 50, Prospeo 75 of 100, email checks 96 of 100, Apify $3.57 of $5.
 - **Verified:** throwaway roles on the e2e user, 15 of 15 on live code, including a role that did reach out still moving on; live browser 21 of 21 at 1440 and 390 px; backend 238 on VM, frontend 149. All QA rows removed.
 - **Still the user's call:** of the master v2 skills only C# and .NET are in `meta.confirmed_skills`. The 7 projects reported as not built are among the 8 Built; none is in the master or on any resume, so they stay off with no action.
+
+## 2026-11-06 — Keyword check tightened, postings split
+
+- **False greens fixed:** `keywordCheck` matches whole words and checks each side of `A / B` alone. "Java" no longer counts from "JavaScript", `AWS / Azure / GCP` colours each one, and `Go`, `C`, `R`, `AI` and 3 to 4 letter acronyms must match case. `CI/CD` and other unspaced slashes stay one keyword. The words are still compared run together, with each match on a word edge, so a line-end `micro-` / `services` and `CI / CD` still match. Plurals match singulars.
+- **Check result shape:** now `{ found, total, present, missing }`, counted per side. The UI colours straight from `present` and `missing`. No `present` list means old rules: `withKeywords` re-checks that version against the PDF on every page open, with no database writes, and the UI shows it grey if that fails. So every version saved before this re-checks on each open until a run writes a new one.
+- **Brackets not split in the check:** 4 keywords like `Unit testing (Google Test)` must appear whole, so they can read red when the first part is on the resume. Errs toward red, left alone.
+- **Postings:** `cleanPosting` breaks after run-together sentences and before a short `STARTERS` list ("degreeStrong"). A list, because any capital would split JavaScript; no "In", because of LinkedIn. Live data: 99 postings with 3 or fewer line breaks to 0, median 17 new breaks. Display only. Worst posting still averages about 850 characters a line.
+- **Commits:** `06dbfa1` (VM `728e4a2` picked, health ok, 17 tests pass there), `6e431d2`. No migration.
+- **Verified:** backend 241, frontend 168, typecheck, build, browser checks 28 of 28 with a fixture role API on local and live.
+- **Still not verified:** the tab on a real role in the live app, including the PDF re-check. The user needs to open one; e2e owns no roles.
+- **Other session:** `email-tracker-db` [7eeb43], log `d1436af3`, "Scout'n'Jobs tailoring pipeline build spec", made `10ed5cb`, `acc2511`, `1f3fe62` beside this work. Confirmed from its log. It runs in this same worktree, on `main`.

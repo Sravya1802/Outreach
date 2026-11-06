@@ -1775,3 +1775,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Later the same day:** `resumeGate` now passes only the user's upload or a role approved in the Review queue, on every apply path. `approveDraft` runs `checkOutreach` on a role's email, Gmail edits included. Outbox 11 and 12 (IBM) discarded, Gmail copies gone. A correction bans latency numbers on non-quant roles (config v3). Revisions requested on the 7 flagged roles (2340, 2029, 1164, 1132, 1593, 1787, 1437); the next run writes them.
 - **Citizens-only comments:** the 6 Ready roles got an open `resume_comments` note at the user's request; they weren't closed. Iridium (1164) is in the revisions too, so that run will also read its citizen note.
 - **Real tries, same day:** throwaway roles with `+qa` aliases on the real account: bulk approve, Gmail drafts with the PDF, Resume v1 label in the data, Outbox refusal on 83ns, 10 of 10; rows and Gmail copies removed. Digest sent for real by email. Run 13 (7 revisions) finished at 20:06 UTC, announced by email at 20:08; all 7 passed, 0 flagged left, 144 Ready. WhatsApp copies wait on template `snj_review_update`. The real apply after the wait is still unrun.
+
+## 2026-11-05 — Gap found: queue roles get no contacts
+
+- **Found while listing what's left:** 141 of 144 Ready roles have no `outreach_drafts`. Only 3 of the 127 Ready companies have `job_contacts` (2 with an email). Runs only read existing contacts, and `prepareContacts` only picks stages `tailoring`, `needs_you`, `asking_referral`, while `approveRole` goes straight to `waiting_referral`, so nothing finds people for queue roles.
+- **Effect:** approving such a role drafts no email and no note, and it applies automatically after 2 business days ("No referral ask is out"). The bulk approve dialog still says its emails go to Gmail Drafts.
+- **Not changed yet:** waiting on the user's choice of fix. No real role has been approved, so nothing has gone out this way.
+- **Live state:** 144 Ready (all passed), 9 Closed; 111 above 90 ATS, 33 at or under; 28 eligibility flags, 6 visa; Select all takes 92. Runs 14 and 15 did 0 roles because the queue is empty.

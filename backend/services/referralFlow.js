@@ -314,12 +314,12 @@ async function trustedDomain(job) {
  * people who don't have a found email yet. Searches are cached per company,
  * so a second role there costs nothing.
  */
-export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = false } = {}) {
+export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = false, domain: proven = null } = {}) {
   const out = { people: 0, emails: 0 };
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
   const providers = await import('./emailProviders.js');
   if (!job || !providers.isConfigured('prospeo')) return out;
-  const domain = await trustedDomain(job);
+  const domain = proven || await trustedDomain(job);
   if (!domain) return out;
   const { cachedDomainSearch, spend } = await import('./providerUsage.js');
   const { upsertContact } = await import('./contactFinder.js');
@@ -393,10 +393,10 @@ async function checkGuesses(userId, people) {
       return;
     }
     if (verdict === 'invalid') {
-      await run("UPDATE job_contacts SET email_status = 'invalid', email_lookup_note = 'Guessed address failed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+      await run("UPDATE job_contacts SET email_status = 'invalid', email_lookup_note = 'Failed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
       p.email = null;
     } else if (verdict === 'valid') {
-      await run("UPDATE job_contacts SET email_status = 'valid', email_lookup_note = 'Guessed from the company pattern; passed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+      await run("UPDATE job_contacts SET email_status = 'valid', email_lookup_note = 'Passed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
       p.guessed = false;
     } else if (verdict === 'accept_all') {
       return;
@@ -441,6 +441,9 @@ export async function findPeopleFor(userId, item) {
   return out;
 }
 
+// isRecruiterTitle takes anyone in HR. A VP of HR doesn't read a new grad's cold email.
+const LEADER = /\b(vp|vice president|director|head of|chief|ceo|founder|co-founder|president)\b/i;
+
 /** Saved recruiters at a company, best first. */
 async function recruitersAt(userId, companyName) {
   const saved = await all(
@@ -448,7 +451,7 @@ async function recruitersAt(userId, companyName) {
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
     [userId, companyName],
   );
-  return saved.filter(c => isRecruiterTitle(c.title) && !isCompanyPage(c.name, companyName)).sort((a, b) => askRank(a) - askRank(b));
+  return saved.filter(c => isRecruiterTitle(c.title) && !LEADER.test(c.title) && !isCompanyPage(c.name, companyName)).sort((a, b) => askRank(a) - askRank(b));
 }
 
 const canEmail = c => c.email && c.email_status !== 'invalid';
@@ -456,8 +459,9 @@ const canEmail = c => c.email && c.email_status !== 'invalid';
 /**
  * Recruiters for a Review queue role, before it's approved, so a run can write
  * its outreach. Lookups are the month's allowance, so this stops at what the
- * role needs: Prospeo's recruiter search, then Hunter, then LinkedIn, each only
- * if the one before left a gap. Companies with enough recruiters cost nothing.
+ * role needs. Prospeo searches by recruiter title but needs a domain we trust;
+ * Hunter finds the domain, and people it finds there prove it. Companies with
+ * 2 recruiters cost nothing, and both searches are cached per company.
  */
 export async function findRecruitersFor(userId, item) {
   const company = item.company_name;
@@ -466,14 +470,18 @@ export async function findRecruitersFor(userId, item) {
   const quiet = (what) => (err) => { console.warn(`[referrals] ${what} failed`, company, err.message); };
   try {
     if (await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true }).catch(quiet('Prospeo'));
-    if (!(await emails()) && await connectionFor(userId)) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
-    if (!(await recruitersAt(userId, company)).length) await findLinkedInPeopleAt(userId, jobId).catch(quiet('LinkedIn search'));
+    if (await emails() < 2 && await connectionFor(userId)) {
+      await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
+      const { domain } = await one('SELECT domain FROM jobs WHERE id = $1', [jobId]);
+      const proven = domain && await one("SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3 LIMIT 1", [userId, jobId, domain]);
+      if (proven && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true, domain }).catch(quiet('Prospeo'));
+    }
     await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
-    const best = (await recruitersAt(userId, company)).slice(0, 2);
-    for (const c of best.filter(x => !canEmail(x))) {
+    for (const c of (await recruitersAt(userId, company)).slice(0, 2).filter(x => !canEmail(x))) {
       await findEmailFor(userId, jobId, { name: c.name, linkedin: c.linkedin_url, contactId: c.id }).catch(quiet('person lookup'));
     }
-    await checkGuesses(userId, (await recruitersAt(userId, company)).slice(0, 2).filter(c => c.email_status === 'guessed').map(c => ({ email: c.email, contactId: c.id })));
+    const unsure = (await recruitersAt(userId, company)).slice(0, 2).filter(c => ['guessed', 'risky'].includes(c.email_status));
+    await checkGuesses(userId, unsure.map(c => ({ email: c.email, contactId: c.id })));
   } finally {
     await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
   }

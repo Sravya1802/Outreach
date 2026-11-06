@@ -64,6 +64,12 @@ test('run message and 9 PM digest say what is ready, and only what applies', () 
   assert.ok(full.params.body[0].length < 700 && !full.params.body[0].includes('\n'));
 });
 
+test('run message: outreach written on its own is announced', () => {
+  assert.equal(runMessage({ roles_done: 0, outreach: 3 }).subject, 'outreach written for 3 roles');
+  assert.equal(runMessage({ roles_done: 2, outreach: 1 }).subject, '2 resumes ready for review, outreach written for 1 role');
+  assert.equal(runMessage({ roles_done: 2 }).subject, '2 resumes ready for review');
+});
+
 test('the app writes no resumes and no AI emails unless switched back on', async () => {
   const { start } = await import('../services/resumeEngine.js');
   const { draftPicked } = await import('../services/dailyPlan.js');

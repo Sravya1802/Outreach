@@ -11,6 +11,8 @@
  *     Approving makes the version final, puts the emails in Gmail Drafts with the
  *     PDF attached and starts the referral wait. Nothing sends from here: each
  *     email waits for the user's OK in Outbox, and applying waits for the referrals.
+ *   findRoleContacts: recruiters for a Ready role; the next run writes its outreach.
+ *   applyWithoutReferral: the only way a role with no outreach goes out.
  *   markApplied (cron): a role applied to from any path moves to Applied.
  *   runSummary, companyQueue: the Home, Usage and Company pages.
  *   runConfig, saveRunConfig: what a run reads. Every save is a new tailoring_config
@@ -20,7 +22,7 @@
 import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, isCompanyPage, me, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -133,8 +135,8 @@ export async function markApplied() {
 /** Every role in the queue, with its latest version. place is its turn among the waiting roles, in claim_tailor_jobs' order. */
 export async function reviewQueue(userId) {
   return all(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.updated_at, j.locked_at, j.locked_by_run AS run,
-            COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.updated_at, j.locked_at, j.locked_by_run AS run,
+            COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
@@ -249,8 +251,12 @@ export async function saveRunConfig(userId, { email_template, linkedin_rules, co
 
 /** Every 2 minutes: a finished run that wrote something gets one message. */
 export async function notifyRuns() {
-  const runs = (await run("UPDATE pipeline_runs SET notified_at = NOW() WHERE finished_at IS NOT NULL AND notified_at IS NULL RETURNING user_id, roles_done, roles_failed")).rows;
-  for (const r of runs.filter(x => x.roles_done > 0 || x.roles_failed > 0)) await tell(r.user_id, runMessage(r));
+  const runs = (await run(
+    `UPDATE pipeline_runs r SET notified_at = NOW() WHERE finished_at IS NOT NULL AND notified_at IS NULL
+     RETURNING user_id, roles_done, roles_failed,
+       (SELECT COUNT(DISTINCT d.plan_item_id)::int FROM outreach_drafts d WHERE d.user_id = r.user_id AND d.created_at BETWEEN r.started_at AND r.finished_at) AS outreach`,
+  )).rows;
+  for (const r of runs.filter(x => x.roles_done > 0 || x.roles_failed > 0 || x.outreach > 0)) await tell(r.user_id, runMessage(r));
 }
 
 /** Gmail to the user's own address and WhatsApp. Neither stops the other. */
@@ -277,7 +283,7 @@ export async function sendReviewDigest(userId) {
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
@@ -352,7 +358,7 @@ export async function editDraft(userId, draftId, { email_subject, email_body, li
  * The user's yes. A flagged or uncompiled version can't be approved, and every email
  * carries the PDF, so nothing is drafted until it's saved. Nothing sends from here.
  */
-export async function approveRole(userId, planItemId) {
+export async function approveRole(userId, planItemId, { withoutReferral = false } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review can be approved.');
@@ -361,12 +367,14 @@ export async function approveRole(userId, planItemId) {
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   if (item.decision === 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) throw fail(409, 'This role has already moved on in To apply.');
   // My contact and None email nobody, even if a run wrote drafts before the mode changed.
-  const drafts = NO_EMAILS.includes(job.referral_mode) ? [] : await all(
+  const noEmails = withoutReferral || NO_EMAILS.includes(job.referral_mode);
+  const drafts = noEmails ? [] : await all(
     `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
        FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
       WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
     [userId, planItemId],
   );
+  if (!noEmails && !drafts.length) throw fail(409, 'This role has no outreach yet. Find its contacts so a run can write it, or press Apply without referral.');
   const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
   for (const d of drafts) {
     const [problem] = checkOutreach({ ...d, company: item.company_name, quant });
@@ -393,4 +401,31 @@ export async function approveRole(userId, planItemId) {
     await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
     throw err;
   }
+}
+
+/** The user's say-so for a role with no outreach: approves it if needed, then it goes at the next morning slot. */
+export async function applyWithoutReferral(userId, planItemId) {
+  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (!['ready', 'approved'].includes(job.status)) throw fail(409, 'Only a role ready for review or approved can apply.');
+  const unsent = await one("SELECT 1 AS x FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.user_id = $1 AND a.plan_item_id = $2 AND o.status IN ('draft', 'scheduled', 'sending') LIMIT 1", [userId, planItemId]);
+  if (unsent) throw fail(409, 'OK or discard this role’s emails in People → Outbox first.');
+  if (job.status === 'ready') {
+    const written = !NO_EMAILS.includes(job.referral_mode) && await one("SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('draft', 'edited') LIMIT 1", [userId, planItemId]);
+    if (written) throw fail(409, 'This role has outreach waiting. Approve it instead.');
+    await approveRole(userId, planItemId, { withoutReferral: true });
+  }
+  await referralAction(userId, planItemId, { action: 'no_referral' });
+}
+
+/** Recruiters for a Ready role with no outreach. The next run writes the emails and notes. */
+export async function findRoleContacts(userId, planItemId) {
+  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (job.status !== 'ready') throw fail(409, 'Only a role ready for review needs contacts.');
+  if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody, so it needs no lookups.');
+  if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
+  const found = await findRecruitersFor(userId, await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]));
+  if (found.recruiters) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  return found;
 }

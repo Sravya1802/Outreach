@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approvedLine, atsOk, backlog, bulkLine, canApprove, isRunning, nextRunLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { approvedLine, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -62,7 +62,7 @@ describe('approvedLine', () => {
     expect(approvedLine({ ...result, inGmail: 1 })).toBe('Approved. 2 emails in Outbox, but 1 didn’t reach Gmail Drafts. OK each one in Outbox.')
   })
   it('says when there is nothing to draft', () => {
-    expect(approvedLine({ ...result, emails: 0, inGmail: 0 })).toBe('Approved. This role has no emails to draft.')
+    expect(approvedLine({ ...result, emails: 0, inGmail: 0 })).toBe('Approved. No emails here, so it applies only when you press Apply without referral.')
   })
 })
 
@@ -94,11 +94,23 @@ describe('readReport', () => {
 })
 
 describe('bulk approve', () => {
-  const row = { status: 'ready' as const, check_status: 'passed' as const, ats_after: 94, eligibility: null, sponsorship: null }
+  const row = { status: 'ready' as const, check_status: 'passed' as const, referral_mode: 'recruiters' as const, outreach: 2, ats_after: 94, eligibility: null, sponsorship: null }
   it('takes a passed resume that is ready', () => {
     expect(canApprove(row)).toBe(true)
     expect(canApprove({ ...row, check_status: 'flagged' })).toBe(false)
     expect(canApprove({ ...row, status: 'approved' })).toBe(false)
+  })
+  it('holds back a recruiter role with no outreach, but not one that emails nobody', () => {
+    expect(needsOutreach({ ...row, outreach: 0 })).toBe(true)
+    expect(canApprove({ ...row, outreach: 0 })).toBe(false)
+    expect(safeToBulk({ ...row, outreach: 0 })).toBe(false)
+    expect(canApprove({ ...row, outreach: 0, referral_mode: 'my_contact' })).toBe(true)
+    expect(canApprove({ ...row, outreach: 0, referral_mode: 'none' })).toBe(true)
+  })
+  it('says where a role with no outreach stands', () => {
+    expect(outreachLine({ outreach_due: true, contacts_at: '2026-11-06' })).toBe('Emails coming')
+    expect(outreachLine({ outreach_due: false, contacts_at: '2026-11-06' })).toBe('No recruiter found')
+    expect(outreachLine({ outreach_due: false, contacts_at: null })).toBe('No outreach yet')
   })
   it('leaves anything under the ATS rule or with an eligibility question out of Select all', () => {
     expect(safeToBulk(row)).toBe(true)

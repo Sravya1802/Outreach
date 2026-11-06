@@ -64,7 +64,7 @@ export function runLine(run: PipelineRun | null, now = Date.now()) {
 
 /** What Approve did, for the toast. */
 export function approvedLine({ emails, inGmail }: ApproveResult) {
-  if (!emails) return 'Approved. This role has no emails to draft.'
+  if (!emails) return 'Approved. No emails here, so it applies only when you press Apply without referral.'
   const count = emails === 1 ? '1 email' : `${emails} emails`
   if (inGmail < emails) return `Approved. ${count} in Outbox, but ${emails - inGmail} didn’t reach Gmail Drafts. OK each one in Outbox.`
   return `Approved. ${count} in Gmail Drafts. OK each one in Outbox to send it.`
@@ -76,11 +76,17 @@ export const atsOk = (n: number | null | undefined) => n != null && n > 90
 /** Says so when the posting rules out someone who needs sponsorship. */
 export const visaLine = (s: string | null | undefined) => (s === 'citizens_only' ? 'US citizens only' : s === 'no_sponsorship' ? 'Won’t sponsor' : null)
 
+/** A recruiter mode with nothing written. My contact and None email nobody, so they never wait for this. */
+export const needsOutreach = (r: Pick<ReviewRow, 'referral_mode' | 'outreach'>) => ['recruiters', 'recruiters_engineers'].includes(r.referral_mode) && r.outreach === 0
+
+/** Where a role with no outreach stands. */
+export const outreachLine = (r: Pick<ReviewRow, 'outreach_due' | 'contacts_at'>) => (r.outreach_due ? 'Emails coming' : r.contacts_at ? 'No recruiter found' : 'No outreach yet')
+
 /** A role Approve can take. */
-export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status'>) => r.status === 'ready' && r.check_status === 'passed'
+export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach'>) => r.status === 'ready' && r.check_status === 'passed' && !needsOutreach(r)
 
 /** What Select all takes: nothing under the ATS rule or with an eligibility question goes in unread. */
-export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
+export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
 
 /** How a bulk approve went, for the toast. */
 export function bulkLine(done: ApproveResult[], failed: number) {

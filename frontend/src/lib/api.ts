@@ -930,6 +930,10 @@ export interface ReviewRow {
   eligibility: string | null
   open_comments: number
   outreach: number
+  /** Recruiters found; the next run writes the emails and notes. */
+  outreach_due: boolean
+  /** When people were last searched for. */
+  contacts_at: string | null
   /** Who can refer the user there. */
   referrer: string | null
   sponsorship: string | null
@@ -1001,7 +1005,7 @@ export interface RunConfig { version: number; created_at: string; master_latex: 
 export interface Referrer { id: string; company_name: string; contact_name: string; note: string | null; roles: number }
 
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null; outreach_due: boolean; contacts_at: string | null }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]
@@ -1189,6 +1193,8 @@ export const api = {
   requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),
   setReferralMode: (id: string, mode: ReferralMode): Promise<{ ok: boolean }> => legacy.career.setReferralMode(id, mode),
   approveRole: (id: string): Promise<ApproveResult> => legacy.career.approveRole(id),
+  applyWithoutReferral: (id: string): Promise<{ ok: boolean }> => legacy.career.applyWithoutReferral(id),
+  findRoleContacts: (id: string): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

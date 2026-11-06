@@ -6,7 +6,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
-import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, reviewTab, runLine, safeToBulk, visaLine, type ReviewTab } from './review'
+import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, type ReviewTab } from './review'
 
 const head = 'border-b border-line px-3 py-2 font-medium'
 const cell = 'border-b border-line px-3 py-3 align-top'
@@ -40,6 +40,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
           {visaLine(r.sponsorship) && <Badge tone="danger">{visaLine(r.sponsorship)}</Badge>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
+          {r.status === 'ready' && needsOutreach(r) && <Badge tone={r.outreach_due ? 'info' : 'neutral'}>{outreachLine(r)}</Badge>}
         </div>
       </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
@@ -167,7 +168,7 @@ export default function ReviewPage() {
           <ConfirmDialog
             open={confirming}
             title={`Approve ${chosen.length} ${chosen.length === 1 ? 'role' : 'roles'}?`}
-            description="Each resume becomes final and its emails go to Gmail Drafts with the PDF attached. Nothing sends until you OK each email in People → Outbox, and applying waits 2 business days for referrals."
+            description="Each resume becomes final and its emails go to Gmail Drafts with the PDF attached. Nothing sends until you OK each email in People → Outbox, and applying waits 2 business days after outreach goes out. A role with no outreach applies only when you press Apply without referral."
             confirmLabel="Approve"
             onConfirm={() => void approveChosen()}
             onCancel={() => setConfirming(false)}

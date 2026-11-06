@@ -499,10 +499,14 @@ export function eveningMessage({ ready = [], drafting = [], own = [], label }) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** After a run: how many resumes it left for review. */
-export function runMessage({ roles_done: done, roles_failed: failed = 0 }) {
-  const line = [`${plural(done, 'resume')} ready for review`, failed ? `${failed} failed` : ''].filter(Boolean).join(', ');
+export function runMessage({ roles_done: done, roles_failed: failed = 0, outreach = 0 }) {
+  const line = [
+    done || !outreach ? `${plural(done, 'resume')} ready for review` : '',
+    outreach ? `outreach written for ${plural(outreach, 'role')}` : '',
+    failed ? `${failed} failed` : '',
+  ].filter(Boolean).join(', ');
   const text = `*${line}*\n\nNothing is sent or applied until you approve it.\n\n${SITE}/review`;
-  return { params: { header: plural(done, 'resume'), body: [line] }, text, plain: text.replace(/\*/g, ''), subject: line };
+  return { params: { header: done || !outreach ? plural(done, 'resume') : plural(outreach, 'role'), body: [line] }, text, plain: text.replace(/\*/g, ''), subject: line };
 }
 
 /** The 9 PM digest: what's ready, what's going tomorrow and what has sat for over a day. */

@@ -16,7 +16,8 @@
  *      Nobody found → a LinkedIn search link + a note.
  *   2. Wait `referralWaitDays` business days. The user reports what happened:
  *      a link or code / "they submitted me" / "they said no". Email replies
- *      are flagged automatically (replyWatcher).
+ *      are flagged automatically (replyWatcher). A role with no outreach out
+ *      never applies on its own: it holds until Apply without referral.
  *   3. Apply at a 6–10 AM slot in the company's time zone (autoApplier, for
  *      Greenhouse / Lever / Ashby; anything else becomes "apply yourself").
  *      Then an "I've applied" note goes in each email thread.
@@ -44,6 +45,9 @@ const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recru
 const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
 // Verified emails revealed per company (1 Prospeo credit each), recruiters first.
 const REVEALS_PER_COMPANY = 10;
+// A queue role needs 2 recruiters, and Prospeo's free allowance is 100 a month.
+const RECRUITER_REVEALS = 2;
+const NO_OUTREACH_NOTE = 'No outreach went out for this role, so it won’t apply on its own. Press Apply without referral when you want it to go.';
 const isProfile = (url) => /linkedin\.com\/in\//i.test(String(url || ''));
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
@@ -310,7 +314,7 @@ async function trustedDomain(job) {
  * people who don't have a found email yet. Searches are cached per company,
  * so a second role there costs nothing.
  */
-export async function findProspeoPeopleAt(userId, jobId) {
+export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = false } = {}) {
   const out = { people: 0, emails: 0 };
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
   const providers = await import('./emailProviders.js');
@@ -322,7 +326,8 @@ export async function findProspeoPeopleAt(userId, jobId) {
   const { seniorityScore } = await import('./contactRules.js');
 
   const found = [];
-  for (const [variant, titles] of [['recruiting-us', RECRUITING_TITLES], ['engineering-us', ENGINEERING_TITLES]]) {
+  const searches = [['recruiting-us', RECRUITING_TITLES], ['engineering-us', ENGINEERING_TITLES]].slice(0, recruitersOnly ? 1 : 2);
+  for (const [variant, titles] of searches) {
     try {
       const { result } = await cachedDomainSearch('prospeo', `${domain}#${variant}`, () => providers.prospeoSearchPeople(domain, titles), { userId });
       found.push(...(Array.isArray(result) ? result : []));
@@ -343,7 +348,7 @@ export async function findProspeoPeopleAt(userId, jobId) {
   const verified = found.filter(p => p.verified && p.person_id && p.linkedin_url)
     .sort((a, b) => Number(!isRecruiterTitle(a.title)) - Number(!isRecruiterTitle(b.title)));
   for (const p of verified) {
-    if (out.emails >= REVEALS_PER_COMPANY) break;
+    if (out.emails >= (recruitersOnly ? RECRUITER_REVEALS : REVEALS_PER_COMPANY)) break;
     const c = await one(
       `SELECT id, email, email_status FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND lower(linkedin_url) = lower($3)`,
       [userId, jobId, p.linkedin_url],
@@ -436,6 +441,46 @@ export async function findPeopleFor(userId, item) {
   return out;
 }
 
+/** Saved recruiters at a company, best first. */
+async function recruitersAt(userId, companyName) {
+  const saved = await all(
+    `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+      WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
+    [userId, companyName],
+  );
+  return saved.filter(c => isRecruiterTitle(c.title) && !isCompanyPage(c.name, companyName)).sort((a, b) => askRank(a) - askRank(b));
+}
+
+const canEmail = c => c.email && c.email_status !== 'invalid';
+
+/**
+ * Recruiters for a Review queue role, before it's approved, so a run can write
+ * its outreach. Lookups are the month's allowance, so this stops at what the
+ * role needs: Prospeo's recruiter search, then Hunter, then LinkedIn, each only
+ * if the one before left a gap. Companies with enough recruiters cost nothing.
+ */
+export async function findRecruitersFor(userId, item) {
+  const company = item.company_name;
+  const jobId = await companyRow(userId, company, item.location);
+  const emails = async () => (await recruitersAt(userId, company)).filter(canEmail).length;
+  const quiet = (what) => (err) => { console.warn(`[referrals] ${what} failed`, company, err.message); };
+  try {
+    if (await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true }).catch(quiet('Prospeo'));
+    if (!(await emails()) && await connectionFor(userId)) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
+    if (!(await recruitersAt(userId, company)).length) await findLinkedInPeopleAt(userId, jobId).catch(quiet('LinkedIn search'));
+    await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
+    const best = (await recruitersAt(userId, company)).slice(0, 2);
+    for (const c of best.filter(x => !canEmail(x))) {
+      await findEmailFor(userId, jobId, { name: c.name, linkedin: c.linkedin_url, contactId: c.id }).catch(quiet('person lookup'));
+    }
+    await checkGuesses(userId, (await recruitersAt(userId, company)).slice(0, 2).filter(c => c.email_status === 'guessed').map(c => ({ email: c.email, contactId: c.id })));
+  } finally {
+    await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
+  }
+  const found = await recruitersAt(userId, company);
+  return { recruiters: found.length, emails: found.filter(canEmail).length };
+}
+
 // Approved roles whose people search is running now (it can take a minute or two).
 const peopleRunning = new Set();
 
@@ -515,9 +560,12 @@ export async function referralEmailMoved(userId, row) {
     if (at > applyAfter) applyAfter = at;
   }
   const asks = await liveAsks(item.id);
-  const note = asks.length ? referralNote(asks, describeDay(applyAfter, tz)) : `No referral ask is out. Applying ${describeDay(applyAfter, tz)} unless you get a referral yourself.`;
-  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, note]);
+  if (!asks.length) return holdRole(item.id);
+  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, referralNote(asks, describeDay(applyAfter, tz))]);
 }
+
+/** No date to apply by: the role stays here until the user presses Apply without referral. */
+const holdRole = (itemId) => run('UPDATE plan_items SET apply_after = NULL, wait_until = NULL, stage_note = $2 WHERE id = $1', [itemId, NO_OUTREACH_NOTE]);
 
 /** Step 1: ask. Moves the role to waiting_referral with its apply time set. */
 export async function askForReferral(userId, item, settings) {
@@ -673,13 +721,13 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
     await run("UPDATE outreach_drafts SET status = 'approved', updated_at = NOW() WHERE id = $1", [d.id]);
   }
   const tz = item.company_tz || settings.timezone;
-  const applyAt = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
   const asks = await liveAsks(item.id);
+  const applyAt = asks.length ? businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 }) : null;
   await run(
     `UPDATE plan_items SET decision = 'approved', decided_at = NOW(), apply_mode = 'auto', stage = 'waiting_referral', needs_reason = NULL,
             referral_status = CASE WHEN referral_status = 'none' AND $4 THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3
       WHERE id = $1`,
-    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : `No referral ask is out. Applying ${describeDay(applyAt, tz)} unless you get a referral yourself.`, asks.length > 0],
+    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : NO_OUTREACH_NOTE, asks.length > 0],
   );
   return result;
 }
@@ -797,6 +845,9 @@ export async function referralAction(userId, itemId, { action, link }) {
   } else if (action === 'declined') {
     await run("UPDATE plan_items SET referral_status = 'declined', stage = 'ready_to_apply', needs_reason = NULL, apply_after = $2, stage_note = $3 WHERE id = $1",
       [item.id, nextMorning, `No referral. Applying ${describeDay(nextMorning, tz)}.`]);
+  } else if (action === 'no_referral') {
+    await run("UPDATE plan_items SET stage = 'ready_to_apply', needs_reason = NULL, apply_after = $2, stage_note = $3 WHERE id = $1",
+      [item.id, nextMorning, `Applying without a referral ${describeDay(nextMorning, tz)}.`]);
   } else if (action === 'apply_now') {
     await run("UPDATE plan_items SET stage = 'ready_to_apply', needs_reason = NULL, apply_after = NOW(), stage_note = 'Applying now.' WHERE id = $1", [item.id]);
   } else if (action === 'applied_myself') {
@@ -811,6 +862,15 @@ export async function referralAction(userId, itemId, { action, link }) {
 export async function markAskSent(userId, askId) {
   const r = await run("UPDATE referral_asks SET status = 'marked_sent' WHERE id = $1 AND user_id = $2 AND status = 'to_send' RETURNING *", [askId, userId]);
   if (r.rows[0]?.contact_id) await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed','sent') THEN status ELSE 'dm_sent' END WHERE id = $1", [r.rows[0].contact_id]);
+  // A held role's first outreach: the person gets the full wait from now.
+  const held = r.rows[0] && await one("SELECT * FROM plan_items WHERE id = $1 AND stage = 'waiting_referral' AND apply_after IS NULL", [r.rows[0].plan_item_id]);
+  if (held) {
+    const { getSettings } = await import('./dailyPlan.js');
+    const settings = await getSettings(userId);
+    const tz = held.company_tz || settings.timezone;
+    const at = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+    await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [held.id, at, referralNote(await liveAsks(held.id), describeDay(at, tz))]);
+  }
   return r.rows[0] || null;
 }
 
@@ -898,7 +958,13 @@ export async function advanceReferrals(userId, settings) {
       // The wait is for people to answer, so it can't run out on an email that hasn't left.
       const unsent = await one("SELECT 1 AS x FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND o.status IN ('draft', 'scheduled', 'sending') LIMIT 1", [item.id]);
       if (unsent) {
-        await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [item.id, 'Waiting for your OK on this role’s emails in People → Outbox. Applying 2 business days after they go out, or discard them to apply without a referral.']);
+        await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [item.id, 'Waiting for your OK on this role’s emails in People → Outbox. Applying 2 business days after they go out. Discard them if you’d rather not ask.']);
+        continue;
+      }
+      // Nothing left the building: every email discarded, or the notes never sent.
+      const wentOut = await one("SELECT 1 AS x FROM referral_asks a LEFT JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND (o.status = 'sent' OR a.status IN ('sent', 'marked_sent', 'replied')) LIMIT 1", [item.id]);
+      if (!wentOut) {
+        await holdRole(item.id);
         continue;
       }
       await run("UPDATE plan_items SET stage = 'ready_to_apply', stage_note = 'No referral came through in time. Applying now, in the company’s morning.' WHERE id = $1", [item.id]);

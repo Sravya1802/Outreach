@@ -962,7 +962,8 @@ export interface ResumeVersion {
   pages: number | null
   check_status: 'passed' | 'flagged' | null
   check_errors: string[]
-  keywords: { found: number; total: number; missing: string[] } | null
+  /** No `present` list means it came from the old rules and can't be trusted. */
+  keywords: { found: number; total: number; present?: string[]; missing: string[] } | null
   has_pdf: boolean
   created_at: string
 }

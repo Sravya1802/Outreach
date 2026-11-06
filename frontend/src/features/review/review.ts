@@ -140,7 +140,12 @@ function entity(whole: string, name: string) {
   return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : whole
 }
 
-/** A posting as plain text: most are already, some are scraped HTML. Line breaks stay; block tags become them. */
+// Words that start a sentence or a list item in postings whose breaks were lost, as in "degreeStrong Python".
+// A list and not any capital, which would split JavaScript. No "In", which would split LinkedIn.
+const STARTERS = 'About|Ability|As|At|Bachelor|Basic|Benefits|Compensation|Demonstrated|Desired|Excellent|Experience|Exposure|Familiarity|Job|Master|Minimum|Our|Preferred|Previous|Proficiency|Qualifications|Required|Requirements|Responsibilities|Solid|Strong|The|This|Understanding|We|What|You'
+const RUN_ON = new RegExp(`(?<=[a-z0-9)%][.!?:])(?=[A-Z][a-z])|(?<=[a-z)])(?=(?:${STARTERS})\\b)`, 'g')
+
+/** A posting as plain text: most are already, some are scraped HTML. Line breaks stay; block tags become them, and so do sentences a scrape ran together. */
 export function cleanPosting(raw: string | null | undefined) {
   return (raw ?? '')
     .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi, '')
@@ -150,6 +155,7 @@ export function cleanPosting(raw: string | null | undefined) {
     .replace(/<\/(p|div|h[1-6]|ul|ol)\s*>/gi, '\n\n')
     .replace(/<\/?[a-z][^>]*>/gi, '')
     .replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, entity)
+    .replace(RUN_ON, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
@@ -157,10 +163,10 @@ export function cleanPosting(raw: string | null | undefined) {
 
 export type KeywordState = 'found' | 'missing' | 'unchecked'
 
-/** Whether the PDF has a keyword. A version with no check to go on stays unchecked, never found. */
-export function keywordStates(keywords: { keyword: string }[], check: { total: number; missing: string[] } | null | undefined) {
-  const state = (k: string): KeywordState => (!check?.total ? 'unchecked' : check.missing.includes(k) ? 'missing' : 'found')
-  return keywords.map(k => ({ keyword: k.keyword, state: state(k.keyword) }))
+/** What the PDF check said, each side of "A / B" on its own. No check to go on stays unchecked, never found. */
+export function keywordStates(keywords: { keyword: string }[], check: { present?: string[]; missing: string[] } | null | undefined): { keyword: string; state: KeywordState }[] {
+  if (!check?.present) return keywords.map(k => ({ keyword: k.keyword, state: 'unchecked' }))
+  return [...check.present.map(keyword => ({ keyword, state: 'found' as const })), ...check.missing.map(keyword => ({ keyword, state: 'missing' as const }))]
 }
 
 /** What to look for in the text: "A / B" and "A (B)" are two things, "CI/CD" is one. */

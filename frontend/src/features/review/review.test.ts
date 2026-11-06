@@ -155,6 +155,14 @@ describe('cleanPosting', () => {
   it('leaves a less-than that isn’t a tag', () => {
     expect(cleanPosting('Teams < 10 people, C++ > 3 years')).toBe('Teams < 10 people, C++ > 3 years')
   })
+  it('splits sentences a scrape ran together', () => {
+    expect(cleanPosting('Driven by excellence.At Aquatic you ship.Are you ready?Join us:Apply now')).toBe('Driven by excellence.\nAt Aquatic you ship.\nAre you ready?\nJoin us:\nApply now')
+    expect(cleanPosting('Computer science degreeStrong PythonExperience with AWSFamiliarity')).toBe('Computer science degree\nStrong Python\nExperience with AWSFamiliarity')
+  })
+  it('leaves names and normal text in one piece', () => {
+    const fine = 'JavaScript, GitHub, LinkedIn, TikTok, PyTorch, TensorFlow, PayPal, DevOps, ByteDance, ASP.NET, Node.js, e.g. this, U.S. citizen, 3.5 years, 10:30 AM, https://acme.com/Jobs'
+    expect(cleanPosting(fine)).toBe(fine)
+  })
   it('survives no posting', () => {
     expect(cleanPosting(null)).toBe('')
     expect(cleanPosting(undefined)).toBe('')
@@ -162,12 +170,14 @@ describe('cleanPosting', () => {
 })
 
 describe('keywordStates', () => {
-  const list = [{ keyword: 'Python' }, { keyword: 'Kafka' }]
-  it('uses the PDF check', () => {
-    expect(keywordStates(list, { total: 2, missing: ['Kafka'] })).toEqual([{ keyword: 'Python', state: 'found' }, { keyword: 'Kafka', state: 'missing' }])
+  const list = [{ keyword: 'AWS / GCP' }, { keyword: 'Kafka' }]
+  it('uses the PDF check, each side on its own', () => {
+    expect(keywordStates(list, { present: ['AWS'], missing: ['GCP', 'Kafka'] })).toEqual([
+      { keyword: 'AWS', state: 'found' }, { keyword: 'GCP', state: 'missing' }, { keyword: 'Kafka', state: 'missing' },
+    ])
   })
-  it('never calls a keyword found when nothing was checked', () => {
-    for (const check of [null, undefined, { total: 0, missing: [] }]) {
+  it('never calls a keyword found without a check under the current rules', () => {
+    for (const check of [null, undefined, { missing: [] }, { missing: ['Kafka'] }]) {
       expect(keywordStates(list, check).map(k => k.state)).toEqual(['unchecked', 'unchecked'])
     }
   })

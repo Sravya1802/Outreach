@@ -934,6 +934,8 @@ export interface ReviewRow {
   outreach_due: boolean
   /** When people were last searched for. */
   contacts_at: string | null
+  /** The last Approve failed after it answered; the role page says why. */
+  approve_failed: boolean
   /** Who can refer the user there. */
   referrer: string | null
   sponsorship: string | null
@@ -1001,6 +1003,8 @@ export interface ApproveResult {
   skipped: { name: string; reason: string }[]
   /** People already asked for another role, not contacted again. */
   repeated?: number
+  /** The PDF, file and emails are still being done after Approve answered. */
+  pending?: boolean
 }
 
 export interface PipelineSummary {
@@ -1015,7 +1019,7 @@ export interface RunConfig { version: number; created_at: string; master_latex: 
 export interface Referrer { id: string; company_name: string; contact_name: string; note: string | null; roles: number }
 
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; job_description: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null; outreach_due: boolean; contacts_at: string | null }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; job_description: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null; outreach_due: boolean; contacts_at: string | null; finishing: boolean }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]

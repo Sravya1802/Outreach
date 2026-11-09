@@ -70,7 +70,7 @@ export function approvedLine({ emails, notes, repeated }: ApproveResult) {
   if (!emails && notes) return `Approved. LinkedIn notes are waiting in People → Contacts; mark each one sent, and applying waits 2 business days from then.${again}`
   if (!emails) return `Approved.${again} No outreach went out, so it applies only when you press Apply without referral.`
   const count = emails === 1 ? '1 email' : `${emails} emails`
-  return `Approved. ${count} in Outbox, reaching Gmail Drafts within a minute. OK each one in Outbox to send it.${again}`
+  return `Approved. ${count} on the way to Outbox and Gmail Drafts. OK each one in Outbox to send it.${again}`
 }
 
 /** The rule is above 90, so 90 itself is under it. */
@@ -97,7 +97,7 @@ export function bulkLine(done: ApproveResult[], failed: number) {
   const roles = done.length === 1 ? '1 role' : `${done.length} roles`
   const mail = emails === 1 ? '1 email' : `${emails} emails`
   const repeated = done.reduce((n, r) => n + (r.repeated ?? 0), 0)
-  return `Approved ${roles}.${emails ? ` ${mail} in Outbox, reaching Gmail Drafts over the next few minutes, each waiting for your OK.` : ''}${againLine(repeated)}${failed ? ` ${failed} couldn’t be approved.` : ''}`
+  return `Approved ${roles}.${emails ? ` ${mail} on the way to Outbox and Gmail Drafts over the next few minutes, each waiting for your OK.` : ''}${againLine(repeated)}${failed ? ` ${failed} couldn’t be approved.` : ''}`
 }
 
 /** "About 3:05 PM", or Due now once the time has passed. */

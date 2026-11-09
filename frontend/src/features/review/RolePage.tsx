@@ -313,7 +313,9 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
         ? 'Approving makes this version final. This role’s mode emails nobody, so it applies only when you press Apply without referral.'
         : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days after outreach goes out.'}</p>}
-      {data.role.status === 'approved' && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}
+      {data.role.status === 'ready' && data.role.stage_note?.startsWith('Approve didn’t finish') && <p className="text-[14px] text-danger">{data.role.stage_note}</p>}
+      {data.role.finishing && <p className="text-[14px] text-muted">Finishing: saving the resume and putting the emails in Outbox and Gmail Drafts. This takes about a minute.</p>}
+      {data.role.status === 'approved' && !data.role.finishing && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}
       {data.role.status === 'approved' && data.role.apply_after && <p className="text-[14px] text-muted">Scheduled to apply {new Date(data.role.apply_after).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}.</p>}
       {data.role.status === 'approved' && <Link to="/people/outbox" className="text-[14px] text-accent hover:underline">Open Outbox</Link>}
       {data.role.status === 'approved' && data.role.referral_mode === 'my_contact' && <MyContact data={data} onDone={onDone} />}
@@ -361,7 +363,8 @@ function ResumePanel({ versions, current, onPick }: { versions: ResumeVersion[];
 export default function RolePage() {
   const id = useParams().id ?? ''
   const qc = useQueryClient()
-  const role = useQuery({ queryKey: qk.reviewRole(id), queryFn: () => api.reviewRole(id), enabled: id !== '' })
+  // An approval finishes after it answers, so the page checks back until it has.
+  const role = useQuery({ queryKey: qk.reviewRole(id), queryFn: () => api.reviewRole(id), enabled: id !== '', refetchInterval: q => (q.state.data?.role.finishing ? 2000 : false) })
   const [picked, setPicked] = useState<string | null>(null)
   const [panel, setPanel] = useState<Panel>('report')
   const refresh = () => { void qc.invalidateQueries({ queryKey: qk.review }) }

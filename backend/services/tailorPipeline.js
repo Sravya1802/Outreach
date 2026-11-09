@@ -23,7 +23,7 @@ import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, askedElsewhere, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -170,7 +170,7 @@ export async function markApplied() {
 /** Every role in the queue, with its latest version. place is its turn among the waiting roles, in claim_tailor_jobs' order. */
 export async function reviewQueue(userId) {
   return all(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.updated_at, j.locked_at, j.locked_by_run AS run,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
             COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
@@ -326,7 +326,7 @@ async function withKeywords({ pdf_path, ...v }) {
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
@@ -402,51 +402,98 @@ export async function editDraft(userId, draftId, { email_subject, email_body, li
  * The user's yes. A flagged or uncompiled version can't be approved, and every email
  * carries the PDF, so nothing is drafted until it's saved. Nothing sends from here.
  */
-export async function approveRole(userId, planItemId, { withoutReferral = false } = {}) {
-  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+// The database is a 230 ms round trip from the server, so the work after the claim
+// (PDF, file, emails) runs after Approve answers, one role at a time per user.
+const finishing = new Set();
+const finishQueue = new Map();
+export const APPROVE_FAILED = 'Approve didn’t finish';
+
+export async function approveRole(userId, planItemId, { withoutReferral = false, wait = false } = {}) {
+  const [job, latest, item, written] = await Promise.all([
+    one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
+    one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]),
+    one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
+    all(
+      `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
+         FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
+        WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
+      [userId, planItemId],
+    ),
+  ]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review can be approved.');
-  const latest = await one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]);
   if (!latest?.pdf_path || latest.check_status !== 'passed') throw fail(409, 'This resume hasn’t passed its checks.');
-  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   if (item.decision === 'approved' && !['proposed', 'tailoring', 'needs_you'].includes(item.stage)) throw fail(409, 'This role has already moved on in To apply.');
   // My contact and None email nobody, even if a run wrote drafts before the mode changed.
   const noEmails = withoutReferral || NO_EMAILS.includes(job.referral_mode);
-  const drafts = noEmails ? [] : await all(
-    `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
-       FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
-      WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
-    [userId, planItemId],
-  );
+  const drafts = noEmails ? [] : written;
   if (!noEmails && !drafts.length) throw fail(409, 'This role has no outreach yet. Find its contacts so a run can write it, or press Apply without referral.');
   const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
   for (const d of drafts) {
     const [problem] = checkOutreach({ ...d, company: item.company_name, quant });
     if (problem) throw fail(409, `${d.name || 'A contact'}: ${problem} Fix it on the Outreach tab first.`);
   }
-  if (drafts.some(d => d.email_body) && !(await connectionFor(userId))) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
+  const [repeats, gmail] = await Promise.all([askedElsewhere(userId, planItemId, drafts), connectionFor(userId)]);
+  const fresh = drafts.filter(d => !repeats.some(r => r.id === d.id));
+  if (fresh.some(d => d.email_body) && !gmail) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
 
   // Two clicks at once: only one gets past this.
   const claimed = await one("UPDATE tailor_jobs SET status = 'approved', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'ready' RETURNING id", [userId, planItemId]);
   if (!claimed) throw fail(409, 'Only a role ready for review can be approved.');
+  finishing.add(String(planItemId));
+  const work = () => finishApproval(userId, item, latest, drafts).finally(() => finishing.delete(String(planItemId)));
+  const done = (finishQueue.get(userId) || Promise.resolve()).then(work, work);
+  finishQueue.set(userId, done.catch(() => {}));
+  if (wait) return done;
+  done.catch(() => {});
+  return {
+    emails: fresh.filter(d => d.email_body).length, inGmail: 0, notes: fresh.filter(d => d.linkedin_note).length,
+    skipped: [], repeated: repeats.length, pending: true,
+  };
+}
+
+/** The rest of an approval. Any failure puts the role back in Ready and says why on its page. */
+async function finishApproval(userId, item, latest, drafts) {
+  const planItemId = item.id;
   try {
-    const pdf = await downloadVersionPdf(latest.pdf_path).catch(() => { throw fail(502, 'Couldn’t get the resume PDF, so nothing was drafted. Try again in a minute.'); });
     const { evaluationFor, getSettings } = await import('./dailyPlan.js');
-    const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
-    await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
-    const file = await saveForEvaluation(userId, evaluationId, pdf, resumeFileName((await me(userId)).name), 'tailored');
-    const { outboxIds, ...result } = await startApprovedAsks(userId, item, drafts, file.id, await getSettings(userId));
-    await tx(async (t) => {
-      await t.query('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-      await t.query('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
-    });
-    // Each Gmail copy takes seconds, so they're written after this answers, on one connection, with the PDF already in hand.
+    const [pdf, evaluationId, who, settings] = await Promise.all([
+      downloadVersionPdf(latest.pdf_path).catch(() => { throw fail(502, 'couldn’t get the resume PDF'); }),
+      item.evaluation_id || evaluationFor(userId, item),
+      me(userId),
+      getSettings(userId),
+    ]);
+    const [file] = await Promise.all([
+      saveForEvaluation(userId, evaluationId, pdf, resumeFileName(who.name), 'tailored'),
+      run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]),
+    ]);
+    const { outboxIds, ...result } = await startApprovedAsks(userId, { ...item, evaluation_id: evaluationId }, drafts, file.id, settings);
+    await run('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2 AND id <> $3', [userId, planItemId, latest.id]);
+    await run('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
+    // Each Gmail copy takes seconds: written after this, on one connection, with the PDF already in hand.
     if (outboxIds.length) copyDraftsToGmail(userId, outboxIds, new Map([[String(file.id), pdf]])).catch(() => {});
     return result;
   } catch (err) {
-    await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
+    console.warn('[review] approve failed', planItemId, err.message);
+    await backToReady(userId, planItemId, String(err.message || 'unknown problem').slice(0, 200));
     throw err;
   }
+}
+
+async function backToReady(userId, planItemId, why) {
+  await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'approved'", [userId, planItemId]);
+  await run('UPDATE plan_items SET stage_note = $3 WHERE id = $1 AND user_id = $2', [planItemId, userId, `${APPROVE_FAILED} (${why}). Approve it again.`]);
+}
+
+/** An approval cut off by a restart: claimed but never finished. It goes back to Ready (cron). */
+export async function recoverApprovals() {
+  const stuck = await all(
+    `SELECT j.user_id, j.plan_item_id FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+      WHERE j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved' AND j.updated_at < NOW() - INTERVAL '10 minutes'`,
+  );
+  const lost = stuck.filter(r => !finishing.has(String(r.plan_item_id)));
+  for (const r of lost) await backToReady(r.user_id, r.plan_item_id, 'the server restarted');
+  return lost.length;
 }
 
 /** The user's say-so for a role with no outreach: approves it if needed, then it goes at the next morning slot. */
@@ -459,7 +506,7 @@ export async function applyWithoutReferral(userId, planItemId) {
   if (job.status === 'ready') {
     const written = !NO_EMAILS.includes(job.referral_mode) && await one("SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('draft', 'edited') LIMIT 1", [userId, planItemId]);
     if (written) throw fail(409, 'This role has outreach waiting. Approve it instead.');
-    await approveRole(userId, planItemId, { withoutReferral: true });
+    await approveRole(userId, planItemId, { withoutReferral: true, wait: true });
   }
   await referralAction(userId, planItemId, { action: 'no_referral' });
 }

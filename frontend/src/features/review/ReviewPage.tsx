@@ -40,6 +40,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
           {visaLine(r.sponsorship) && <Badge tone="danger">{visaLine(r.sponsorship)}</Badge>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
+          {r.approve_failed && <Badge tone="danger">Approve failed</Badge>}
           {r.status === 'ready' && needsOutreach(r) && <Badge tone={r.outreach_due ? 'info' : 'neutral'}>{outreachLine(r)}</Badge>}
         </div>
       </td>

@@ -706,7 +706,7 @@ export async function askForReferral(userId, item, settings) {
  * email not discarded, a note marked sent, or a note waiting on a role still in
  * its wait. Notes left from roles that never went anywhere don't count.
  */
-async function askedElsewhere(userId, itemId, drafts) {
+export async function askedElsewhere(userId, itemId, drafts) {
   if (!drafts.length) return [];
   const before = await all(
     `SELECT a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin, pi.title

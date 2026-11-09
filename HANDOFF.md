@@ -1824,3 +1824,11 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Queue:** 144 Ready. Approve can take 22 (15 with outreach, 7 My contact); Select all takes 19. 106 have never been searched for contacts, 16 had no recruiter. Nothing approved, Outbox unchanged.
 - **Risks Approve doesn't catch:** Garmin 2550 and 2158 share both recruiters, Emonics 2346 and 1463 too, and IBM 1765 and 1148 share Dave Nguyen. `startApprovedAsks` doesn't check for a person already asked for another role, so approving both roles at a company emails the same person twice. Synchrony Systems (1622) has its one draft to chad.johnson@synchrony.com, which is Synchrony Financial's domain (the run flagged it).
 - **Still open:** the user hasn't answered which master v2 skills to remove. App lookup allowance left this month: Hunter 14, Prospeo 75.
+
+## 2026-11-09 — Nobody asked twice; Synchrony contacts fixed
+
+- **Asked:** "yes" to fixing the double emails and the Synchrony draft.
+- **No repeats:** `askedElsewhere` in [referralFlow.js](backend/services/referralFlow.js) runs inside `startApprovedAsks`. A draft is skipped (no email, no note) when the person, matched by contact, email or LinkedIn URL, was already asked for another role: an email not discarded, a note marked sent, or an unsent note on a role still in `waiting_referral`/`ready_to_apply`. Unsent notes on old roles that went nowhere don't count (Thomson Reuters 1481 still asks Kevin Womack and Danielle McCowan). A role whose people were all asked holds, and its note names them. The result carries `repeated`; the toasts say how many weren't contacted again. The note-only toast was also wrong (it said the role applies only on Apply without referral) and now says the notes are waiting.
+- **Role page:** each draft lists `also_for`, the other open roles with a draft to the same person.
+- **Synchrony:** the 10 @synchrony.com contacts on job 61 (Synchrony Systems, Inc.) moved to job 67 "Synchrony Financial"; draft 66 deleted; job 61's domain cleared. Backup at `~/synchrony-2026-11-09.json` on the VM. Role 1622 now reads No recruiter found.
+- **Verified:** 9 of 9 on live code with throwaway e2e roles; browser 6 checks at 1440 and 390 px (a seventh line in the script was a placeholder, not a check). Backend 241, frontend 169. QA rows removed. Commit `f2e904c`.

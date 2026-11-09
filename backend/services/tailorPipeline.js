@@ -528,10 +528,20 @@ export async function markRoleApplied(userId, planItemId) {
   if (job.status === 'in_progress') throw fail(409, 'A run is working on this role. Try again when it finishes.');
   if (['applied', 'closed'].includes(job.status)) throw fail(409, `This role is already ${job.status}.`);
   if (finishing.has(String(planItemId))) throw fail(409, 'Still finishing the approval. Try again in a minute.');
-  const { evaluationFor } = await import('./dailyPlan.js');
-  const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
-  if (!item.evaluation_id) await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
-  await markAppliedYourself(userId, evaluationId);
+  // One submitted application per posting: an earlier one in the Tracker stands, and only the role moves.
+  const earlier = item.apply_url && await one("SELECT id FROM evaluations WHERE user_id = $1 AND job_url = $2 AND apply_status = 'submitted' LIMIT 1", [userId, item.apply_url]);
+  if (!earlier) {
+    const { evaluationFor } = await import('./dailyPlan.js');
+    const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
+    if (!item.evaluation_id) await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
+    await markAppliedYourself(userId, evaluationId);
+  }
+  await run(
+    `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.',
+            decision = CASE WHEN decision IN ('pending', 'expired') THEN 'approved' ELSE decision END, decided_at = COALESCE(decided_at, NOW())
+      WHERE id = $1 AND user_id = $2 AND stage NOT IN ('applied', 'done')`,
+    [planItemId, userId],
+  );
   await run("UPDATE tailor_jobs SET status = 'applied', outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
   const waiting = await one(
     `SELECT COUNT(*)::int AS n FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id

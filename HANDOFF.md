@@ -1817,3 +1817,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Verified:** backend 241, frontend 168, typecheck, build, browser checks 28 of 28 with a fixture role API on local and live.
 - **Still not verified:** the tab on a real role in the live app, including the PDF re-check. The user needs to open one; e2e owns no roles.
 - **Other session:** `email-tracker-db` [7eeb43], log `d1436af3`, "Scout'n'Jobs tailoring pipeline build spec", made `10ed5cb`, `acc2511`, `1f3fe62` beside this work. Confirmed from its log. It runs in this same worktree, on `main`.
+
+## 2026-11-09 — Status check before review
+
+- **Run 16** (Nov 6, 10:05 UTC) did the outreach-only step: 23 drafts for 12 roles, message sent 10:08. Kodexo got none (no recruiter). All 21 new emails are `valid`. Runs 17 to 29 found nothing to do.
+- **Queue:** 144 Ready. Approve can take 22 (15 with outreach, 7 My contact); Select all takes 19. 106 have never been searched for contacts, 16 had no recruiter. Nothing approved, Outbox unchanged.
+- **Risks Approve doesn't catch:** Garmin 2550 and 2158 share both recruiters, Emonics 2346 and 1463 too, and IBM 1765 and 1148 share Dave Nguyen. `startApprovedAsks` doesn't check for a person already asked for another role, so approving both roles at a company emails the same person twice. Synchrony Systems (1622) has its one draft to chad.johnson@synchrony.com, which is Synchrony Financial's domain (the run flagged it).
+- **Still open:** the user hasn't answered which master v2 skills to remove. App lookup allowance left this month: Hunter 14, Prospeo 75.

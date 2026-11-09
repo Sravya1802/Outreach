@@ -990,9 +990,18 @@ export interface OutreachDraft {
   linkedin_url: string | null
   /** What breaks your outreach rules; Approve refuses until they're fixed. */
   problems: string[]
+  /** Other roles whose outreach goes to this person; only the first approved asks them. */
+  also_for: string[] | null
 }
 
-export interface ApproveResult { emails: number; inGmail: number; notes: number; skipped: { name: string; reason: string }[] }
+export interface ApproveResult {
+  emails: number
+  inGmail: number
+  notes: number
+  skipped: { name: string; reason: string }[]
+  /** People already asked for another role, not contacted again. */
+  repeated?: number
+}
 
 export interface PipelineSummary {
   runs: PipelineRun[]

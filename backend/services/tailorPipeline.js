@@ -342,7 +342,9 @@ export async function reviewRole(userId, planItemId) {
     ),
     all('SELECT id, version_id, body, status, addressed_in_version, created_at FROM resume_comments WHERE user_id = $1 AND plan_item_id = $2 ORDER BY created_at', [userId, planItemId]),
     all(
-      `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.linkedin_url
+      `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.linkedin_url,
+              (SELECT array_agg(pi.title ORDER BY pi.id) FROM outreach_drafts o JOIN plan_items pi ON pi.id = o.plan_item_id JOIN tailor_jobs j ON j.plan_item_id = o.plan_item_id
+                WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed') AS also_for
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],
     ),

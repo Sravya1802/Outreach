@@ -701,9 +701,36 @@ export async function askForReferral(userId, item, settings) {
  * here and in Gmail Drafts, and nothing sends until the user OKs it. Each note is
  * theirs to send by hand. The wait starts now and restarts when an email goes out.
  */
+/**
+ * Drafts to people already asked for another role, so nobody is asked twice: an
+ * email not discarded, a note marked sent, or a note waiting on a role still in
+ * its wait. Notes left from roles that never went anywhere don't count.
+ */
+async function askedElsewhere(userId, itemId, drafts) {
+  if (!drafts.length) return [];
+  const before = await all(
+    `SELECT a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin, pi.title
+       FROM referral_asks a JOIN plan_items pi ON pi.id = a.plan_item_id LEFT JOIN email_outbox o ON o.id = a.outbox_id
+      WHERE a.user_id = $1 AND a.plan_item_id <> $2
+        AND ((a.channel = 'email' AND o.status IN ('draft', 'scheduled', 'sending', 'sent'))
+          OR a.status IN ('sent', 'marked_sent', 'replied')
+          OR (a.channel = 'linkedin' AND a.status = 'to_send' AND pi.stage IN ('waiting_referral', 'ready_to_apply')))`,
+    [userId, itemId],
+  );
+  const same = (b, d) => (b.contact_id && String(b.contact_id) === String(d.contact_id))
+    || (b.email && d.email && b.email === String(d.email).toLowerCase())
+    || (b.linkedin && d.linkedin_url && b.linkedin === String(d.linkedin_url).toLowerCase());
+  return drafts.flatMap(d => {
+    const hit = before.find(b => same(b, d));
+    return hit ? [{ id: d.id, name: d.name || 'Someone', title: hit.title }] : [];
+  });
+}
+
 export async function startApprovedAsks(userId, item, drafts, attachmentFileId, settings) {
-  const result = { emails: 0, inGmail: 0, notes: 0, skipped: [] };
+  const repeats = await askedElsewhere(userId, item.id, drafts);
+  const result = { emails: 0, inGmail: 0, notes: 0, skipped: [], repeated: repeats.length };
   for (const d of drafts) {
+    if (repeats.some(r => r.id === d.id)) continue;
     const person = {
       name: d.name, title: d.title, email: d.email, contactId: d.contact_id, connectionId: null,
       linkedin: d.linkedin_url || linkedinSearchUrl(`${d.name} ${item.company_name}`),
@@ -731,11 +758,15 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
   const tz = item.company_tz || settings.timezone;
   const asks = await liveAsks(item.id);
   const applyAt = asks.length ? businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 }) : null;
+  const names = repeats.map(r => r.name).join(' and ');
+  const held = repeats.length
+    ? `${names} ${repeats.length === 1 ? 'was' : 'were'} already asked for ${repeats[0].title}, so nobody was asked again for this role. It won’t apply on its own: press Apply without referral when you want it to go.`
+    : NO_OUTREACH_NOTE;
   await run(
     `UPDATE plan_items SET decision = 'approved', decided_at = NOW(), apply_mode = 'auto', stage = 'waiting_referral', needs_reason = NULL,
             referral_status = CASE WHEN referral_status = 'none' AND $4 THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3
       WHERE id = $1`,
-    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : NO_OUTREACH_NOTE, asks.length > 0],
+    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : held, asks.length > 0],
   );
   return result;
 }

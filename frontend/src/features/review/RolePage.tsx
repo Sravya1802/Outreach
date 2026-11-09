@@ -183,6 +183,11 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
       {d.problems.length > 0 && (
         <ul className="list-disc rounded-[4px] bg-danger-soft py-2 pr-3 pl-7 text-[14px] text-fg">{d.problems.map(x => <li key={x}>{x}</li>)}</ul>
       )}
+      {!locked && d.also_for && d.also_for.length > 0 && (
+        <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg">
+          Also in the outreach for {d.also_for.join(', ')}. Only the first of these roles you approve contacts {d.name?.split(' ')[0] || 'them'}; the others don’t ask again.
+        </p>
+      )}
       {d.email_body !== null || d.email ? (
         <>
           <Field label="Subject">{p => <Input {...p} value={subject} disabled={locked} onChange={e => setSubject(e.target.value)} />}</Field>

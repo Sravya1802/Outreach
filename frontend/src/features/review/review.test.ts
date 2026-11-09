@@ -62,7 +62,12 @@ describe('approvedLine', () => {
     expect(approvedLine({ ...result, inGmail: 1 })).toBe('Approved. 2 emails in Outbox, but 1 didn’t reach Gmail Drafts. OK each one in Outbox.')
   })
   it('says when there is nothing to draft', () => {
-    expect(approvedLine({ ...result, emails: 0, inGmail: 0 })).toBe('Approved. No emails here, so it applies only when you press Apply without referral.')
+    expect(approvedLine({ ...result, emails: 0, inGmail: 0, notes: 0 })).toBe('Approved. No outreach went out, so it applies only when you press Apply without referral.')
+  })
+  it('says when only LinkedIn notes went, and when someone was already asked', () => {
+    expect(approvedLine({ ...result, emails: 0, inGmail: 0 })).toBe('Approved. LinkedIn notes are waiting in People → Contacts; mark each one sent, and applying waits 2 business days from then.')
+    expect(approvedLine({ ...result, emails: 1, inGmail: 1, repeated: 1 })).toBe('Approved. 1 email in Gmail Drafts. OK each one in Outbox to send it. 1 person already asked for another role wasn’t contacted again.')
+    expect(approvedLine({ ...result, emails: 0, inGmail: 0, notes: 0, repeated: 2 })).toBe('Approved. 2 people already asked for another role weren’t contacted again. No outreach went out, so it applies only when you press Apply without referral.')
   })
 })
 
@@ -126,6 +131,7 @@ describe('bulk approve', () => {
     const r = { emails: 2, inGmail: 2, notes: 2, skipped: [] }
     expect(bulkLine([r, r], 0)).toBe('Approved 2 roles. 4 emails in Gmail Drafts, each waiting for your OK in Outbox.')
     expect(bulkLine([{ ...r, emails: 0 }], 1)).toBe('Approved 1 role. 1 couldn’t be approved.')
+    expect(bulkLine([r, { ...r, emails: 0, repeated: 2 }], 0)).toBe('Approved 2 roles. 2 emails in Gmail Drafts, each waiting for your OK in Outbox. 2 people already asked for another role weren’t contacted again.')
   })
 })
 

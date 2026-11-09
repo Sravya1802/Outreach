@@ -5,8 +5,16 @@ import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
-import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Skeleton, useToast } from '@/ui'
-import { TABS, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, type ReviewTab } from './review'
+import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
+import { TABS, YEAR_OPTIONS, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+
+const YEAR_KEY = 'snj.review.year'
+function savedYear() {
+  try { return localStorage.getItem(YEAR_KEY) ?? '' } catch { return '' }
+}
+function saveYear(v: string) {
+  try { localStorage.setItem(YEAR_KEY, v) } catch { /* private window: the choice lasts this visit */ }
+}
 
 const head = 'border-b border-line px-3 py-2 font-medium'
 const cell = 'border-b border-line px-3 py-3 align-top'
@@ -39,6 +47,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
           {visaLine(r.sponsorship) && <Badge tone="danger">{visaLine(r.sponsorship)}</Badge>}
+          {r.grad_years?.length > 0 && <span title="The posting names this year for graduating or starting"><Badge tone="accent">{yearsLabel(r.grad_years)}</Badge></span>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
           {r.approve_failed && <Badge tone="danger">Approve failed</Badge>}
           {r.status === 'ready' && needsOutreach(r) && <Badge tone={r.outreach_due ? 'info' : 'neutral'}>{outreachLine(r)}</Badge>}
@@ -77,14 +86,17 @@ const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
 export default function ReviewPage() {
   const [params, setParams] = useSearchParams()
   const [company, setCompany] = useState('')
+  const [year, setYear] = useState(savedYear)
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
-  const all = queue.data?.roles ?? []
+  const everything = queue.data?.roles ?? []
+  // The year menu narrows the tiles, the rows and Select all; the backlog bar counts everything.
+  const all = everything.filter(r => yearMatch(r.grad_years, year))
   const run = queue.data?.lastRun ?? null
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
   const s = company.trim().toLowerCase()
   const rows = all.filter(r => reviewTab(r) === tab && (!s || r.company_name.toLowerCase().includes(s)))
-  const { done, total, percent } = backlog(all)
+  const { done, total, percent } = backlog(everything)
   const line = LINE_COLUMNS[tab]
   const bulk = tab === 'ready'
   const columns = line ?? (bulk ? ['Select', ...COLUMNS] : COLUMNS)
@@ -140,6 +152,10 @@ export default function ReviewPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="sm:w-56!" />
+            <Select value={year} onChange={e => { setYear(e.target.value); saveYear(e.target.value) }} aria-label="Year" className="sm:w-48">
+              <option value="">Any year</option>
+              {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
             {bulk && safe.length > 0 && (
               <label className="inline-flex items-center gap-2 text-[14px] text-fg">
                 <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}
@@ -162,7 +178,7 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
-                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : 'Nothing here right now.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : year ? 'No role here matches that year.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>

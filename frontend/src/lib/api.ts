@@ -936,6 +936,8 @@ export interface ReviewRow {
   contacts_at: string | null
   /** The last Approve failed after it answered; the role page says why. */
   approve_failed: boolean
+  /** Graduation or start years the posting names ("class of 2027", "2027 New Grad"). */
+  grad_years: string[]
   /** Who can refer the user there. */
   referrer: string | null
   sponsorship: string | null

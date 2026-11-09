@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseYearFilter, yearCondition } from '../services/gradYear.js'
+import { YEARS_SELECT, parseYearFilter, yearCondition, yearsSelect } from '../services/gradYear.js'
 
 test('year filter: 2027, 2027-or-unstated, junk ignored', () => {
   assert.deepEqual(parseYearFilter('2027'), { year: '2027', orUnstated: false })
@@ -17,4 +17,11 @@ test('year condition: numbered params continue from the caller, values never in 
   assert.equal(open.params.length, 4)
   assert.ok(!open.sql.includes('2027'))
   assert.equal(yearCondition(null, 4), null)
+})
+
+test('year tag: any title and description, and the Jobs list keeps its own', () => {
+  const q = yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')
+  assert.match(q, /WHERE concat_ws\(' ', pi\.title, sr\.title\) ~/)
+  assert.match(q, /COALESCE\(COALESCE\(sr\.description, pi\.job_description\), ''\)/)
+  assert.equal(YEARS_SELECT, yearsSelect('r.title', 'r.description'))
 })

@@ -27,6 +27,7 @@ import { NOTE_END, askedElsewhere, findRecruitersFor, isCompanyPage, me, referra
 import { pdfText } from './resumeEngine.js';
 import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
+import { yearsSelect } from './gradYear.js';
 import { downloadVersionPdf, uploadVersionPdf } from './resumeStorage.js';
 import { notify, reviewMessage, runMessage } from './whatsapp.js';
 
@@ -175,6 +176,7 @@ export async function reviewQueue(userId) {
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
+            ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
             (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id

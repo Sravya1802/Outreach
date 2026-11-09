@@ -31,8 +31,15 @@ export function yearCondition(filter, next) {
   return { sql: `(${says.sql} OR NOT ${any.sql})`, params: [...says.params, ...any.params] };
 }
 
-/** SELECT expression: the years (2025–2029) a row names, for the year tag on each role. */
-export const YEARS_SELECT = `ARRAY(
+/**
+ * SELECT expression: the years (2025–2029) a role names, for the year tag. `title` and
+ * `description` are SQL expressions. The plain search runs before the context regex,
+ * which is slower, since most postings don't name the year at all.
+ */
+export const yearsSelect = (title, description) => `ARRAY(
   SELECT y FROM unnest(ARRAY['2025', '2026', '2027', '2028', '2029']) AS y
-   WHERE r.title ~ ('\\m' || y || '\\M') OR left(COALESCE(r.description, ''), 20000) ~* ('${CONTEXT}\\m' || y || '\\M')
+   WHERE ${title} ~ ('\\m' || y || '\\M')
+      OR (strpos(left(COALESCE(${description}, ''), 20000), y) > 0 AND left(COALESCE(${description}, ''), 20000) ~* ('${CONTEXT}\\m' || y || '\\M'))
 ) AS grad_years`;
+
+export const YEARS_SELECT = yearsSelect('r.title', 'r.description');

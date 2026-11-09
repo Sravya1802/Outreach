@@ -100,6 +100,28 @@ export function bulkLine(done: ApproveResult[], failed: number) {
   return `Approved ${roles}.${emails ? ` ${mail} on the way to Outbox and Gmail Drafts over the next few minutes, each waiting for your OK.` : ''}${againLine(repeated)}${failed ? ` ${failed} couldn’t be approved.` : ''}`
 }
 
+/** The year menu, as on the Jobs page: the posting names 2027, or names 2027 or no year at all. */
+export const YEAR_OPTIONS = [
+  { value: '2027', label: 'Says 2027' },
+  { value: '2027-or-unstated', label: '2027 or not stated' },
+] as const
+
+/** '' keeps every role. */
+export function yearMatch(years: string[] | null | undefined, filter: string) {
+  const m = /^(\d{4})(-or-unstated)?$/.exec(filter)
+  if (!m) return true
+  const [, y = '', orUnstated] = m
+  const named = years ?? []
+  return named.includes(y) || (Boolean(orUnstated) && named.length === 0)
+}
+
+/** "2027", or "2026–27" when a posting takes either year. */
+export function yearsLabel(years: string[]) {
+  const first = years[0] ?? ''
+  const last = years[years.length - 1] ?? ''
+  return first === last ? first : `${first}–${last.slice(2)}`
+}
+
 /** "About 3:05 PM", or Due now once the time has passed. */
 export function nextRunLine(at: string | null, now = Date.now()) {
   if (!at) return 'Not scheduled'

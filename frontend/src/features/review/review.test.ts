@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -224,5 +224,22 @@ describe('markPosting', () => {
   it('handles no keywords and no text', () => {
     expect(markPosting('Hello', []).parts).toEqual([{ text: 'Hello' }])
     expect(markPosting('', [{ keyword: 'Python', state: 'found' }]).parts).toEqual([])
+  })
+})
+
+describe('year filter', () => {
+  it('keeps roles that name the year, and unstated ones only when asked', () => {
+    expect(yearMatch(['2027'], '2027')).toBe(true)
+    expect(yearMatch(['2026', '2027'], '2027')).toBe(true)
+    expect(yearMatch(['2026'], '2027')).toBe(false)
+    expect(yearMatch([], '2027')).toBe(false)
+    expect(yearMatch([], '2027-or-unstated')).toBe(true)
+    expect(yearMatch(['2026'], '2027-or-unstated')).toBe(false)
+    expect(yearMatch(['2026'], '')).toBe(true)
+    expect(yearMatch(null, 'junk')).toBe(true)
+  })
+  it('labels one year or a range', () => {
+    expect(yearsLabel(['2027'])).toBe('2027')
+    expect(yearsLabel(['2026', '2027'])).toBe('2026–27')
   })
 })

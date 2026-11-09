@@ -176,10 +176,26 @@ function apolloHeaders() {
   return { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'X-Api-Key': key('APOLLO_API_KEY', 'apollo') };
 }
 
-/** People match by LinkedIn URL (preferred) or name + domain. */
-export function apolloMatch({ linkedinUrl = null, first = null, last = null, domain = null }) {
+/** Apollo's people search, as plain rows. Last names can come back masked until a match reveals them. */
+export function readApolloPeople(data) {
+  return (Array.isArray(data?.people) ? data.people : [])
+    .map(p => ({ id: p?.id || null, first: String(p?.first_name || '').trim(), title: String(p?.title || '').trim(), hasEmail: p?.has_email !== false }))
+    .filter(p => p.id && p.first);
+}
+
+/** People at a company by title. No emails and no credits; apolloMatch by id reveals one. */
+export function apolloPeopleSearch({ domain, titles, perPage = 10 }) {
   return guarded('apollo', async () => {
-    const body = linkedinUrl ? { linkedin_url: linkedinUrl } : { first_name: first, last_name: last, domain };
+    const res = await http.post('https://api.apollo.io/api/v1/mixed_people/api_search',
+      { q_organization_domains_list: [domain], person_titles: titles, per_page: perPage, page: 1 }, { headers: apolloHeaders() });
+    return readApolloPeople(res.data);
+  });
+}
+
+/** People match by Apollo id, LinkedIn URL, or name + domain. A match with an email costs a credit. */
+export function apolloMatch({ id = null, linkedinUrl = null, first = null, last = null, domain = null }) {
+  return guarded('apollo', async () => {
+    const body = id ? { id } : linkedinUrl ? { linkedin_url: linkedinUrl } : { first_name: first, last_name: last, domain };
     const res = await http.post('https://api.apollo.io/v1/people/match', { ...body, reveal_personal_emails: false }, { headers: apolloHeaders() });
     const p = res.data?.person;
     if (!p?.email) return null;

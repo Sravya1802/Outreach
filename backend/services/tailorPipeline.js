@@ -24,7 +24,7 @@ import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, askedElsewhere, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -551,14 +551,35 @@ export async function markRoleApplied(userId, planItemId) {
   return { emailsWaiting: waiting.n };
 }
 
-/** Recruiters for a Ready role with no outreach. The next run writes the emails and notes. */
-export async function findRoleContacts(userId, planItemId) {
+/** Search Apollo, by hand: its errors are the user's to see (a Free plan says so). */
+async function apolloOnly(userId, item) {
+  const { clearCooldown } = await import('./providerGuard.js');
+  clearCooldown('apollo');
+  const jobId = await companyRow(userId, item.company_name, item.location);
+  try {
+    await findApolloRecruitersAt(userId, jobId, item);
+    await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
+  } catch (err) {
+    if (err.code === 'PLAN') throw fail(402, 'Apollo’s Free plan doesn’t allow searches from the app. Upgrade the Apollo account whose key the app uses, then try again.');
+    if (err.code === 'BUDGET' || err.code === 'QUOTA') throw fail(402, err.message);
+    throw fail(502, `Apollo: ${err.message}`);
+  }
+  const found = await recruitersAt(userId, item.company_name);
+  return { recruiters: found.length, emails: found.filter(c => c.email && c.email_status !== 'invalid').length };
+}
+
+/**
+ * Recruiters for a Ready role with no outreach. The next run writes the emails
+ * and notes. `source: 'apollo'` asks Apollo alone, even after other sources found nobody.
+ */
+export async function findRoleContacts(userId, planItemId, { source = 'all' } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review needs contacts.');
   if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody, so it needs no lookups.');
   if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
-  const found = await findRecruitersFor(userId, await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]));
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  const found = source === 'apollo' ? await apolloOnly(userId, item) : await findRecruitersFor(userId, item);
   if (found.recruiters) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   return found;
 }

@@ -1212,7 +1212,8 @@ export const api = {
   applyWithoutReferral: (id: string): Promise<{ ok: boolean }> => legacy.career.applyWithoutReferral(id),
   /** You applied on the company's site: the role moves to Applied and nothing applies for you. */
   markRoleApplied: (id: string): Promise<{ emailsWaiting: number }> => legacy.career.markRoleApplied(id),
-  findRoleContacts: (id: string): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id),
+  /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
+  findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

@@ -172,3 +172,19 @@ test('sponsorship: citizen-only wording is caught, and equal-opportunity lines a
     'Employment is contingent on either verifying the U.S. Person status or obtaining any necessary export license.',
   ]) assert.equal(status(t), null, t);
 });
+
+test('Apollo people search: rows with an id and a first name, masked last names left for the match', async () => {
+  const { readApolloPeople } = await import('../services/emailProviders.js');
+  const rows = readApolloPeople({ people: [
+    { id: 'a1', first_name: 'Tara', last_name_obfuscated: 'Bo***e', title: 'University Recruiter', has_email: true },
+    { id: 'a2', first_name: 'Sam', title: 'Technical Recruiter', has_email: false },
+    { id: null, first_name: 'Nobody', title: 'Recruiter' },
+    { id: 'a4', first_name: '', title: 'Recruiter' },
+  ] });
+  assert.deepEqual(rows, [
+    { id: 'a1', first: 'Tara', title: 'University Recruiter', hasEmail: true },
+    { id: 'a2', first: 'Sam', title: 'Technical Recruiter', hasEmail: false },
+  ]);
+  assert.deepEqual(readApolloPeople(null), []);
+  assert.deepEqual(readApolloPeople({ people: 'x' }), []);
+});

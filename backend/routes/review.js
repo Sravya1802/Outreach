@@ -98,7 +98,7 @@ router.post('/:id/applied', withId(async (req, res, id) => {
 }));
 
 router.post('/:id/contacts', withId(async (req, res, id) => {
-  res.json(await findRoleContacts(req.user.id, id));
+  res.json(await findRoleContacts(req.user.id, id, { source: req.body?.source === 'apollo' ? 'apollo' : 'all' }));
 }));
 
 export default router;

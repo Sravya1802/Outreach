@@ -252,10 +252,10 @@ function MyContact({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
 function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
   const toast = useToast()
   const find = useMutation({
-    mutationFn: () => api.findRoleContacts(data.role.id),
-    onSuccess: (r) => {
+    mutationFn: (source: 'all' | 'apollo') => api.findRoleContacts(data.role.id, source),
+    onSuccess: (r, source) => {
       if (r.recruiters) toast.success(`Found ${r.recruiters === 1 ? '1 recruiter' : `${r.recruiters} recruiters`}. The next run writes the outreach.`)
-      else toast.error('No recruiter found at this company.')
+      else toast.error(source === 'apollo' ? 'Apollo found no recruiter with an email here.' : 'No recruiter found at this company.')
       onDone()
     },
     onError: (e: Error) => toast.error(e.message),
@@ -263,8 +263,11 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
   if (data.role.outreach_due) return <p className="text-[14px] text-fg">Recruiters found. The next run writes the emails and notes, then you can approve.</p>
   return (
     <div className="space-y-2">
-      <p className="text-[14px] text-fg">{data.role.contacts_at ? 'No recruiter found at this company, so there’s nobody to write to.' : 'No outreach yet. Find this company’s recruiters and the next run writes the emails and notes. This uses lookups.'}</p>
-      {!data.role.contacts_at && <Button loading={find.isPending} onClick={() => find.mutate()}>Find contacts</Button>}
+      <p className="text-[14px] text-fg">{data.role.contacts_at ? 'No recruiter found at this company yet, so there’s nobody to write to. Apollo may know someone.' : 'No outreach yet. Find this company’s recruiters and the next run writes the emails and notes. This uses lookups.'}</p>
+      <div className="flex flex-wrap gap-2">
+        {!data.role.contacts_at && <Button loading={find.isPending && find.variables === 'all'} disabled={find.isPending} onClick={() => find.mutate('all')}>Find contacts</Button>}
+        <Button variant="ghost" loading={find.isPending && find.variables === 'apollo'} disabled={find.isPending} onClick={() => find.mutate('apollo')}>Search Apollo</Button>
+      </div>
     </div>
   )
 }

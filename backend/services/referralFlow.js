@@ -445,7 +445,7 @@ export async function findPeopleFor(userId, item) {
 const LEADER = /\b(vp|vice president|director|head of|chief|ceo|founder|co-founder|president)\b/i;
 
 /** Saved recruiters at a company, best first. */
-async function recruitersAt(userId, companyName) {
+export async function recruitersAt(userId, companyName) {
   const saved = await all(
     `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url FROM job_contacts c JOIN jobs j ON j.id = c.job_id
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
@@ -455,6 +455,47 @@ async function recruitersAt(userId, companyName) {
 }
 
 const canEmail = c => c.email && c.email_status !== 'invalid';
+
+/**
+ * Recruiters from Apollo, up to 2 with an email at the company. The search is
+ * free; each email revealed is a credit, counted against the monthly allowance.
+ * The domain must be one we trust or one Hunter's finds proved; failing both,
+ * Apollo's own company lookup by name (also counted).
+ */
+export async function findApolloRecruitersAt(userId, jobId, item) {
+  const providers = await import('./emailProviders.js');
+  const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  if (!job || !providers.isConfigured('apollo')) return 0;
+  const { spend } = await import('./providerUsage.js');
+  const { upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+  const proven = job.domain && await one("SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3 LIMIT 1", [userId, jobId, job.domain]);
+  let domain = (proven && job.domain) || await trustedDomain(job);
+  if (!domain) {
+    // Counted once Apollo answers, so a refusal (a Free plan) doesn't use up the allowance.
+    const org = await providers.apolloOrganization({ name: item.company_name });
+    await spend(userId, 'apollo');
+    domain = org?.domain || null;
+  }
+  if (!domain) return 0;
+  const found = (await providers.apolloPeopleSearch({ domain, titles: RECRUITING_TITLES }))
+    .filter(p => p.hasEmail && isRecruiterTitle(p.title) && !LEADER.test(p.title))
+    .sort((a, b) => askRank(a) - askRank(b));
+  let have = (await recruitersAt(userId, item.company_name)).filter(canEmail).length;
+  let added = 0;
+  for (const p of found) {
+    if (have >= 2) break;
+    await spend(userId, 'apollo');
+    const hit = await providers.apolloMatch({ id: p.id });
+    if (!hit?.email || await one('SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND lower(email) = lower($2)', [userId, hit.email])) continue;
+    const r = await upsertContact({ all, run }, {
+      userId, jobId, seniorityScore: seniorityScore(hit.title || p.title),
+      contact: { name: hit.name || p.first, title: hit.title || p.title, linkedin_url: hit.linkedin_url, email: hit.email, status: hit.status, confidence: hit.confidence, source: 'apollo' },
+    });
+    if (r === 'inserted') { added += 1; have += 1; }
+  }
+  return added;
+}
 
 /**
  * Recruiters for a Review queue role, before it's approved, so a run can write
@@ -476,6 +517,7 @@ export async function findRecruitersFor(userId, item) {
       const proven = domain && await one("SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3 LIMIT 1", [userId, jobId, domain]);
       if (proven && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true, domain }).catch(quiet('Prospeo'));
     }
+    if (await emails() < 2) await findApolloRecruitersAt(userId, jobId, item).catch(quiet('Apollo'));
     await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
     for (const c of (await recruitersAt(userId, company)).slice(0, 2).filter(x => !canEmail(x))) {
       await findEmailFor(userId, jobId, { name: c.name, linkedin: c.linkedin_url, contactId: c.id }).catch(quiet('person lookup'));

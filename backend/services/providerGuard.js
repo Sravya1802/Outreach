@@ -54,6 +54,11 @@ export function assertAvailable(provider) {
   throw new ProviderError(provider, 'SKIPPED', c.message, { retryAt: new Date(c.until).toISOString() });
 }
 
+/** Forget a cooldown, for a lookup the user asked for by hand (a plan may have been upgraded since). */
+export function clearCooldown(provider) {
+  cooldowns.delete(provider);
+}
+
 export function providerStatus(provider) {
   const c = cooldowns.get(provider);
   return c && Date.now() < c.until ? { available: false, ...c, until: new Date(c.until).toISOString() } : { available: true };

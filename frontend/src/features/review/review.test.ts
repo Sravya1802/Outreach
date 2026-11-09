@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -241,5 +241,17 @@ describe('year filter', () => {
   it('labels one year or a range', () => {
     expect(yearsLabel(['2027'])).toBe('2027')
     expect(yearsLabel(['2026', '2027'])).toBe('2026–27')
+  })
+})
+
+describe('I already applied', () => {
+  it('is offered until the role has gone out or a run has it', () => {
+    for (const status of ['queued', 'ready', 'revision_requested', 'approved'] as const) expect(canMarkApplied({ status })).toBe(true)
+    for (const status of ['in_progress', 'applied', 'closed'] as const) expect(canMarkApplied({ status })).toBe(false)
+    expect(canMarkApplied({ status: 'approved', finishing: true })).toBe(false)
+  })
+  it('says what is left in Outbox', () => {
+    expect(appliedLine(0)).toBe('Marked as applied. Nothing will apply for you.')
+    expect(appliedLine(2)).toBe('Marked as applied. Nothing will apply for you. 2 emails are still in Outbox: OK or discard them there.')
   })
 })

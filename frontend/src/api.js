@@ -512,6 +512,7 @@ export const api = {
     setReferralMode: (id, mode) => apiCall(`/review/${id}/mode`, { method: 'PUT', body: { mode } }),
     approveRole: (id) => apiCall(`/review/${id}/approve`, { method: 'POST' }),
     applyWithoutReferral: (id) => apiCall(`/review/${id}/apply-without-referral`, { method: 'POST' }),
+    markRoleApplied: (id) => apiCall(`/review/${id}/applied`, { method: 'POST' }),
     findRoleContacts: (id) => apiCall(`/review/${id}/contacts`, { method: 'POST' }),
     saveOutreachDraft: (id, patch) => apiCall(`/review/outreach/${id}`, { method: 'PATCH', body: patch }),
     resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),

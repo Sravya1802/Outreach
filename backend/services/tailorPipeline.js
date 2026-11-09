@@ -13,6 +13,7 @@
  *     email waits for the user's OK in Outbox, and applying waits for the referrals.
  *   findRoleContacts: recruiters for a Ready role; the next run writes its outreach.
  *   applyWithoutReferral: the only way a role with no outreach goes out.
+ *   markRoleApplied: the user applied on their own; nothing applies for them.
  *   markApplied (cron): a role applied to from any path moves to Applied.
  *   runSummary, companyQueue: the Home, Usage and Company pages.
  *   runConfig, saveRunConfig: what a run reads. Every save is a new tailoring_config
@@ -25,7 +26,7 @@ import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
 import { NOTE_END, askedElsewhere, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
-import { resumeFileName, saveForEvaluation } from './resumeFiles.js';
+import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
 import { yearsSelect } from './gradYear.js';
 import { downloadVersionPdf, uploadVersionPdf } from './resumeStorage.js';
@@ -511,6 +512,33 @@ export async function applyWithoutReferral(userId, planItemId) {
     await approveRole(userId, planItemId, { withoutReferral: true, wait: true });
   }
   await referralAction(userId, planItemId, { action: 'no_referral' });
+}
+
+/**
+ * The user applied on the company's site themselves. The role moves to Applied
+ * and shows in the Tracker; nothing applies for them and no run takes it.
+ * Emails already in Outbox stay there for them to OK or discard.
+ */
+export async function markRoleApplied(userId, planItemId) {
+  const [job, item] = await Promise.all([
+    one('SELECT status FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
+    one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
+  ]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (job.status === 'in_progress') throw fail(409, 'A run is working on this role. Try again when it finishes.');
+  if (['applied', 'closed'].includes(job.status)) throw fail(409, `This role is already ${job.status}.`);
+  if (finishing.has(String(planItemId))) throw fail(409, 'Still finishing the approval. Try again in a minute.');
+  const { evaluationFor } = await import('./dailyPlan.js');
+  const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
+  if (!item.evaluation_id) await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
+  await markAppliedYourself(userId, evaluationId);
+  await run("UPDATE tailor_jobs SET status = 'applied', outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
+  const waiting = await one(
+    `SELECT COUNT(*)::int AS n FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id
+      WHERE a.user_id = $1 AND a.plan_item_id = $2 AND o.status IN ('draft', 'scheduled')`,
+    [userId, planItemId],
+  );
+  return { emailsWaiting: waiting.n };
 }
 
 /** Recruiters for a Ready role with no outreach. The next run writes the emails and notes. */

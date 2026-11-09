@@ -85,6 +85,14 @@ export const needsOutreach = (r: Pick<ReviewRow, 'referral_mode' | 'outreach'>) 
 /** Where a role with no outreach stands. */
 export const outreachLine = (r: Pick<ReviewRow, 'outreach_due' | 'contacts_at'>) => (r.outreach_due ? 'Emails coming' : r.contacts_at ? 'No recruiter found' : 'No outreach yet')
 
+/** Before applying starts, you can say you applied yourself. */
+export const canMarkApplied = (r: { status: ReviewStatus; finishing?: boolean }) =>
+  ['queued', 'ready', 'revision_requested', 'approved'].includes(r.status) && !r.finishing
+
+/** What I already applied did, for the toast. */
+export const appliedLine = (emailsWaiting: number) =>
+  `Marked as applied. Nothing will apply for you.${emailsWaiting ? ` ${emailsWaiting === 1 ? '1 email is' : `${emailsWaiting} emails are`} still in Outbox: OK or discard ${emailsWaiting === 1 ? 'it' : 'them'} there.` : ''}`
+
 /** A role Approve can take. */
 export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach'>) => r.status === 'ready' && r.check_status === 'passed' && !needsOutreach(r)
 

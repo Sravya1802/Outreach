@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  applyWithoutReferral, approveRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf,
+  applyWithoutReferral, approveRole, markRoleApplied, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf,
 } from '../services/tailorPipeline.js';
 
 const router = Router();
@@ -91,6 +91,10 @@ router.post('/:id/approve', withId(async (req, res, id) => {
 router.post('/:id/apply-without-referral', withId(async (req, res, id) => {
   await applyWithoutReferral(req.user.id, id);
   res.json({ ok: true });
+}));
+
+router.post('/:id/applied', withId(async (req, res, id) => {
+  res.json(await markRoleApplied(req.user.id, id));
 }));
 
 router.post('/:id/contacts', withId(async (req, res, id) => {

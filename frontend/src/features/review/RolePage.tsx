@@ -7,7 +7,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, approvedLine, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
+import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -272,6 +272,12 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
 function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: ResumeVersion | undefined; onDone: () => void }) {
   const toast = useToast()
   const [confirming, setConfirming] = useState(false)
+  const [markingApplied, setMarkingApplied] = useState(false)
+  const applied = useMutation({
+    mutationFn: () => api.markRoleApplied(data.role.id),
+    onSuccess: (r) => { toast.success(appliedLine(r.emailsWaiting)); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
   const withoutReferral = useMutation({
     mutationFn: () => api.applyWithoutReferral(data.role.id),
     onSuccess: () => { toast.success('It applies at the company’s next morning slot.'); onDone() },
@@ -304,10 +310,11 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {latest && !atsOk(latest.ats_after) && <p className="text-[14px] text-warning">ATS is {latest.ats_after ?? '?'}%, under your 90% rule. You can still approve it.</p>}
       {latest && !passed && <p className="text-[14px] text-danger">This version hasn’t passed its checks, so it can’t be approved.</p>}
       {data.role.status === 'ready' && noOutreach && <NoOutreach data={data} onDone={onDone} />}
-      {(data.role.status === 'ready' || canGoAlone) && (
+      {(data.role.status === 'ready' || canGoAlone || canMarkApplied(data.role)) && (
         <div className="flex flex-wrap gap-2">
           {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed || noOutreach} onClick={() => approve.mutate()}>Approve</Button>}
           {canGoAlone && <Button loading={withoutReferral.isPending} onClick={() => setConfirming(true)}>Apply without referral</Button>}
+          {canMarkApplied(data.role) && <Button variant="ghost" loading={applied.isPending} onClick={() => setMarkingApplied(true)}>I already applied</Button>}
         </div>
       )}
       {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
@@ -326,6 +333,14 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
         confirmLabel="Apply without referral"
         onConfirm={() => { setConfirming(false); withoutReferral.mutate() }}
         onCancel={() => setConfirming(false)}
+      />
+      <ConfirmDialog
+        open={markingApplied}
+        title="Mark as applied?"
+        description="For a role you applied to on the company’s site yourself. It moves to Applied and shows in your Tracker, and nothing applies for you. The emails and notes here don’t go out."
+        confirmLabel="Mark as applied"
+        onConfirm={() => { setMarkingApplied(false); applied.mutate() }}
+        onCancel={() => setMarkingApplied(false)}
       />
     </div>
   )

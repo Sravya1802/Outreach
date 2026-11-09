@@ -21,6 +21,7 @@
  */
 import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
+import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
 import { NOTE_END, findRecruitersFor, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
@@ -434,11 +435,13 @@ export async function approveRole(userId, planItemId, { withoutReferral = false 
     const evaluationId = item.evaluation_id || await evaluationFor(userId, item);
     await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
     const file = await saveForEvaluation(userId, evaluationId, pdf, resumeFileName((await me(userId)).name), 'tailored');
-    const result = await startApprovedAsks(userId, item, drafts, file.id, await getSettings(userId));
+    const { outboxIds, ...result } = await startApprovedAsks(userId, item, drafts, file.id, await getSettings(userId));
     await tx(async (t) => {
       await t.query('UPDATE resume_versions SET is_final = FALSE WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
       await t.query('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
     });
+    // Each Gmail copy takes seconds, so they're written after this answers, on one connection, with the PDF already in hand.
+    if (outboxIds.length) copyDraftsToGmail(userId, outboxIds, new Map([[String(file.id), pdf]])).catch(() => {});
     return result;
   } catch (err) {
     await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);

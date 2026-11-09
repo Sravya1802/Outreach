@@ -728,7 +728,7 @@ async function askedElsewhere(userId, itemId, drafts) {
 
 export async function startApprovedAsks(userId, item, drafts, attachmentFileId, settings) {
   const repeats = await askedElsewhere(userId, item.id, drafts);
-  const result = { emails: 0, inGmail: 0, notes: 0, skipped: [], repeated: repeats.length };
+  const result = { emails: 0, inGmail: 0, notes: 0, skipped: [], repeated: repeats.length, outboxIds: [] };
   for (const d of drafts) {
     if (repeats.some(r => r.id === d.id)) continue;
     const person = {
@@ -737,7 +737,9 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
     };
     if (d.email_body) {
       try {
-        const o = await scheduleEmail(userId, { contactId: d.contact_id, subject: d.email_subject, body: d.email_body, purpose: 'referral', draft: true, attachmentFileId });
+        // The Gmail copy is written after Approve answers (copyDraftsToGmail).
+        const o = await scheduleEmail(userId, { contactId: d.contact_id, subject: d.email_subject, body: d.email_body, purpose: 'referral', draft: true, attachmentFileId, gmailLater: true });
+        result.outboxIds.push(o.id);
         await run(
           `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, outbox_id, subject, message, status)
            VALUES ($1, $2, 'email', $3, $4, $5, $6, $7, $8, $9, $10, 'draft')`,

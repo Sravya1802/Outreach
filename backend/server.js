@@ -44,7 +44,7 @@ import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
 import { checkNewVersions, markApplied, notifyRuns } from './services/tailorPipeline.js';
 import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
-import { runOutbox } from './services/outbox.js';
+import { fillGmailDrafts, runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
 import { requestContext } from './services/requestContext.js';
@@ -525,6 +525,8 @@ cron.schedule('*/2 * * * *', async () => {
   try {
     const r = await runOutbox();
     if (r.sent) console.log(`[outbox] sent ${r.sent} of ${r.due} due`);
+    const copied = await fillGmailDrafts();
+    if (copied) console.log(`[outbox] ${copied} Gmail Drafts copies caught up`);
   } catch (err) { console.error('[outbox] pass failed:', err.message); }
 }, CRON_OPTS);
 // Claude chat runs: compile and check the resumes they've written.

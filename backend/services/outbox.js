@@ -9,11 +9,13 @@
  *     goes to the user's Gmail Drafts with the resume attached, and nothing is
  *     sent until they approve it here (their edits in Gmail are kept). Sending
  *     or deleting the draft in Gmail is noticed by syncDrafts().
- * runOutbox() is called by a cron every 2 minutes.
+ *     Approve writes those copies after it answers (copyDraftsToGmail), since
+ *     each one takes seconds; fillGmailDrafts() retries any that didn't land.
+ * runOutbox() and fillGmailDrafts() are called by a cron every 2 minutes.
  */
 
 import { all, one, run } from '../db.js';
-import { connectionFor, draftHash, messagesTo, putDraft, readDraft, removeDraft, sendAs, specialFolder, withImap } from './gmail.js';
+import { appendDraft, connectionFor, deleteDrafts, draftHash, messagesTo, putDraft, readDraft, removeDraft, sendAs, specialFolder, withImap } from './gmail.js';
 import { fileBytes, fileForUser } from './resumeFiles.js';
 import { nextSendSlot, businessDaysLater, timezoneFor, describeSlot } from './sendWindow.js';
 import { marketFor } from './markets.js';
@@ -60,7 +62,7 @@ export function followupBody(step, { toName, company, sender, original, sentAt, 
  * with a human description of when it goes. `draft` holds it for the user's OK
  * (and puts a copy in their Gmail Drafts); `attachmentFileId` is a resume_files id.
  */
-export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach', draft = false, attachmentFileId = null }) {
+export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach', draft = false, attachmentFileId = null, gmailLater = false }) {
   const contact = await one(
     `SELECT c.*, j.name AS company_name FROM job_contacts c LEFT JOIN jobs j ON j.id = c.job_id WHERE c.id = $1 AND c.user_id = $2`,
     [contactId, userId],
@@ -91,6 +93,7 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   )).rows[0];
   await run('UPDATE job_contacts SET generated_subject = $1, generated_body = $2 WHERE id = $3 AND user_id = $4', [str(subject), str(body), contactId, userId]);
   if (draft) {
+    if (gmailLater) return { ...row, in_gmail_drafts: false, when: 'draft' };
     const inGmail = await copyToGmailDrafts(row);
     return { ...row, in_gmail_drafts: inGmail, when: 'draft' };
   }
@@ -98,12 +101,66 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   return { ...row, when: describeSlot(sendAfter, tz) };
 }
 
-/** The row's attachment (the role's tailored resume), ready for nodemailer. */
-async function attachmentsFor(row) {
+/** The row's attachment (the role's tailored resume), ready for nodemailer. `bytes` holds files already downloaded, by id. */
+async function attachmentsFor(row, bytes = new Map()) {
   if (!row.attachment_file_id) return [];
   const file = await fileForUser(row.user_id, row.attachment_file_id);
   if (!file) return [];
-  return [{ filename: file.filename || 'resume.pdf', content: await fileBytes(file), contentType: 'application/pdf' }];
+  const key = String(row.attachment_file_id);
+  if (!bytes.has(key)) bytes.set(key, await fileBytes(file));
+  return [{ filename: file.filename || 'resume.pdf', content: bytes.get(key), contentType: 'application/pdf' }];
+}
+
+// One Gmail session at a time per user, and rows being copied now, so the retry tick doesn't make a second copy.
+const gmailQueue = new Map();
+const copying = new Set();
+
+/**
+ * Gmail Drafts copies for new draft rows, on one connection. A new row has no
+ * earlier copy, so there's nothing to search for and delete first. A row OK'd
+ * or discarded while this ran loses the copy again.
+ */
+export function copyDraftsToGmail(userId, ids, bytes = new Map()) {
+  const work = async () => {
+    const rows = (await all(
+      "SELECT * FROM email_outbox WHERE user_id = $1 AND id = ANY($2::bigint[]) AND status = 'draft' AND gmail_draft_hash IS NULL ORDER BY id",
+      [userId, ids],
+    )).filter(r => !copying.has(String(r.id)));
+    if (!rows.length) return 0;
+    rows.forEach(r => copying.add(String(r.id)));
+    let done = 0;
+    try {
+      await withImap(userId, async (client, conn) => {
+        for (const row of rows) {
+          const hash = await appendDraft(client, conn, { to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, attachments: await attachmentsFor(row, bytes) });
+          const kept = await run("UPDATE email_outbox SET gmail_draft_hash = $2 WHERE id = $1 AND status = 'draft'", [row.id, hash]);
+          if (kept.rowCount) done += 1;
+          else await deleteDrafts(client, await specialFolder(client, '\\Drafts'), row.to_email, row.created_at);
+        }
+      });
+    } catch (err) {
+      console.warn('[outbox] Gmail draft copies failed', ids.join(','), err.message);
+    } finally {
+      rows.forEach(r => copying.delete(String(r.id)));
+    }
+    return done;
+  };
+  const next = (gmailQueue.get(userId) || Promise.resolve()).then(work, work);
+  gmailQueue.set(userId, next);
+  next.finally(() => { if (gmailQueue.get(userId) === next) gmailQueue.delete(userId); }).catch(() => {});
+  return next;
+}
+
+/** Draft rows from the last 3 days whose Gmail copy never landed. */
+export async function fillGmailDrafts() {
+  const rows = await all(
+    `SELECT user_id, array_agg(id ORDER BY id) AS ids FROM email_outbox
+      WHERE status = 'draft' AND gmail_draft_hash IS NULL AND created_at BETWEEN NOW() - INTERVAL '3 days' AND NOW() - INTERVAL '2 minutes'
+      GROUP BY user_id`,
+  );
+  let n = 0;
+  for (const r of rows) if (!gmailQueue.has(r.user_id)) n += await copyDraftsToGmail(r.user_id, r.ids.slice(0, 10));
+  return n;
 }
 
 /** Put (or replace) the Gmail Drafts copy of a draft row. False when Gmail couldn't be reached. */

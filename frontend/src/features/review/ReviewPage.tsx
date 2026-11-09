@@ -6,14 +6,16 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { TABS, YEAR_OPTIONS, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, outreachMatch, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
+// The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
-function savedYear() {
-  try { return localStorage.getItem(YEAR_KEY) ?? '' } catch { return '' }
+const OUTREACH_KEY = 'snj.review.outreach'
+function saved(key: string) {
+  try { return localStorage.getItem(key) ?? '' } catch { return '' }
 }
-function saveYear(v: string) {
-  try { localStorage.setItem(YEAR_KEY, v) } catch { /* private window: the choice lasts this visit */ }
+function save(key: string, v: string) {
+  try { localStorage.setItem(key, v) } catch { /* private window: the choice lasts this visit */ }
 }
 
 const head = 'border-b border-line px-3 py-2 font-medium'
@@ -86,11 +88,12 @@ const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
 export default function ReviewPage() {
   const [params, setParams] = useSearchParams()
   const [company, setCompany] = useState('')
-  const [year, setYear] = useState(savedYear)
+  const [year, setYear] = useState(() => saved(YEAR_KEY))
+  const [outreach, setOutreach] = useState(() => saved(OUTREACH_KEY))
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
   const everything = queue.data?.roles ?? []
-  // The year menu narrows the tiles, the rows and Select all; the backlog bar counts everything.
-  const all = everything.filter(r => yearMatch(r.grad_years, year))
+  // The menus narrow the tiles, the rows and Select all; the backlog bar counts everything.
+  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach))
   const run = queue.data?.lastRun ?? null
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
@@ -152,9 +155,13 @@ export default function ReviewPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="sm:w-56!" />
-            <Select value={year} onChange={e => { setYear(e.target.value); saveYear(e.target.value) }} aria-label="Year" className="sm:w-48">
+            <Select value={year} onChange={e => { setYear(e.target.value); save(YEAR_KEY, e.target.value) }} aria-label="Year" className="sm:w-48">
               <option value="">Any year</option>
               {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            <Select value={outreach} onChange={e => { setOutreach(e.target.value); save(OUTREACH_KEY, e.target.value) }} aria-label="Outreach" className="sm:w-48">
+              <option value="">Any outreach</option>
+              {OUTREACH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
             {bulk && safe.length > 0 && (
               <label className="inline-flex items-center gap-2 text-[14px] text-fg">
@@ -178,7 +185,7 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
-                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : year ? 'No role here matches that year.' : 'Nothing here right now.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : year || outreach ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>

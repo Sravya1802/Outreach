@@ -85,6 +85,26 @@ export const needsOutreach = (r: Pick<ReviewRow, 'referral_mode' | 'outreach'>) 
 /** Where a role with no outreach stands. */
 export const outreachLine = (r: Pick<ReviewRow, 'outreach_due' | 'contacts_at'>) => (r.outreach_due ? 'Emails coming' : r.contacts_at ? 'No recruiter found' : 'No outreach yet')
 
+export type OutreachState = 'written' | 'coming' | 'none' | 'nobody' | 'self'
+
+/** The outreach menu: one state per role, the same ones the badges show. */
+export const OUTREACH_OPTIONS: { value: OutreachState; label: string }[] = [
+  { value: 'written', label: 'Has outreach' },
+  { value: 'coming', label: 'Emails coming' },
+  { value: 'none', label: 'No outreach yet' },
+  { value: 'nobody', label: 'No recruiter found' },
+  { value: 'self', label: 'My contact or none' },
+]
+
+export function outreachState(r: Pick<ReviewRow, 'referral_mode' | 'outreach' | 'outreach_due' | 'contacts_at'>): OutreachState {
+  if (r.outreach > 0) return 'written'
+  if (!needsOutreach(r)) return 'self'
+  return r.outreach_due ? 'coming' : r.contacts_at ? 'nobody' : 'none'
+}
+
+/** '' keeps every role. */
+export const outreachMatch = (r: Parameters<typeof outreachState>[0], filter: string) => !filter || outreachState(r) === filter
+
 /** Before applying starts, you can say you applied yourself. */
 export const canMarkApplied = (r: { status: ReviewStatus; finishing?: boolean }) =>
   ['queued', 'ready', 'revision_requested', 'approved'].includes(r.status) && !r.finishing

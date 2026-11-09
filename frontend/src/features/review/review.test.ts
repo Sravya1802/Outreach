@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -253,5 +253,22 @@ describe('I already applied', () => {
   it('says what is left in Outbox', () => {
     expect(appliedLine(0)).toBe('Marked as applied. Nothing will apply for you.')
     expect(appliedLine(2)).toBe('Marked as applied. Nothing will apply for you. 2 emails are still in Outbox: OK or discard them there.')
+  })
+})
+
+describe('outreach filter', () => {
+  const row = { referral_mode: 'recruiters' as const, outreach: 0, outreach_due: false, contacts_at: null as string | null }
+  it('puts each role in one state', () => {
+    expect(outreachState({ ...row, outreach: 2 })).toBe('written')
+    expect(outreachState({ ...row, outreach_due: true, contacts_at: '2026-11-09' })).toBe('coming')
+    expect(outreachState({ ...row, contacts_at: '2026-11-09' })).toBe('nobody')
+    expect(outreachState(row)).toBe('none')
+    expect(outreachState({ ...row, referral_mode: 'my_contact' })).toBe('self')
+    expect(outreachState({ ...row, referral_mode: 'none', outreach: 1 })).toBe('written')
+  })
+  it('keeps everything with no filter', () => {
+    expect(outreachMatch(row, '')).toBe(true)
+    expect(outreachMatch(row, 'written')).toBe(false)
+    expect(outreachMatch({ ...row, outreach: 1 }, 'written')).toBe(true)
   })
 })

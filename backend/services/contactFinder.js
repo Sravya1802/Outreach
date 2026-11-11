@@ -45,6 +45,25 @@ export function emailFromPattern(pattern, name, domain) {
   return /^[a-z0-9][a-z0-9._-]*$/.test(local) ? `${local}@${domain}` : null;
 }
 
+// Formats companies use. The first three cover most companies, in that order.
+const PATTERNS = ['{first}.{last}', '{f}{last}', '{first}', '{first}{last}', '{first}{l}', '{first}_{last}', '{first}.{l}', '{f}.{last}', '{last}{f}', '{last}.{first}', '{first}-{last}', '{last}'];
+export const COMMON_PATTERNS = PATTERNS.slice(0, 3);
+
+/**
+ * The company's pattern read off addresses already found there, e.g. Jane Doe
+ * at jdoe@acme.com → "{f}{last}". The one most addresses fit; null when none does.
+ */
+export function patternFromAddresses(people, domain) {
+  const votes = new Map();
+  for (const p of people || []) {
+    const email = String(p.email || '').toLowerCase();
+    if (!email.endsWith(`@${domain}`)) continue;
+    const fit = PATTERNS.find(pattern => emailFromPattern(pattern, p.name, domain) === email);
+    if (fit) votes.set(fit, (votes.get(fit) || 0) + 1);
+  }
+  return [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+}
+
 function dedupeByEmail(list) {
   const out = new Map();
   for (const c of list) {

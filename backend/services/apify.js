@@ -640,6 +640,27 @@ export function parseLinkedInSerpResult(item, companyName) {
   return { name, title: role, linkedin_url: link.split('?')[0] };
 }
 
+// A profile snippet that places the person outside the US.
+const NON_US = /\b(germany|deutschland|united kingdom|ireland|france|india|pakistan|bangladesh|philippines|vietnam|egypt|canada|australia|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|spain|italy|portugal|brazil|singapore|japan|china|korea|israel|poland|czech|romania|ukraine|russia|mexico)\b/i;
+
+/**
+ * A Google result for someone at the company now, in the US: the parsed
+ * profile, or null for a country LinkedIn site (in.linkedin.com), a non-US
+ * place in the snippet, or a stint that has ended ("2016 - May 2017" and no
+ * "Present").
+ */
+export function currentUsProfile(item, companyName) {
+  const p = parseLinkedInSerpResult(item, companyName);
+  if (!p) return null;
+  let host = '';
+  try { host = new URL(item.link).hostname.toLowerCase(); } catch { return null; }
+  if (!/^(www\.)?linkedin\.com$/.test(host)) return null;
+  const snippet = String(item.snippet || '');
+  if (NON_US.test(snippet)) return null;
+  if (/\b(?:19|20)\d{2}\s*[-–—]\s*(?:[a-z]{3,9}\.?\s+)?(?:19|20)\d{2}\b/i.test(snippet) && !/\bpresent\b/i.test(snippet)) return null;
+  return p;
+}
+
 /**
  * Find people worth contacting at a company:
  *   L1 Apollo  — organization (by trusted domain, else by name with a
@@ -657,7 +678,6 @@ export function parseLinkedInSerpResult(item, companyName) {
  * @param {{signal?: AbortSignal}} [opts]
  */
 export async function findPeopleAtLinkedInCompany(companyName, linkedinCompanyUrl = null, domain = null, onProgress = null, { signal, userId = null } = {}) {
-  const NON_US = /\b(germany|deutschland|united kingdom|france|india|canada|australia|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|spain|italy|portugal|brazil|singapore|japan|china|korea|israel|poland|czech|romania|ukraine|russia|mexico)\b/i;
   const people = [];
   const seenNames = new Set();
   const seenLinks = new Set();

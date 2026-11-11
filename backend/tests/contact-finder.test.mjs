@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { emailFromPattern, findCompanyEmails, findPersonEmail, nameFromEmailAddress, upsertContact } from '../services/contactFinder.js'
+import { emailFromPattern, findCompanyEmails, findPersonEmail, nameFromEmailAddress, patternFromAddresses, upsertContact } from '../services/contactFinder.js'
 import { ProviderError } from '../services/providerGuard.js'
 
 const noMx = async () => false
@@ -140,4 +140,17 @@ test('emailFromPattern builds the address from a name, skips initials', () => {
   assert.equal(emailFromPattern('{first}.{last}', 'A B Vijay Kumar', 'ibm.com'), null)
   assert.equal(emailFromPattern('{first}.{last}', 'Cher', 'acme.com'), null)
   assert.equal(emailFromPattern(null, 'Jane Doe', 'acme.com'), null)
+})
+
+test('patternFromAddresses reads the company format off addresses found there', () => {
+  assert.equal(patternFromAddresses([{ name: 'Jane Doe', email: 'jdoe@acme.com' }, { name: 'Sam Lee', email: 'slee@acme.com' }], 'acme.com'), '{f}{last}')
+  assert.equal(patternFromAddresses([{ name: 'Jane Doe', email: 'jane.doe@acme.com' }], 'acme.com'), '{first}.{last}')
+  assert.equal(patternFromAddresses([{ name: 'Jane Doe', email: 'jane@acme.com' }], 'acme.com'), '{first}')
+  // Most addresses win; other domains, odd names and unfit addresses don't count.
+  assert.equal(patternFromAddresses([
+    { name: 'Jane Doe', email: 'jane.doe@acme.com' }, { name: 'Sam Lee', email: 'sam.lee@acme.com' },
+    { name: 'Ann Poe', email: 'apoe@acme.com' }, { name: 'Bo Ray', email: 'bo.ray@other.com' },
+  ], 'acme.com'), '{first}.{last}')
+  assert.equal(patternFromAddresses([{ name: 'Jane Doe', email: 'hr@acme.com' }, { name: 'J', email: 'j@acme.com' }], 'acme.com'), null)
+  assert.equal(patternFromAddresses([], 'acme.com'), null)
 })

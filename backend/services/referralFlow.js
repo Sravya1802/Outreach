@@ -224,8 +224,9 @@ export async function findEmailsAt(userId, jobId, item) {
   const { seniorityScore } = await import('./contactRules.js');
   const result = await findCompanyEmails({ ...job, url: job.url || item.apply_url }, { userId });
   if (!result.domain) return 0;
-  await run('UPDATE jobs SET domain = $1, domain_source = $2 WHERE id = $3 AND user_id = $4',
-    [result.domain, result.domainSource === 'mx' ? 'guess' : result.domainSource, jobId, userId]);
+  // A guessed domain where real addresses turned up isn't a guess any more.
+  const source = result.domainSource === 'mx' ? (result.candidates.length ? 'found' : 'guess') : result.domainSource;
+  await run('UPDATE jobs SET domain = $1, domain_source = $2 WHERE id = $3 AND user_id = $4', [result.domain, source, jobId, userId]);
   let added = 0;
   for (const c of result.candidates) {
     if ((await upsertContact({ all, run }, { userId, jobId, contact: c, seniorityScore: seniorityScore(c.title) })) === 'inserted') added += 1;
@@ -279,33 +280,106 @@ export async function findLinkedInPeopleAt(userId, jobId) {
  * the user sees it's a guess before approving a draft to it.
  */
 export async function guessEmailsAt(userId, jobId) {
-  const job = await one('SELECT name, domain, domain_source FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
-  if (!job?.domain || job.domain_source === 'guess') return 0;
-  const known = await one(
-    `SELECT result->>'pattern' AS pattern FROM provider_domain_cache
-      WHERE (domain = $1 OR domain LIKE $1 || '#%') AND result->>'pattern' IS NOT NULL ORDER BY searched_at DESC LIMIT 1`,
-    [job.domain],
-  );
-  if (!known?.pattern) return 0;
+  const job = await one('SELECT id, name, url, domain, domain_source FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
+  const domain = job && await trustedDomain(job, userId);
+  const pattern = domain && await patternFor(userId, jobId, domain);
+  if (!pattern) return 0;
   const { emailFromPattern } = await import('./contactFinder.js');
   const people = await all('SELECT id, name FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email IS NULL', [userId, jobId]);
   let n = 0;
   for (const p of people) {
-    const email = emailFromPattern(known.pattern, p.name, job.domain);
+    const email = emailFromPattern(pattern, p.name, domain);
     if (!email || await one('SELECT 1 FROM job_contacts WHERE user_id = $1 AND lower(email) = $2', [userId, email])) continue;
     await run(
       "UPDATE job_contacts SET email = $3, email_status = 'guessed', email_lookup_note = $4 WHERE id = $1 AND user_id = $2 AND email IS NULL",
-      [p.id, userId, email, `Guessed from ${job.name}'s email pattern (${known.pattern}@${job.domain})`],
+      [p.id, userId, email, `Guessed from ${job.name}'s email pattern (${pattern}@${domain})`],
     ).then(() => { n += 1; }).catch(err => console.warn('[referrals] guessed email not saved', p.name, err.message));
   }
   return n;
 }
 
-/** The company's email domain when we're sure of it (looked up, never guessed). */
-async function trustedDomain(job) {
+/** Addresses found at the domain (not built from a guess) prove it's the company's. */
+async function domainProven(userId, jobId, domain) {
+  return Boolean(domain && await one(
+    `SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3
+        AND COALESCE(email_status, '') NOT IN ('guessed', 'invalid') LIMIT 1`,
+    [userId, jobId, domain],
+  ));
+}
+
+/** The company's email domain when we're sure of it: looked up, or a guess that found addresses proved. */
+async function trustedDomain(job, userId = null) {
   if (job.domain && job.domain_source !== 'guess') return job.domain;
+  if (userId && job.id && await domainProven(userId, job.id, job.domain)) return job.domain;
   const { resolveCompanyDomain } = await import('./companyDomain.js');
   return (await resolveCompanyDomain(job, { verify: async () => false }).catch(() => null))?.domain || null;
+}
+
+// What the email check learned about a domain (a pattern it confirmed, or that
+// the server takes any address), shared like the providers' domain searches.
+async function rememberDomain(domain, fields) {
+  await run(
+    `INSERT INTO provider_domain_cache (provider, domain, result, searched_at) VALUES ('checked', $1, $2::jsonb, NOW())
+     ON CONFLICT (provider, domain) DO UPDATE SET result = provider_domain_cache.result || EXCLUDED.result, searched_at = NOW()`,
+    [domain, JSON.stringify(fields)],
+  ).catch(err => console.warn('[referrals] domain note not saved', domain, err.message));
+}
+
+async function acceptsAnyAddress(domain) {
+  return Boolean(await one("SELECT 1 AS x FROM provider_domain_cache WHERE provider = 'checked' AND domain = $1 AND result->>'accept_all' = 'true'", [domain]));
+}
+
+/** The company's email pattern: a provider's (Hunter's), one the email check confirmed, else read off addresses found there. */
+async function patternFor(userId, jobId, domain) {
+  const known = await one(
+    `SELECT result->>'pattern' AS pattern FROM provider_domain_cache
+      WHERE (domain = $1 OR domain LIKE $1 || '#%') AND result->>'pattern' IS NOT NULL ORDER BY searched_at DESC LIMIT 1`,
+    [domain],
+  );
+  if (known?.pattern) return known.pattern;
+  const { patternFromAddresses } = await import('./contactFinder.js');
+  const found = await all(
+    `SELECT name, email FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3
+        AND COALESCE(email_status, '') NOT IN ('guessed', 'invalid')`,
+    [userId, jobId, domain],
+  );
+  return patternFromAddresses(found, domain);
+}
+
+/**
+ * No pattern anywhere: try the common formats on one person with the email
+ * check, up to 3 checks. The format that passes is the company's, kept for
+ * every later role there. A server that takes any address can't tell, and
+ * that's kept too, so it isn't checked again.
+ */
+async function probePattern(userId, domain, names) {
+  const { COMMON_PATTERNS, emailFromPattern } = await import('./contactFinder.js');
+  const name = names.find(n => emailFromPattern(COMMON_PATTERNS[0], n, domain)); // a full name ("Celestine N" won't do)
+  if (!name || await acceptsAnyAddress(domain)) return null;
+  for (const pattern of COMMON_PATTERNS) {
+    const email = emailFromPattern(pattern, name, domain);
+    if (!email) return null;
+    const verdict = await verifyAddress(userId, email);
+    if (verdict === 'valid') { await rememberDomain(domain, { pattern }); return pattern; }
+    if (verdict !== 'invalid') return null; // accept_all (kept by verifyAddress), unknown, or out of checks
+  }
+  return null;
+}
+
+/** Hunter's email check on one address → 'valid' | 'invalid' | 'accept_all' | 'unknown', or null when it can't run (not set up, out of checks). */
+async function verifyAddress(userId, email) {
+  const { hunterVerify, isConfigured } = await import('./emailProviders.js');
+  if (!isConfigured('hunter')) return null;
+  const { spend } = await import('./providerUsage.js');
+  try {
+    await spend(userId, 'hunter_verify');
+    const verdict = await hunterVerify(email);
+    if (verdict === 'accept_all') await rememberDomain(email.split('@')[1], { accept_all: true });
+    return verdict;
+  } catch (err) {
+    console.warn('[referrals] email check stopped', err.message);
+    return null;
+  }
 }
 
 /**
@@ -319,7 +393,7 @@ export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = fals
   const job = await one('SELECT * FROM jobs WHERE id = $1 AND user_id = $2', [jobId, userId]);
   const providers = await import('./emailProviders.js');
   if (!job || !providers.isConfigured('prospeo')) return out;
-  const domain = proven || await trustedDomain(job);
+  const domain = proven || await trustedDomain(job, userId);
   if (!domain) return out;
   const { cachedDomainSearch, spend } = await import('./providerUsage.js');
   const { upsertContact } = await import('./contactFinder.js');
@@ -380,27 +454,43 @@ export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = fals
  * nothing more to learn there, so checking stops.
  */
 async function checkGuesses(userId, people) {
-  const { hunterVerify, isConfigured } = await import('./emailProviders.js');
-  if (!isConfigured('hunter')) return;
-  const { spend } = await import('./providerUsage.js');
   for (const p of people) {
-    let verdict;
-    try {
-      await spend(userId, 'hunter_verify');
-      verdict = await hunterVerify(p.email);
-    } catch (err) {
-      console.warn('[referrals] email check stopped', err.message);
-      return;
-    }
-    if (verdict === 'invalid') {
-      await run("UPDATE job_contacts SET email_status = 'invalid', email_lookup_note = 'Failed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
-      p.email = null;
-    } else if (verdict === 'valid') {
-      await run("UPDATE job_contacts SET email_status = 'valid', email_lookup_note = 'Passed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
-      p.guessed = false;
-    } else if (verdict === 'accept_all') {
-      return;
-    }
+    if (await checkGuess(userId, p) === 'stop') return;
+  }
+}
+
+/** One address through the email check, saved: the verdict, or 'stop' when there's nothing more to learn at the company (or no checks left). */
+async function checkGuess(userId, p) {
+  const verdict = await verifyAddress(userId, p.email);
+  if (verdict === null || verdict === 'accept_all') return 'stop';
+  if (verdict === 'invalid') {
+    await run("UPDATE job_contacts SET email_status = 'invalid', email_lookup_note = 'Failed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+    p.email = null;
+  } else if (verdict === 'valid') {
+    await run("UPDATE job_contacts SET email_status = 'valid', email_lookup_note = 'Passed the email check' WHERE id = $1 AND user_id = $2", [p.contactId, userId]);
+    p.guessed = false;
+  }
+  return verdict;
+}
+
+/**
+ * The best recruiters' unsure addresses (guessed, or risky) through the email
+ * check, down the list, until 2 hold up: a failed one is dropped and the next
+ * recruiter is checked. Up to `maxChecks` a role; once the company's server
+ * turns out to take any address, the rest stay as they are.
+ */
+async function checkBestAddresses(userId, company, domain, { want = 2, maxChecks = 4 } = {}) {
+  let anyAddress = Boolean(domain) && await acceptsAnyAddress(domain);
+  let good = 0;
+  let checks = 0;
+  for (const c of (await recruitersAt(userId, company)).filter(canEmail)) {
+    if (good >= want) break;
+    const unsure = ['guessed', 'risky'].includes(c.email_status);
+    if (!unsure || anyAddress || checks >= maxChecks) { good += 1; continue; }
+    checks += 1;
+    const verdict = await checkGuess(userId, { email: c.email, contactId: c.id });
+    if (verdict === 'stop') anyAddress = true; // nothing more to learn: keep the rest as they are
+    if (verdict !== 'invalid') good += 1;
   }
 }
 
@@ -469,8 +559,7 @@ export async function findApolloRecruitersAt(userId, jobId, item) {
   const { spend } = await import('./providerUsage.js');
   const { upsertContact } = await import('./contactFinder.js');
   const { seniorityScore } = await import('./contactRules.js');
-  const proven = job.domain && await one("SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3 LIMIT 1", [userId, jobId, job.domain]);
-  let domain = (proven && job.domain) || await trustedDomain(job);
+  let domain = await trustedDomain(job, userId);
   if (!domain) {
     // Counted once Apollo answers, so a refusal (a Free plan) doesn't use up the allowance.
     const org = await providers.apolloOrganization({ name: item.company_name });
@@ -498,32 +587,96 @@ export async function findApolloRecruitersAt(userId, jobId, item) {
 }
 
 /**
+ * A company with no domain we trust: Apollo's company lookup by name (it
+ * answers on the Free plan), kept only when it's plausibly the same company,
+ * and saved so every later lookup uses it. → the domain, or null.
+ */
+async function domainFromApollo(userId, jobId, company) {
+  const providers = await import('./emailProviders.js');
+  if (!providers.isConfigured('apollo')) return null;
+  const { spend } = await import('./providerUsage.js');
+  const { isDomainPlausibleForCompany, normalizeCompanyName, registrableDomain } = await import('./companyDomain.js');
+  const org = await providers.apolloOrganization({ name: plainCompany(company) });
+  await spend(userId, 'apollo'); // counted once Apollo answers
+  const domain = registrableDomain(org?.domain);
+  if (!domain || !(normalizeCompanyName(org.name) === normalizeCompanyName(company) || isDomainPlausibleForCompany(domain, company))) return null;
+  await run("UPDATE jobs SET domain = $1, domain_source = 'apollo' WHERE id = $2 AND user_id = $3", [domain, jobId, userId]);
+  return domain;
+}
+
+// "Comscore, Inc." → "Comscore": how people write it in their LinkedIn headline.
+const plainCompany = (name) => str(name).replace(/[,\s]+(inc|llc|ltd|corp|corporation|co|plc|lp|llp)\.?$/i, '').trim() || str(name);
+
+/**
+ * Recruiters' names from Google: LinkedIn profiles that put them at the
+ * company now, in the US. One search a company, cached, so another role there
+ * costs nothing. No emails here: the company's email pattern supplies those.
+ */
+async function findGoogleRecruitersAt(userId, jobId, company) {
+  const providers = await import('./emailProviders.js');
+  if (!providers.isConfigured('serper')) return 0;
+  const { cachedDomainSearch } = await import('./providerUsage.js');
+  const { currentUsProfile } = await import('./apify.js');
+  const { upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+  const name = plainCompany(company);
+  const q = `site:linkedin.com/in "${name}" recruiter OR "talent acquisition" OR "university recruiting" OR "technical recruiter"`;
+  const { result } = await cachedDomainSearch('serper', `${squash(name)}#linkedin-recruiters`, () => providers.serperSearch(q, 10), { userId });
+  let added = 0;
+  for (const item of result?.organic || []) {
+    const p = currentUsProfile(item, name);
+    if (!p || !isRecruiterTitle(p.title) || LEADER.test(p.title)) continue;
+    const r = await upsertContact({ all, run }, { userId, jobId, seniorityScore: seniorityScore(p.title), contact: { ...p, source: 'google' } });
+    if (r === 'inserted') added += 1;
+  }
+  return added;
+}
+
+/**
  * Recruiters for a Review queue role, before it's approved, so a run can write
  * its outreach. Lookups are the month's allowance, so this stops at what the
- * role needs. Prospeo searches by recruiter title but needs a domain we trust;
- * Hunter finds the domain, and people it finds there prove it. Companies with
- * 2 recruiters cost nothing, and both searches are cached per company.
+ * role needs; companies with 2 recruiters cost nothing, and every search is
+ * cached per company.
+ *   1. Prospeo searches by recruiter title (needs a domain we trust).
+ *   2. Hunter: people at the company, and its email pattern; addresses it
+ *      finds prove a guessed domain. No domain at all: Apollo's company lookup.
+ *   3. Apollo's people search (paid plans only).
+ *   4. Recruiters' names from Google, their addresses built from the pattern
+ *      (Hunter's, read off found addresses, or confirmed by the email check).
+ *   5. A person lookup for the best 2 still without one, then the email check
+ *      on guesses down the list until 2 hold up.
  */
 export async function findRecruitersFor(userId, item) {
   const company = item.company_name;
   const jobId = await companyRow(userId, company, item.location);
   const emails = async () => (await recruitersAt(userId, company)).filter(canEmail).length;
+  const domainNow = async () => trustedDomain(await one('SELECT * FROM jobs WHERE id = $1', [jobId]), userId);
   const quiet = (what) => (err) => { console.warn(`[referrals] ${what} failed`, company, err.message); };
   try {
-    if (await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true }).catch(quiet('Prospeo'));
-    if (await emails() < 2 && await connectionFor(userId)) {
-      await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
-      const { domain } = await one('SELECT domain FROM jobs WHERE id = $1', [jobId]);
-      const proven = domain && await one("SELECT 1 AS x FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND email ILIKE '%@' || $3 LIMIT 1", [userId, jobId, domain]);
-      if (proven && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true, domain }).catch(quiet('Prospeo'));
+    const before = await domainNow();
+    if (before && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true }).catch(quiet('Prospeo'));
+    const gmail = await connectionFor(userId);
+    if (await emails() < 2 && gmail) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
+    if (!(await domainNow()) && await emails() < 2) {
+      const found = await domainFromApollo(userId, jobId, company).catch(quiet('Apollo company lookup'));
+      if (found && gmail) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
     }
+    const domain = await domainNow();
+    // A domain proved or found just now: Prospeo there too (a search already made is cached).
+    if (domain && domain !== before && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true, domain }).catch(quiet('Prospeo'));
     if (await emails() < 2) await findApolloRecruitersAt(userId, jobId, item).catch(quiet('Apollo'));
+    if (await emails() < 2) await findGoogleRecruitersAt(userId, jobId, company).catch(quiet('Google'));
     await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
+    if (domain && await emails() < 2) {
+      const names = (await recruitersAt(userId, company)).filter(c => !c.email).map(c => c.name);
+      if (names.length && !(await patternFor(userId, jobId, domain)) && await probePattern(userId, domain, names)) {
+        await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
+      }
+    }
     for (const c of (await recruitersAt(userId, company)).slice(0, 2).filter(x => !canEmail(x))) {
       await findEmailFor(userId, jobId, { name: c.name, linkedin: c.linkedin_url, contactId: c.id }).catch(quiet('person lookup'));
     }
-    const unsure = (await recruitersAt(userId, company)).slice(0, 2).filter(c => ['guessed', 'risky'].includes(c.email_status));
-    await checkGuesses(userId, unsure.map(c => ({ email: c.email, contactId: c.id })));
+    await checkBestAddresses(userId, company, domain);
   } finally {
     await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
   }

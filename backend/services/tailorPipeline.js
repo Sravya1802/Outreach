@@ -613,7 +613,7 @@ export async function findRoleContacts(userId, planItemId, { source = 'all' } = 
   if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody, so it needs no lookups.');
   if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
-  const found = source === 'apollo' ? await apolloOnly(userId, item) : await findRecruitersFor(userId, item);
+  const found = source === 'apollo' ? await apolloOnly(userId, item) : await findRecruitersFor(userId, item, { engineer: job.referral_mode === 'recruiters_engineers' });
   if (found.recruiters) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   return found;
 }

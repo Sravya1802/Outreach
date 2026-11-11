@@ -558,9 +558,9 @@ const canEmail = c => c.email && c.email_status !== 'invalid';
 /**
  * Who a role's outreach goes to: the best 2 recruiters (a found address before
  * a guess, then anyone with a LinkedIn profile for a note), and in
- * 'recruiters_engineers' mode the best engineer too. → contacts with `audience`.
+ * 'recruiters_engineers' mode (the default) the best engineer too. → contacts with `audience`.
  */
-export async function outreachTargets(userId, company, mode = 'recruiters') {
+export async function outreachTargets(userId, company, mode = 'recruiters_engineers') {
   const recs = await recruitersAt(userId, company);
   const mailable = recs.filter(canEmail).sort((a, b) => Number(a.email_status === 'guessed') - Number(b.email_status === 'guessed'));
   const picked = [...mailable, ...recs.filter(c => !canEmail(c) && isProfile(c.linkedin_url))].slice(0, MAX_PEOPLE_PER_ROLE)
@@ -659,12 +659,18 @@ async function domainFromApollo(userId, jobId, company) {
 // "Comscore, Inc." → "Comscore": how people write it in their LinkedIn headline.
 const plainCompany = (name) => str(name).replace(/[,\s]+(inc|llc|ltd|corp|corporation|co|plc|lp|llp)\.?$/i, '').trim() || str(name);
 
+const GOOGLE_PEOPLE = {
+  recruiters: { q: 'recruiter OR "talent acquisition" OR "university recruiting" OR "technical recruiter"', fits: t => isRecruiterTitle(t) },
+  engineers: { q: '"software engineer" OR "software developer" OR "machine learning engineer" OR "data engineer"', fits: t => askRank({ title: t }) === 2 },
+};
+
 /**
- * Recruiters' names from Google: LinkedIn profiles that put them at the
- * company now, in the US. One search a company, cached, so another role there
- * costs nothing. No emails here: the company's email pattern supplies those.
+ * Recruiters' (or engineers') names from Google: LinkedIn profiles that put
+ * them at the company now, in the US. One search a company, cached, so
+ * another role there costs nothing. No emails here: the company's email
+ * pattern supplies those.
  */
-async function findGoogleRecruitersAt(userId, jobId, company) {
+async function findGooglePeopleAt(userId, jobId, company, kind = 'recruiters') {
   const providers = await import('./emailProviders.js');
   if (!providers.isConfigured('serper')) return 0;
   const { cachedDomainSearch } = await import('./providerUsage.js');
@@ -672,12 +678,12 @@ async function findGoogleRecruitersAt(userId, jobId, company) {
   const { upsertContact } = await import('./contactFinder.js');
   const { seniorityScore } = await import('./contactRules.js');
   const name = plainCompany(company);
-  const q = `site:linkedin.com/in "${name}" recruiter OR "talent acquisition" OR "university recruiting" OR "technical recruiter"`;
-  const { result } = await cachedDomainSearch('serper', `${squash(name)}#linkedin-recruiters`, () => providers.serperSearch(q, 10), { userId });
+  const { q, fits } = GOOGLE_PEOPLE[kind];
+  const { result } = await cachedDomainSearch('serper', `${squash(name)}#linkedin-${kind}`, () => providers.serperSearch(`site:linkedin.com/in "${name}" ${q}`, 10), { userId });
   let added = 0;
   for (const item of result?.organic || []) {
     const p = currentUsProfile(item, name);
-    if (!p || !isRecruiterTitle(p.title) || LEADER.test(p.title)) continue;
+    if (!p || !fits(p.title) || LEADER.test(p.title)) continue;
     const r = await upsertContact({ all, run }, { userId, jobId, seniorityScore: seniorityScore(p.title), contact: { ...p, source: 'google' } });
     if (r === 'inserted') added += 1;
   }
@@ -698,8 +704,10 @@ async function findGoogleRecruitersAt(userId, jobId, company) {
  *      (Hunter's, read off found addresses, or confirmed by the email check).
  *   5. A person lookup for the best 2 still without one, then the email check
  *      on guesses down the list until 2 hold up.
+ *   With `engineer` ('recruiters_engineers' mode), an engineer too: names from
+ *   Google when none has an address, and their guessed address checked once.
  */
-export async function findRecruitersFor(userId, item) {
+export async function findRecruitersFor(userId, item, { engineer = false } = {}) {
   const company = item.company_name;
   const jobId = await companyRow(userId, company, item.location);
   const emails = async () => (await recruitersAt(userId, company)).filter(canEmail).length;
@@ -719,7 +727,10 @@ export async function findRecruitersFor(userId, item) {
     // A domain proved or found just now: Prospeo there too (a search already made is cached).
     if (domain && domain !== before && await emails() < 2) await findProspeoPeopleAt(userId, jobId, { recruitersOnly: true, domain }).catch(quiet('Prospeo'));
     if (await emails() < 2) await findApolloRecruitersAt(userId, jobId, item).catch(quiet('Apollo'));
-    if (await emails() < 2) await findGoogleRecruitersAt(userId, jobId, company).catch(quiet('Google'));
+    if (await emails() < 2) await findGooglePeopleAt(userId, jobId, company, 'recruiters').catch(quiet('Google'));
+    // The engineer's place in 'recruiters_engineers' mode: anyone at the company with an engineering title.
+    const engineers = async () => (await outreachTargets(userId, company)).filter(c => c.audience === 'engineer');
+    if (engineer && !(await engineers()).some(canEmail)) await findGooglePeopleAt(userId, jobId, company, 'engineers').catch(quiet('Google engineers'));
     await guessEmailsAt(userId, jobId).catch(quiet('email guesses'));
     if (domain && await emails() < 2) {
       const names = (await recruitersAt(userId, company)).filter(c => !c.email).map(c => c.name);
@@ -731,6 +742,10 @@ export async function findRecruitersFor(userId, item) {
       await findEmailFor(userId, jobId, { name: c.name, linkedin: c.linkedin_url, contactId: c.id }).catch(quiet('person lookup'));
     }
     await checkBestAddresses(userId, company, domain);
+    if (engineer) {
+      const [e] = await engineers();
+      if (e && e.email_status === 'guessed' && !(domain && await acceptsAnyAddress(domain))) await checkGuess(userId, { email: e.email, contactId: e.id });
+    }
   } finally {
     await run('UPDATE plan_items SET contacts_at = NOW(), contacts_lookup = true WHERE id = $1', [item.id]);
   }

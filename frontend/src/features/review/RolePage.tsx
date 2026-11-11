@@ -215,7 +215,7 @@ function ModeSelect({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
     onError: (e: Error) => toast.error(e.message),
   })
   return (
-    <Field label="Referral mode" hint="The best 2 recruiters by default. Recruiters and engineers adds 1 engineer. Applies from the next run.">
+    <Field label="Referral mode" hint="Recruiters and engineers by default: the best 2 recruiters and 1 engineer. Recruiters only leaves the engineer out. Applies from the next run.">
       {p => (
         <Select {...p} value={data.role.referral_mode} disabled={set.isPending} onChange={e => set.mutate(e.target.value as ReferralMode)}>
           {(Object.keys(MODE_LABEL) as ReferralMode[]).map(m => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}

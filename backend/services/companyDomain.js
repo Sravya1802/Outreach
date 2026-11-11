@@ -190,7 +190,10 @@ export function websiteFromSerp(data, companyName) {
     if (!d) continue
     // "Synchrony | Credit Cards" isn't Synchrony Systems; "Synchrony Systems Company Profile | RocketReach" isn't its site.
     const parts = String(r.title || '').split(/\s+[|–—-]\s+|:\s+/).map(normalizeCompanyName)
-    if (parts.includes(name)) return d
+    // An address that doesn't spell the name counts only as the company's home, careers or about page, not a job board's posting.
+    let path = ''
+    try { path = new URL(r.link).pathname } catch { continue }
+    if (parts.includes(name) && /^\/((careers?|about(-us)?)\/?)?$/i.test(path)) return d
     if (` ${normalizeCompanyName(r.title)} `.includes(` ${name} `) && isDomainPlausibleForCompany(d, companyName)) return d
   }
   return null

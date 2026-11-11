@@ -104,4 +104,5 @@ test('websiteFromSerp: a result titled with exactly the name, whatever its addre
   // A directory page or a different company with a similar name: nothing.
   assert.equal(websiteFromSerp({ organic: [{ title: 'Synchrony Systems Company Profile | RocketReach', link: 'https://rocketreach.co/x' }, { title: 'Synchrony Financial careers', link: 'https://www.synchronycareers.com/' }] }, 'Synchrony Systems, Inc.'), null)
   assert.equal(websiteFromSerp({ organic: [{ title: 'OFFICIAL | definition in the Cambridge English Dictionary', link: 'https://dictionary.cambridge.org/x' }] }, 'Old Mission'), null)
+  assert.equal(websiteFromSerp({ organic: [{ title: 'Founding Full Stack Software Engineer | SmartyArty Tech', link: 'https://workaafrica.com/jobs/6a60556' }] }, 'SmartyArty Tech'), null)
 })

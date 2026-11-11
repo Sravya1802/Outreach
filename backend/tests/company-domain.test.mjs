@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyDomainFromUrl, companySlug, isDomainPlausibleForCompany, isJobBoardDomain, knownDomainFor,
+  companyDomainFromUrl, companySlug, isDomainPlausibleForCompany, isSameCompanyName, isJobBoardDomain, knownDomainFor,
   companySlugCandidates, normalizeCompanyName, normalizeHost, registrableDomain, resolveCompanyDomain,
 } from '../services/companyDomain.js'
 
@@ -77,4 +77,13 @@ test('resolveCompanyDomain: precedence and verification', async () => {
   assert.equal(await resolveCompanyDomain({ name: 'Nonexistent Startup' }, { verify: noMx }), null)
   // a stored guess is not trusted next time — it's re-derived
   assert.equal((await resolveCompanyDomain({ name: 'Rocket Lab', domain: 'rocketlab.com', domain_source: 'guess' }, { verify: mxFor('rocketlab.com') })).source, 'mx')
+})
+
+test('isSameCompanyName: equal names, or one plus words at the end', () => {
+  assert.equal(isSameCompanyName('AQR Capital Management', 'AQR Capital Management, LLC'), true)
+  assert.equal(isSameCompanyName('Old Mission', 'Old Mission Capital'), true)
+  assert.equal(isSameCompanyName('Comscore, Inc.', 'comScore'), true)
+  assert.equal(isSameCompanyName('Synchrony Systems, Inc.', 'Synchrony Financial'), false)
+  assert.equal(isSameCompanyName('Mission', 'Old Mission Capital'), false)
+  assert.equal(isSameCompanyName('', 'Acme'), false)
 })

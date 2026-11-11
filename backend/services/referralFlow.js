@@ -588,18 +588,18 @@ export async function findApolloRecruitersAt(userId, jobId, item) {
 
 /**
  * A company with no domain we trust: Apollo's company lookup by name (it
- * answers on the Free plan), kept only when it's plausibly the same company,
+ * answers on the Free plan), kept only when the names match,
  * and saved so every later lookup uses it. → the domain, or null.
  */
 async function domainFromApollo(userId, jobId, company) {
   const providers = await import('./emailProviders.js');
   if (!providers.isConfigured('apollo')) return null;
   const { spend } = await import('./providerUsage.js');
-  const { isDomainPlausibleForCompany, normalizeCompanyName, registrableDomain } = await import('./companyDomain.js');
+  const { isSameCompanyName, registrableDomain } = await import('./companyDomain.js');
   const org = await providers.apolloOrganization({ name: plainCompany(company) });
   await spend(userId, 'apollo'); // counted once Apollo answers
   const domain = registrableDomain(org?.domain);
-  if (!domain || !(normalizeCompanyName(org.name) === normalizeCompanyName(company) || isDomainPlausibleForCompany(domain, company))) return null;
+  if (!domain || !isSameCompanyName(org.name, company)) return null;
   await run("UPDATE jobs SET domain = $1, domain_source = 'apollo' WHERE id = $2 AND user_id = $3", [domain, jobId, userId]);
   return domain;
 }

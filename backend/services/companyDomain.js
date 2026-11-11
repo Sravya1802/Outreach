@@ -153,6 +153,20 @@ export function isDomainPlausibleForCompany(domain, companyName) {
   return tokens.some(t => base === t || (base.startsWith(t) && base.length - t.length <= 3) || (base.endsWith(t) && base.length - t.length <= 3))
 }
 
+/**
+ * Same company by name, for lookups that answer with a company: equal names,
+ * or one is the other plus words at the end ("Old Mission" / "Old Mission
+ * Capital"). Stricter than isDomainPlausibleForCompany: "Synchrony Systems"
+ * isn't "Synchrony Financial".
+ */
+export function isSameCompanyName(a, b) {
+  const x = normalizeCompanyName(a).split(' ').filter(Boolean)
+  const y = normalizeCompanyName(b).split(' ').filter(Boolean)
+  if (!x.length || !y.length) return false
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return short.every((w, i) => long[i] === w)
+}
+
 /** Default verifier: does the domain have MX records? Free, ~50 ms, 3 s cap. */
 export async function hasMailServer(domain, timeoutMs = 3000) {
   const lookup = dns.promises.resolveMx(domain).then(r => r.length > 0, () => false)

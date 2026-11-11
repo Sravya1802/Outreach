@@ -171,8 +171,8 @@ const NOT_A_COMPANY_SITE = /(^|\.)(linkedin|wikipedia|facebook|instagram|twitter
 
 /**
  * The company's own domain from a Google result page: the knowledge panel's
- * website when the panel is for that name, else the first result whose
- * address fits the name. Job boards and profile sites don't count.
+ * website when the panel is for that name, else the first result titled
+ * with the whole name whose address fits it. Job boards and profile sites don't count.
  */
 export function websiteFromSerp(data, companyName) {
   const own = (url) => {
@@ -181,9 +181,11 @@ export function websiteFromSerp(data, companyName) {
   }
   const kg = data?.knowledgeGraph
   if (kg?.website && isSameCompanyName(kg.title, companyName) && own(kg.website)) return own(kg.website)
+  // A result titled with the whole name ("AQR Capital Management | Home"): "Synchrony | Credit Cards" isn't Synchrony Systems.
+  const whole = ` ${normalizeCompanyName(companyName)} `
   for (const r of (data?.organic || []).slice(0, 5)) {
     const d = own(r.link)
-    if (d && isDomainPlausibleForCompany(d, companyName)) return d
+    if (d && ` ${normalizeCompanyName(r.title)} `.includes(whole) && isDomainPlausibleForCompany(d, companyName)) return d
   }
   return null
 }

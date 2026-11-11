@@ -5,6 +5,7 @@ import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
+import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
 import { OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, outreachMatch, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
@@ -132,6 +133,7 @@ export default function ReviewPage() {
   return (
     <Page wide>
       <PageHeader title="Review queue" description="Resumes and outreach written by your Claude chat runs. Open a role to read it, ask for changes or approve it." />
+      <div className="mb-4"><AddOwnJob queue /></div>
       {queue.error ? <ErrorState error={queue.error} onRetry={() => void queue.refetch()} /> : queue.isLoading ? <Skeleton className="h-72" /> : total === 0 ? (
         <EmptyState title="Nothing in the queue yet" description="Roles appear here as soon as they’re added to the queue." />
       ) : (

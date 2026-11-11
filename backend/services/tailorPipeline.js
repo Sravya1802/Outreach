@@ -24,7 +24,7 @@ import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, signature, startApprovedAsks, templateAsk, withdrawApprovedAsks } from './referralFlow.js';
 import { pdfText } from './resumeEngine.js';
 import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -337,7 +337,7 @@ export async function reviewRole(userId, planItemId) {
     [userId, planItemId],
   );
   if (!role) return null;
-  const [versions, comments, outreach] = await Promise.all([
+  const [versions, comments, outreach, contacts] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,
               keywords, pdf_path, pdf_path IS NOT NULL AS has_pdf, created_at
@@ -352,9 +352,12 @@ export async function reviewRole(userId, planItemId) {
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],
     ),
+    // Who the outreach would go to, shown while the role has none yet.
+    NO_EMAILS.includes(role.referral_mode) ? [] : outreachTargets(userId, role.company_name, role.referral_mode)
+      .then(list => list.map(c => ({ id: c.id, name: c.name, title: c.title, email: c.email, email_status: c.email_status, linkedin_url: c.linkedin_url, audience: c.audience }))),
   ]);
   const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
-  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
+  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
 
 /** A version's PDF, if it's the user's and it compiled. */
@@ -566,6 +569,37 @@ async function apolloOnly(userId, item) {
   }
   const found = await recruitersAt(userId, item.company_name);
   return { recruiters: found.length, emails: found.filter(c => c.email && c.email_status !== 'invalid').length };
+}
+
+/**
+ * The role's outreach from the plain template, now rather than at the next
+ * run: an email (and a LinkedIn note) to each of the best 2 recruiters, plus
+ * an engineer in that mode; a note only for someone with no address. Drafts
+ * like a run's: edit them, then Approve sends them with the resume attached.
+ */
+export async function templateOutreach(userId, planItemId) {
+  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (job.status !== 'ready') throw fail(409, 'Only a role ready for review gets new outreach.');
+  if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody.');
+  if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  const [people, who] = await Promise.all([outreachTargets(userId, item.company_name, job.referral_mode), me(userId)]);
+  if (!people.length) throw fail(409, 'No recruiter found at this company yet. Find contacts first.');
+  const base = { me: who.name, school: who.school, major: who.major, sig: signature(who), title: item.title, company: item.company_name, jobUrl: item.apply_url, attached: true };
+  await tx(async (q) => {
+    for (const p of people) {
+      const t = templateAsk({ ...base, personName: p.name });
+      const mail = Boolean(p.email && p.email_status !== 'invalid');
+      await q.query(
+        `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, email_subject, email_body, linkedin_note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
+        [userId, planItemId, p.id, p.audience, mail ? t.subject : null, mail ? t.body : null, t.note],
+      );
+    }
+    await q.query('UPDATE tailor_jobs SET outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  });
+  return { drafts: people.length, emails: people.filter(p => p.email && p.email_status !== 'invalid').length };
 }
 
 /**

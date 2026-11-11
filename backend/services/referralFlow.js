@@ -556,6 +556,29 @@ export async function recruitersAt(userId, companyName) {
 const canEmail = c => c.email && c.email_status !== 'invalid';
 
 /**
+ * Who a role's outreach goes to: the best 2 recruiters (a found address before
+ * a guess, then anyone with a LinkedIn profile for a note), and in
+ * 'recruiters_engineers' mode the best engineer too. → contacts with `audience`.
+ */
+export async function outreachTargets(userId, company, mode = 'recruiters') {
+  const recs = await recruitersAt(userId, company);
+  const mailable = recs.filter(canEmail).sort((a, b) => Number(a.email_status === 'guessed') - Number(b.email_status === 'guessed'));
+  const picked = [...mailable, ...recs.filter(c => !canEmail(c) && isProfile(c.linkedin_url))].slice(0, MAX_PEOPLE_PER_ROLE)
+    .map(c => ({ ...c, audience: 'recruiter' }));
+  if (mode === 'recruiters_engineers') {
+    const saved = await all(
+      `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+        WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
+      [userId, company],
+    );
+    const engineer = saved.filter(c => askRank(c) === 2 && !isCompanyPage(c.name, company) && (canEmail(c) || isProfile(c.linkedin_url)))
+      .sort((a, b) => Number(!canEmail(a)) - Number(!canEmail(b)))[0];
+    if (engineer) picked.push({ ...engineer, audience: 'engineer' });
+  }
+  return picked;
+}
+
+/**
  * Recruiters from Apollo, up to 2 with an email at the company. The search is
  * free; each email revealed is a credit, counted against the monthly allowance.
  * The domain must be one we trust or one Hunter's finds proved; failing both,

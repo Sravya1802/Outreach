@@ -514,6 +514,7 @@ export const api = {
     applyWithoutReferral: (id) => apiCall(`/review/${id}/apply-without-referral`, { method: 'POST' }),
     markRoleApplied: (id) => apiCall(`/review/${id}/applied`, { method: 'POST' }),
     findRoleContacts: (id, source) => apiCall(`/review/${id}/contacts`, { method: 'POST', body: { source } }),
+    templateOutreach: (id) => apiCall(`/review/${id}/template-outreach`, { method: 'POST' }),
     saveOutreachDraft: (id, patch) => apiCall(`/review/outreach/${id}`, { method: 'PATCH', body: patch }),
     resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),

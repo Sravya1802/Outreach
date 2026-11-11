@@ -90,7 +90,8 @@ test('isSameCompanyName: equal names, or one plus words at the end', () => {
 
 test('websiteFromSerp: the knowledge panel for that name, else a top result that fits', () => {
   assert.equal(websiteFromSerp({ knowledgeGraph: { title: 'National Louis University', website: 'https://www.nl.edu/' } }, 'National Louis University'), 'nl.edu')
-  assert.equal(websiteFromSerp({ organic: [{ link: 'https://www.linkedin.com/company/aqr' }, { link: 'https://www.aqr.com/About-Us' }] }, 'AQR Capital Management'), 'aqr.com')
+  assert.equal(websiteFromSerp({ organic: [{ link: 'https://www.linkedin.com/company/aqr' }, { title: 'AQR Capital Management | Home', link: 'https://www.aqr.com/About-Us' }] }, 'AQR Capital Management'), 'aqr.com')
+  assert.equal(websiteFromSerp({ organic: [{ title: 'Synchrony | Credit Cards, Banking', link: 'https://www.synchrony.com' }] }, 'Synchrony Systems, Inc.'), null)
   // A panel for another company, job boards and unrelated sites: nothing.
   assert.equal(websiteFromSerp({ knowledgeGraph: { title: 'Synchrony Financial', website: 'https://www.synchrony.com' } }, 'Synchrony Systems, Inc.'), null)
   assert.equal(websiteFromSerp({ organic: [{ link: 'https://boards.greenhouse.io/acme' }, { link: 'https://en.wikipedia.org/wiki/Acme' }] }, 'Acme'), null)

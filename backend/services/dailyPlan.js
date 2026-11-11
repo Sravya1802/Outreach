@@ -566,21 +566,9 @@ export async function sendReviewed(userId, itemId) {
  * tailored resume first.
  */
 export async function addOwnJob(userId, { url, company, title, jobDescription, resume }) {
-  const link = str(url);
-  if (!/^https?:\/\/\S+$/i.test(link)) throw Object.assign(new Error('Paste the job’s link (https://…)'), { status: 400 });
-  const { fetchJobFromUrl, looksLikeJobDescription } = await import('./jobEvaluator.js');
-  const pasted = str(jobDescription);
-  const fetched = await fetchJobFromUrl(link, { company: str(company) || undefined }).catch(() => null);
-  const text = looksLikeJobDescription(pasted) ? pasted : looksLikeJobDescription(fetched?.text) ? String(fetched.text) : '';
-  if (!text) {
-    throw Object.assign(new Error(fetched?.closed ? 'That posting looks closed.' : `Couldn’t read the job from that link${fetched?.error ? ` (${fetched.error.split(' — ')[0]})` : ''}. Paste the job description too.`), { status: 400 });
-  }
-  const name = str(company) || str(fetched?.company);
-  if (!name) throw Object.assign(new Error('Add the company name'), { status: 400 });
-  // Boards in front of an ATS (CareerPuck → Greenhouse) apply on the ATS form.
-  const applyUrl = fetched?.atsUrl || link;
-  const firstLine = text.split('\n').map(x => x.trim()).find(Boolean) || '';
-  const role = str(title) || (firstLine.length <= 100 ? firstLine : '') || 'Role';
+  // Resumes come from the Claude chat runs now: without the user's PDF, the job goes to the Review queue.
+  if (!resume?.buffer?.length && !inAppTailoring()) return queueOwnJob(userId, { url, company, title, jobDescription });
+  const { link, applyUrl, text, name, role } = await readOwnJob({ url, company, title, jobDescription });
   const dup = await one(
     `SELECT pi.id FROM plan_items pi WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.apply_url IN ($2, $3)`,
     [userId, link, applyUrl],
@@ -588,12 +576,7 @@ export async function addOwnJob(userId, { url, company, title, jobDescription, r
   if (dup) throw Object.assign(new Error('That job is already on To apply.'), { status: 409 });
 
   const settings = await getSettings(userId);
-  let plan = await one('SELECT id FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
-  if (!plan) {
-    // No list yet: yesterday's, so tonight's list still builds.
-    const yesterday = localDate(settings.timezone, new Date(Date.now() - 86400_000));
-    plan = (await run("INSERT INTO daily_plans (user_id, plan_date, status, built_at) VALUES ($1, $2, 'ready', NOW()) RETURNING id", [userId, yesterday])).rows[0];
-  }
+  const plan = await latestPlan(userId, settings);
   const evalId = (await run(
     `INSERT INTO evaluations (user_id, job_url, job_title, company_name, job_description, source, apply_mode, apply_status)
      VALUES ($1, $2, $3, $4, $5, 'daily_plan', 'auto', 'not_started') RETURNING id`,
@@ -617,6 +600,62 @@ export async function addOwnJob(userId, { url, company, title, jobDescription, r
   advanceUser(userId).catch(err => console.warn('[daily-plan] advance failed:', err.message));
   prepareContacts(userId).catch(err => console.warn('[daily-plan] contacts:', err.message));
   return { item, evaluationId: Number(evalId), ownResume: own };
+}
+
+/** A job from the user's link: the posting read (or their pasted text), the company and the role. */
+async function readOwnJob({ url, company, title, jobDescription }) {
+  const link = str(url);
+  if (!/^https?:\/\/\S+$/i.test(link)) throw Object.assign(new Error('Paste the job’s link (https://…)'), { status: 400 });
+  const { fetchJobFromUrl, looksLikeJobDescription } = await import('./jobEvaluator.js');
+  const pasted = str(jobDescription);
+  const fetched = await fetchJobFromUrl(link, { company: str(company) || undefined }).catch(() => null);
+  const text = looksLikeJobDescription(pasted) ? pasted : looksLikeJobDescription(fetched?.text) ? String(fetched.text) : '';
+  if (!text) {
+    throw Object.assign(new Error(fetched?.closed ? 'That posting looks closed.' : `Couldn’t read the job from that link${fetched?.error ? ` (${fetched.error.split(' — ')[0]})` : ''}. Paste the job description too.`), { status: 400 });
+  }
+  const name = str(company) || str(fetched?.company);
+  if (!name) throw Object.assign(new Error('Add the company name'), { status: 400 });
+  // Boards in front of an ATS (CareerPuck → Greenhouse) apply on the ATS form.
+  const applyUrl = fetched?.atsUrl || link;
+  const firstLine = text.split('\n').map(x => x.trim()).find(Boolean) || '';
+  const role = str(title) || str(fetched?.title) || (firstLine.length <= 100 ? firstLine : '') || 'Role';
+  return { link, applyUrl, text, name, role };
+}
+
+/** The latest list, or yesterday's made now when there's none, so tonight's list still builds. */
+async function latestPlan(userId, settings) {
+  const plan = await one('SELECT id FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
+  if (plan) return plan;
+  const yesterday = localDate(settings.timezone, new Date(Date.now() - 86400_000));
+  return (await run("INSERT INTO daily_plans (user_id, plan_date, status, built_at) VALUES ($1, $2, 'ready', NOW()) RETURNING id", [userId, yesterday])).rows[0];
+}
+
+/**
+ * A job from the user's own link, into the Review queue: the next Claude chat
+ * run writes its resume, and it waits there for the user's approval like a
+ * listed role. Nothing is spent here.
+ */
+export async function queueOwnJob(userId, { url, company, title, jobDescription }) {
+  const { link, applyUrl, text, name, role } = await readOwnJob({ url, company, title, jobDescription });
+  const dup = await one(
+    `SELECT pi.id, pi.decision, j.plan_item_id AS queued FROM plan_items pi LEFT JOIN tailor_jobs j ON j.plan_item_id = pi.id
+      WHERE pi.user_id = $1 AND pi.apply_url IN ($2, $3) AND (j.plan_item_id IS NOT NULL OR pi.decision = 'approved') LIMIT 1`,
+    [userId, link, applyUrl],
+  );
+  if (dup) throw Object.assign(new Error(dup.queued ? 'That job is already in the Review queue.' : 'That job is already on To apply.'), { status: 409 });
+  const plan = await latestPlan(userId, await getSettings(userId));
+  const item = (await run(
+    `INSERT INTO plan_items (plan_id, user_id, company_name, title, apply_url, tier, reason, decision, stage, job_description)
+     VALUES ($1, $2, $3, $4, $5, 'worth', 'Added by you', 'pending', 'proposed', $6) RETURNING *`,
+    [plan.id, userId, name, role, applyUrl, text.slice(0, 20000)],
+  )).rows[0];
+  const { changed } = await bulkItems(userId, [item.id], 'queue');
+  if (!changed) {
+    // The same company and role are already queued from the list.
+    await run('DELETE FROM plan_items WHERE id = $1 AND user_id = $2', [item.id, userId]);
+    throw Object.assign(new Error(`${name} · ${role} is already in the Review queue.`), { status: 409 });
+  }
+  return { item, queued: true, planItemId: Number(item.id) };
 }
 
 /** The evaluation (application row) a plan item's resume and application hang off. */

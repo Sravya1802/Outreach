@@ -1025,6 +1025,8 @@ export interface ReviewRole {
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]
+  /** Who the outreach would go to, while the role has none yet. */
+  contacts: { id: string; name: string; title: string | null; email: string | null; email_status: string | null; linkedin_url: string | null; audience: 'recruiter' | 'engineer' }[]
 }
 
 export const api = {
@@ -1161,7 +1163,7 @@ export const api = {
   skillGaps: (): Promise<SkillGaps> => legacy.career.skillGaps(),
   /** "I know these": added to every unsent resume missing them, each re-scored. */
   approveSkillGaps: (skills: string[]): Promise<{ resumes: number; skills: string[] }> => legacy.career.approveSkillGaps(skills),
-  addOwnJob: (f: { url: string; company: string; title?: string; jobDescription?: string; resume?: File | null }): Promise<{ evaluationId: number; ownResume: boolean }> => {
+  addOwnJob: (f: { url: string; company: string; title?: string; jobDescription?: string; resume?: File | null }): Promise<{ evaluationId?: number; ownResume?: boolean; queued?: boolean; planItemId?: number }> => {
     const fd = new FormData()
     fd.append('url', f.url)
     fd.append('company', f.company)
@@ -1214,6 +1216,8 @@ export const api = {
   markRoleApplied: (id: string): Promise<{ emailsWaiting: number }> => legacy.career.markRoleApplied(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
+  /** Write this role's emails and notes from the plain template now, for the user to edit. */
+  templateOutreach: (id: string): Promise<{ drafts: number; emails: number }> => legacy.career.templateOutreach(id),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

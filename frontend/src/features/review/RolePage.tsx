@@ -260,7 +260,28 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
     },
     onError: (e: Error) => toast.error(e.message),
   })
-  if (data.role.outreach_due) return <p className="text-[14px] text-fg">Recruiters found. The next run writes the emails and notes, then you can approve.</p>
+  const template = useMutation({
+    mutationFn: () => api.templateOutreach(data.role.id),
+    onSuccess: (r) => { toast.success(`Wrote ${r.drafts === 1 ? '1 draft' : `${r.drafts} drafts`} from the template. Edit them here, then approve.`); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const people = data.contacts ?? []
+  if (people.length) return (
+    <div className="space-y-3">
+      <p className="text-[14px] text-fg">{data.role.outreach_due ? 'Recruiters found. The next run writes the emails and notes, or write them now from the template.' : 'People found here. Write the emails and notes from the template, then edit and approve.'}</p>
+      <ul className="divide-y divide-border rounded-[4px] border border-border">
+        {people.map(c => (
+          <li key={c.id} className="px-3 py-2 text-[14px]">
+            <span className="font-medium text-fg">{c.name}</span>{c.title ? <span className="text-muted"> · {c.title}</span> : null}
+            <div className="text-[13px] text-subtle">
+              {c.email ? `${c.email}${c.email_status === 'guessed' ? ' (guessed from the company’s pattern)' : c.email_status === 'risky' ? ' (unconfirmed)' : ''}` : 'No email: LinkedIn note only'}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Button variant="primary" loading={template.isPending} onClick={() => template.mutate()}>Use template</Button>
+    </div>
+  )
   return (
     <div className="space-y-2">
       <p className="text-[14px] text-fg">{data.role.contacts_at ? 'No recruiter found at this company yet, so there’s nobody to write to. Apollo may know someone.' : 'No outreach yet. Find this company’s recruiters and the next run writes the emails and notes. This uses lookups.'}</p>

@@ -26,3 +26,10 @@ test('currentUsProfile keeps people at the company now, in the US', () => {
   assert.equal(currentUsProfile({ title: 'Madhavi Dey - Recruiter at Comscore, Inc.', snippet: 'Recruiter at Comscore, Inc. · Location: Pune', link: 'https://in.linkedin.com/in/madhavi' }, 'Comscore'), null)
   assert.equal(currentUsProfile(us('Namita Tyagi - Recruiter at Comscore', 'Comscore, Inc. Aug 2025 - Present. Pune, Maharashtra, India'), 'Comscore'), null)
 })
+
+test('currentUsProfile: the company as a whole word, and no other employer in the headline', () => {
+  const us = (title, snippet) => ({ title, snippet, link: 'https://www.linkedin.com/in/x' })
+  assert.equal(currentUsProfile(us('Karen Leahy - Senior Recruiting Coordinator @ Headkount', 'Recruiting at Headkount · Kount alumni'), 'Kount'), null)
+  assert.equal(currentUsProfile(us('Josh Adrian - Recruiting at TRM Labs (Series C)', 'Previously Old Mission recruiting'), 'Old Mission'), null)
+  assert.equal(currentUsProfile(us('Jane Doe - Recruiter at Kount', 'Recruiter at Kount · Boise, Idaho'), 'Kount')?.name, 'Jane Doe')
+})

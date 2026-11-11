@@ -167,6 +167,27 @@ export function isSameCompanyName(a, b) {
   return short.every((w, i) => long[i] === w)
 }
 
+const NOT_A_COMPANY_SITE = /(^|\.)(linkedin|wikipedia|facebook|instagram|twitter|x|youtube|crunchbase|glassdoor|indeed|bloomberg|zoominfo|craft|pitchbook|dnb|yelp|bbb|google|apple|reddit|tiktok|github)\.[a-z.]+$/i
+
+/**
+ * The company's own domain from a Google result page: the knowledge panel's
+ * website when the panel is for that name, else the first result whose
+ * address fits the name. Job boards and profile sites don't count.
+ */
+export function websiteFromSerp(data, companyName) {
+  const own = (url) => {
+    const d = companyDomainFromUrl(url)
+    return d && !NOT_A_COMPANY_SITE.test(d) ? d : null
+  }
+  const kg = data?.knowledgeGraph
+  if (kg?.website && isSameCompanyName(kg.title, companyName) && own(kg.website)) return own(kg.website)
+  for (const r of (data?.organic || []).slice(0, 5)) {
+    const d = own(r.link)
+    if (d && isDomainPlausibleForCompany(d, companyName)) return d
+  }
+  return null
+}
+
 /** Default verifier: does the domain have MX records? Free, ~50 ms, 3 s cap. */
 export async function hasMailServer(domain, timeoutMs = 3000) {
   const lookup = dns.promises.resolveMx(domain).then(r => r.length > 0, () => false)

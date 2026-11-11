@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  companyDomainFromUrl, companySlug, isDomainPlausibleForCompany, isSameCompanyName, isJobBoardDomain, knownDomainFor,
+  companyDomainFromUrl, companySlug, isDomainPlausibleForCompany, isSameCompanyName, websiteFromSerp, isJobBoardDomain, knownDomainFor,
   companySlugCandidates, normalizeCompanyName, normalizeHost, registrableDomain, resolveCompanyDomain,
 } from '../services/companyDomain.js'
 
@@ -86,4 +86,13 @@ test('isSameCompanyName: equal names, or one plus words at the end', () => {
   assert.equal(isSameCompanyName('Synchrony Systems, Inc.', 'Synchrony Financial'), false)
   assert.equal(isSameCompanyName('Mission', 'Old Mission Capital'), false)
   assert.equal(isSameCompanyName('', 'Acme'), false)
+})
+
+test('websiteFromSerp: the knowledge panel for that name, else a top result that fits', () => {
+  assert.equal(websiteFromSerp({ knowledgeGraph: { title: 'National Louis University', website: 'https://www.nl.edu/' } }, 'National Louis University'), 'nl.edu')
+  assert.equal(websiteFromSerp({ organic: [{ link: 'https://www.linkedin.com/company/aqr' }, { link: 'https://www.aqr.com/About-Us' }] }, 'AQR Capital Management'), 'aqr.com')
+  // A panel for another company, job boards and unrelated sites: nothing.
+  assert.equal(websiteFromSerp({ knowledgeGraph: { title: 'Synchrony Financial', website: 'https://www.synchrony.com' } }, 'Synchrony Systems, Inc.'), null)
+  assert.equal(websiteFromSerp({ organic: [{ link: 'https://boards.greenhouse.io/acme' }, { link: 'https://en.wikipedia.org/wiki/Acme' }] }, 'Acme'), null)
+  assert.equal(websiteFromSerp(null, 'Acme'), null)
 })

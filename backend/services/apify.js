@@ -657,6 +657,11 @@ export function currentUsProfile(item, companyName) {
   if (!/^(www\.)?linkedin\.com$/.test(host)) return null;
   const snippet = String(item.snippet || '');
   if (NON_US.test(snippet)) return null;
+  // The company as a whole word ("Kount" isn't "Headkount"), and no other employer in the headline ("Recruiting at TRM Labs").
+  const name = String(companyName || '').toLowerCase().replace(/\b(inc|llc|ltd|corp)\b\.?/g, '').replace(/[,.\s]+$/, '').trim();
+  const word = new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`, 'i');
+  if (!word.test(`${item.title || ''} ${snippet}`)) return null;
+  if (/\s(?:at|@)\s/i.test(` ${p.title} `)) return null;
   if (/\b(?:19|20)\d{2}\s*[-–—]\s*(?:[a-z]{3,9}\.?\s+)?(?:19|20)\d{2}\b/i.test(snippet) && !/\bpresent\b/i.test(snippet)) return null;
   return p;
 }

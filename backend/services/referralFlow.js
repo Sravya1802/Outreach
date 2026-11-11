@@ -224,9 +224,12 @@ export async function findEmailsAt(userId, jobId, item) {
   const { seniorityScore } = await import('./contactRules.js');
   const result = await findCompanyEmails({ ...job, url: job.url || item.apply_url }, { userId });
   if (!result.domain) return 0;
-  // A guessed domain where real addresses turned up isn't a guess any more.
-  const source = result.domainSource === 'mx' ? (result.candidates.length ? 'found' : 'guess') : result.domainSource;
+  // A guessed domain where real addresses turned up isn't a guess any more, unless the
+  // guess dropped part of the name: synchrony.com for Synchrony Systems is another company.
+  const whole = await wholeNameDomain(result.domain, job.name);
+  const source = result.domainSource === 'mx' ? (result.candidates.length && whole ? 'found' : 'guess') : result.domainSource;
   await run('UPDATE jobs SET domain = $1, domain_source = $2 WHERE id = $3 AND user_id = $4', [result.domain, source, jobId, userId]);
+  if (result.domainSource === 'mx' && !whole) return 0;
   let added = 0;
   for (const c of result.candidates) {
     if ((await upsertContact({ all, run }, { userId, jobId, contact: c, seniorityScore: seniorityScore(c.title) })) === 'inserted') added += 1;
@@ -307,10 +310,16 @@ async function domainProven(userId, jobId, domain) {
   ));
 }
 
-/** The company's email domain when we're sure of it: looked up, or a guess that found addresses proved. */
+/** A domain spelled from the company's whole name (comscore.com for "Comscore, Inc."), not a shortened one. */
+async function wholeNameDomain(domain, name) {
+  const { companySlug, registrableDomain } = await import('./companyDomain.js');
+  return (registrableDomain(domain) || '').split('.')[0] === companySlug(name);
+}
+
+/** The company's email domain when we're sure of it: looked up, or a guess on the whole name that found addresses proved. */
 async function trustedDomain(job, userId = null) {
   if (job.domain && job.domain_source !== 'guess') return job.domain;
-  if (userId && job.id && await domainProven(userId, job.id, job.domain)) return job.domain;
+  if (userId && job.id && await wholeNameDomain(job.domain, job.name) && await domainProven(userId, job.id, job.domain)) return job.domain;
   const { resolveCompanyDomain } = await import('./companyDomain.js');
   return (await resolveCompanyDomain(job, { verify: async () => false }).catch(() => null))?.domain || null;
 }
@@ -532,7 +541,7 @@ export async function findPeopleFor(userId, item) {
 }
 
 // isRecruiterTitle takes anyone in HR. A VP of HR doesn't read a new grad's cold email.
-const LEADER = /\b(vp|vice president|director|head of|chief|ceo|founder|co-founder|president)\b/i;
+const LEADER = /\b(s?vp|evp|vice president|director|head of|chief|ceo|founder|co-founder|president)\b/i;
 
 /** Saved recruiters at a company, best first. */
 export async function recruitersAt(userId, companyName) {
@@ -587,8 +596,26 @@ export async function findApolloRecruitersAt(userId, jobId, item) {
 }
 
 /**
- * A company with no domain we trust: Apollo's company lookup by name (it
- * answers on the Free plan), kept only when the names match,
+ * A company with no domain we trust: its website from Google (the knowledge
+ * panel for that exact name, else a top result whose address fits the name).
+ * One search a company, cached; saved so every later lookup uses it.
+ */
+async function domainFromGoogle(userId, jobId, company) {
+  const providers = await import('./emailProviders.js');
+  if (!providers.isConfigured('serper')) return null;
+  const { cachedDomainSearch } = await import('./providerUsage.js');
+  const { websiteFromSerp } = await import('./companyDomain.js');
+  const name = plainCompany(company);
+  const { result } = await cachedDomainSearch('serper', `${squash(name)}#website`, () => providers.serperSearch(`${name} official website`, 10), { userId });
+  const domain = websiteFromSerp(result, company);
+  if (!domain) return null;
+  await run("UPDATE jobs SET domain = $1, domain_source = 'google' WHERE id = $2 AND user_id = $3", [domain, jobId, userId]);
+  return domain;
+}
+
+/**
+ * A company with no domain we trust: Apollo's company lookup by name (paid
+ * plans; the Free plan refuses it), kept only when the names match,
  * and saved so every later lookup uses it. → the domain, or null.
  */
 async function domainFromApollo(userId, jobId, company) {
@@ -639,7 +666,8 @@ async function findGoogleRecruitersAt(userId, jobId, company) {
  * cached per company.
  *   1. Prospeo searches by recruiter title (needs a domain we trust).
  *   2. Hunter: people at the company, and its email pattern; addresses it
- *      finds prove a guessed domain. No domain at all: Apollo's company lookup.
+ *      finds prove a guessed domain. No domain at all: the website from Google,
+ *      else Apollo's company lookup.
  *   3. Apollo's people search (paid plans only).
  *   4. Recruiters' names from Google, their addresses built from the pattern
  *      (Hunter's, read off found addresses, or confirmed by the email check).
@@ -658,7 +686,8 @@ export async function findRecruitersFor(userId, item) {
     const gmail = await connectionFor(userId);
     if (await emails() < 2 && gmail) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
     if (!(await domainNow()) && await emails() < 2) {
-      const found = await domainFromApollo(userId, jobId, company).catch(quiet('Apollo company lookup'));
+      const found = await domainFromGoogle(userId, jobId, company).catch(quiet('Google website lookup'))
+        || await domainFromApollo(userId, jobId, company).catch(quiet('Apollo company lookup'));
       if (found && gmail) await findEmailsAt(userId, jobId, item).catch(quiet('email lookup'));
     }
     const domain = await domainNow();

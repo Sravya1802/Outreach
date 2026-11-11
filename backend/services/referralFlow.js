@@ -627,10 +627,12 @@ async function domainFromGoogle(userId, jobId, company) {
   const providers = await import('./emailProviders.js');
   if (!providers.isConfigured('serper')) return null;
   const { cachedDomainSearch } = await import('./providerUsage.js');
-  const { websiteFromSerp } = await import('./companyDomain.js');
+  const { registrableDomain, websiteFromSerp } = await import('./companyDomain.js');
   const name = plainCompany(company);
-  const { result } = await cachedDomainSearch('serper', `${squash(name)}#website`, () => providers.serperSearch(`${name} official website`, 10), { userId });
-  const domain = websiteFromSerp(result, company);
+  // A name that is its own address ("LaunchAI.work").
+  const named = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(name) ? registrableDomain(name) : null;
+  const { result } = named ? { result: null } : await cachedDomainSearch('serper', `${squash(name)}#careers`, () => providers.serperSearch(`"${name}" careers`, 10), { userId });
+  const domain = named || websiteFromSerp(result, company);
   if (!domain) return null;
   await run("UPDATE jobs SET domain = $1, domain_source = 'google' WHERE id = $2 AND user_id = $3", [domain, jobId, userId]);
   return domain;

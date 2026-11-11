@@ -167,12 +167,14 @@ export function isSameCompanyName(a, b) {
   return short.every((w, i) => long[i] === w)
 }
 
-const NOT_A_COMPANY_SITE = /(^|\.)(linkedin|wikipedia|facebook|instagram|twitter|x|youtube|crunchbase|glassdoor|indeed|bloomberg|zoominfo|craft|pitchbook|dnb|yelp|bbb|google|apple|reddit|tiktok|github)\.[a-z.]+$/i
+const NOT_A_COMPANY_SITE = /(^|\.)(linkedin|wikipedia|facebook|instagram|twitter|x|youtube|crunchbase|glassdoor|indeed|bloomberg|zoominfo|craft|pitchbook|dnb|yelp|bbb|google|apple|reddit|tiktok|github|rocketreach|apollo|signalhire|builtin|theorg|cbinsights|owler|wellfound|ycombinator|levels|comparably|ziprecruiter|monster|simplyhired|smartcatalogiq|merriam-webster|cambridge|dictionary)\.[a-z.]+$/i
 
 /**
  * The company's own domain from a Google result page: the knowledge panel's
- * website when the panel is for that name, else the first result titled
- * with the whole name whose address fits it. Job boards and profile sites don't count.
+ * website when the panel is for that name, else the first of the top results
+ * titled with exactly the name ("Careers | National Louis University" → nl.edu),
+ * or naming it with an address that fits it. Job boards, directories and
+ * profile sites don't count.
  */
 export function websiteFromSerp(data, companyName) {
   const own = (url) => {
@@ -181,11 +183,15 @@ export function websiteFromSerp(data, companyName) {
   }
   const kg = data?.knowledgeGraph
   if (kg?.website && isSameCompanyName(kg.title, companyName) && own(kg.website)) return own(kg.website)
-  // A result titled with the whole name ("AQR Capital Management | Home"): "Synchrony | Credit Cards" isn't Synchrony Systems.
-  const whole = ` ${normalizeCompanyName(companyName)} `
+  const name = normalizeCompanyName(companyName)
+  if (!name) return null
   for (const r of (data?.organic || []).slice(0, 5)) {
     const d = own(r.link)
-    if (d && ` ${normalizeCompanyName(r.title)} `.includes(whole) && isDomainPlausibleForCompany(d, companyName)) return d
+    if (!d) continue
+    // "Synchrony | Credit Cards" isn't Synchrony Systems; "Synchrony Systems Company Profile | RocketReach" isn't its site.
+    const parts = String(r.title || '').split(/\s+[|–—-]\s+|:\s+/).map(normalizeCompanyName)
+    if (parts.includes(name)) return d
+    if (` ${normalizeCompanyName(r.title)} `.includes(` ${name} `) && isDomainPlausibleForCompany(d, companyName)) return d
   }
   return null
 }

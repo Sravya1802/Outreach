@@ -14,7 +14,7 @@
 import { Router } from 'express';
 import { all, one, run } from '../db.js';
 import { scrapeAllSourcesAndPersist } from '../services/multiSourceScraper.js';
-import { parseYearFilter, yearCondition, YEARS_SELECT } from '../services/gradYear.js';
+import { notReturnToSchool, parseYearFilter, yearCondition, YEARS_SELECT } from '../services/gradYear.js';
 
 const router = Router();
 
@@ -51,7 +51,8 @@ router.get('/', async (req, res) => {
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(200, Math.max(10, Number(req.query.pageSize) || 50));
 
-    const where = ['is_active = 1', 'role_type = $1', 'region = $2'];
+    // Internships for students going back to school afterwards are left out.
+    const where = ['is_active = 1', 'role_type = $1', 'region = $2', notReturnToSchool()];
     const params = [role_type, region];
     let p = 3;
     if (source) { where.push(`source = $${p++}`); params.push(source); }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { YEARS_SELECT, parseYearFilter, yearCondition, yearsSelect } from '../services/gradYear.js'
+import { YEARS_SELECT, notReturnToSchool, parseYearFilter, wantsReturningStudents, yearCondition, yearsSelect } from '../services/gradYear.js'
 
 test('year filter: 2027, 2027-or-unstated, junk ignored', () => {
   assert.deepEqual(parseYearFilter('2027'), { year: '2027', orUnstated: false })
@@ -24,4 +24,21 @@ test('year tag: any title and description, and the Jobs list keeps its own', () 
   assert.match(q, /WHERE concat_ws\(' ', pi\.title, sr\.title\) ~/)
   assert.match(q, /COALESCE\(COALESCE\(sr\.description, pi\.job_description\), ''\)/)
   assert.equal(YEARS_SELECT, yearsSelect('r.title', 'r.description'))
+})
+
+test('wantsReturningStudents: internships for students going back to school', () => {
+  for (const t of [
+    'Candidates must be returning to school in the fall.',
+    'Must be returning to an accredited degree program after the internship.',
+    'Have at least one quarter of school remaining after the internship.',
+    'Students returning to their studies following the internship.',
+    'You must remain enrolled in your program after the internship ends.',
+  ]) assert.equal(wantsReturningStudents(t), true, t)
+  for (const t of [
+    'Open to students graduating in May 2027.',
+    'Return to the office three days a week.',
+    'Currently pursuing a BS or MS in Computer Science.',
+    '',
+  ]) assert.equal(wantsReturningStudents(t), false, t)
+  assert.match(notReturnToSchool(), /^NOT \(role_type = 'intern' AND COALESCE\(description, ''\) ~\* '/)
 })

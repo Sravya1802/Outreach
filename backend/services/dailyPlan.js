@@ -24,6 +24,7 @@ import { connectionFor, sendToSelf } from './gmail.js';
 import { start as startTailoring, reviewReason } from './resumeEngine.js';
 import { fixLocation } from './locations.js';
 import { inAppTailoring } from './features.js';
+import { wantsReturningStudents } from './gradYear.js';
 import { advanceReferrals, asksFor, maybeSendSummary, prepareContacts } from './referralFlow.js';
 import { companyKey } from './linkedinConnections.js';
 import { notify as whatsappNotify, sendPickList, eveningMessage, pickListMessage, numberedTop } from './whatsapp.js';
@@ -320,6 +321,7 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
         }
       }
       if (!jd) { rows.push({ ...base, tier: 'low', reason: unreadable(got.closed), score: null }); return; }
+      if (base.role.role_type === 'intern' && wantsReturningStudents(jd)) { rows.push({ ...base, jd, tier: 'excluded', reason: 'For students returning to school after the internship' }); return; }
       const byText = looksLikeAgency(base.role.company_name, jd);
       if (byText.agency) { rows.push({ ...base, jd, tier: 'excluded', reason: byText.why }); return; }
       scoredCount += 1;

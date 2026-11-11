@@ -43,3 +43,16 @@ export const yearsSelect = (title, description) => `ARRAY(
 ) AS grad_years`;
 
 export const YEARS_SELECT = yearsSelect('r.title', 'r.description');
+
+// An internship for students who go back to school afterwards ("returning to
+// school", "at least one quarter of school remaining"): no good to someone
+// who graduates first. Plain regex that reads the same in JS and Postgres.
+export const RETURN_TO_SCHOOL = '(return(ing)? to (school|college|university|campus|an accredited|(their|your|his|her|a|an) [a-z ]{0,30}(studies|degree|program|education|coursework|school))|returning (student|to complete)|(semester|quarter|term|year)s? of (school|study|coursework|studies) remaining|continu(e|ing) (their|your) (studies|education|degree|enrollment) (after|following|upon)|(remain|be) enrolled [^.]{0,80}(after|following|upon) (the|your|their|completion)|not (be )?graduating (before|prior))';
+const RETURN_RE = new RegExp(RETURN_TO_SCHOOL, 'i');
+
+/** Does the posting want interns who return to school after the internship? */
+export const wantsReturningStudents = (text) => RETURN_RE.test(String(text || ''));
+
+/** SQL condition keeping every role except internships whose posting wants returning students. */
+export const notReturnToSchool = (roleType = 'role_type', description = 'description') =>
+  `NOT (${roleType} = 'intern' AND COALESCE(${description}, '') ~* '${RETURN_TO_SCHOOL}')`;

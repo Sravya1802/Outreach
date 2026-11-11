@@ -97,3 +97,11 @@ test('websiteFromSerp: the knowledge panel for that name, else a top result that
   assert.equal(websiteFromSerp({ organic: [{ link: 'https://boards.greenhouse.io/acme' }, { link: 'https://en.wikipedia.org/wiki/Acme' }] }, 'Acme'), null)
   assert.equal(websiteFromSerp(null, 'Acme'), null)
 })
+
+test('websiteFromSerp: a result titled with exactly the name, whatever its address', () => {
+  assert.equal(websiteFromSerp({ organic: [{ title: 'National Louis University - Wikipedia', link: 'https://en.wikipedia.org/wiki/NLU' }, { title: 'Careers | National Louis University', link: 'https://nl.edu/careers/' }] }, 'National Louis University'), 'nl.edu')
+  assert.equal(websiteFromSerp({ organic: [{ title: 'Synchrony Systems: Legacy application modernization', link: 'https://sync-sys.com/' }] }, 'Synchrony Systems, Inc.'), 'sync-sys.com')
+  // A directory page or a different company with a similar name: nothing.
+  assert.equal(websiteFromSerp({ organic: [{ title: 'Synchrony Systems Company Profile | RocketReach', link: 'https://rocketreach.co/x' }, { title: 'Synchrony Financial careers', link: 'https://www.synchronycareers.com/' }] }, 'Synchrony Systems, Inc.'), null)
+  assert.equal(websiteFromSerp({ organic: [{ title: 'OFFICIAL | definition in the Cambridge English Dictionary', link: 'https://dictionary.cambridge.org/x' }] }, 'Old Mission'), null)
+})

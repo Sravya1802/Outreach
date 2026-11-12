@@ -39,3 +39,13 @@ test('AI rate limits: wait as long as Groq asks, never for billing errors', asyn
   assert.equal(rateLimitWait({ status: 429, message: 'You have no credits remaining' }), null);
   assert.equal(rateLimitWait({ status: 500, message: 'server error' }), null);
 });
+
+test('amazon.jobs job ids from the links the scrapers save', async () => {
+  const { amazonJobId } = await import('../services/jobEvaluator.js');
+  assert.equal(amazonJobId('https://www.amazon.jobs/jobs/10601956/apply'), '10601956');
+  assert.equal(amazonJobId('https://www.amazon.jobs/en/jobs/10601956/software-development-engineer'), '10601956');
+  assert.equal(amazonJobId('https://amazon.jobs/en/jobs/3011234'), '3011234');
+  assert.equal(amazonJobId('https://www.amazon.jobs/en/search?base_query=sde'), null);
+  assert.equal(amazonJobId('https://evil-amazon.jobs.example.com/jobs/1'), null);
+  assert.equal(amazonJobId('not a url'), null);
+});

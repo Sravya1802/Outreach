@@ -919,8 +919,10 @@ export interface ReviewRow {
   /** The run working on it. */
   run: string | null
   posted_at: string | null
-  /** Its turn among the waiting roles; null once a run has taken it. */
+  /** Its turn among the waiting roles; null once a run has taken it, or while its posting can't be read. */
   place: number | null
+  /** Waiting, but its posting couldn't be read, so a run can't take it yet. */
+  no_posting: boolean
   company_name: string
   title: string
   location: string | null

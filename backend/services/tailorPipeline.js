@@ -169,13 +169,19 @@ export async function markApplied() {
   );
 }
 
-/** Every role in the queue, with its latest version. place is its turn among the waiting roles, in claim_tailor_jobs' order. */
+/**
+ * Every role in the queue, with its latest version. place is its turn among the
+ * waiting roles, in claim_tailor_jobs' order; a waiting role whose posting
+ * couldn't be read (no_posting) has none, since a run can't take it.
+ */
 export async function reviewQueue(userId) {
+  const hasPosting = "GREATEST(length(COALESCE(pi.job_description, '')), length(COALESCE(sr.description, ''))) > 200";
   return all(
     `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
             COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
-            CASE WHEN j.status = 'queued'
-                 THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
+            (j.status = 'queued' AND NOT ${hasPosting}) AS no_posting,
+            CASE WHEN j.status = 'queued' AND ${hasPosting}
+                 THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
             CASE WHEN jsonb_typeof(v.report->'skills_to_learn') = 'array' THEN jsonb_array_length(v.report->'skills_to_learn') ELSE 0 END AS to_learn,
             COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,

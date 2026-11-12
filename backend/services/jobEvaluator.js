@@ -177,7 +177,8 @@ async function fetchAshbyJD(jobUrl) {
     if (!res.ok) return null;
     const data = await res.json();
     const job = (data?.jobs || []).find(j => j.id === jobId);
-    if (!job) return null;
+    // The board lists every open posting: one it doesn't list has closed.
+    if (!job) return Array.isArray(data?.jobs) ? { closed: true } : null;
     const text = [
       job.title,
       job.location,
@@ -203,6 +204,7 @@ async function fetchGreenhouseJD(jobUrl) {
       headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
+    if (res.status === 404) return { closed: true }; // "Job not found"
     if (!res.ok) return null;
     const data = await res.json();
     const { load } = await import('cheerio');
@@ -230,6 +232,7 @@ async function fetchLeverJD(jobUrl) {
       headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 ScoutnJobs/1.0' },
       signal:  AbortSignal.timeout(10000),
     });
+    if (res.status === 404) return { closed: true };
     if (!res.ok) return null;
     const data = await res.json();
     const { load } = await import('cheerio');
@@ -351,6 +354,41 @@ async function fetchCareerPuckJD(jobUrl) {
   } catch { return null; }
 }
 
+// amazon.jobs: the stored link is often the /apply page (a sign-in wall); the
+// job page itself has Description and Basic / Preferred Qualifications.
+//   URL: https://www.amazon.jobs/[en/]jobs/<id>[/<slug>|/apply]
+export function amazonJobId(url) {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)amazon\.jobs$/i.test(u.hostname)) return null;
+    return u.pathname.match(/\/jobs\/(\d+)/)?.[1] || null;
+  } catch { return null; }
+}
+
+async function fetchAmazonJD(url) {
+  const id = amazonJobId(url);
+  if (!id) return null;
+  try {
+    const res = await fetch(`https://www.amazon.jobs/en/jobs/${id}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36', Accept: 'text/html' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status === 404 || res.status === 410) return { closed: true };
+    if (!res.ok) return null;
+    const { load } = await import('cheerio');
+    const $ = load(await res.text());
+    const parts = [$('h1').first().text().trim()];
+    $('h2').each((_, h) => {
+      if (!/^(description|basic qualifications|preferred qualifications)$/i.test($(h).text().trim())) return;
+      const section = $(h).parent();
+      section.find('br').replaceWith('\n');
+      parts.push(section.text().trim());
+    });
+    const text = parts.filter(Boolean).join('\n\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 8000);
+    return text.length > 300 ? text : null;
+  } catch { return null; }
+}
+
 export async function fetchJobFromUrl(url, { company } = {}) {
   if (careerPuckIds(url)) {
     const cp = await fetchCareerPuckJD(url);
@@ -366,17 +404,26 @@ export async function fetchJobFromUrl(url, { company } = {}) {
       return { text: null, url, error: wd.error };
     }
   }
+  const closedAt = (where) => ({ text: null, url, closed: true, error: `The posting looks closed (${where} says the job isn’t found).` });
   if (/jobs\.ashbyhq\.com/i.test(url)) {
     const t = await fetchAshbyJD(url);
+    if (t?.closed) return closedAt('Ashby');
     if (t) return { text: t, url, source: 'ashby-api' };
   }
   if (/(boards|job-boards)\.greenhouse\.io/i.test(url)) {
     const t = await fetchGreenhouseJD(url);
+    if (t?.closed) return closedAt('Greenhouse');
     if (t) return { text: t, url, source: 'greenhouse-api' };
   }
   if (/jobs\.lever\.co/i.test(url)) {
     const t = await fetchLeverJD(url);
+    if (t?.closed) return closedAt('Lever');
     if (t) return { text: t, url, source: 'lever-api' };
+  }
+  if (amazonJobId(url)) {
+    const t = await fetchAmazonJD(url);
+    if (t?.closed) return closedAt('Amazon');
+    if (t) return { text: t, url, source: 'amazon-page' };
   }
   if (linkedInJobId(url)) {
     const t = await fetchLinkedInJD(url);

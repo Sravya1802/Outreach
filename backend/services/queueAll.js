@@ -57,20 +57,30 @@ async function mapLimit(items, limit, fn) {
   }));
 }
 
+// Sites that turn automated readers away: their postings aren't fetched again.
+const NO_READER = String.raw`lifeattiktok\.com`;
+
+/** Enough of a posting for a run to write a resume from (the same bar claim_tailor_jobs uses). */
+export const HAS_POSTING_SQL = "GREATEST(length(COALESCE(pi.job_description, '')), length(COALESCE(sr.description, ''))) > 200";
+
 /**
  * Read the Roles tab's postings that haven't been read: text saved where the
  * row had none, deadline, return-to-school, closed (the role leaves the Roles
  * tab). LinkedIn one at a time, gently; everything else four at a time.
+ * `retry`: postings read before without getting their text, once a day each.
  */
-export async function readRolesTabPostings({ limit = 500, log = console, read } = {}) {
+export async function readRolesTabPostings({ limit = 500, log = console, read, retry = false } = {}) {
   const w = rolesTabWhere(1, { keepReturnToSchool: true });
+  const which = retry
+    ? `facts_read_at < NOW() - INTERVAL '1 day' AND length(COALESCE(description, '')) <= 200 AND apply_url IS NOT NULL AND apply_url !~* '${NO_READER}'`
+    : 'facts_read_at IS NULL';
   const rows = await all(
     `SELECT id, role_type, apply_url, COALESCE(posted_at, scraped_at) AS posted, length(COALESCE(description, '')) > 200 AS has_text
-       FROM scraped_roles WHERE ${w.sql} AND facts_read_at IS NULL
-      ORDER BY COALESCE(posted_at, scraped_at) DESC LIMIT $${w.params.length + 1}`,
+       FROM scraped_roles WHERE ${w.sql} AND ${which}
+      ORDER BY facts_read_at NULLS FIRST, COALESCE(posted_at, scraped_at) DESC LIMIT $${w.params.length + 1}`,
     [...w.params, limit],
   );
-  const stats = { read: 0, fromStored: 0, fetched: 0, closed: 0, unreadable: 0, returnToSchool: 0, deadlines: 0 };
+  const stats = { read: 0, fromStored: 0, fetched: 0, closed: 0, unreadable: 0, returnToSchool: 0, deadlines: 0, closedIds: [], returnToSchoolIds: [] };
   const pending = [];
   const flush = async () => {
     if (!pending.length) return;
@@ -88,9 +98,9 @@ export async function readRolesTabPostings({ limit = 500, log = console, read } 
   const done = async (r, { text = null, closed = false }) => {
     const f = text ? postingFacts(text, { roleType: r.role_type, posted: r.posted }) : { deadline: null, returnToSchool: null };
     stats.read += 1;
-    if (closed) stats.closed += 1;
+    if (closed) { stats.closed += 1; stats.closedIds.push(String(r.id)); }
     if (!text && !closed) stats.unreadable += 1;
-    if (f.returnToSchool) stats.returnToSchool += 1;
+    if (f.returnToSchool) { stats.returnToSchool += 1; stats.returnToSchoolIds.push(String(r.id)); }
     if (f.deadline) stats.deadlines += 1;
     pending.push({ id: r.id, text: text ? String(text).slice(0, 20000) : null, deadline: f.deadline, rts: text ? f.returnToSchool : null, closed });
     if (pending.length >= 50) await flush();
@@ -123,6 +133,29 @@ export async function readRolesTabPostings({ limit = 500, log = console, read } 
   ]);
   await flush();
   return { ...stats, due: rows.length };
+}
+
+/**
+ * A posting read after its role was queued turned out closed, or an internship
+ * for students returning to school: the role leaves the queue (not one a run
+ * is writing, or has written).
+ */
+export async function dropFromQueue({ closedIds = [], returnToSchoolIds = [] }) {
+  let dropped = 0;
+  for (const [ids, note] of [
+    [closedIds, 'The posting closed before its resume was written.'],
+    [returnToSchoolIds, 'This internship is for students returning to school afterwards, so it left the queue.'],
+  ]) {
+    if (!ids.length) continue;
+    const gone = await all(
+      `UPDATE tailor_jobs SET status = 'closed', updated_at = NOW()
+        WHERE status = 'queued' AND scraped_role_id = ANY($1::bigint[]) RETURNING plan_item_id`,
+      [ids],
+    );
+    if (gone.length) await run('UPDATE plan_items SET stage_note = $2 WHERE id = ANY($1::bigint[])', [gone.map(g => g.plan_item_id), note]);
+    dropped += gone.length;
+  }
+  return dropped;
 }
 
 /**
@@ -226,7 +259,7 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
   const { getSettings } = await import('./dailyPlan.js');
   const settings = await getSettings(userId);
   const rows = await all(
-    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url,
+    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url, ${HAS_POSTING_SQL} AS has_text,
             COALESCE(pi.apply_deadline, sr.apply_deadline) AS deadline, COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
       WHERE j.user_id = $1 AND j.status = 'queued' AND j.claimed_at IS NULL`,
@@ -239,6 +272,7 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
     let ready = 0;
     for (const r of order) {
       if (ready >= settings.queueCap) break;
+      if (!r.has_text) continue; // a run can't take it until its posting is read
       const old = time(r.posted) < now.getTime() - OLD_DAYS * DAY;
       const fresh = time(r.live_checked_at) > now.getTime() - RECHECK_DAYS * DAY;
       if (old && !fresh && r.apply_url) {
@@ -316,6 +350,12 @@ export async function queueTick({ readLimit = 300, log = console } = {}) {
   const w = rolesTabWhere(1, { keepReturnToSchool: true });
   const unread = Number((await one(`SELECT COUNT(*)::int AS n FROM scraped_roles WHERE ${w.sql} AND facts_read_at IS NULL`, w.params))?.n || 0);
   const read = unread <= 500 ? await readRolesTabPostings({ limit: readLimit, log }) : { read: 0, skipped: `backfill: ${unread} unread` };
+  // Postings that couldn't be read get another try, each once a day.
+  const retried = await readRolesTabPostings({ limit: 60, log, retry: true });
+  const dropped = await dropFromQueue({
+    closedIds: [...(read.closedIds || []), ...retried.closedIds],
+    returnToSchoolIds: [...(read.returnToSchoolIds || []), ...retried.returnToSchoolIds],
+  });
   const users = await all('SELECT DISTINCT user_id FROM tailoring_config');
   const out = [];
   for (const { user_id: userId } of users) {
@@ -324,5 +364,6 @@ export async function queueTick({ readLimit = 300, log = console } = {}) {
     const deadlines = await pullInDeadlines(userId);
     out.push({ userId, filled, order, deadlines });
   }
-  return { read, users: out };
+  const brief = ({ closedIds, returnToSchoolIds, ...rest }) => rest;
+  return { read: read.closedIds ? brief(read) : read, retried: brief(retried), dropped, users: out };
 }

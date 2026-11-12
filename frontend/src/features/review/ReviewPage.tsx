@@ -72,8 +72,15 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
 function LineRow({ r }: { r: ReviewRow }) {
   return (
     <tr>
-      <td className={cn(cell, num)}>{r.place ?? `Run ${r.run}`}</td>
-      <td className={cell}><RoleName r={r} /></td>
+      <td className={cn(cell, num)}>{r.no_posting ? blank : r.place ?? `Run ${r.run}`}</td>
+      <td className={cell}>
+        <RoleName r={r} />
+        {r.no_posting && (
+          <div className="mt-1" title="A run needs the posting's text to write a resume. The app tries the link again each day (not TikTok, whose site turns automated readers away). Open the link to apply yourself.">
+            <Badge tone="neutral">No posting text</Badge>
+          </div>
+        )}
+      </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
       <td className={cn(cell, 'text-[13px] whitespace-nowrap text-muted')}>{timeAgo(r.place == null ? r.locked_at : r.posted_at)}</td>
     </tr>

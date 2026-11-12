@@ -53,6 +53,6 @@ const RETURN_RE = new RegExp(RETURN_TO_SCHOOL, 'i');
 /** Does the posting want interns who return to school after the internship? */
 export const wantsReturningStudents = (text) => RETURN_RE.test(String(text || ''));
 
-/** SQL condition keeping every role except internships whose posting wants returning students. */
-export const notReturnToSchool = (roleType = 'role_type', description = 'description') =>
-  `NOT (${roleType} = 'intern' AND COALESCE(${description}, '') ~* '${RETURN_TO_SCHOOL}')`;
+/** SQL condition keeping every role except internships whose posting wants returning students (as read, or in the saved text). */
+export const notReturnToSchool = (roleType = 'role_type', description = 'description', flag = 'return_to_school') =>
+  `NOT (${roleType} = 'intern' AND (COALESCE(${flag}, FALSE) OR COALESCE(${description}, '') ~* '${RETURN_TO_SCHOOL}'))`;

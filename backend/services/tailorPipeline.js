@@ -176,7 +176,9 @@ export async function reviewQueue(userId) {
             COALESCE(sr.posted_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             CASE WHEN j.status = 'queued'
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
-            v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
+            v.version, v.ats_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
+            CASE WHEN jsonb_typeof(v.report->'skills_to_learn') = 'array' THEN jsonb_array_length(v.report->'skills_to_learn') ELSE 0 END AS to_learn,
+            COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,
             ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
             (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach
@@ -416,7 +418,7 @@ export const APPROVE_FAILED = 'Approve didn’t finish';
 
 export async function approveRole(userId, planItemId, { withoutReferral = false, wait = false } = {}) {
   const [job, latest, item, written] = await Promise.all([
-    one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
+    one('SELECT status, referral_mode, outreach_due FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
     one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]),
     one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
     all(
@@ -433,7 +435,9 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   // My contact and None email nobody, even if a run wrote drafts before the mode changed.
   const noEmails = withoutReferral || NO_EMAILS.includes(job.referral_mode);
   const drafts = noEmails ? [] : written;
-  if (!noEmails && !drafts.length) throw fail(409, 'This role has no outreach yet. Find its contacts so a run can write it, or press Apply without referral.');
+  if (!noEmails && !drafts.length && job.outreach_due) throw fail(409, 'This role’s emails come with the next run. Approve it once they’re written, or press Apply without referral.');
+  // No recruiter found: the template goes to Gmail Drafts with the resume and an empty To line, for the address the user finds.
+  const blank = !noEmails && !drafts.length;
   const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
   for (const d of drafts) {
     const [problem] = checkOutreach({ ...d, company: item.company_name, quant });
@@ -441,25 +445,25 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   }
   const [repeats, gmail] = await Promise.all([askedElsewhere(userId, planItemId, drafts), connectionFor(userId)]);
   const fresh = drafts.filter(d => !repeats.some(r => r.id === d.id));
-  if (fresh.some(d => d.email_body) && !gmail) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
+  if ((blank || fresh.some(d => d.email_body)) && !gmail) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
 
   // Two clicks at once: only one gets past this.
   const claimed = await one("UPDATE tailor_jobs SET status = 'approved', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'ready' RETURNING id", [userId, planItemId]);
   if (!claimed) throw fail(409, 'Only a role ready for review can be approved.');
   finishing.add(String(planItemId));
-  const work = () => finishApproval(userId, item, latest, drafts).finally(() => finishing.delete(String(planItemId)));
+  const work = () => finishApproval(userId, item, latest, drafts, { blank }).finally(() => finishing.delete(String(planItemId)));
   const done = (finishQueue.get(userId) || Promise.resolve()).then(work, work);
   finishQueue.set(userId, done.catch(() => {}));
   if (wait) return done;
   done.catch(() => {});
   return {
     emails: fresh.filter(d => d.email_body).length, inGmail: 0, notes: fresh.filter(d => d.linkedin_note).length,
-    skipped: [], repeated: repeats.length, pending: true,
+    skipped: [], repeated: repeats.length, pending: true, blankDraft: blank,
   };
 }
 
 /** The rest of an approval. Any failure puts the role back in Ready and says why on its page. */
-async function finishApproval(userId, item, latest, drafts) {
+async function finishApproval(userId, item, latest, drafts, { blank = false } = {}) {
   const planItemId = item.id;
   try {
     const { evaluationFor, getSettings } = await import('./dailyPlan.js');
@@ -478,12 +482,32 @@ async function finishApproval(userId, item, latest, drafts) {
     await run('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
     // Each Gmail copy takes seconds: written after this, on one connection, with the PDF already in hand.
     if (outboxIds.length) copyDraftsToGmail(userId, outboxIds, new Map([[String(file.id), pdf]])).catch(() => {});
-    return result;
+    if (blank) await blankDraftFor(userId, item, who, pdf, resumeFileName(who.name));
+    return { ...result, blankDraft: blank };
   } catch (err) {
     console.warn('[review] approve failed', planItemId, err.message);
     await backToReady(userId, planItemId, String(err.message || 'unknown problem').slice(0, 200));
     throw err;
   }
+}
+
+/**
+ * A role approved with no recruiter found: the plain template ("Dear Hiring
+ * Team,") in Gmail Drafts with the resume attached and nobody in To. The role
+ * stays held; it applies when the user presses Apply without referral.
+ */
+async function blankDraftFor(userId, item, who, pdf, filename) {
+  const t = templateAsk({ me: who.name, school: who.school, major: who.major, sig: signature(who), title: item.title, company: item.company_name, jobUrl: item.apply_url, attached: true, personName: '' });
+  let note;
+  try {
+    const { putBlankDraft } = await import('./gmail.js');
+    await putBlankDraft(userId, { subject: t.subject, text: t.body, attachments: [{ filename, content: pdf, contentType: 'application/pdf' }] });
+    note = 'Your template is in Gmail Drafts with the resume attached and an empty To line: add the address you find and send it. This role applies only when you press Apply without referral.';
+  } catch (err) {
+    console.warn('[review] blank Gmail draft failed', item.id, err.message);
+    note = `The Gmail draft couldn’t be made (${String(err.message).slice(0, 80)}). This role applies only when you press Apply without referral.`;
+  }
+  await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1 AND user_id = $3', [item.id, note, userId]);
 }
 
 async function backToReady(userId, planItemId, why) {

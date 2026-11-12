@@ -40,5 +40,5 @@ test('wantsReturningStudents: internships for students going back to school', ()
     'Currently pursuing a BS or MS in Computer Science.',
     '',
   ]) assert.equal(wantsReturningStudents(t), false, t)
-  assert.match(notReturnToSchool(), /^NOT \(role_type = 'intern' AND COALESCE\(description, ''\) ~\* '/)
+  assert.match(notReturnToSchool(), /^NOT \(role_type = 'intern' AND \(COALESCE\(return_to_school, FALSE\) OR COALESCE\(description, ''\) ~\* '/)
 })

@@ -238,6 +238,16 @@ export async function appendDraft(client, conn, { to, toName, subject, text, att
   return draftHash(subject, text);
 }
 
+/** A draft with nobody in To yet: the user adds the address they find (a role with no recruiter found). */
+export async function putBlankDraft(userId, { subject, text, attachments }) {
+  return withImap(userId, async (client, conn) => {
+    const folder = await specialFolder(client, '\\Drafts');
+    const raw = await buildMime({ from: fromOf(conn), subject, text, attachments, messageId: newMessageId(conn.email) });
+    await client.append(folder, raw, ['\\Draft', '\\Seen']);
+    return true;
+  });
+}
+
 export async function putDraft(userId, msg) {
   return withImap(userId, (client, c) => appendDraft(client, c, msg));
 }

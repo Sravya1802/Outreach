@@ -50,6 +50,8 @@ export const DEFAULT_SETTINGS = {
   minPerDay: 10,
   referralFirst: true,
   referralWaitDays: 2,
+  // New roles the Claude chat runs take a day from the queue (claim_tailor_jobs reads it).
+  queueCap: 60,
 };
 
 const clamp = (n, lo, hi, d) => (Number.isFinite(Number(n)) ? Math.min(hi, Math.max(lo, Number(n))) : d);
@@ -67,6 +69,7 @@ export function normalizeSettings(s = {}) {
     minPerDay: Math.round(clamp(s.minPerDay, 0, 30, d.minPerDay)),
     referralFirst: s.referralFirst !== false,
     referralWaitDays: Math.round(clamp(s.referralWaitDays, 0, 5, d.referralWaitDays)),
+    queueCap: Math.round(clamp(s.queueCap, 0, 200, d.queueCap)),
   };
 }
 
@@ -349,7 +352,8 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
       );
     }
     // Tier the whole plan together, so a rebuild adds to tonight's list instead of starting a second one.
-    const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1", [plan.id]);
+    // Roles queued straight from the Roles tab sit on the list too; they aren't the list's to tier.
+    const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1 AND tier <> 'queue'", [plan.id]);
     const tiered = assignTiers(all_.map(r => ({ ...r, score: r.score == null ? null : Number(r.score) })), settings);
     for (const r of tiered) {
       const was = all_.find(x => x.id === r.id);
@@ -403,7 +407,7 @@ export async function refreshPlan(userId, planId) {
       } catch (err) { if (err.status === 402) throw err; }
     }));
   }
-  const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1", [planId]);
+  const all_ = await all("SELECT id, company_name, score, reason, tier, decision FROM plan_items WHERE plan_id = $1 AND tier <> 'queue'", [planId]);
   const tiered = assignTiers(all_.map(r => ({ ...r, score: r.score == null ? null : Number(r.score) })), settings);
   for (const r of tiered) {
     const was = all_.find(x => x.id === r.id);
@@ -625,7 +629,7 @@ async function readOwnJob({ url, company, title, jobDescription }) {
 }
 
 /** The latest list, or yesterday's made now when there's none, so tonight's list still builds. */
-async function latestPlan(userId, settings) {
+export async function latestPlan(userId, settings) {
   const plan = await one('SELECT id FROM daily_plans WHERE user_id = $1 ORDER BY plan_date DESC LIMIT 1', [userId]);
   if (plan) return plan;
   const yesterday = localDate(settings.timezone, new Date(Date.now() - 86400_000));
@@ -1048,7 +1052,7 @@ export async function overview(userId) {
     `SELECT pi.id, pi.scraped_role_id, pi.evaluation_id, pi.company_name, pi.title, pi.apply_url, pi.location, pi.pay, pi.sponsorship, pi.tier, pi.score,
             pi.reason, pi.decision, pi.decided_at, pi.stage, pi.stage_note, p.plan_date::text AS plan_date, t.ats_score
        FROM plan_items pi JOIN daily_plans p ON p.id = pi.plan_id LEFT JOIN resume_tailorings t ON t.id = pi.tailoring_id
-      WHERE pi.user_id = $1 AND pi.pick IS NULL AND pi.decision IN ('expired', 'pending') AND pi.tier <> 'excluded'
+      WHERE pi.user_id = $1 AND pi.pick IS NULL AND pi.decision IN ('expired', 'pending') AND pi.tier NOT IN ('excluded', 'queue')
         AND ($2::bigint IS NULL OR pi.plan_id <> $2)
       ORDER BY pi.score DESC NULLS LAST, pi.created_at DESC LIMIT 1500`,
     [userId, plan?.id ?? null],

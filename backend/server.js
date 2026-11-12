@@ -540,6 +540,18 @@ cron.schedule('*/2 * * * *', async () => {
     if (lost) console.log(`[review] ${lost} unfinished approvals back to Ready`);
   } catch (err) { console.error('[review] check pass failed:', err.message); }
 }, CRON_OPTS);
+// The Roles tab into the Claude chat runs' queue: read new postings, queue, order and check, pull deadlines in.
+// At :35, before the runs at :05. A long first read (backfill) runs on its own; the tick only reads when few are waiting.
+let queueBusy = false;
+cron.schedule('35 * * * *', async () => {
+  if (queueBusy) return;
+  queueBusy = true;
+  try {
+    const { queueTick } = await import('./services/queueAll.js');
+    const r = await queueTick();
+    for (const u of r.users) console.log(`[queue] read ${r.read.read}, queued ${u.filled.queued}, closed ${u.order.closed}, deadlines moved ${u.deadlines.moved}`);
+  } catch (err) { console.error('[queue] tick failed:', err.message); } finally { queueBusy = false; }
+}, CRON_OPTS);
 // Daily plan: build lists an hour before each user's list time, email at list time, move approved roles on.
 cron.schedule('*/5 * * * *', async () => {
   try {

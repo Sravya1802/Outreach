@@ -47,8 +47,8 @@ function ReportPanel({ v }: { v: ResumeVersion }) {
       {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}</p>}
       <div className="flex flex-wrap gap-4">
         <Score label="ATS" before={v.ats_before} after={v.ats_after} note={r.atsReason} good={atsOk(v.ats_after)} />
-        <Score label="Callback" before={v.callback_before} after={v.callback_after} note={r.callbackReason} />
       </div>
+      <List title="Added skills to learn before interviews" items={r.skillsToLearn} />
       {r.verdict && <section><h3 className={heading}>Verdict</h3><p className="text-[14px] text-muted">{r.verdict}</p></section>}
       <List title="Top 5 hiring needs" items={r.needs} />
       {r.keywords.length > 0 && (
@@ -336,14 +336,18 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {data.role.status === 'ready' && noOutreach && <NoOutreach data={data} onDone={onDone} />}
       {(data.role.status === 'ready' || canGoAlone || canMarkApplied(data.role)) && (
         <div className="flex flex-wrap gap-2">
-          {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed || noOutreach} onClick={() => approve.mutate()}>Approve</Button>}
+          {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed || (noOutreach && data.role.outreach_due)} onClick={() => approve.mutate()}>Approve</Button>}
           {canGoAlone && <Button loading={withoutReferral.isPending} onClick={() => setConfirming(true)}>Apply without referral</Button>}
           {canMarkApplied(data.role) && <Button variant="ghost" loading={applied.isPending} onClick={() => setMarkingApplied(true)}>I already applied</Button>}
         </div>
       )}
       {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
         ? 'Approving makes this version final. This role’s mode emails nobody, so it applies only when you press Apply without referral.'
-        : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days after outreach goes out.'}</p>}
+        : noOutreach
+          ? (data.role.outreach_due
+            ? 'This role’s emails come with the next run. Approve it once they’re written, or press Apply without referral.'
+            : 'No recruiter found yet. Approving makes this version final and puts your template in Gmail Drafts with the resume attached and an empty To line, for the address you find. It applies only when you press Apply without referral.')
+          : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days after outreach goes out.'}</p>}
       {data.role.status === 'ready' && data.role.stage_note?.startsWith('Approve didn’t finish') && <p className="text-[14px] text-danger">{data.role.stage_note}</p>}
       {data.role.finishing && <p className="text-[14px] text-muted">Finishing: saving the resume and putting the emails in Outbox and Gmail Drafts. This takes about a minute.</p>}
       {data.role.status === 'approved' && !data.role.finishing && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}

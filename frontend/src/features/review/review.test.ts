@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -99,7 +99,7 @@ describe('readReport', () => {
 })
 
 describe('bulk approve', () => {
-  const row = { status: 'ready' as const, check_status: 'passed' as const, referral_mode: 'recruiters' as const, outreach: 2, ats_after: 94, eligibility: null, sponsorship: null }
+  const row = { status: 'ready' as const, check_status: 'passed' as const, referral_mode: 'recruiters' as const, outreach: 2, outreach_due: false, ats_after: 94, eligibility: null, sponsorship: null }
   it('takes a passed resume that is ready', () => {
     expect(canApprove(row)).toBe(true)
     expect(canApprove({ ...row, check_status: 'flagged' })).toBe(false)
@@ -107,7 +107,9 @@ describe('bulk approve', () => {
   })
   it('holds back a recruiter role with no outreach, but not one that emails nobody', () => {
     expect(needsOutreach({ ...row, outreach: 0 })).toBe(true)
-    expect(canApprove({ ...row, outreach: 0 })).toBe(false)
+    // No recruiter found: Approve is open (the template goes to Gmail with an empty To line), but never in bulk.
+    expect(canApprove({ ...row, outreach: 0 })).toBe(true)
+    expect(canApprove({ ...row, outreach: 0, outreach_due: true })).toBe(false)
     expect(safeToBulk({ ...row, outreach: 0 })).toBe(false)
     expect(canApprove({ ...row, outreach: 0, referral_mode: 'my_contact' })).toBe(true)
     expect(canApprove({ ...row, outreach: 0, referral_mode: 'none' })).toBe(true)
@@ -270,5 +272,22 @@ describe('outreach filter', () => {
     expect(outreachMatch(row, '')).toBe(true)
     expect(outreachMatch(row, 'written')).toBe(false)
     expect(outreachMatch({ ...row, outreach: 1 }, 'written')).toBe(true)
+  })
+})
+
+describe('skills to learn and deadlines', () => {
+  it('reads skills_to_learn as names or { skill, why }', () => {
+    expect(readReport({ skills_to_learn: ['Kafka', { skill: 'Terraform', why: 'listed under nice to have' }, { name: 'Rust' }, '', 3] }).skillsToLearn)
+      .toEqual(['Kafka', 'Terraform: listed under nice to have', 'Rust'])
+    expect(readReport({}).skillsToLearn).toEqual([])
+  })
+  it('labels a stated deadline', () => {
+    expect(deadlineLabel('2026-11-14')).toBe('Closes Sat, Nov 14')
+    expect(deadlineLabel(null)).toBeNull()
+    expect(deadlineLabel('soon')).toBeNull()
+  })
+  it('approves a no-recruiter role with its template, never in bulk', () => {
+    const r = { emails: 0, inGmail: 0, notes: 0, skipped: [], blankDraft: true }
+    expect(approvedLine(r)).toMatch(/Gmail Drafts with the resume attached and an empty To line/)
   })
 })

@@ -1,13 +1,13 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, outreachMatch, atsOk, backlog, bulkLine, canApprove, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -53,12 +53,13 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.grad_years?.length > 0 && <span title="The posting names this year for graduating or starting"><Badge tone="accent">{yearsLabel(r.grad_years)}</Badge></span>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
           {r.approve_failed && <Badge tone="danger">Approve failed</Badge>}
+          {deadlineLabel(r.deadline) && <Badge tone="warning">{deadlineLabel(r.deadline)}</Badge>}
+          {r.to_learn > 0 && <span title="Skills added to Technical Skills that you should learn before interviews"><Badge tone="neutral">{r.to_learn} to learn</Badge></span>}
           {r.status === 'ready' && needsOutreach(r) && <Badge tone={r.outreach_due ? 'info' : 'neutral'}>{outreachLine(r)}</Badge>}
         </div>
       </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
       <td className={cn(cell, num)}>{r.ats_after == null ? blank : <span className={atsOk(r.ats_after) ? 'text-success' : 'text-warning'}>{r.ats_after}%</span>}</td>
-      <td className={cn(cell, num)}>{r.callback_after == null ? blank : `${r.callback_after}%`}</td>
       <td className={cn(cell, num)}>{r.version == null ? blank : `v${r.version}`}</td>
       <td className={cn(cell, num)}>{r.open_comments || blank}</td>
       <td className={cn(cell, num)}>{r.outreach || blank}</td>
@@ -79,10 +80,35 @@ function LineRow({ r }: { r: ReviewRow }) {
   )
 }
 
-const COLUMNS = ['Company and role', 'Fit', 'ATS', 'Callback', 'Version', 'Comments', 'Outreach', '']
+const COLUMNS = ['Company and role', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
 const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
   working: ['Run', 'Company and role', 'Fit', 'Started'],
   waiting: ['Turn', 'Company and role', 'Fit', 'Posted'],
+}
+
+const CAPS = [15, 30, 45, 60, 90, 120]
+
+/** How many new roles the runs take from the queue a day (revisions don't count). */
+function DailyCap() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const settings = useQuery({ queryKey: ['dailyPlanSettings'], queryFn: api.dailyPlanSettings })
+  const save = useMutation({
+    mutationFn: (queueCap: number) => api.saveDailyPlanSettings({ queueCap }),
+    onSuccess: (s) => { qc.setQueryData(['dailyPlanSettings'], s); toast.success(`Runs now take up to ${s.queueCap} new roles a day.`) },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const cap = settings.data?.queueCap
+  if (cap == null) return null
+  const options = CAPS.includes(cap) ? CAPS : [...CAPS, cap].sort((a, b) => a - b)
+  return (
+    <label className="flex items-center gap-2 text-[13px] text-muted">
+      New roles a day
+      <Select aria-label="New roles a day" value={String(cap)} disabled={save.isPending} onChange={e => save.mutate(Number(e.target.value))} className="w-24!">
+        {options.map(n => <option key={n} value={n}>{n}</option>)}
+      </Select>
+    </label>
+  )
 }
 
 /** Every role the Claude chat runs have written or will write, by where it stands. */
@@ -150,7 +176,10 @@ export default function ReviewPage() {
             ))}
           </div>
           <div>
-            <p className="mb-1.5 text-[13px] text-muted"><span className="font-medium text-fg">{done} of {total}</span> done · {runLine(run)}</p>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[13px] text-muted"><span className="font-medium text-fg">{done} of {total}</span> done · {runLine(run)}</p>
+              <DailyCap />
+            </div>
             <div role="progressbar" aria-label="Backlog done" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-raised">
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>

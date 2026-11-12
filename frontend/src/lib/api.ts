@@ -448,6 +448,8 @@ export interface DailyPlanSettings {
   minPerDay: number
   referralFirst: boolean
   referralWaitDays: number
+  /** New roles the Claude chat runs take from the queue each day. */
+  queueCap: number
 }
 export type PlanStage = 'proposed' | 'tailoring' | 'asking_referral' | 'waiting_referral' | 'ready_to_apply' | 'applying' | 'applied' | 'referred' | 'needs_you' | 'done'
 /** What happens once a role is approved: the app applies, or it waits for you to read the resume. */
@@ -925,8 +927,11 @@ export interface ReviewRow {
   score: string | number | null
   version: number | null
   ats_after: number | null
-  callback_after: number | null
   check_status: 'passed' | 'flagged' | null
+  /** Skills the run added to Technical Skills that the user should learn before interviews. */
+  to_learn: number
+  /** The application deadline the posting states ('YYYY-MM-DD'). */
+  deadline: string | null
   eligibility: string | null
   open_comments: number
   outreach: number
@@ -1007,6 +1012,8 @@ export interface ApproveResult {
   repeated?: number
   /** The PDF, file and emails are still being done after Approve answered. */
   pending?: boolean
+  /** No recruiter found: the template goes to Gmail Drafts with an empty To line. */
+  blankDraft?: boolean
 }
 
 export interface PipelineSummary {

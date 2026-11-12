@@ -65,8 +65,9 @@ export function runLine(run: PipelineRun | null, now = Date.now()) {
 const againLine = (n = 0) => (n ? ` ${n === 1 ? '1 person' : `${n} people`} already asked for another role ${n === 1 ? 'wasn’t' : 'weren’t'} contacted again.` : '')
 
 /** What Approve did, for the toast. */
-export function approvedLine({ emails, notes, repeated }: ApproveResult) {
+export function approvedLine({ emails, notes, repeated, blankDraft }: ApproveResult) {
   const again = againLine(repeated)
+  if (blankDraft) return 'Approved. Your template goes to Gmail Drafts with the resume attached and an empty To line: add the address you find and send it. It applies only when you press Apply without referral.'
   if (!emails && notes) return `Approved. LinkedIn notes are waiting in People → Contacts; mark each one sent, and applying waits 2 business days from then.${again}`
   if (!emails) return `Approved.${again} No outreach went out, so it applies only when you press Apply without referral.`
   const count = emails === 1 ? '1 email' : `${emails} emails`
@@ -114,10 +115,11 @@ export const appliedLine = (emailsWaiting: number) =>
   `Marked as applied. Nothing will apply for you.${emailsWaiting ? ` ${emailsWaiting === 1 ? '1 email is' : `${emailsWaiting} emails are`} still in Outbox: OK or discard ${emailsWaiting === 1 ? 'it' : 'them'} there.` : ''}`
 
 /** A role Approve can take. */
-export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach'>) => r.status === 'ready' && r.check_status === 'passed' && !needsOutreach(r)
+// No recruiter found: Approve puts the template in Gmail Drafts with an empty To line. Emails a run is about to write are waited for.
+export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due'>) => r.status === 'ready' && r.check_status === 'passed' && !(needsOutreach(r) && r.outreach_due)
 
 /** What Select all takes: nothing under the ATS rule or with an eligibility question goes in unread. */
-export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
+export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && !needsOutreach(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
 
 /** How a bulk approve went, for the toast. */
 export function bulkLine(done: ApproveResult[], failed: number) {
@@ -161,6 +163,25 @@ export function nextRunLine(at: string | null, now = Date.now()) {
 const strings = (x: unknown) => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string' && s.trim() !== '') : [])
 const text = (x: unknown) => (typeof x === 'string' && x.trim() ? x : null)
 
+/** skills_to_learn as written: plain names, or { skill, why }. */
+function skillList(x: unknown) {
+  if (!Array.isArray(x)) return []
+  return x.map((k) => {
+    if (typeof k === 'string') return k.trim()
+    const o = (k && typeof k === 'object' ? k : {}) as Record<string, unknown>
+    const name = text(o.skill) ?? text(o.name)
+    const why = text(o.why) ?? text(o.reason) ?? text(o.note)
+    return name ? (why ? `${name}: ${why}` : name) : ''
+  }).filter(Boolean)
+}
+
+/** "Closes Fri, Nov 14" for a stated deadline ('YYYY-MM-DD'). */
+export function deadlineLabel(d: string | null | undefined) {
+  if (!d) return null
+  const date = new Date(`${d.slice(0, 10)}T12:00:00Z`)
+  return Number.isNaN(date.getTime()) ? null : `Closes ${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}`
+}
+
 /** A run writes the report as free JSON, so anything can be missing. */
 export function readReport(report: unknown) {
   const r = (report && typeof report === 'object' ? report : {}) as Record<string, unknown>
@@ -182,7 +203,7 @@ export function readReport(report: unknown) {
     eligibility: text(r.eligibility_flag),
     nextChange: text(r.one_more_change),
     atsReason: text(scores.ats_reason),
-    callbackReason: text(scores.callback_reason),
+    skillsToLearn: skillList(r.skills_to_learn),
   }
 }
 

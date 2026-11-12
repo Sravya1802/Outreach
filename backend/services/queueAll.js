@@ -134,8 +134,9 @@ export async function readRolesTabPostings({ limit = 500, log = console, read } 
 export async function fillQueue(userId) {
   const w = rolesTabWhere(1);
   const roles = await all(
+    // Only roles whose posting has been read: a return-to-school internship or a closed posting never goes in unread.
     `SELECT id, role_type, company_name, title, location, apply_url, salary_range, sponsorship, apply_deadline, COALESCE(posted_at, scraped_at) AS posted
-       FROM scraped_roles WHERE ${w.sql}`,
+       FROM scraped_roles WHERE ${w.sql} AND facts_read_at IS NOT NULL`,
     w.params,
   );
   const taken = await all(

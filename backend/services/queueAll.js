@@ -19,7 +19,7 @@
 import { all, one, run } from '../db.js';
 import { postingFacts } from './postingFacts.js';
 
-import { DAY, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, queueOrder, rolesTabWhere, time } from './queueOrder.js';
+import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, rolesTabWhere, time } from './queueOrder.js';
 
 export { groupRoles, queueOrder, rolesTabWhere };
 
@@ -179,6 +179,33 @@ export async function closePastDeadlines(userId, tz = 'America/Chicago') {
 }
 
 /**
+ * Roles the user doesn't apply to (MBA, PhD-only, or outside software, data and
+ * AI by title; `offFieldReason`): a waiting role leaves the queue and its list
+ * item is marked skipped, so it never comes back; a Ready role goes to Closed,
+ * its resume kept. Approved and applied roles are left alone.
+ */
+export async function skipOffField(userId) {
+  const rows = await all(
+    `SELECT j.id, j.status, j.plan_item_id, pi.title, EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = j.plan_item_id) AS written
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+      WHERE j.user_id = $1 AND j.status IN ('queued', 'ready', 'revision_requested')`,
+    [userId],
+  );
+  const hits = rows.map(r => ({ ...r, why: offFieldReason(r.title) })).filter(r => r.why);
+  if (!hits.length) return { removed: 0, closed: 0 };
+  const drop = hits.filter(r => r.status === 'queued' && !r.written);
+  const close = hits.filter(r => !drop.includes(r));
+  if (drop.length) await run('DELETE FROM tailor_jobs WHERE id = ANY($1::bigint[]) AND status = $2', [drop.map(r => r.id), 'queued']);
+  if (close.length) await run("UPDATE tailor_jobs SET status = 'closed', updated_at = NOW() WHERE id = ANY($1::bigint[])", [close.map(r => r.id)]);
+  await run(
+    `UPDATE plan_items p SET decision = CASE WHEN u.dropped THEN 'skipped' ELSE p.decision END, stage_note = u.note
+       FROM unnest($1::bigint[], $2::text[], $3::boolean[]) AS u(id, note, dropped) WHERE p.id = u.id`,
+    [hits.map(r => r.plan_item_id), hits.map(r => OFF_FIELD_NOTE[r.why]), hits.map(r => drop.includes(r))],
+  );
+  return { removed: drop.length, closed: close.length };
+}
+
+/**
  * Queue the Roles tab: one role per company + title, locations grouped. A role
  * the user skipped, or one already queued, approved or applied (by role, link
  * or company + title) stays out. Earlier list items for the same role are
@@ -204,7 +231,7 @@ export async function fillQueue(userId) {
   const keys = new Set(taken.map(t => t.k));
   const urls = new Set(taken.map(t => t.url).filter(Boolean));
   const rids = new Set(taken.map(t => t.rid).filter(Boolean));
-  const groups = groupRoles(roles).filter(g =>
+  const groups = groupRoles(roles).filter(g => !offFieldReason(g.lead.title) &&
     !keys.has(key(g.lead.company_name, g.lead.title)) && !g.ids.some(id => rids.has(id)) && !urls.has(g.lead.apply_url));
   if (!groups.length) return { roles: roles.length, groups: 0, queued: 0, reused: 0 };
 
@@ -386,9 +413,10 @@ export async function queueTick({ readLimit = 300, log = console } = {}) {
     const { getSettings } = await import('./dailyPlan.js');
     const pastDeadline = await closePastDeadlines(userId, (await getSettings(userId)).timezone || 'America/Chicago');
     const filled = await fillQueue(userId);
+    const offField = await skipOffField(userId);
     const order = await prioritizeQueue(userId);
     const deadlines = await pullInDeadlines(userId);
-    out.push({ userId, pastDeadline, filled, order, deadlines });
+    out.push({ userId, pastDeadline, filled, offField, order, deadlines });
   }
   const brief = ({ closedIds, returnToSchoolIds, ...rest }) => rest;
   return { read: read.closedIds ? brief(read) : read, retried: brief(retried), dropped, users: out };

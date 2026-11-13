@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupRoles, queueOrder, rolesTabWhere } from '../services/queueOrder.js'
+import { groupRoles, offFieldReason, queueOrder, rolesTabWhere } from '../services/queueOrder.js'
 
 const now = new Date('2026-11-11T15:00:00Z')
 const d = (days) => new Date(now.getTime() + days * 86_400_000).toISOString()
@@ -51,4 +51,20 @@ test('queueOrder: top companies right after the closing dates, newest first', ()
     { id: 'top-closed', posted: d(-3), deadline: d(-2).slice(0, 10), top: true },
   ]
   assert.deepEqual(queueOrder(rows, { now }).map(r => r.id), ['top-closes', 'closes', 'top-new', 'top-closed', 'top-old', 'plain-new', 'plain-old'])
+})
+
+test('offFieldReason: MBA, PhD-only and off-field titles skipped; software, data and AI kept', () => {
+  assert.equal(offFieldReason('Strategic Partnerships MBA Intern, Enterprise GTM - Summer 2027'), 'mba')
+  assert.equal(offFieldReason('PhD Research Intern - AI for Climate and Weather Simulation - 2027'), 'phd')
+  assert.equal(offFieldReason('Software Engineer - Intern - TikTok BRIC - 2027 Start - PhD'), 'phd')
+  assert.equal(offFieldReason('Dow 2026-2027 Campus Internship (Ph.D)'), 'phd')
+  assert.equal(offFieldReason('Machine Learning Engineering Intern (Masters/PhD) - Summer 2027'), null)
+  assert.equal(offFieldReason('Financial Analyst Intern, Hardware FP&A - Summer 2027'), 'field')
+  assert.equal(offFieldReason('VLSI Timing Methodology Intern - Summer 2027'), 'field')
+  assert.equal(offFieldReason('UX Design Intern - Summer 2027'), 'field')
+  assert.equal(offFieldReason('Summer 2027 Internship Program - Marketing Data Science Intern'), null)
+  assert.equal(offFieldReason('2027 Summer Intern Clinical Statistical Modeling Cambridge MA'), null)
+  assert.equal(offFieldReason('Engineer, Development Tax Technology | Montvale Winter 2027'), null)
+  assert.equal(offFieldReason('Software Development Engineer Intern - Summer 2027'), null)
+  assert.equal(offFieldReason('Quantitative Trader Intern'), null)
 })

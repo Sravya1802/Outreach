@@ -62,3 +62,28 @@ export function groupRoles(roles) {
   });
 }
 
+
+// Titles the user doesn't apply to: outside software, data and AI, or a degree
+// they don't have. A title that names software/data/AI work stays, whatever
+// else it says ("Marketing Data Science Intern").
+const IN_FIELD = /\b(software|data|machine learning|ml|ai|artificial intelligence|deep learning|llm|nlp|computer vision|developer|devops|sre|site reliability|backend|back-end|frontend|front-end|full[- ]?stack|cloud|platform engineer|infrastructure|security engineer|cyber ?security|analytics|quantitative|quant|algorithm|robotics software|embedded software|firmware|programmer|coding|computer science|research engineer|research scientist|applied scientist|swe|sde|statistic(s|al)|informatics|engineer, development)\b/i;
+const OFF_FIELD = /\b(financial analyst|finance|accounting|accountant|audit|tax|treasury|fp&a|actuarial|underwriting|insurance|sales|marketing|communications|public relations|human resources|hr|recruiting|talent acquisition|legal|paralegal|supply chain|procurement|logistics|operations intern|business operations|strategy|strategic partnerships|consulting|ux|ui|user experience|graphic|visual design|product design|industrial design|content|journalism|editorial|wastewater|civil|mechanical|electrical engineer|chemical|manufacturing|process engineer|quality engineer|facilities|construction|environmental|vlsi|asic|rtl|analog|circuit|physical design|hardware engineer|biology|biolog|chemistry|clinical|pharma|nursing|medical|public policy|economics|real estate|investment banking|wealth|private equity)\b/i;
+const MBA = /\bmba\b/i;
+const PHD_ONLY = /\b(ph\.?\s?d|doctoral|doctorate)\b/i;
+const OTHER_DEGREE = /\b(master'?s?|masters|ms|m\.s\.|bachelor'?s?|bs|b\.s\.|undergrad(uate)?|graduate)\b/i;
+
+/** Why a title is skipped ('mba' | 'phd' | 'field'), or null to keep it. Pure. */
+export function offFieldReason(title) {
+  const t = String(title || '');
+  if (MBA.test(t)) return 'mba';
+  if (PHD_ONLY.test(t) && !OTHER_DEGREE.test(t)) return 'phd';
+  if (OFF_FIELD.test(t) && !IN_FIELD.test(t)) return 'field';
+  return null;
+}
+
+/** The note a skipped role gets. */
+export const OFF_FIELD_NOTE = {
+  mba: 'Skipped: the role is for MBA students.',
+  phd: 'Skipped: the role is for PhD students.',
+  field: 'Skipped: outside software, data and AI.',
+};

@@ -1955,3 +1955,5 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Run live:** 133 skipped: 118 waiting removed (Northrop Grumman ×14, Amazon ×8, Booz Allen ×7, GDMS ×6, Astranis ×6, GTRI ×5, MIT Lincoln Lab ×5, Saronic, BAE, Lockheed, Honeywell, Anduril, Raytheon, Federal Reserve…), 15 Ready closed (SpaceX ×3, Muon Space, Amca, GDMS, JHU APL, ICF, Guidehouse, Tenet3, Iridium, Ankura, North Atlantic, Amazon ADC, Motorola Embedded SW via its flag). Backup `~/usperson-backup-2026-11-13.json`.
 - **Open:** 40+ Ready roles flagged "No sponsorship" (Dow Jones ×3 also undergrad-only, GALLO, Vertex, Vertiv, Deutsche Bank, Crown, Entegris, Riot, MSD, Addepar, BioSpace/Sanofi "CPT/OPT excluded") — asked the user whether to skip those too.
 - **Verified:** backend 260 (tests for the phrases, EEO lines, Motorola's F-1 exception).
+
+- **Decided 2026-11-13:** keep "no visa sponsorship now or in the future" roles (user). BioSpace/Sanofi "CPT/OPT excluded" left in, undecided.

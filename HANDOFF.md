@@ -1941,3 +1941,9 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Asked:** "fix the ui of this page" (screenshot: Sort by and Select all wrapped onto their own line under five uneven menus; every new LinkedIn role said "Opened today").
 - **Built** (commits `f6ca3c7`, `9062d5a`; VM `6ef9578`): search + Year / Outreach / Opened / Closes in one even grid row (two across on a phone, search full width); a bar under it with "N roles", Select all above 90% ATS, Approve N and Sort by on the right. `reviewQueue` returns `posted_known` (`scraped_roles.posted_at` set); without it the row says "First seen today / 10 days ago (Nov 3)" (LinkedIn and own links give no posting date).
 - **Verified:** frontend typecheck + 182, backend 259; live browser at 1440, 1024 and 390 px (menus on one line, count and Sort by on one bar, no sideways scroll, no errors); test roles removed.
+
+## 2026-11-13 — Days column; more off-field titles
+
+- **Asked:** "i want number of days to show up here as well in table".
+- **Built** (commit `97d6e9d`, VM `84d3a8d`): a Days column after Company and role (`daysOpen` in [review.ts](frontend/src/features/review/review.ts): calendar days since `posted_at`; "~N" when it's first-seen, tooltip says so); the Waiting tab's last column is Days too (Run working now keeps Started). `OFF_FIELD` now also catches electrical/mechanical engineering, geotechnical, structural, surveying, digital/graphic design, "design intern" (screenshot showed Georgia-Pacific Electrical Engineering, Langan Geotechnical, Southern Glazer's Digital Design as Ready). Applied live: 2 waiting removed (Kimley-Horn Structural Analyst, GFT Geotechnical), 3 Ready closed; backup `~/offfield-backup-2026-11-13b.json`.
+- **Verified:** frontend 182, backend 259; live browser 8 of 8 at 1440 and 390 px; test roles removed.

@@ -71,7 +71,7 @@ const LEVEL = String.raw`(?:an?\s+)?(?:active\s+|interim\s+|current\s+)?(?:u\.?s
 const CLEARANCE = new RegExp([
   String.raw`\b(?:active|current|interim|ability to obtain|able to obtain|eligib\w+ (?:to|for) (?:obtain\w*)?(?: and maintain)?|must (?:obtain|hold|have|possess|be able to obtain)|requires?|required|obtain and maintain|maintain)\s+${LEVEL}\b`,
   String.raw`\b(?:secret|top secret|ts\/sci|public trust)(?:\s+security)?\s+clearance\s+(?:is\s+)?(?:required|needed|mandatory)\b`,
-  String.raw`\bclearance(?:\s+(?:level|required|requirements?))?\s*:\s*\**\s*(?:active\s+)?(?:u\.?s\.?\s+)?(?:dod\s+|dow\s+)?(?:secret|top secret|ts\/sci|ts|public trust)\b`,
+  String.raw`\bclearance(?:\s+(?:level|required|requirements?))?\s*:\s*\**\s*(?:active\s+)?(?:u\.?s\.?\s+)?(?:dod\s+|dow\s+)?(?:secret|top secret|ts\/sci|ts|public trust|ability to obtain|required|must obtain)\b`,
   String.raw`\bpolygraph\s+(?:is\s+)?required\b|\b(?:with|and|pass(?:ing)?|submit to|undergo)\s+(?:an?\s+)?(?:full[-\s]scope\s+|ci\s+|counterintelligence\s+)?polygraph\b(?!\s+protection)`,
 ].join('|'), 'i');
 const CLEARANCE_SOFT = /\b(?:secret|top secret|ts\/sci|security|public trust)\s+(?:level\s+)?clearance\b|\bpolygraph\b(?!\s+protection)/i;
@@ -106,7 +106,8 @@ const REMAINING = /\b(?:at least|minimum of|a minimum of)?\s*(?:one|1|a|two|2)\s
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const SEASON = { spring: 5, summer: 8, fall: 12, autumn: 12, winter: 12 };
 const DATE_TOKEN = /\b(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?(20[2-3]\d)\b/gi;
-const GRAD_SENTENCE = /\b(?:graduat\w*|class of|degree (?:completion|conferral)|complet\w* (?:your|their|a|the)? ?(?:degree|program)|expected to (?:graduate|complete))\b/i;
+// Graduation wording only: not "graduate-level", "graduate students" or "graduate degree".
+const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
 // "graduating by / before / no later than <date>" is a ceiling the user meets: those dates don't count.
 const CEILING = /\b(?:before|by|no later than|prior to|until|through|up to)\s+((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|spring|summer|fall|autumn|winter)\s*(?:of\s+)?,?\s*)?20[2-3]\d\b/gi;
 const USER_GRAD = 2027 * 12 + 6; // June 2027: graduating after this means returning to school

@@ -21,6 +21,7 @@ test('clearance: active or obtainable, any level, polygraph', () => {
   assert.equal(reason('**Clearance:** TS/SCI - Polygraph required'), 'clearance')
   assert.equal(reason('Ability to obtain a SECRET clearance. ### **Preferred Qualifications**'), 'clearance')
   assert.equal(reason('Must be able to obtain a Public Trust clearance.'), 'clearance')
+  assert.equal(reason('Security Clearance: Ability to Obtain Level of Experience: Intern'), 'clearance')
 })
 
 test('MBA and PhD only when required', () => {
@@ -38,6 +39,10 @@ test('return to school (internships only)', () => {
   assert.equal(reason('Expected graduation date between Fall 2027 and Summer 2028.'), 'return_to_school')
   assert.equal(reason('Open to the Class of 2028.'), 'return_to_school')
   assert.equal(reason('Students graduating in 2028 or later.'), 'return_to_school')
+  assert.equal(reason("Corning's research team is hiring a graduate-level intern for Summer 2027 to contribute to modeling."), null)
+  assert.equal(reason('Open to graduate students for Summer 2027.'), null)
+  assert.equal(reason('You will graduate in fall 2027 or spring 2028 with a Master\'s degree.'), 'return_to_school')
+  assert.equal(reason('Tech stack: Python. 2028 or 2029 graduation year.'), 'return_to_school')
   // Graduating by / no later than a date: the user meets it.
   assert.equal(reason('Must be graduating no later than December 2027.'), null)
   assert.equal(reason('Graduating between December 2026 and June 2027.'), null)

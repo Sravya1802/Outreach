@@ -223,6 +223,13 @@ export function closesMatch(deadline: string | null | undefined, filter: string,
   return days >= 0 && days <= Number(filter)
 }
 
+/** Whole days since the posting opened (or was first seen), counting calendar days in the browser's zone; null without a date. */
+export function daysOpen(posted: string | null | undefined, now = Date.now()) {
+  const d = posted ? new Date(posted) : null
+  if (!d || Number.isNaN(d.getTime())) return null
+  return Math.max(0, Math.round((today(now) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY))
+}
+
 /**
  * How old the posting is: "Opened today", "Opened yesterday", "Opened 10 days
  * ago (Nov 3)" (the year when it isn't this one). When the board gave no
@@ -232,7 +239,7 @@ export function openedLabel(posted: string | null | undefined, now = Date.now(),
   const d = posted ? new Date(posted) : null
   if (!d || Number.isNaN(d.getTime())) return null
   const word = known ? 'Opened' : 'First seen'
-  const days = Math.max(0, Math.round((today(now) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY))
+  const days = daysOpen(posted, now) ?? 0
   if (days === 0) return `${word} today`
   if (days === 1) return `${word} yesterday`
   const sameYear = d.getFullYear() === new Date(now).getFullYear()

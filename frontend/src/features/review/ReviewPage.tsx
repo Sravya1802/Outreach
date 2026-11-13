@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -38,6 +38,12 @@ function RoleName({ r, opened = false }: { r: ReviewRow; opened?: boolean }) {
 }
 
 const fit = (r: ReviewRow) => (r.score == null ? blank : Number(r.score).toFixed(1))
+/** Days the posting has been up; "~" when that's counted from the day the app first saw it. */
+function Days({ r }: { r: ReviewRow }) {
+  const n = daysOpen(r.posted_at)
+  if (n == null) return blank
+  return <span title={r.posted_known ? `Opened ${n} ${n === 1 ? 'day' : 'days'} ago` : `First seen ${n} ${n === 1 ? 'day' : 'days'} ago (the site gives no posting date)`}>{r.posted_known ? n : `~${n}`}</span>
+}
 
 function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (on: boolean) => void }) {
   return (
@@ -62,6 +68,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.status === 'ready' && needsOutreach(r) && <Badge tone={r.outreach_due ? 'info' : 'neutral'}>{outreachLine(r)}</Badge>}
         </div>
       </td>
+      <td className={cn(cell, num)}><Days r={r} /></td>
       <td className={cn(cell, num)}>{fit(r)}</td>
       <td className={cn(cell, num)}>{r.ats_after == null ? blank : <span className={atsOk(r.ats_after) ? 'text-success' : 'text-warning'}>{r.ats_after}%</span>}</td>
       <td className={cn(cell, num)}>{r.version == null ? blank : `v${r.version}`}</td>
@@ -86,15 +93,15 @@ function LineRow({ r }: { r: ReviewRow }) {
         )}
       </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
-      <td className={cn(cell, 'text-[13px] whitespace-nowrap text-muted')}>{timeAgo(r.place == null ? r.locked_at : r.posted_at)}</td>
+      <td className={cn(cell, r.status === 'queued' ? num : 'text-[13px] whitespace-nowrap text-muted')}>{r.status === 'queued' ? <Days r={r} /> : timeAgo(r.locked_at)}</td>
     </tr>
   )
 }
 
-const COLUMNS = ['Company and role', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
+const COLUMNS = ['Company and role', 'Days', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
 const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
   working: ['Run', 'Company and role', 'Fit', 'Started'],
-  waiting: ['Turn', 'Company and role', 'Fit', 'Opened'],
+  waiting: ['Turn', 'Company and role', 'Fit', 'Days'],
 }
 
 const CAPS = [15, 30, 45, 60, 90, 120]

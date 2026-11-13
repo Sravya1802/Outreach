@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -330,6 +330,9 @@ describe('date menus', () => {
     expect(openedLabel(new Date(2026, 10, 3, 12).toISOString(), now)).toBe('Opened 10 days ago (Nov 3)')
     expect(openedLabel(new Date(2025, 11, 30, 12).toISOString(), now)).toBe('Opened 318 days ago (Dec 30, 2025)')
     expect(openedLabel(null, now)).toBeNull()
+    expect(daysOpen(new Date(2026, 10, 13, 8).toISOString(), now)).toBe(0)
+    expect(daysOpen(new Date(2026, 10, 3, 12).toISOString(), now)).toBe(10)
+    expect(daysOpen(null, now)).toBeNull()
     expect(openedLabel(new Date(2026, 10, 13, 8).toISOString(), now, false)).toBe('First seen today')
     expect(openedLabel(new Date(2026, 10, 3, 12).toISOString(), now, false)).toBe('First seen 10 days ago (Nov 3)')
   })

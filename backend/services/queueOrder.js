@@ -28,19 +28,22 @@ export const time = (v) => (v ? new Date(v).getTime() || 0 : 0);
 export const key = (company, title) => `${String(company || '').trim().toLowerCase()}|${String(title || '').trim().toLowerCase()}`;
 
 /**
- * The order roles go to the runs: deadlines stated for the next `soonDays`
- * days first (soonest first), then the rest alternating newest and oldest.
- * Rows: { deadline, posted }. Pure.
+ * The order roles go to the runs: every role whose posting states a closing
+ * date still to come, soonest first; then roles at top companies (FAANG+ and
+ * quant firms, `top`), newest first; then the rest alternating newest and
+ * oldest. Rows: { deadline, posted, top }. Pure.
  */
-export function queueOrder(rows, { now = new Date(), soonDays = SOON_DAYS } = {}) {
+export function queueOrder(rows, { now = new Date() } = {}) {
   const today = day(now);
-  const until = day(new Date(new Date(now).getTime() + soonDays * DAY));
-  const isSoon = (r) => { const d = day(r.deadline); return Boolean(d && d >= today && d <= until); };
-  const soon = rows.filter(isSoon).sort((a, b) => day(a.deadline).localeCompare(day(b.deadline)) || time(b.posted) - time(a.posted));
-  const rest = rows.filter(r => !isSoon(r)).sort((a, b) => time(b.posted) - time(a.posted));
+  const newest = (a, b) => time(b.posted) - time(a.posted);
+  const dated = (r) => { const d = day(r.deadline); return Boolean(d && d >= today); };
+  const closing = rows.filter(dated).sort((a, b) => day(a.deadline).localeCompare(day(b.deadline)) || Number(Boolean(b.top)) - Number(Boolean(a.top)) || newest(a, b));
+  const left = rows.filter(r => !dated(r));
+  const top = left.filter(r => r.top).sort(newest);
+  const rest = left.filter(r => !r.top).sort(newest);
   const mix = [];
-  for (let i = 0, j = rest.length - 1, newest = true; i <= j; newest = !newest) mix.push(newest ? rest[i++] : rest[j--]);
-  return [...soon, ...mix];
+  for (let i = 0, j = rest.length - 1, first = true; i <= j; first = !first) mix.push(first ? rest[i++] : rest[j--]);
+  return [...closing, ...top, ...mix];
 }
 
 /** Roles that are the same job (company + title), the one to apply on first: an auto-apply form, then the newest. Pure. */

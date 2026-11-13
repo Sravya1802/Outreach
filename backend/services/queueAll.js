@@ -279,12 +279,16 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
   const { getSettings } = await import('./dailyPlan.js');
   const settings = await getSettings(userId);
   const rows = await all(
-    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url, ${HAS_POSTING_SQL} AS has_text,
+    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url, ${HAS_POSTING_SQL} AS has_text, pi.company_name, sr.tier,
             COALESCE(pi.apply_deadline, sr.apply_deadline) AS deadline, COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
       WHERE j.user_id = $1 AND j.status = 'queued' AND j.claimed_at IS NULL`,
     [userId],
   );
+  // Top companies (FAANG+ and quant firms, as on the Jobs page) go right after the closing dates.
+  const { companyTiers, tierFor } = await import('./companyTier.js');
+  const tiers = await companyTiers();
+  for (const r of rows) r.top = r.tier === 'faang' || r.tier === 'quant' || Boolean(tierFor(r.company_name, tiers));
   let order = queueOrder(rows, { now });
   const closed = [];
   const checked = [];

@@ -178,7 +178,7 @@ export async function reviewQueue(userId) {
   const hasPosting = "GREATEST(length(COALESCE(pi.job_description, '')), length(COALESCE(sr.description, ''))) > 200";
   return all(
     `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
-            COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted_at, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
+            COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted_at, (sr.posted_at IS NOT NULL) AS posted_known, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             (j.status = 'queued' AND NOT ${hasPosting}) AS no_posting,
             CASE WHEN j.status = 'queued' AND ${hasPosting}
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,

@@ -223,15 +223,20 @@ export function closesMatch(deadline: string | null | undefined, filter: string,
   return days >= 0 && days <= Number(filter)
 }
 
-/** How old the posting is: "Opened today", "Opened yesterday", "Opened 10 days ago (Nov 3)" (the year when it isn't this one). */
-export function openedLabel(posted: string | null | undefined, now = Date.now()) {
+/**
+ * How old the posting is: "Opened today", "Opened yesterday", "Opened 10 days
+ * ago (Nov 3)" (the year when it isn't this one). When the board gave no
+ * posting date (`known` false) it's the day the app first saw it: "First seen …".
+ */
+export function openedLabel(posted: string | null | undefined, now = Date.now(), known = true) {
   const d = posted ? new Date(posted) : null
   if (!d || Number.isNaN(d.getTime())) return null
+  const word = known ? 'Opened' : 'First seen'
   const days = Math.max(0, Math.round((today(now) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY))
-  if (days === 0) return 'Opened today'
-  if (days === 1) return 'Opened yesterday'
+  if (days === 0) return `${word} today`
+  if (days === 1) return `${word} yesterday`
   const sameYear = d.getFullYear() === new Date(now).getFullYear()
-  return `Opened ${days} days ago (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })})`
+  return `${word} ${days} days ago (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })})`
 }
 
 /** The Sort by menu; '' keeps the queue's own order (turn, then most recently updated). */

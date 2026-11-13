@@ -919,6 +919,8 @@ export interface ReviewRow {
   /** The run working on it. */
   run: string | null
   posted_at: string | null
+  /** posted_at is the posting's own date; false when it's the day the app first saw it. */
+  posted_known: boolean
   /** Its turn among the waiting roles; null once a run has taken it, or while its posting can't be read. */
   place: number | null
   /** Waiting, but its posting couldn't be read, so a run can't take it yet. */

@@ -28,7 +28,7 @@ const num = 'font-mono text-[13px] whitespace-nowrap'
 const blank = <span className="text-subtle">—</span>
 
 function RoleName({ r, opened = false }: { r: ReviewRow; opened?: boolean }) {
-  const sub = [r.location, opened ? openedLabel(r.posted_at) : null].filter(Boolean).join(' · ')
+  const sub = [r.location, opened ? openedLabel(r.posted_at, Date.now(), r.posted_known) : null].filter(Boolean).join(' · ')
   return (
     <>
       <Link to={`/review/${r.id}`} className="hover:text-accent"><b className="font-medium">{r.company_name}</b> · {r.title}</Link>
@@ -198,43 +198,46 @@ export default function ReviewPage() {
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="sm:w-56!" />
-            <Select value={year} onChange={e => { setYear(e.target.value); save(YEAR_KEY, e.target.value) }} aria-label="Year" className="sm:w-48">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,1fr))]">
+            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="w-full sm:col-span-2 lg:col-span-1" />
+            <Select value={year} onChange={e => { setYear(e.target.value); save(YEAR_KEY, e.target.value) }} aria-label="Year" className="w-full">
               <option value="">Any year</option>
               {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
-            <Select value={outreach} onChange={e => { setOutreach(e.target.value); save(OUTREACH_KEY, e.target.value) }} aria-label="Outreach" className="sm:w-48">
+            <Select value={outreach} onChange={e => { setOutreach(e.target.value); save(OUTREACH_KEY, e.target.value) }} aria-label="Outreach" className="w-full">
               <option value="">Any outreach</option>
               {OUTREACH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
-            <Select value={opened} onChange={e => { setOpened(e.target.value); save(OPENED_KEY, e.target.value) }} aria-label="Opened" className="sm:w-56">
+            <Select value={opened} onChange={e => { setOpened(e.target.value); save(OPENED_KEY, e.target.value) }} aria-label="Opened" className="w-full">
               <option value="">Opened any time</option>
               {OPENED_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
-            <Select value={closes} onChange={e => { setCloses(e.target.value); save(CLOSES_KEY, e.target.value) }} aria-label="Closes" className="sm:w-56">
+            <Select value={closes} onChange={e => { setCloses(e.target.value); save(CLOSES_KEY, e.target.value) }} aria-label="Closes" className="w-full">
               <option value="">Any closing date</option>
               {CLOSES_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
-            <label className="flex items-center gap-2 text-[13px] text-muted sm:ml-auto">
-              Sort by
-              <Select value={sort} onChange={e => { setSort(e.target.value); save(SORT_KEY, e.target.value) }} aria-label="Sort by" className="sm:w-52">
-                <option value="">Turn order</option>
-                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-            </label>
+          </div>
+          <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="text-[13px] text-muted"><span className="font-medium text-fg">{rows.length}</span> {rows.length === 1 ? 'role' : 'roles'}</p>
             {bulk && safe.length > 0 && (
-              <label className="inline-flex items-center gap-2 text-[14px] text-fg">
+              <label className="inline-flex items-center gap-2 text-[13px] text-fg">
                 <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}
                   onChange={e => setPicked(e.target.checked ? new Set(safe.map(r => r.id)) : new Set())} />
                 Select all {safe.length} above 90% ATS
               </label>
             )}
             {bulk && chosen.length > 0 && (
-              <Button variant="primary" className="ml-auto" loading={progress != null} onClick={() => setConfirming(true)}>
+              <Button variant="primary" size="sm" loading={progress != null} onClick={() => setConfirming(true)}>
                 {progress != null ? `Approving ${progress} of ${chosen.length}` : `Approve ${chosen.length}`}
               </Button>
             )}
+            <label className="ml-auto flex items-center gap-2 text-[13px] text-muted">
+              Sort by
+              <Select value={sort} onChange={e => { setSort(e.target.value); save(SORT_KEY, e.target.value) }} aria-label="Sort by" className="w-48">
+                <option value="">Turn order</option>
+                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </label>
           </div>
           <div className="overflow-x-auto rounded-[4px] border border-line bg-surface">
             <table className={cn('w-full border-collapse text-[14px] text-fg', !line && 'min-w-[860px]')}>

@@ -86,4 +86,5 @@ export const OFF_FIELD_NOTE = {
   mba: 'Skipped: the role is for MBA students.',
   phd: 'Skipped: the role is for PhD students.',
   field: 'Skipped: outside software, data and AI.',
+  us_person: 'Skipped: the posting requires a U.S. person (citizen or green card) or a security clearance.',
 };

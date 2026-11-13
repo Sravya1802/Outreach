@@ -54,3 +54,42 @@ export function postingFacts(text, { roleType, posted } = {}) {
     returnToSchool: roleType === 'intern' && wantsReturningStudents(text),
   };
 }
+
+// A posting only a U.S. person can take: citizenship, a green card, U.S.
+// persons under ITAR/EAR export control, or a security clearance. EEO lines
+// ("without regard to … citizenship status") don't count.
+const US = String.raw`(?:u\.?\s?s\.?|united states)`;
+const US_ONLY = [
+  new RegExp(String.raw`\b(?:must|required to|need to|needs to|have to)\s+(?:be|hold|possess|have)\s+(?:an?\s+)?(?:active\s+)?${US}\s+(?:citizen(?:ship)?|persons?|national)`, 'i'),
+  new RegExp(String.raw`\b(?:must|required to|need to)\s+be\s+(?:an?\s+)?(?:${US}\s+)?(?:citizen|permanent resident|lawful permanent resident|green card holder)s?\b`, 'i'),
+  new RegExp(String.raw`\b${US}\s+citizenship\s+(?:is\s+)?(?:required|needed|mandatory)`, 'i'),
+  new RegExp(String.raw`\b(?:requires?|requiring|required:?)\s+(?:active\s+|current\s+)?${US}\s+(?:citizenship|citizens?|persons?)`, 'i'),
+  new RegExp(String.raw`\b${US}\s+(?:citizens?|persons?)\s+only\b`, 'i'),
+  new RegExp(String.raw`\bonly\s+${US}\s+(?:citizens?|persons?)\b`, 'i'),
+  new RegExp(String.raw`\b(?:citizens?|persons?)\s+of\s+the\s+united states\s+(?:only|required)\b`, 'i'),
+  // Export control with U.S. persons as the bar.
+  new RegExp(String.raw`\b(?:itar|ear|export[-\s]control(?:led)?|export administration regulations|international traffic in arms)\b[^.]{0,250}\b${US}\s+persons?\b|\b${US}\s+persons?\b[^.]{0,250}\b(?:itar|export[-\s]control(?:led)?|international traffic in arms)\b`, 'i'),
+  // A clearance the role needs (not "no clearance required").
+  /\b(?:active|current|interim|ability to obtain|able to obtain|eligib\w+ (?:to|for) (?:obtain\w*)?(?: and maintain)?|must (?:obtain|hold|have|possess)|requires?|obtain and maintain)\s+(?:an?\s+)?(?:active\s+|interim\s+)?(?:dod\s+|government\s+|federal\s+|u\.?s\.?\s+government\s+)?(?:secret|top secret|ts\/sci|ts|security|public trust)\s+clearance\b/i,
+];
+
+// "…or be an MS student with work authorization (F1 Visa on CPT accepted)": the bar has a door for students.
+const STUDENTS_WELCOME = /\b(?:f-?1|cpt|opt|stem opt)\b[^.]{0,80}\b(?:accepted|eligible|welcome|considered)\b|\bstudents?\s+with\s+(?:valid\s+)?work authorization\b|\bor\s+(?:be\s+)?(?:otherwise\s+)?(?:authorized|eligible)\s+to\s+work\b/i;
+
+/** The phrase that makes a posting U.S.-persons-only, or null. Pure. */
+export function usPersonOnly(text) {
+  const t = String(text || '');
+  for (const re of US_ONLY) {
+    const m = re.exec(t);
+    if (!m) continue;
+    if (STUDENTS_WELCOME.test(t.slice(m.index, m.index + m[0].length + 250))) continue;
+    return m[0].replace(/\s+/g, ' ').slice(0, 160);
+  }
+  return null;
+}
+
+/** A run's eligibility flag that says the same (citizenship, U.S. person, export control, clearance). */
+export const US_PERSON_FLAG = /\b(?:u\.?s\.? citizen|citizenship|u\.?s\.? persons?|itar|export control|clearance|green card)\b/i;
+
+/** Students on F-1/CPT/OPT (or anyone with work authorization) can take it after all. */
+export const studentsWelcome = (text) => STUDENTS_WELCOME.test(String(text || ''));

@@ -30,3 +30,27 @@ test('postingFacts: return-to-school only counts for internships', () => {
   assert.deepEqual(postingFacts(text, { roleType: 'intern', posted }), { deadline: '2026-11-20', returnToSchool: true })
   assert.deepEqual(postingFacts(text, { roleType: 'new_grad', posted }), { deadline: '2026-11-20', returnToSchool: false })
 })
+
+test('usPersonOnly: citizenship, green card, ITAR/EAR U.S. persons and clearances; not EEO lines', async () => {
+  const { usPersonOnly } = await import('../services/postingFacts.js')
+  for (const t of [
+    'Applicants must be U.S. citizens.',
+    'Due to ITAR regulations, applicants must be U.S. persons (citizen, permanent resident, refugee or asylee).',
+    'This role requires access to export-controlled information; candidates must qualify as a U.S. Person.',
+    'U.S. citizenship is required.',
+    'Must be a US citizen or permanent resident.',
+    'Ability to obtain a Secret clearance.',
+    'Active TS/SCI clearance with polygraph.',
+    'Requires US citizenship to obtain a security clearance.',
+    'Open to US citizens only.',
+  ]) assert.ok(usPersonOnly(t), t)
+  for (const t of [
+    'All qualified applicants will receive consideration without regard to race, religion, national origin, citizenship status or disability.',
+    'No security clearance required.',
+    'We sponsor visas, including for international students.',
+    'We may need to determine whether you are a U.S. person to comply with export laws; we will apply for a license if needed.',
+    'Must be a US Citizen, permanent resident or be an MS student with work authorization (F1 Visa on CPT accepted only for masters-level students).',
+    'Applicants must be U.S. citizens, permanent residents, or otherwise authorized to work in the United States.',
+    '',
+  ]) assert.equal(usPersonOnly(t), null, t)
+})

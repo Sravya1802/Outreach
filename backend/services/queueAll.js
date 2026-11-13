@@ -17,7 +17,7 @@
 //
 // Nothing here applies, emails or drafts anything: approval stays the user's.
 import { all, one, run } from '../db.js';
-import { postingFacts } from './postingFacts.js';
+import { US_PERSON_FLAG, postingFacts, studentsWelcome, usPersonOnly } from './postingFacts.js';
 
 import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, rolesTabWhere, time } from './queueOrder.js';
 
@@ -180,18 +180,24 @@ export async function closePastDeadlines(userId, tz = 'America/Chicago') {
 
 /**
  * Roles the user doesn't apply to (MBA, PhD-only, or outside software, data and
- * AI by title; `offFieldReason`): a waiting role leaves the queue and its list
+ * AI by title, `offFieldReason`; or a posting only a U.S. person can take,
+ * `usPersonOnly` on the posting or the run's eligibility flag): a waiting role leaves the queue and its list
  * item is marked skipped, so it never comes back; a Ready role goes to Closed,
  * its resume kept. Approved and applied roles are left alone.
  */
 export async function skipOffField(userId) {
   const rows = await all(
-    `SELECT j.id, j.status, j.plan_item_id, pi.title, EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = j.plan_item_id) AS written
+    `SELECT j.id, j.status, j.plan_item_id, pi.title, v.flag, v.id IS NOT NULL AS written,
+            CASE WHEN p.text ~* 'citizen|u\\.?s\\.? person|clearance|itar|permanent resident|green card' THEN p.text END AS text
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
+       CROSS JOIN LATERAL (SELECT COALESCE(NULLIF(pi.job_description, ''), sr.description) AS text) p
+       LEFT JOIN LATERAL (SELECT x.id, x.report->>'eligibility_flag' AS flag FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
       WHERE j.user_id = $1 AND j.status IN ('queued', 'ready', 'revision_requested')`,
     [userId],
   );
-  const hits = rows.map(r => ({ ...r, why: offFieldReason(r.title) })).filter(r => r.why);
+  const usOnly = (r) => Boolean(usPersonOnly(r.text) || (r.flag && US_PERSON_FLAG.test(r.flag) && !studentsWelcome(r.text)));
+  const hits = rows.map(r => ({ ...r, why: offFieldReason(r.title) || (usOnly(r) ? 'us_person' : null) })).filter(r => r.why);
   if (!hits.length) return { removed: 0, closed: 0 };
   const drop = hits.filter(r => r.status === 'queued' && !r.written);
   const close = hits.filter(r => !drop.includes(r));

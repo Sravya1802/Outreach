@@ -7,13 +7,14 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
 const OUTREACH_KEY = 'snj.review.outreach'
 const OPENED_KEY = 'snj.review.opened'
 const CLOSES_KEY = 'snj.review.closes'
+const SORT_KEY = 'snj.review.sort'
 function saved(key: string) {
   try { return localStorage.getItem(key) ?? '' } catch { return '' }
 }
@@ -129,6 +130,7 @@ export default function ReviewPage() {
   const [outreach, setOutreach] = useState(() => saved(OUTREACH_KEY))
   const [opened, setOpened] = useState(() => saved(OPENED_KEY))
   const [closes, setCloses] = useState(() => saved(CLOSES_KEY))
+  const [sort, setSort] = useState(() => saved(SORT_KEY))
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
   const everything = queue.data?.roles ?? []
   // The menus narrow the tiles, the rows and Select all; the backlog bar counts everything.
@@ -137,7 +139,7 @@ export default function ReviewPage() {
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
   const s = company.trim().toLowerCase()
-  const rows = all.filter(r => reviewTab(r) === tab && (!s || r.company_name.toLowerCase().includes(s)))
+  const rows = sortRows(all.filter(r => reviewTab(r) === tab && (!s || r.company_name.toLowerCase().includes(s))), sort)
   const { done, total, percent } = backlog(everything)
   const line = LINE_COLUMNS[tab]
   const bulk = tab === 'ready'
@@ -214,6 +216,13 @@ export default function ReviewPage() {
               <option value="">Any closing date</option>
               {CLOSES_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
+            <label className="flex items-center gap-2 text-[13px] text-muted sm:ml-auto">
+              Sort by
+              <Select value={sort} onChange={e => { setSort(e.target.value); save(SORT_KEY, e.target.value) }} aria-label="Sort by" className="sm:w-52">
+                <option value="">Turn order</option>
+                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </label>
             {bulk && safe.length > 0 && (
               <label className="inline-flex items-center gap-2 text-[14px] text-fg">
                 <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}

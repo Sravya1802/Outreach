@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -330,5 +330,23 @@ describe('date menus', () => {
     expect(openedLabel(new Date(2026, 10, 3, 12).toISOString(), now)).toBe('Opened 10 days ago (Nov 3)')
     expect(openedLabel(new Date(2025, 11, 30, 12).toISOString(), now)).toBe('Opened 318 days ago (Dec 30, 2025)')
     expect(openedLabel(null, now)).toBeNull()
+  })
+})
+
+describe('sortRows', () => {
+  const r = (company_name: string, posted_at: string | null, deadline: string | null, ats_after: number | null) => ({ company_name, title: 'SWE', posted_at, deadline, ats_after })
+  const rows = [r('beta', '2026-11-01T00:00:00Z', null, 90), r('Acme', '2026-11-10T00:00:00Z', '2026-12-01', null), r('Cyan', null, '2026-11-20', 100), r('dune', '2026-10-01T00:00:00Z', null, 95)]
+  const names = (x: typeof rows) => x.map(y => y.company_name)
+  it('sorts by opened, closing date, ATS and company; missing values last', () => {
+    expect(names(sortRows(rows, 'newest'))).toEqual(['Acme', 'beta', 'dune', 'Cyan'])
+    expect(names(sortRows(rows, 'oldest'))).toEqual(['dune', 'beta', 'Acme', 'Cyan'])
+    expect(names(sortRows(rows, 'closing'))).toEqual(['Cyan', 'Acme', 'beta', 'dune'])
+    expect(names(sortRows(rows, 'ats'))).toEqual(['Cyan', 'dune', 'beta', 'Acme'])
+    expect(names(sortRows(rows, 'company'))).toEqual(['Acme', 'beta', 'Cyan', 'dune'])
+  })
+  it('keeps the queue order with no sort, and never changes the input', () => {
+    expect(sortRows(rows, '')).toBe(rows)
+    sortRows(rows, 'ats')
+    expect(names(rows)).toEqual(['beta', 'Acme', 'Cyan', 'dune'])
   })
 })

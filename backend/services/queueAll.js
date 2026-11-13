@@ -159,6 +159,26 @@ export async function dropFromQueue({ closedIds = [], returnToSchoolIds = [] }) 
 }
 
 /**
+ * A role whose stated closing date has passed (in the user's timezone) can't be
+ * applied to: waiting and Ready roles go to Closed. Approved roles are left
+ * alone (pullInDeadlines applies them before the date).
+ */
+export async function closePastDeadlines(userId, tz = 'America/Chicago') {
+  const gone = await all(
+    `UPDATE tailor_jobs j SET status = 'closed', updated_at = NOW()
+       FROM plan_items pi LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
+      WHERE pi.id = j.plan_item_id AND j.user_id = $1 AND j.status IN ('queued', 'ready', 'revision_requested')
+        AND COALESCE(pi.apply_deadline, sr.apply_deadline) < (NOW() AT TIME ZONE $2)::date
+      RETURNING j.plan_item_id, COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline`,
+    [userId, tz],
+  );
+  for (const g of gone) {
+    await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1', [g.plan_item_id, `The posting’s closing date (${fmtDay(g.deadline)}) has passed.`]);
+  }
+  return gone.length;
+}
+
+/**
  * Queue the Roles tab: one role per company + title, locations grouped. A role
  * the user skipped, or one already queued, approved or applied (by role, link
  * or company + title) stays out. Earlier list items for the same role are
@@ -359,10 +379,12 @@ export async function queueTick({ readLimit = 300, log = console } = {}) {
   const users = await all('SELECT DISTINCT user_id FROM tailoring_config');
   const out = [];
   for (const { user_id: userId } of users) {
+    const { getSettings } = await import('./dailyPlan.js');
+    const pastDeadline = await closePastDeadlines(userId, (await getSettings(userId)).timezone || 'America/Chicago');
     const filled = await fillQueue(userId);
     const order = await prioritizeQueue(userId);
     const deadlines = await pullInDeadlines(userId);
-    out.push({ userId, filled, order, deadlines });
+    out.push({ userId, pastDeadline, filled, order, deadlines });
   }
   const brief = ({ closedIds, returnToSchoolIds, ...rest }) => rest;
   return { read: read.closedIds ? brief(read) : read, retried: brief(retried), dropped, users: out };

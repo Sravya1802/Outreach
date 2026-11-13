@@ -234,6 +234,33 @@ export function openedLabel(posted: string | null | undefined, now = Date.now())
   return `Opened ${days} days ago (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })})`
 }
 
+/** The Sort by menu; '' keeps the queue's own order (turn, then most recently updated). */
+export const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest opened first' },
+  { value: 'oldest', label: 'Oldest opened first' },
+  { value: 'closing', label: 'Closing soonest' },
+  { value: 'ats', label: 'Highest ATS' },
+  { value: 'company', label: 'Company A–Z' },
+] as const
+
+type Sortable = Pick<ReviewRow, 'posted_at' | 'deadline' | 'ats_after' | 'company_name' | 'title'>
+const at = (d: string | null | undefined) => { const t = d ? new Date(d).getTime() : NaN; return Number.isNaN(t) ? null : t }
+/** null sorts last whichever way the rest go. */
+const by = (a: number | null, b: number | null, dir: 1 | -1) => (a == null ? (b == null ? 0 : 1) : b == null ? -1 : (a - b) * dir)
+
+/** A sorted copy; ties keep the order they came in. */
+export function sortRows<T extends Sortable>(rows: T[], sort: string): T[] {
+  const cmp: Record<string, (a: T, b: T) => number> = {
+    newest: (a, b) => by(at(a.posted_at), at(b.posted_at), -1),
+    oldest: (a, b) => by(at(a.posted_at), at(b.posted_at), 1),
+    closing: (a, b) => by(at(a.deadline), at(b.deadline), 1),
+    ats: (a, b) => by(a.ats_after, b.ats_after, -1),
+    company: (a, b) => a.company_name.localeCompare(b.company_name, 'en', { sensitivity: 'base' }) || a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }),
+  }
+  const f = cmp[sort]
+  return f ? [...rows].sort(f) : rows
+}
+
 /** "Closes Fri, Nov 14" for a stated deadline ('YYYY-MM-DD'). */
 export function deadlineLabel(d: string | null | undefined) {
   if (!d) return null

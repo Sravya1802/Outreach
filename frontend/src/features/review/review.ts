@@ -246,6 +246,18 @@ export function openedLabel(posted: string | null | undefined, now = Date.now(),
   return `${word} ${days} days ago (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })})`
 }
 
+/** Why a role is in Closed. */
+export const CLOSED_LABEL: Record<string, string> = {
+  citizenship: 'Citizen or green card only',
+  clearance: 'Clearance required',
+  mba: 'MBA required',
+  phd: 'PhD required',
+  return_to_school: 'Return to school',
+  field: 'Outside your field',
+  posting_closed: 'Posting closed',
+  deadline_passed: 'Closing date passed',
+}
+
 /** The Sort by menu; '' keeps the queue's own order (turn, then most recently updated). */
 export const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest opened first' },

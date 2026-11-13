@@ -267,7 +267,17 @@ export interface CatalogListing {
   grad_years?: string[]
   /** Other sources listing the same job (same company + title). */
   also_on: string[]
+  /** Why the user can't take it (from the job description); null when they can. */
+  ineligible_reason: IneligibleReason | null
+  /** The words in the posting that decided it. */
+  ineligible_phrase: string | null
+  /** Something close to a bar but not clearly one: "Check eligibility". */
+  eligibility_flag: string | null
+  /** The user said the check was wrong. */
+  restored: boolean
 }
+
+export type IneligibleReason = 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school'
 
 export type Sponsorship = 'sponsors' | 'no_sponsorship' | 'citizens_only'
 export type VisaFilter = 'sponsors' | 'open' | 'citizens'
@@ -285,7 +295,7 @@ export interface CatalogSourceCount { source: string; role_type: RoleType; regio
 /** '2027' = names 2027; '2027-or-unstated' = names 2027 or no year at all. */
 export type YearFilter = `${number}` | `${number}-or-unstated`
 
-export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; visa?: VisaFilter; year?: YearFilter; page?: number; pageSize?: number }
+export interface CatalogQuery { roleType: RoleType; region: Region; field?: Field; source?: string; search?: string; tier?: Tier; hasPay?: boolean; visa?: VisaFilter; year?: YearFilter; removed?: boolean; page?: number; pageSize?: number }
 
 export interface AlertSubscription {
   subscribed: boolean
@@ -925,6 +935,8 @@ export interface ReviewRow {
   place: number | null
   /** Waiting, but its posting couldn't be read, so a run can't take it yet. */
   no_posting: boolean
+  /** Why a Closed role was closed (citizenship, clearance, mba, phd, return_to_school, field, posting_closed, deadline_passed). */
+  closed_reason: string | null
   company_name: string
   title: string
   location: string | null
@@ -1270,6 +1282,7 @@ export const api = {
   searchCompanies: (q: string): Promise<CompanySearchHit[]> => legacy.jobs.search(q),
   catalog: (q: CatalogQuery): Promise<CatalogPage> => legacy.scrapedRoles.list(q),
   catalogSources: async (): Promise<CatalogSourceCount[]> => (await legacy.scrapedRoles.sources()).sources ?? [],
+  restoreListing: (id: number): Promise<{ ok: boolean; reopened: string[] }> => legacy.scrapedRoles.restore(id),
   trackListing: (id: number): Promise<{ ok: boolean; evaluation: { id: number; alreadySubmitted?: boolean } }> => legacy.scrapedRoles.track(id),
   autoApplyListing: (id: number): Promise<{ ok: boolean; evaluation: { id: number; alreadySubmitted?: boolean } }> => legacy.scrapedRoles.autoApply(id),
   refreshCatalog: (): Promise<{ ok: boolean; message: string }> => legacy.scrapedRoles.refresh(),

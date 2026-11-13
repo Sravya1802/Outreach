@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, BellRing, Check, RefreshCw, Search, Sparkles, Zap } from 'lucide-react'
 import { qk } from '@/app/queryClient'
-import { api, type VisaFilter, type CatalogListing, type CatalogPage, type Field, type Tier, type YearFilter } from '@/lib/api'
+import { type IneligibleReason, api, type VisaFilter, type CatalogListing, type CatalogPage, type Field, type Tier, type YearFilter } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { formatNumber } from '@/lib/format'
 import {
@@ -45,13 +45,24 @@ function yearsLabel(years: string[]) {
   return first === last ? first : `${first}–${last.slice(2)}`
 }
 
-function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
+/** Why a role was taken off the Roles tab. */
+const REASON_LABEL: Record<IneligibleReason, string> = {
+  citizenship: 'U.S. citizen or green card only',
+  clearance: 'Security clearance',
+  mba: 'MBA required',
+  phd: 'PhD required',
+  return_to_school: 'Return to school',
+}
+
+function RoleRow({ role, field, onTrack, onAutoApply, onRestore, busy }: {
   field?: Field
   role: CatalogListing
   onTrack: () => void
   onAutoApply: () => void
-  busy: 'track' | 'auto' | null
+  onRestore: () => void
+  busy: 'track' | 'auto' | 'restore' | null
 }) {
+  const removed = Boolean(role.ineligible_reason && !role.restored)
   const visa = visaLabel(role.sponsorship, role.jd_read)
   const visaTitle = role.sponsorship_quote ? `“${role.sponsorship_quote}”` : visa ? 'The job description doesn’t mention visas.' : 'The job description hasn’t been read yet.'
   const others = (role.also_on ?? []).filter(s => s !== role.source)
@@ -75,6 +86,15 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
           {role.company_name}
           <span className="md:hidden">{role.location ? ` · ${role.location}` : ''}{posted ? ` · ${postedWords(posted)}` : ''}</span>
         </p>
+        {removed && role.ineligible_reason && (
+          <p className="mt-1 flex min-w-0 items-start gap-1.5 text-xs text-muted">
+            <Badge tone="danger">{REASON_LABEL[role.ineligible_reason]}</Badge>
+            {role.ineligible_phrase && <span className="line-clamp-2">“{role.ineligible_phrase}”</span>}
+          </p>
+        )}
+        {!removed && role.eligibility_flag && (
+          <p className="mt-1 text-xs" title={role.eligibility_flag}><Badge tone="warning">Check eligibility</Badge></p>
+        )}
       </div>
       <p className={cn('hidden truncate font-mono text-[13px] md:block', role.salary_range ? 'text-fg' : 'text-subtle')}
         title={role.salary_range ? 'Pay range from the job posting' : 'This posting doesn’t list pay'}>
@@ -99,7 +119,9 @@ function RoleRow({ role, field, onTrack, onAutoApply, busy }: {
         {posted && <span className="block xl:hidden">{postedWords(posted)}</span>}
       </div>
       <div className="flex items-center gap-1.5 md:justify-end">
-        {role.autoQueued ? (
+        {removed ? (
+          <Button size="sm" variant="secondary" loading={busy === 'restore'} disabled={!!busy} onClick={onRestore} title="The check got it wrong: put it back on the Roles tab and in the queue">Restore</Button>
+        ) : role.autoQueued ? (
           <Badge tone="accent"><Zap className="size-3" /> Queued</Badge>
         ) : role.tracked ? (
           <>
@@ -143,7 +165,9 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
   const page = Math.max(0, Number(params.get('page')) || 0)
   const [pageSize, setPageSize] = usePageSize('roles')
   const [alertsOpen, setAlertsOpen] = useState(false)
-  const [busy, setBusy] = useState<Record<number, 'track' | 'auto'>>({})
+  const [busy, setBusy] = useState<Record<number, 'track' | 'auto' | 'restore'>>({})
+  // show=removed: the roles taken off because the posting rules the user out.
+  const removed = params.get('show') === 'removed'
 
   // Keep ?q= in sync with the debounced search (and reset to page 1).
   useEffect(() => {
@@ -154,7 +178,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
     setParams(next, { replace: true })
   }, [search, params, setParams])
 
-  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa, year, page, pageSize }
+  const query = { roleType, region: list.region, field, source: source || undefined, search: search || undefined, tier, hasPay: hasPay || undefined, visa: removed ? undefined : visa, year, removed: removed || undefined, page, pageSize }
   const listing = useQuery({ queryKey: qk.catalog(query), queryFn: () => api.catalog(query), placeholderData: keepPreviousData })
   const sources = useQuery({ queryKey: qk.catalogSources, queryFn: api.catalogSources, staleTime: 5 * 60_000 })
   const counts = countsByList(sources.data ?? [], market, field)
@@ -197,6 +221,17 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
         navigate('/jobs/auto-apply')
       } else toast.error(e.message)
     },
+    onSettled: (_r, _e, role) => setBusy(({ [role.id]: _done, ...rest }) => rest),
+  })
+  const restore = useMutation({
+    mutationFn: (role: CatalogListing) => api.restoreListing(role.id),
+    onMutate: (role) => setBusy(b => ({ ...b, [role.id]: 'restore' })),
+    onSuccess: (r, role) => {
+      markRow(role.id, { restored: true })
+      toast.success(`Restored ${role.company_name}. It’s back on the Roles tab${r.reopened.length ? ' and in your Review queue' : ''}.`)
+      void qc.invalidateQueries({ queryKey: ['catalog'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
     onSettled: (_r, _e, role) => setBusy(({ [role.id]: _done, ...rest }) => rest),
   })
   const refresh = useMutation({
@@ -263,7 +298,11 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
           <option value="faang">FAANG+ only</option>
           <option value="quant">Quant / trading</option>
         </Select>
-        <Select value={visa ?? 'any'} onChange={e => setParam('visa', e.target.value)} aria-label="Visa sponsorship" className="sm:w-52">
+        <Select value={removed ? 'removed' : 'eligible'} onChange={e => setParam('show', e.target.value === 'removed' ? 'removed' : '')} aria-label="Eligibility" className="sm:w-52">
+          <option value="eligible">Roles I can take</option>
+          <option value="removed">Removed (not eligible)</option>
+        </Select>
+        <Select value={visa ?? 'any'} onChange={e => setParam('visa', e.target.value)} aria-label="Visa sponsorship" className="sm:w-52" disabled={removed}>
           <option value="any">Any visa status</option>
           <option value="open">Hide “won’t sponsor”</option>
           <option value="sponsors">Says it sponsors</option>
@@ -308,7 +347,7 @@ function RolesList({ list, market }: { list: CatalogList; market: Market }) {
           <ul className={`divide-y divide-line transition-opacity ${listing.isPlaceholderData ? 'opacity-60' : ''}`}>
             {rows.map(role => (
               <RoleRow key={role.id} role={role} field={field} busy={busy[role.id] ?? null}
-                onTrack={() => track.mutate(role)} onAutoApply={() => autoApply.mutate(role)} />
+                onTrack={() => track.mutate(role)} onRestore={() => restore.mutate(role)} onAutoApply={() => autoApply.mutate(role)} />
             ))}
           </ul>
         )}

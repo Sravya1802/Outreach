@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -289,5 +289,46 @@ describe('skills to learn and deadlines', () => {
   it('approves a no-recruiter role with its template, never in bulk', () => {
     const r = { emails: 0, inGmail: 0, notes: 0, skipped: [], blankDraft: true }
     expect(approvedLine(r)).toMatch(/Gmail Drafts with the resume attached and an empty To line/)
+  })
+})
+
+describe('date menus', () => {
+  // Thu Nov 13 2026, 10:00 in the browser's zone.
+  const now = new Date(2026, 10, 13, 10, 0).getTime()
+  const ago = (days: number) => new Date(now - days * 86_400_000).toISOString()
+
+  it('Opened: within the last N days, or over 30 days ago', () => {
+    expect(openedMatch(ago(0.5), '1', now)).toBe(true)
+    expect(openedMatch(ago(2), '1', now)).toBe(false)
+    expect(openedMatch(ago(2), '3', now)).toBe(true)
+    expect(openedMatch(ago(10), '7', now)).toBe(false)
+    expect(openedMatch(ago(10), '14', now)).toBe(true)
+    expect(openedMatch(ago(45), '30', now)).toBe(false)
+    expect(openedMatch(ago(45), 'older', now)).toBe(true)
+    expect(openedMatch(ago(5), 'older', now)).toBe(false)
+    expect(openedMatch(null, '7', now)).toBe(false)
+    expect(openedMatch(null, '', now)).toBe(true)
+  })
+
+  it('Closes: within N days counts today, a past date is only "stated"', () => {
+    expect(closesMatch('2026-11-13', '3', now)).toBe(true)
+    expect(closesMatch('2026-11-16', '3', now)).toBe(true)
+    expect(closesMatch('2026-11-17', '3', now)).toBe(false)
+    expect(closesMatch('2026-11-20', '7', now)).toBe(true)
+    expect(closesMatch('2026-12-10', '30', now)).toBe(true)
+    expect(closesMatch('2026-11-12', '7', now)).toBe(false)
+    expect(closesMatch('2026-11-12', 'stated', now)).toBe(true)
+    expect(closesMatch(null, 'stated', now)).toBe(false)
+    expect(closesMatch(null, 'none', now)).toBe(true)
+    expect(closesMatch('2026-11-20', 'none', now)).toBe(false)
+    expect(closesMatch(null, '', now)).toBe(true)
+  })
+
+  it('Opened label: how old the posting is, then the date (the year only when it differs)', () => {
+    expect(openedLabel(new Date(2026, 10, 13, 8).toISOString(), now)).toBe('Opened today')
+    expect(openedLabel(new Date(2026, 10, 12, 23).toISOString(), now)).toBe('Opened yesterday')
+    expect(openedLabel(new Date(2026, 10, 3, 12).toISOString(), now)).toBe('Opened 10 days ago (Nov 3)')
+    expect(openedLabel(new Date(2025, 11, 30, 12).toISOString(), now)).toBe('Opened 318 days ago (Dec 30, 2025)')
+    expect(openedLabel(null, now)).toBeNull()
   })
 })

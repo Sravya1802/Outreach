@@ -7,11 +7,13 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
 const OUTREACH_KEY = 'snj.review.outreach'
+const OPENED_KEY = 'snj.review.opened'
+const CLOSES_KEY = 'snj.review.closes'
 function saved(key: string) {
   try { return localStorage.getItem(key) ?? '' } catch { return '' }
 }
@@ -24,11 +26,12 @@ const cell = 'border-b border-line px-3 py-3 align-top'
 const num = 'font-mono text-[13px] whitespace-nowrap'
 const blank = <span className="text-subtle">—</span>
 
-function RoleName({ r }: { r: ReviewRow }) {
+function RoleName({ r, opened = false }: { r: ReviewRow; opened?: boolean }) {
+  const sub = [r.location, opened ? openedLabel(r.posted_at) : null].filter(Boolean).join(' · ')
   return (
     <>
       <Link to={`/review/${r.id}`} className="hover:text-accent"><b className="font-medium">{r.company_name}</b> · {r.title}</Link>
-      {r.location && <p className="mt-0.5 text-[12px] text-subtle">{r.location}</p>}
+      {sub && <p className="mt-0.5 text-[12px] text-subtle">{sub}</p>}
     </>
   )
 }
@@ -44,7 +47,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
         </td>
       )}
       <td className={cell}>
-        <RoleName r={r} />
+        <RoleName r={r} opened />
         <div className="mt-1 flex flex-wrap gap-1.5 empty:hidden">
           {r.version != null && r.check_status === null && <Badge tone="info">Checking</Badge>}
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
@@ -90,7 +93,7 @@ function LineRow({ r }: { r: ReviewRow }) {
 const COLUMNS = ['Company and role', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
 const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
   working: ['Run', 'Company and role', 'Fit', 'Started'],
-  waiting: ['Turn', 'Company and role', 'Fit', 'Posted'],
+  waiting: ['Turn', 'Company and role', 'Fit', 'Opened'],
 }
 
 const CAPS = [15, 30, 45, 60, 90, 120]
@@ -124,10 +127,12 @@ export default function ReviewPage() {
   const [company, setCompany] = useState('')
   const [year, setYear] = useState(() => saved(YEAR_KEY))
   const [outreach, setOutreach] = useState(() => saved(OUTREACH_KEY))
+  const [opened, setOpened] = useState(() => saved(OPENED_KEY))
+  const [closes, setCloses] = useState(() => saved(CLOSES_KEY))
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
   const everything = queue.data?.roles ?? []
   // The menus narrow the tiles, the rows and Select all; the backlog bar counts everything.
-  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach))
+  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach) && openedMatch(r.posted_at, opened) && closesMatch(r.deadline, closes))
   const run = queue.data?.lastRun ?? null
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
@@ -201,6 +206,14 @@ export default function ReviewPage() {
               <option value="">Any outreach</option>
               {OUTREACH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
+            <Select value={opened} onChange={e => { setOpened(e.target.value); save(OPENED_KEY, e.target.value) }} aria-label="Opened" className="sm:w-56">
+              <option value="">Opened any time</option>
+              {OPENED_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            <Select value={closes} onChange={e => { setCloses(e.target.value); save(CLOSES_KEY, e.target.value) }} aria-label="Closes" className="sm:w-56">
+              <option value="">Any closing date</option>
+              {CLOSES_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
             {bulk && safe.length > 0 && (
               <label className="inline-flex items-center gap-2 text-[14px] text-fg">
                 <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}
@@ -223,7 +236,7 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
-                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : year || outreach ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>

@@ -175,6 +175,65 @@ function skillList(x: unknown) {
   }).filter(Boolean)
 }
 
+const DAY = 86_400_000
+
+/** Midnight of `now`'s day (the browser's), as a UTC timestamp of that date: compares with 'YYYY-MM-DD' dates. */
+function today(now: number) {
+  const d = new Date(now)
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+/** The Opened menu: when the posting went up (the day the app first saw it, when the posting doesn't say). */
+export const OPENED_OPTIONS = [
+  { value: '1', label: 'Opened in the last day' },
+  { value: '3', label: 'Opened in the last 3 days' },
+  { value: '7', label: 'Opened in the last 7 days' },
+  { value: '14', label: 'Opened in the last 14 days' },
+  { value: '30', label: 'Opened in the last 30 days' },
+  { value: 'older', label: 'Opened over 30 days ago' },
+] as const
+
+/** '' keeps every role. */
+export function openedMatch(posted: string | null | undefined, filter: string, now = Date.now()) {
+  if (!filter) return true
+  const t = posted ? new Date(posted).getTime() : NaN
+  if (Number.isNaN(t)) return false
+  const days = (now - t) / DAY
+  return filter === 'older' ? days > 30 : days <= Number(filter)
+}
+
+/** The Closes menu: only postings that state a closing date have one. */
+export const CLOSES_OPTIONS = [
+  { value: '3', label: 'Closes within 3 days' },
+  { value: '7', label: 'Closes within 7 days' },
+  { value: '14', label: 'Closes within 14 days' },
+  { value: '30', label: 'Closes within 30 days' },
+  { value: 'stated', label: 'States a closing date' },
+  { value: 'none', label: 'No closing date stated' },
+] as const
+
+/** '' keeps every role. "Within N days" counts from today (today included); a date already past only counts as stated. */
+export function closesMatch(deadline: string | null | undefined, filter: string, now = Date.now()) {
+  if (!filter) return true
+  const t = deadline ? Date.parse(`${deadline.slice(0, 10)}T00:00:00Z`) : NaN
+  if (filter === 'none') return Number.isNaN(t)
+  if (Number.isNaN(t)) return false
+  if (filter === 'stated') return true
+  const days = (t - today(now)) / DAY
+  return days >= 0 && days <= Number(filter)
+}
+
+/** How old the posting is: "Opened today", "Opened yesterday", "Opened 10 days ago (Nov 3)" (the year when it isn't this one). */
+export function openedLabel(posted: string | null | undefined, now = Date.now()) {
+  const d = posted ? new Date(posted) : null
+  if (!d || Number.isNaN(d.getTime())) return null
+  const days = Math.max(0, Math.round((today(now) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / DAY))
+  if (days === 0) return 'Opened today'
+  if (days === 1) return 'Opened yesterday'
+  const sameYear = d.getFullYear() === new Date(now).getFullYear()
+  return `Opened ${days} days ago (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })})`
+}
+
 /** "Closes Fri, Nov 14" for a stated deadline ('YYYY-MM-DD'). */
 export function deadlineLabel(d: string | null | undefined) {
   if (!d) return null

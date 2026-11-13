@@ -17,7 +17,8 @@
 //
 // Nothing here applies, emails or drafts anything: approval stays the user's.
 import { all, one, run } from '../db.js';
-import { US_PERSON_FLAG, postingFacts, studentsWelcome, usPersonOnly } from './postingFacts.js';
+import { US_PERSON_FLAG, postingFacts, studentsWelcome } from './postingFacts.js';
+import { closedNote, eligibilityFor } from './eligibility.js';
 
 import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, rolesTabWhere, time } from './queueOrder.js';
 
@@ -142,15 +143,15 @@ export async function readRolesTabPostings({ limit = 500, log = console, read, r
  */
 export async function dropFromQueue({ closedIds = [], returnToSchoolIds = [] }) {
   let dropped = 0;
-  for (const [ids, note] of [
-    [closedIds, 'The posting closed before its resume was written.'],
-    [returnToSchoolIds, 'This internship is for students returning to school afterwards, so it left the queue.'],
+  for (const [ids, note, reason] of [
+    [closedIds, 'The posting closed before its resume was written.', 'posting_closed'],
+    [returnToSchoolIds, closedNote('return_to_school'), 'return_to_school'],
   ]) {
     if (!ids.length) continue;
     const gone = await all(
-      `UPDATE tailor_jobs SET status = 'closed', updated_at = NOW()
+      `UPDATE tailor_jobs SET status = 'closed', closed_reason = $2, updated_at = NOW()
         WHERE status = 'queued' AND scraped_role_id = ANY($1::bigint[]) RETURNING plan_item_id`,
-      [ids],
+      [ids, reason],
     );
     if (gone.length) await run('UPDATE plan_items SET stage_note = $2 WHERE id = ANY($1::bigint[])', [gone.map(g => g.plan_item_id), note]);
     dropped += gone.length;
@@ -165,7 +166,7 @@ export async function dropFromQueue({ closedIds = [], returnToSchoolIds = [] }) 
  */
 export async function closePastDeadlines(userId, tz = 'America/Chicago') {
   const gone = await all(
-    `UPDATE tailor_jobs j SET status = 'closed', updated_at = NOW()
+    `UPDATE tailor_jobs j SET status = 'closed', closed_reason = 'deadline_passed', updated_at = NOW()
        FROM plan_items pi LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
       WHERE pi.id = j.plan_item_id AND j.user_id = $1 AND j.status IN ('queued', 'ready', 'revision_requested')
         AND COALESCE(pi.apply_deadline, sr.apply_deadline) < (NOW() AT TIME ZONE $2)::date
@@ -179,36 +180,80 @@ export async function closePastDeadlines(userId, tz = 'America/Chicago') {
 }
 
 /**
- * Roles the user doesn't apply to (MBA, PhD-only, or outside software, data and
- * AI by title, `offFieldReason`; or a posting only a U.S. person can take,
- * `usPersonOnly` on the posting or the run's eligibility flag): a waiting role leaves the queue and its list
- * item is marked skipped, so it never comes back; a Ready role goes to Closed,
- * its resume kept. Approved and applied roles are left alone.
+ * Check scraped roles' postings for eligibility (`eligibilityFor`): the reason
+ * and the phrase, or a "Check eligibility" flag. Roles never checked, or whose
+ * posting changed since (a trigger clears eligibility_checked_at), newest first.
  */
-export async function skipOffField(userId) {
+export async function checkEligibility({ limit = 3000 } = {}) {
   const rows = await all(
-    `SELECT j.id, j.status, j.plan_item_id, pi.title, v.flag, v.id IS NOT NULL AS written,
-            CASE WHEN p.text ~* 'citizen|u\\.?s\\.? person|clearance|itar|permanent resident|green card' THEN p.text END AS text
+    `SELECT id, role_type, title, description, sponsorship_quote FROM scraped_roles
+      WHERE eligibility_checked_at IS NULL ORDER BY id DESC LIMIT $1`,
+    [limit],
+  );
+  const stats = { checked: rows.length, removed: 0, flagged: 0 };
+  for (let i = 0; i < rows.length; i += 500) {
+    const c = rows.slice(i, i + 500).map((r) => {
+      const v = eligibilityFor({ title: r.title, text: r.description, quote: r.sponsorship_quote, roleType: r.role_type });
+      if (v?.reason) stats.removed += 1;
+      if (v?.flag) stats.flagged += 1;
+      return { id: r.id, reason: v?.reason || null, phrase: v?.phrase || null, flag: v?.flag || null };
+    });
+    await run(
+      `UPDATE scraped_roles s SET ineligible_reason = u.reason, ineligible_phrase = u.phrase, eligibility_flag = u.flag, eligibility_checked_at = NOW()
+         FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[]) AS u(id, reason, phrase, flag) WHERE s.id = u.id`,
+      [c.map(x => x.id), c.map(x => x.reason), c.map(x => x.phrase), c.map(x => x.flag)],
+    );
+  }
+  return stats;
+}
+
+const flagReason = (flag) => (/clearance|polygraph/i.test(flag) ? 'clearance' : 'citizenship');
+
+/**
+ * Queued and Ready roles the user can't take go to Closed, with the reason
+ * (tailor_jobs.closed_reason) and the phrase (plan_items.stage_note). Never
+ * deleted. Reasons: the posting's (scraped_roles.ineligible_reason; an own
+ * link's posting is checked here), a title outside software, data and AI, or
+ * a run's eligibility flag that says U.S. person or clearance. A role the user
+ * restored on the Roles tab stays.
+ */
+export async function closeIneligible(userId) {
+  const rows = await all(
+    `SELECT j.id, j.plan_item_id, pi.title, sr.role_type, sr.ineligible_reason, sr.ineligible_phrase, (sr.eligibility_restored_at IS NOT NULL) AS restored,
+            CASE WHEN sr.id IS NULL THEN pi.job_description END AS own_text, v.flag,
+            CASE WHEN v.flag IS NOT NULL THEN COALESCE(NULLIF(pi.job_description, ''), sr.description) END AS text
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
-       CROSS JOIN LATERAL (SELECT COALESCE(NULLIF(pi.job_description, ''), sr.description) AS text) p
-       LEFT JOIN LATERAL (SELECT x.id, x.report->>'eligibility_flag' AS flag FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
+       LEFT JOIN LATERAL (SELECT x.report->>'eligibility_flag' AS flag FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
       WHERE j.user_id = $1 AND j.status IN ('queued', 'ready', 'revision_requested')`,
     [userId],
   );
-  const usOnly = (r) => Boolean(usPersonOnly(r.text) || (r.flag && US_PERSON_FLAG.test(r.flag) && !studentsWelcome(r.text)));
-  const hits = rows.map(r => ({ ...r, why: offFieldReason(r.title) || (usOnly(r) ? 'us_person' : null) })).filter(r => r.why);
-  if (!hits.length) return { removed: 0, closed: 0 };
-  const drop = hits.filter(r => r.status === 'queued' && !r.written);
-  const close = hits.filter(r => !drop.includes(r));
-  if (drop.length) await run('DELETE FROM tailor_jobs WHERE id = ANY($1::bigint[]) AND status = $2', [drop.map(r => r.id), 'queued']);
-  if (close.length) await run("UPDATE tailor_jobs SET status = 'closed', updated_at = NOW() WHERE id = ANY($1::bigint[])", [close.map(r => r.id)]);
+  const hits = [];
+  for (const r of rows) {
+    if (r.restored) continue;
+    let reason = r.ineligible_reason;
+    let phrase = r.ineligible_phrase;
+    if (!reason && r.own_text) {
+      const v = eligibilityFor({ title: r.title, text: r.own_text, roleType: /intern|co-?op/i.test(r.title) ? 'intern' : 'new_grad' });
+      if (v?.reason) ({ reason, phrase } = v);
+    }
+    if (!reason && offFieldReason(r.title) === 'field') { reason = 'field'; phrase = r.title; }
+    if (!reason && r.flag && US_PERSON_FLAG.test(r.flag) && !studentsWelcome(r.text)) { reason = flagReason(r.flag); phrase = `The run’s check: ${r.flag}`; }
+    if (reason) hits.push({ ...r, reason, phrase });
+  }
+  if (!hits.length) return { closed: 0 };
   await run(
-    `UPDATE plan_items p SET decision = CASE WHEN u.dropped THEN 'skipped' ELSE p.decision END, stage_note = u.note
-       FROM unnest($1::bigint[], $2::text[], $3::boolean[]) AS u(id, note, dropped) WHERE p.id = u.id`,
-    [hits.map(r => r.plan_item_id), hits.map(r => OFF_FIELD_NOTE[r.why]), hits.map(r => drop.includes(r))],
+    `UPDATE tailor_jobs j SET status = 'closed', closed_reason = u.reason, updated_at = NOW()
+       FROM unnest($1::bigint[], $2::text[]) AS u(id, reason) WHERE j.id = u.id AND j.status IN ('queued', 'ready', 'revision_requested')`,
+    [hits.map(h => h.id), hits.map(h => h.reason)],
   );
-  return { removed: drop.length, closed: close.length };
+  await run(
+    'UPDATE plan_items p SET stage_note = u.note FROM unnest($1::bigint[], $2::text[]) AS u(id, note) WHERE p.id = u.id',
+    [hits.map(h => h.plan_item_id), hits.map(h => closedNote(h.reason, h.phrase))],
+  );
+  const byReason = {};
+  for (const h of hits) byReason[h.reason] = (byReason[h.reason] || 0) + 1;
+  return { closed: hits.length, byReason };
 }
 
 /**
@@ -222,7 +267,7 @@ export async function fillQueue(userId) {
   const roles = await all(
     // Only roles whose posting has been read: a return-to-school internship or a closed posting never goes in unread.
     `SELECT id, role_type, company_name, title, location, apply_url, salary_range, sponsorship, apply_deadline, COALESCE(posted_at, scraped_at) AS posted
-       FROM scraped_roles WHERE ${w.sql} AND facts_read_at IS NOT NULL`,
+       FROM scraped_roles WHERE ${w.sql} AND facts_read_at IS NOT NULL AND eligibility_checked_at IS NOT NULL`,
     w.params,
   );
   const taken = await all(
@@ -342,7 +387,7 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
   }
   if (closed.length) {
     const ids = closed.map(r => r.id);
-    await run("UPDATE tailor_jobs SET status = 'closed', updated_at = NOW() WHERE id = ANY($1::bigint[])", [ids]);
+    await run("UPDATE tailor_jobs SET status = 'closed', closed_reason = 'posting_closed', updated_at = NOW() WHERE id = ANY($1::bigint[])", [ids]);
     await run("UPDATE plan_items SET stage_note = 'The posting closed before its resume was written.' WHERE id = ANY($1::bigint[])", [closed.map(r => r.plan_item_id)]);
     const rids = closed.map(r => r.scraped_role_id).filter(Boolean);
     if (rids.length) await run('UPDATE scraped_roles SET is_active = 0 WHERE id = ANY($1::bigint[])', [rids]);
@@ -413,17 +458,18 @@ export async function queueTick({ readLimit = 300, log = console } = {}) {
     closedIds: [...(read.closedIds || []), ...retried.closedIds],
     returnToSchoolIds: [...(read.returnToSchoolIds || []), ...retried.returnToSchoolIds],
   });
+  const eligibility = await checkEligibility();
   const users = await all('SELECT DISTINCT user_id FROM tailoring_config');
   const out = [];
   for (const { user_id: userId } of users) {
     const { getSettings } = await import('./dailyPlan.js');
     const pastDeadline = await closePastDeadlines(userId, (await getSettings(userId)).timezone || 'America/Chicago');
     const filled = await fillQueue(userId);
-    const offField = await skipOffField(userId);
+    const ineligible = await closeIneligible(userId);
     const order = await prioritizeQueue(userId);
     const deadlines = await pullInDeadlines(userId);
-    out.push({ userId, pastDeadline, filled, offField, order, deadlines });
+    out.push({ userId, pastDeadline, filled, ineligible, order, deadlines });
   }
   const brief = ({ closedIds, returnToSchoolIds, ...rest }) => rest;
-  return { read: read.closedIds ? brief(read) : read, retried: brief(retried), dropped, users: out };
+  return { read: read.closedIds ? brief(read) : read, retried: brief(retried), dropped, eligibility, users: out };
 }

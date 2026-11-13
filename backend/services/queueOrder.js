@@ -1,6 +1,7 @@
 // The pure half of queueAll.js: which roles the Roles tab holds, how the same
 // job is grouped, and the order roles go to the runs. No I/O.
-import { notReturnToSchool, yearCondition } from './gradYear.js';
+import { yearCondition } from './gradYear.js';
+import { eligibleSql } from './eligibility.js';
 
 // The Roles tab as the user reads it: USA, says 2027, not "won't sponsor".
 export const QUEUE_YEAR = '2027';
@@ -11,10 +12,10 @@ export const DAY = 86_400_000;
 const ATS = /(greenhouse\.io|lever\.co|ashbyhq\.com)/i;
 
 /** WHERE (on scraped_roles, unqualified) for the Roles tab's roles; `next` is the first free $ index. */
-export function rolesTabWhere(next, { keepReturnToSchool = false } = {}) {
+export function rolesTabWhere(next, { keepReturnToSchool = false } = {}) { // keepReturnToSchool: keep ineligible roles too (to read them)
   const y = yearCondition({ year: QUEUE_YEAR, orUnstated: false }, next);
   const parts = ['is_active = 1', "region = 'usa'", "role_type IN ('intern', 'new_grad')", "(sponsorship IS NULL OR sponsorship = 'sponsors')", y.sql];
-  if (!keepReturnToSchool) parts.push(notReturnToSchool());
+  if (!keepReturnToSchool) parts.push(eligibleSql());
   return { sql: parts.join(' AND '), params: y.params };
 }
 

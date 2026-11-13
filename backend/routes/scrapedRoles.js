@@ -14,7 +14,8 @@
 import { Router } from 'express';
 import { all, one, run } from '../db.js';
 import { scrapeAllSourcesAndPersist } from '../services/multiSourceScraper.js';
-import { notReturnToSchool, parseYearFilter, yearCondition, YEARS_SELECT } from '../services/gradYear.js';
+import { parseYearFilter, yearCondition, YEARS_SELECT } from '../services/gradYear.js';
+import { REASONS, eligibleSql, removedSql } from '../services/eligibility.js';
 
 const router = Router();
 
@@ -48,11 +49,13 @@ router.get('/', async (req, res) => {
     // year: 2027 = the posting names 2027 (title, or graduating/start in the description);
     // 2027-or-unstated also keeps roles that name no year (hides only other years).
     const year      = parseYearFilter(req.query.year);
+    // removed=1: the roles taken off for eligibility (to look over and restore).
+    const removed   = req.query.removed === '1';
     const page      = Math.max(0, Number(req.query.page) || 0);
     const pageSize  = Math.min(200, Math.max(10, Number(req.query.pageSize) || 50));
 
-    // Internships for students going back to school afterwards are left out.
-    const where = ['is_active = 1', 'role_type = $1', 'region = $2', notReturnToSchool()];
+    // Roles the user can't take (citizenship, clearance, MBA, PhD, return to school) are left out, or alone with removed=1.
+    const where = ['is_active = 1', 'role_type = $1', 'region = $2', removed ? removedSql() : eligibleSql()];
     const params = [role_type, region];
     let p = 3;
     if (source) { where.push(`source = $${p++}`); params.push(source); }
@@ -73,6 +76,7 @@ router.get('/', async (req, res) => {
     const sql = `
       SELECT r.id, r.role_type, r.region, r.tracks, r.title, r.company_name, r.company_url, r.location, r.apply_url, r.source, r.tier,
              r.salary_range, r.posted_at, r.scraped_at, r.sponsorship, r.sponsorship_quote, (r.jd_checked_at IS NOT NULL) AS jd_read,
+             r.ineligible_reason, r.ineligible_phrase, r.eligibility_flag, (r.eligibility_restored_at IS NOT NULL) AS restored,
              ${YEARS_SELECT},
              -- The same job listed by another source (matched on company + title).
              ARRAY(
@@ -210,6 +214,37 @@ async function upsertEvaluationFromRole(userId, role, { applyMode, applyStatus }
   );
   return { id: r?.id, created: true };
 }
+
+// ── POST /api/scraped-roles/:id/restore ───────────────────────────────────────
+// The eligibility check got it wrong: the role comes back to the Roles tab and
+// the queue, and a queue role it closed reopens (Ready if a resume exists).
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad role id' });
+    const role = await one('UPDATE scraped_roles SET eligibility_restored_at = NOW() WHERE id = $1 RETURNING id, company_name, title', [id]);
+    if (!role) return res.status(404).json({ error: 'Role not found' });
+    const reopened = req.user?.id ? await all(
+      `UPDATE tailor_jobs j SET status = CASE WHEN EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = j.plan_item_id) THEN 'ready' ELSE 'queued' END,
+              closed_reason = NULL, claimed_at = CASE WHEN EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = j.plan_item_id) THEN j.claimed_at END,
+              updated_at = NOW()
+        WHERE j.user_id = $1 AND j.scraped_role_id = $2 AND j.status = 'closed' AND j.closed_reason = ANY($3::text[])
+        RETURNING j.plan_item_id, j.status`,
+      [req.user.id, id, [...REASONS, 'field']],
+    ) : [];
+    if (reopened.length) {
+      await run(
+        `UPDATE plan_items SET stage_note = 'Restored: you marked it as a role you can take.', decision = CASE WHEN decision = 'skipped' THEN 'pending' ELSE decision END
+          WHERE id = ANY($1::bigint[]) AND user_id = $2`,
+        [reopened.map(r => r.plan_item_id), req.user.id],
+      );
+    }
+    res.json({ ok: true, role, reopened: reopened.map(r => r.status) });
+  } catch (err) {
+    console.error('[scraped-roles restore]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── POST /api/scraped-roles/:id/track ─────────────────────────────────────────
 router.post('/:id/track', async (req, res) => {

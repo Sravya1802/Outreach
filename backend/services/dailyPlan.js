@@ -14,6 +14,7 @@
  *   Unpicked roles expire with the next list. Nothing applies without approval.
  */
 
+import { eligibleSql } from './eligibility.js';
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { marketFor, regionForMarket } from './markets.js';
@@ -277,6 +278,7 @@ export async function buildPlan(userId, { now = new Date(), force = false } = {}
     const candidates = await all(
       `SELECT sr.* FROM scraped_roles sr
         WHERE sr.is_active = 1 AND sr.region = $2 AND sr.role_type = ANY($3)
+          AND ${eligibleSql('sr.')}
           AND COALESCE(sr.posted_at, sr.scraped_at) > NOW() - make_interval(days => $4)
           AND NOT EXISTS (SELECT 1 FROM plan_items pi WHERE pi.user_id = $1 AND pi.scraped_role_id = sr.id)
           AND NOT EXISTS (SELECT 1 FROM evaluations e WHERE e.user_id = $1 AND e.job_url = sr.apply_url)

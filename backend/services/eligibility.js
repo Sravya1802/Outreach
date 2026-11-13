@@ -109,7 +109,7 @@ const DATE_TOKEN = /\b(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|j
 // Graduation wording only: not "graduate-level", "graduate students" or "graduate degree".
 const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
 // "graduating by / before / no later than <date>" is a ceiling the user meets: those dates don't count.
-const CEILING = /\b(?:before|by|no later than|prior to|until|through|up to)\s+((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|spring|summer|fall|autumn|winter)\s*(?:of\s+)?,?\s*)?20[2-3]\d\b/gi;
+const CEILING = /\b(?:before|by|no later th[ae]n|not later th[ae]n|prior to|until|through|up to|on or before)\s+((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|spring|summer|fall|autumn|winter)\s*(?:of\s+)?,?\s*)?20[2-3]\d\b/gi;
 const USER_GRAD = 2027 * 12 + 6; // June 2027: graduating after this means returning to school
 
 /** The earliest graduation date a sentence asks for, as year*12+month, ignoring ceilings; null without one. */

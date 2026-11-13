@@ -45,6 +45,7 @@ test('return to school (internships only)', () => {
   assert.equal(reason('Tech stack: Python. 2028 or 2029 graduation year.'), 'return_to_school')
   // Graduating by / no later than a date: the user meets it.
   assert.equal(reason('Must be graduating no later than December 2027.'), null)
+  assert.equal(reason('Expected graduation date no later then December 2028.'), null)
   assert.equal(reason('Graduating between December 2026 and June 2027.'), null)
   // New grad roles aren't held to it.
   assert.equal(eligibilityFor({ text: 'Must be returning to school after the internship.', roleType: 'new_grad' }), null)

@@ -198,8 +198,8 @@ export default function ReviewPage() {
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,1fr))]">
-            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="w-full sm:col-span-2 lg:col-span-1" />
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,1fr))]">
+            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="col-span-2 w-full lg:col-span-1" />
             <Select value={year} onChange={e => { setYear(e.target.value); save(YEAR_KEY, e.target.value) }} aria-label="Year" className="w-full">
               <option value="">Any year</option>
               {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -231,7 +231,7 @@ export default function ReviewPage() {
                 {progress != null ? `Approving ${progress} of ${chosen.length}` : `Approve ${chosen.length}`}
               </Button>
             )}
-            <label className="ml-auto flex items-center gap-2 text-[13px] text-muted">
+            <label className="ml-auto flex items-center gap-2 text-[13px] whitespace-nowrap text-muted">
               Sort by
               <Select value={sort} onChange={e => { setSort(e.target.value); save(SORT_KEY, e.target.value) }} aria-label="Sort by" className="w-48">
                 <option value="">Turn order</option>

@@ -188,3 +188,12 @@ test('Apollo people search: rows with an id and a first name, masked last names 
   assert.deepEqual(readApolloPeople(null), []);
   assert.deepEqual(readApolloPeople({ people: 'x' }), []);
 });
+
+test('keywordCheck: combined keywords are separate terms; C++ and C# match literally', () => {
+  const table = [{ keyword: 'C++, Python' }, { keyword: 'Go; Rust' }, { keyword: 'C' }, { keyword: 'CI/CD' }, { keyword: 'SQL, NoSQL, etc.' }]
+  const r = keywordCheck('Languages: C++ and Python. Built CI/CD with Go. SQL daily.', table)
+  assert.deepEqual(r.present.sort(), ['C++', 'CI/CD', 'Go', 'Python', 'SQL'].sort())
+  assert.deepEqual(r.missing.sort(), ['C', 'NoSQL', 'Rust'].sort())
+  assert.deepEqual(keywordCheck('I write C and C#.', [{ keyword: 'C++' }]).missing, ['C++'])
+  assert.deepEqual(keywordCheck('Python, C++', [{ keyword: 'C++' }]).present, ['C++'])
+})

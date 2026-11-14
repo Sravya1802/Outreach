@@ -79,11 +79,17 @@ export function checkOutreach({ email_body, linkedin_note, name, company, quant 
   return errors;
 }
 
+/** The posting's text: the role's own when it has 200+ characters, else the scraped posting's (joined as sr). */
+const POSTING_TEXT = "CASE WHEN length(COALESCE(pi.job_description, '')) >= 200 THEN pi.job_description ELSE COALESCE(NULLIF(sr.description, ''), pi.job_description) END";
+
 /** A run writes the table as [{ keyword, where }] or as { keyword: where }. */
 const keywordList = (table) => (Array.isArray(table) ? table.map(k => String(k?.keyword || '')) : Object.keys(table && typeof table === 'object' ? table : {})).filter(Boolean);
 
-/** "A / B" is two things to find; "CI/CD" is one. */
-const keywordTerms = (table) => [...new Set(keywordList(table).flatMap(k => k.split(/\s+\/\s+/)).map(t => t.trim()).filter(Boolean))];
+/** "A / B", "C++, Python" and "Go; Rust" are separate things to find; "CI/CD" and "C++" are one. */
+export const keywordTerms = (table) => [...new Set(keywordList(table).flatMap(splitKeyword))];
+export const splitKeyword = (k) => String(k).split(/\s*[,;|]\s*|\s+\/\s+/)
+  .map(t => t.trim().replace(/^(?:and|or|&)\s+/i, '').trim())
+  .filter(t => t && !/^(?:etc\.?|and more|or similar|or related(?: fields?)?|related(?: fields?)?)$/i.test(t));
 
 /** The words run together, so "CI / CD" and a line-end "micro-services" still match, with where each word starts and ends. */
 function wordMap(text) {
@@ -149,7 +155,7 @@ export async function checkNewVersions(limit = 10) {
   checking = true;
   try {
     const rows = await all(
-      `SELECT v.id, v.plan_item_id, v.version, v.latex, v.report, pi.title, pi.company_name, COALESCE(pi.job_description, sr.description) AS description
+      `SELECT v.id, v.plan_item_id, v.version, v.latex, v.report, pi.title, pi.company_name, ${POSTING_TEXT} AS description
          FROM resume_versions v JOIN plan_items pi ON pi.id = v.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
         WHERE v.checked_at IS NULL ORDER BY v.created_at LIMIT $1`,
       [limit],
@@ -337,9 +343,10 @@ async function withKeywords({ pdf_path, ...v }) {
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
   const role = await one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, pi.job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, ${POSTING_TEXT} AS job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN scraped_roles sr ON sr.id = COALESCE(j.scraped_role_id, pi.scraped_role_id)
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
       WHERE j.user_id = $1 AND j.plan_item_id = $2`,
     [userId, planItemId],

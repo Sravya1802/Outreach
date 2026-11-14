@@ -2,7 +2,7 @@
 // from the job description and the title. Pure functions, no I/O.
 //
 //   eligibilityFor({ title, text, roleType }) →
-//     { reason, phrase }  remove: 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school'
+//     { reason, phrase }  remove: 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school' | 'graduation'
 //     { flag }            keep, but "Check eligibility": the posting says something close
 //     null                nothing found
 //
@@ -29,18 +29,20 @@ export function closedNote(reason, phrase) {
     mba: 'the role requires an MBA',
     phd: 'the role requires a PhD',
     return_to_school: 'the internship is for students returning to school afterwards',
+    graduation: 'its graduation window holds neither May 2027 nor December 2027',
     field: 'the title is outside software, data and AI',
   }[reason] || reason;
   return `Removed: ${why}${phrase ? ` (“${String(phrase).slice(0, 160)}”)` : ''}.`;
 }
 
-export const REASONS = ['citizenship', 'clearance', 'mba', 'phd', 'return_to_school'];
+export const REASONS = ['citizenship', 'clearance', 'mba', 'phd', 'return_to_school', 'graduation'];
 export const REASON_LABEL = {
   citizenship: 'U.S. citizen or green card only',
   clearance: 'Security clearance',
   mba: 'MBA required',
   phd: 'PhD required',
   return_to_school: 'Return to school',
+  graduation: 'Graduation date',
 };
 
 const clip = (s) => String(s).replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -118,49 +120,81 @@ export function mastersOption(title, text) {
 const RETURN_RE = new RegExp(RETURN_TO_SCHOOL, 'i');
 const REMAINING = /\b(?:at least|minimum of|a minimum of)?\s*(?:one|1|a|two|2)\s+(?:full\s+)?(?:academic\s+)?(?:semester|quarter|term|year)s?\s+(?:of\s+(?:school|study|studies|coursework|classes)\s+)?(?:remaining|left)\s+(?:after|following|upon)\b[^.]{0,60}/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-const SEASON = { spring: 5, summer: 8, fall: 12, autumn: 12, winter: 12 };
-const DATE_TOKEN = /\b(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?(20[2-3]\d)\b/gi;
+// A season is a span of months; a bare year is the whole year.
+const SEASON = { spring: [3, 5], summer: [6, 8], fall: [9, 12], autumn: [9, 12], winter: [12, 12] };
+const DATE = String.raw`(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?20[2-3]\d\b`;
+const DATE_PARTS = /(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?(20[2-3]\d)/i;
 // Graduation wording only: not "graduate-level", "graduate students" or "graduate degree".
-const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
-// "graduating by / before / no later than <date>" is a ceiling the user meets: those dates don't count.
-const CEILING = /\b(?:before|by|no later th[ae]n|not later th[ae]n|prior to|until|through|up to|on or before)\s+((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|spring|summer|fall|autumn|winter)\s*(?:of\s+)?,?\s*)?20[2-3]\d\b/gi;
-// The latest graduation the user takes on: December 2027 (they graduate May 2027 but want Fall 2027 roles too).
-// A window that allows any date up to then stays; only an earliest date in 2028 or later removes the role.
-const LATEST_GRAD = 2027 * 12 + 12;
+const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates|graduated\s+(?:in|by|between|from|after|before|no|within|during)|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
+// The user graduates May 2027, or December 2027: a window holding either date keeps the role.
+const USER_GRADS = [2027 * 12 + 5, 2027 * 12 + 12];
 
-/** The earliest graduation date a sentence asks for, as year*12+month, ignoring ceilings; null without one. */
-function earliestGraduation(sentence) {
-  // "not graduating before / prior to <date>" is a floor: keep its date.
-  const s = sentence.replace(/\bnot\s+(?:be\s+)?graduat\w*\s+(?:before|prior to)\s+/gi, 'graduating from ').replace(CEILING, ' ');
-  let best = null;
-  for (const m of s.matchAll(DATE_TOKEN)) {
-    const [, when, year] = m;
-    const y = Number(year);
-    let month;
-    if (!when) month = y >= 2028 ? 1 : null; // "2028" alone: some time in 2028; "2027" alone can't be told
-    else if (SEASON[when.toLowerCase()]) month = SEASON[when.toLowerCase()];
-    else month = MONTHS.indexOf(when.slice(0, 3).toLowerCase()) + 1;
-    if (!month) continue;
-    const v = y * 12 + month;
-    if (best == null || v < best) best = v;
-  }
-  return best;
+/** A date's months as [first, last] (year*12+month). */
+function span(token) {
+  const m = DATE_PARTS.exec(token);
+  if (!m) return null;
+  const [, when, year] = m;
+  const y = Number(year) * 12;
+  if (!when) return [y + 1, y + 12];
+  const season = SEASON[when.toLowerCase()];
+  if (season) return [y + season[0], y + season[1]];
+  const month = MONTHS.indexOf(when.slice(0, 3).toLowerCase()) + 1;
+  return [y + month, y + month];
 }
 
-function returnToSchool(t) {
-  let m = RETURN_RE.exec(t);
-  if (m) return around(t, m, 30, 80);
-  m = REMAINING.exec(t);
-  if (m) return around(t, m, 30, 20);
-  // A graduation window that starts after June 2027 ("graduating between December 2027 and June 2028", "Class of 2028").
+const RANGE = new RegExp(String.raw`(${DATE})\s*(?:–|—|-|to|through|thru|and|until|till)\s*(${DATE})`, 'i');
+const OR_LATER = new RegExp(String.raw`(${DATE})\s*(?:or|and)\s+(?:later|after|beyond|onwards?)`, 'i');
+const FLOOR = new RegExp(String.raw`\b(?:after|no earlier than|not earlier than|starting(?:\s+in)?|beginning(?:\s+in)?|from|not\s+(?:be\s+)?graduat\w*\s+(?:before|prior to))\s+(${DATE})`, 'i');
+const CEILING = new RegExp(String.raw`\b(?:by|before|no later th[ae]n|not later th[ae]n|prior to|until|up to|on or before|through)\s+(${DATE})`, 'i');
+const ANY_DATE = new RegExp(DATE, 'gi');
+
+/**
+ * The graduation window a clause allows, as { lo, hi } (year*12+month; null =
+ * open), or null when it names no date. Ranges first, then floors and
+ * ceilings, else the dates it lists ("Fall 2027 or Spring 2028").
+ */
+export function graduationWindow(clause) {
+  const c = String(clause || '');
+  const r = RANGE.exec(c);
+  if (r) {
+    // "not graduating before X - Y" is still the range X to Y.
+    const a = span(r[1]); const b = span(r[2]);
+    if (a && b) return { lo: Math.min(a[0], b[0]), hi: Math.max(a[1], b[1]) };
+  }
+  let lo = null; let hi = null;
+  const later = OR_LATER.exec(c);
+  if (later) lo = span(later[1])?.[0] ?? null;
+  const floor = FLOOR.exec(c);
+  if (floor && lo == null) lo = span(floor[1])?.[0] ?? null;
+  const ceiling = CEILING.exec(c);
+  if (ceiling && !/\bnot\s+(?:be\s+)?graduat\w*\s+$/i.test(c.slice(0, ceiling.index))) hi = span(ceiling[1])?.[1] ?? null;
+  if (lo != null || hi != null) return { lo, hi };
+  const spans = [...c.matchAll(ANY_DATE)].map(m => span(m[0])).filter(Boolean);
+  if (!spans.length) return null;
+  return { lo: Math.min(...spans.map(x => x[0])), hi: Math.max(...spans.map(x => x[1])) };
+}
+
+/** Does the window hold May 2027 or December 2027? */
+export const windowFitsUser = (w) => !w || USER_GRADS.some(d => (w.lo == null || w.lo <= d) && (w.hi == null || d <= w.hi));
+
+/** The graduation clause that rules the user out, or null (no date, or a window holding May or December 2027). */
+function graduationMismatch(t) {
   for (const sentence of t.split(/(?<=[a-z0-9)\]][.!?])\s*(?=[A-Z(*])|\n+|;\s*|•|<[^>]+>|\s\*\s/)) {
     const g = GRAD_SENTENCE.exec(sentence);
     if (!g) continue;
     // Only the dates near the graduation words, not the internship's own dates later on.
     const near = sentence.slice(Math.max(0, g.index - 40), g.index + 160);
-    const earliest = earliestGraduation(near);
-    if (earliest != null && earliest > LATEST_GRAD) return clip(near);
+    if (!windowFitsUser(graduationWindow(near))) return clip(near);
   }
+  return null;
+}
+
+/** An internship that says the intern goes back to school afterwards. */
+function returnToSchool(t) {
+  let m = RETURN_RE.exec(t);
+  if (m) return around(t, m, 30, 80);
+  m = REMAINING.exec(t);
+  if (m) return around(t, m, 30, 20);
   return null;
 }
 
@@ -242,11 +276,14 @@ export function eligibilityFor({ title = '', text = '', quote = '', roleType = '
     else return { reason: 'phd', phrase: around(t, p, 0, 0) };
   }
 
-  // Return to school: internships only.
+  // Return to school: internships that say so.
   if (roleType === 'intern') {
     const r = returnToSchool(t);
     if (r) return { reason: 'return_to_school', phrase: r };
   }
+  // Graduation window (internships and new grad): neither May nor December 2027 inside it.
+  const g = graduationMismatch(t);
+  if (g) return { reason: 'graduation', phrase: g };
 
   return flags.length ? { flag: flags[0].slice(0, 300) } : null;
 }

@@ -145,8 +145,7 @@ async function checkVersion(v) {
     'UPDATE resume_versions SET pdf_path = $2, pages = $3, check_status = $4, check_errors = $5, keywords = $6, checked_at = NOW() WHERE id = $1',
     [v.id, path, built.pages, errors.length ? 'flagged' : 'passed', JSON.stringify(errors), JSON.stringify(keywordCheck(text, v.report?.keyword_table))],
   );
-  // The run left the callback chance empty: estimate it here, so every version has one.
-  if (v.callback_after == null) await fillCallback(v, text).catch(err => console.warn('[review] callback estimate failed', v.id, err.message));
+  // A run that leaves the callback chance empty gets one from fillMissingCallbacks, one every 2 minutes (Groq's limit is per minute).
 }
 
 let callbackPauseUntil = 0;

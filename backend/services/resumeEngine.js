@@ -614,20 +614,42 @@ ${str(afterText).slice(0, 6000)}`,
   };
 }
 
+// Callback only, kept small for Groq's 8K tokens a minute (the full recruiter check above is ~7.6K).
+const CALLBACK_SYSTEM = `You are a senior technical recruiter. Estimate the chance a recruiter shortlists this application for an interview from the resume alone (no referral), before and after tailoring. Base rate for a new-grad cold application: big tech or a famous startup 2–5%, mid-size 5–10%, small company 8–15%. Every required qualification clearly shown → up to ×3; most shown → ×1.5–2; a hard requirement missing → ×0.5 or lower. Cap at 35%. Same base rate before and after, so the difference is only what tailoring changed.
+Return JSON only: {"callback_before": 0-100, "callback_after": 0-100, "callback_why": "one or two short sentences"}`;
+
 /**
  * The callback chance for a resume a Claude chat run wrote, when the run left it
- * empty: the same recruiter check, the master resume as "before", the run's PDF
- * text as "after". Null when it can't run.
+ * empty: the master resume as "before", the run's PDF text as "after". Null when
+ * there's too little to judge.
  */
-export async function estimateCallback({ userId, title, company, description, afterText, keywordTable, atsBefore = null, atsAfter = null }) {
+export async function estimateCallback({ userId, title, company, description, afterText, keywordTable }) {
   if (!str(description) || str(description).length < 200 || !str(afterText)) return null;
   const beforeText = (await resumeText(userId)) || '';
   if (beforeText.length < 200) return null;
   const rows = Array.isArray(keywordTable) ? keywordTable.map(k => String(k?.keyword || '')) : Object.keys(keywordTable && typeof keywordTable === 'object' ? keywordTable : {});
-  const keywords = rows.filter(Boolean).map(term => ({ term, importance: 'required' }));
-  const ctx = { ev: { job_title: title, company_name: company, job_description: str(description) }, keywords };
-  const j = await judge(ctx, { beforeText, afterText, atsBefore: atsBefore ?? '?', atsAfter: atsAfter ?? '?', userId });
-  return { before: j.callbackBefore, after: j.callbackAfter, why: j.callbackWhy };
+  const r = await complete({
+    task: 'callback',
+    json: true,
+    maxTokens: 700,
+    userId,
+    system: CALLBACK_SYSTEM,
+    user: `JOB: ${title} at ${company}
+KEYWORDS: ${rows.filter(Boolean).slice(0, 25).join(', ')}
+
+JOB DESCRIPTION:
+${str(description).slice(0, 3500)}
+
+RESUME BEFORE (master, untailored):
+${str(beforeText).slice(0, 3000)}
+
+RESUME AFTER (tailored):
+${str(afterText).slice(0, 3000)}`,
+  });
+  const j = parseJson(r.text);
+  const pct = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+  if (j.callback_after == null) return null;
+  return { before: pct(j.callback_before), after: pct(j.callback_after), why: str(j.callback_why) };
 }
 
 /** The hiring-manager review of a built page (Opus). Null when it can't run; the resume still goes on. */

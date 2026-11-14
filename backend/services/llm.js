@@ -32,6 +32,8 @@ export const ROUTES = {
   evaluate: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'medium' }, { provider: 'gemini', model: 'gemini-3.5-flash', reasoning: 'medium' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   email: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   categorize: [{ provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
+  // The callback chance for a resume a run wrote: small (~3.5K tokens), and each Groq model has its own 8K-a-minute allowance.
+  callback: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'groq', model: 'openai/gpt-oss-20b', reasoning: 'low' }, { provider: 'gemini', model: 'gemini-3.5-flash', reasoning: 'low' }],
   keywords: [{ provider: 'groq', model: 'openai/gpt-oss-120b', reasoning: 'low' }, { provider: 'gemini', model: 'gemini-3.5-flash', reasoning: 'low' }, { provider: 'openai', model: 'gpt-4o-mini' }],
   // Medium effort: high thought for ~12K output tokens a draft (~$0.30); medium is about half.
   resume: [{ provider: 'anthropic', model: 'claude-opus-5-5', effort: process.env.RESUME_EFFORT || 'medium' }],

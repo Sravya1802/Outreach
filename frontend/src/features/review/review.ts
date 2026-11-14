@@ -78,7 +78,7 @@ export function approvedLine({ emails, notes, repeated, blankDraft }: ApproveRes
 export const atsOk = (n: number | null | undefined) => n != null && n > 90
 
 /** Says so when the posting rules out someone who needs sponsorship. */
-export const visaLine = (s: string | null | undefined) => (s === 'citizens_only' ? 'US citizens only' : s === 'no_sponsorship' ? 'Won’t sponsor' : null)
+export const visaLine = (s: string | null | undefined) => (s === 'citizens_only' ? 'US citizens only' : s === 'no_sponsorship' ? 'No sponsorship' : null)
 
 /** A recruiter mode with nothing written. My contact and None email nobody, so they never wait for this. */
 export const needsOutreach = (r: Pick<ReviewRow, 'referral_mode' | 'outreach'>) => ['recruiters', 'recruiters_engineers'].includes(r.referral_mode) && r.outreach === 0

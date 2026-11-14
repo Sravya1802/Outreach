@@ -60,7 +60,7 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}
           {r.no_opt && <span title={`“${r.no_opt}”`}><Badge tone="warning">Says no OPT/CPT</Badge></span>}
-          {visaLine(r.sponsorship) && <Badge tone="danger">{visaLine(r.sponsorship)}</Badge>}
+          {visaLine(r.sponsorship) && <Badge tone={r.sponsorship === 'no_sponsorship' ? 'warning' : 'danger'}>{visaLine(r.sponsorship)}</Badge>}
           {r.grad_years?.length > 0 && <span title="The posting names this year for graduating or starting"><Badge tone="accent">{yearsLabel(r.grad_years)}</Badge></span>}
           {r.referrer && <Badge tone="accent">Ask {r.referrer}</Badge>}
           {r.approve_failed && <Badge tone="danger">Approve failed</Badge>}
@@ -88,7 +88,12 @@ function LineRow({ r }: { r: ReviewRow }) {
       <td className={cn(cell, num)}>{r.no_posting ? blank : r.place ?? `Run ${r.run}`}</td>
       <td className={cell}>
         <RoleName r={r} />
-        {r.no_opt && <div className="mt-1" title={`“${r.no_opt}”`}><Badge tone="warning">Says no OPT/CPT</Badge></div>}
+        {(r.no_opt || visaLine(r.sponsorship)) && (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {visaLine(r.sponsorship) && <Badge tone="warning">{visaLine(r.sponsorship)}</Badge>}
+            {r.no_opt && <span title={`“${r.no_opt}”`}><Badge tone="warning">Says no OPT/CPT</Badge></span>}
+          </div>
+        )}
         {r.no_posting && (
           <div className="mt-1" title="A run needs the posting's text to write a resume. The app tries the link again each day (not TikTok, whose site turns automated readers away). Open the link to apply yourself.">
             <Badge tone="neutral">No posting text</Badge>

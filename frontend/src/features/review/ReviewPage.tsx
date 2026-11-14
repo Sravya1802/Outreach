@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CLOSED_LABEL, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { CLOSED_LABEL, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -15,6 +15,7 @@ const OUTREACH_KEY = 'snj.review.outreach'
 const OPENED_KEY = 'snj.review.opened'
 const CLOSES_KEY = 'snj.review.closes'
 const SORT_KEY = 'snj.review.sort'
+const TYPE_KEY = 'snj.review.type'
 function saved(key: string) {
   try { return localStorage.getItem(key) ?? '' } catch { return '' }
 }
@@ -146,10 +147,11 @@ export default function ReviewPage() {
   const [opened, setOpened] = useState(() => saved(OPENED_KEY))
   const [closes, setCloses] = useState(() => saved(CLOSES_KEY))
   const [sort, setSort] = useState(() => saved(SORT_KEY))
+  const [kind, setKind] = useState(() => saved(TYPE_KEY))
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
   const everything = queue.data?.roles ?? []
   // The menus narrow the tiles, the rows and Select all; the backlog bar counts everything.
-  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach) && openedMatch(r.posted_at, opened) && closesMatch(r.deadline, closes))
+  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach) && openedMatch(r.posted_at, opened) && closesMatch(r.deadline, closes) && typeMatch(r.role_kind, kind))
   const run = queue.data?.lastRun ?? null
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
@@ -213,8 +215,12 @@ export default function ReviewPage() {
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,1fr))]">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="col-span-2 w-full lg:col-span-1" />
+            <Select value={kind} onChange={e => { setKind(e.target.value); save(TYPE_KEY, e.target.value) }} aria-label="Type" className="w-full">
+              <option value="">Any type</option>
+              {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
             <Select value={year} onChange={e => { setYear(e.target.value); save(YEAR_KEY, e.target.value) }} aria-label="Year" className="w-full">
               <option value="">Any year</option>
               {YEAR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -263,7 +269,7 @@ export default function ReviewPage() {
               </thead>
               <tbody>
                 {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
-                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened || kind ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>

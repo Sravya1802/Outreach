@@ -259,6 +259,15 @@ export const CLOSED_LABEL: Record<string, string> = {
   deadline_passed: 'Closing date passed',
 }
 
+/** The Type menu. */
+export const TYPE_OPTIONS = [
+  { value: 'intern', label: 'Internships' },
+  { value: 'new_grad', label: 'New grad' },
+] as const
+
+/** '' keeps every role. */
+export const typeMatch = (kind: string | null | undefined, filter: string) => !filter || kind === filter
+
 /** The Sort by menu; '' keeps the queue's own order (turn, then most recently updated). */
 export const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest opened first' },

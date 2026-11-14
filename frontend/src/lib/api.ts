@@ -937,6 +937,8 @@ export interface ReviewRow {
   place: number | null
   /** Waiting, but its posting couldn't be read, so a run can't take it yet. */
   no_posting: boolean
+  /** Internship or new grad (the Roles tab's type; else read from the title). */
+  role_kind: 'intern' | 'new_grad'
   /** The posting's words saying OPT / CPT / F-1 students aren't eligible (shown, never removed). */
   no_opt: string | null
   /** Why a Closed role was closed (citizenship, clearance, mba, phd, return_to_school, field, posting_closed, deadline_passed). */

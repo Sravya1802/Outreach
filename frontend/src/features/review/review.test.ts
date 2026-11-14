@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -361,5 +361,14 @@ describe('markPosting: combined keywords', () => {
     const { parts, placed } = markPosting('We use C++ and Python, not C.', [{ keyword: 'C++, Python', state: 'found' }])
     expect(parts.filter(p => 'state' in p).map(p => p.text)).toEqual(['C++', 'Python'])
     expect(placed.has('C++, Python')).toBe(true)
+  })
+})
+
+describe('typeMatch', () => {
+  it('keeps every role with no filter, else only the chosen type', () => {
+    expect(typeMatch('intern', '')).toBe(true)
+    expect(typeMatch('intern', 'intern')).toBe(true)
+    expect(typeMatch('new_grad', 'intern')).toBe(false)
+    expect(typeMatch('new_grad', 'new_grad')).toBe(true)
   })
 })

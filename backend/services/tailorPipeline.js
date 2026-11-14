@@ -25,7 +25,7 @@ import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
 import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, signature, startApprovedAsks, templateAsk, withdrawApprovedAsks } from './referralFlow.js';
-import { pdfText } from './resumeEngine.js';
+import { estimateCallback, pdfText } from './resumeEngine.js';
 import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
 import { yearsSelect } from './gradYear.js';
@@ -145,6 +145,24 @@ async function checkVersion(v) {
     'UPDATE resume_versions SET pdf_path = $2, pages = $3, check_status = $4, check_errors = $5, keywords = $6, checked_at = NOW() WHERE id = $1',
     [v.id, path, built.pages, errors.length ? 'flagged' : 'passed', JSON.stringify(errors), JSON.stringify(keywordCheck(text, v.report?.keyword_table))],
   );
+  // The run left the callback chance empty: estimate it here, so every version has one.
+  if (v.callback_after == null) await fillCallback(v, text).catch(err => console.warn('[review] callback estimate failed', v.id, err.message));
+}
+
+/** Save a callback estimate (before, after and why) on a version that has none. */
+export async function fillCallback(v, text) {
+  const c = await estimateCallback({
+    userId: v.user_id, title: v.title, company: v.company_name, description: v.description, afterText: text,
+    keywordTable: v.report?.keyword_table, atsBefore: v.ats_before, atsAfter: v.ats_after,
+  });
+  if (!c) return null;
+  await run(
+    `UPDATE resume_versions SET callback_before = $2, callback_after = $3,
+            report = COALESCE(report, '{}'::jsonb) || jsonb_build_object('scores', COALESCE(report->'scores', '{}'::jsonb) || jsonb_build_object('callback_reason', $4::text, 'callback_by', 'app'))
+      WHERE id = $1 AND callback_after IS NULL`,
+    [v.id, c.before, c.after, c.why || null],
+  );
+  return c;
 }
 
 let checking = false;
@@ -155,7 +173,7 @@ export async function checkNewVersions(limit = 10) {
   checking = true;
   try {
     const rows = await all(
-      `SELECT v.id, v.plan_item_id, v.version, v.latex, v.report, pi.title, pi.company_name, ${POSTING_TEXT} AS description
+      `SELECT v.id, v.user_id, v.plan_item_id, v.version, v.latex, v.report, v.ats_before, v.ats_after, v.callback_after, pi.title, pi.company_name, ${POSTING_TEXT} AS description
          FROM resume_versions v JOIN plan_items pi ON pi.id = v.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
         WHERE v.checked_at IS NULL ORDER BY v.created_at LIMIT $1`,
       [limit],

@@ -614,6 +614,22 @@ ${str(afterText).slice(0, 6000)}`,
   };
 }
 
+/**
+ * The callback chance for a resume a Claude chat run wrote, when the run left it
+ * empty: the same recruiter check, the master resume as "before", the run's PDF
+ * text as "after". Null when it can't run.
+ */
+export async function estimateCallback({ userId, title, company, description, afterText, keywordTable, atsBefore = null, atsAfter = null }) {
+  if (!str(description) || str(description).length < 200 || !str(afterText)) return null;
+  const beforeText = (await resumeText(userId)) || '';
+  if (beforeText.length < 200) return null;
+  const rows = Array.isArray(keywordTable) ? keywordTable.map(k => String(k?.keyword || '')) : Object.keys(keywordTable && typeof keywordTable === 'object' ? keywordTable : {});
+  const keywords = rows.filter(Boolean).map(term => ({ term, importance: 'required' }));
+  const ctx = { ev: { job_title: title, company_name: company, job_description: str(description) }, keywords };
+  const j = await judge(ctx, { beforeText, afterText, atsBefore: atsBefore ?? '?', atsAfter: atsAfter ?? '?', userId });
+  return { before: j.callbackBefore, after: j.callbackAfter, why: j.callbackWhy };
+}
+
 /** The hiring-manager review of a built page (Opus). Null when it can't run; the resume still goes on. */
 async function hiringReview(ctx, pass, userId) {
   try {

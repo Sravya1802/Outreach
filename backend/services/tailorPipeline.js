@@ -541,6 +541,37 @@ export async function recoverApprovals() {
 }
 
 /** The user's say-so for a role with no outreach: approves it if needed, then it goes at the next morning slot. */
+/**
+ * The user doesn't want this role: it goes to Closed ("Removed by you"), never
+ * deleted, never queued again, and the runs leave it alone. Waiting, Ready or
+ * revising roles only.
+ */
+export async function removeRole(userId, planItemId) {
+  const row = await one(
+    `UPDATE tailor_jobs SET status = 'closed', closed_reason = 'removed', locked_at = NULL, locked_by_run = NULL, updated_at = NOW()
+      WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('queued', 'ready', 'revision_requested')
+      RETURNING plan_item_id`,
+    [userId, planItemId],
+  );
+  if (!row) throw fail(409, 'Only a waiting or Ready role can be removed.');
+  await run("UPDATE plan_items SET stage_note = 'You removed it.' WHERE id = $1 AND user_id = $2", [planItemId, userId]);
+  return { ok: true };
+}
+
+/** Undo a removal: Ready again if it has a resume, else waiting. */
+export async function restoreRemovedRole(userId, planItemId) {
+  const row = await one(
+    `UPDATE tailor_jobs j SET status = CASE WHEN EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = j.plan_item_id) THEN 'ready' ELSE 'queued' END,
+            closed_reason = NULL, updated_at = NOW()
+      WHERE j.user_id = $1 AND j.plan_item_id = $2 AND j.status = 'closed' AND j.closed_reason = 'removed'
+      RETURNING j.status`,
+    [userId, planItemId],
+  );
+  if (!row) throw fail(409, 'This role wasn’t removed by you, so there’s nothing to restore.');
+  await run('UPDATE plan_items SET stage_note = NULL WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  return { status: row.status };
+}
+
 export async function applyWithoutReferral(userId, planItemId) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');

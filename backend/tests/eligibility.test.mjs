@@ -71,3 +71,23 @@ test('unsure: kept with a Check eligibility flag', () => {
   assert.match(eligibilityFor({ text: 'This role may require access to export-controlled technology; we may need an export license.' })?.flag ?? '', /export control/i)
   assert.match(eligibilityFor({ text: 'Must be a US Citizen, permanent resident or be an MS student with work authorization (F1 Visa on CPT accepted).' })?.flag ?? '', /students with work authorization/)
 })
+
+test("PhD and MBA: never removed when a Master's is acceptable anywhere; other reasons still remove", async () => {
+  const { mastersOption } = await import('../services/eligibility.js')
+  const e = (title, text) => eligibilityFor({ title, text, roleType: 'intern' })
+  assert.equal(e('PhD Research Intern - 2027', 'Currently pursuing a Master\'s or PhD in Computer Science.'), null)
+  assert.equal(e('Research Intern', 'Requirements: currently enrolled in a PhD program. MS students with research experience will also be considered.'), null)
+  assert.equal(e('Research Intern', 'Bachelor\'s, Master\'s or PhD students in CS.'), null)
+  assert.equal(e('Strategy MBA Intern', 'Open to MBA or graduate degree students.'), null)
+  assert.equal(e('Research Intern', 'Currently enrolled in a PhD program. Proficient with MS Office.')?.reason, 'phd')
+  assert.equal(e('Research Intern', 'Currently enrolled in a PhD program in Robotics.')?.reason, 'phd')
+  assert.equal(e('Strategic Partnerships MBA Intern', 'Join our GTM team.')?.reason, 'mba')
+  // Master's mentioned, other reasons still remove.
+  assert.equal(e('Software Intern', 'Pursuing a Master\'s degree. Must be a U.S. citizen.')?.reason, 'citizenship')
+  assert.equal(e('Software Intern', 'Pursuing a Master\'s degree. Ability to obtain a Secret clearance.')?.reason, 'clearance')
+  assert.equal(e('Software Intern', 'Pursuing a Master\'s degree, graduating between December 2027 and June 2028.')?.reason, 'return_to_school')
+  assert.equal(mastersOption('', 'Experience with MS SQL Server and MS Excel.'), null)
+  assert.equal(mastersOption('', 'Are you a master of natural language processing?'), null)
+  assert.ok(mastersOption('', 'Pursuing a Master of Science in CS'))
+  assert.ok(mastersOption('', 'Pursuing an M.S. in Computer Science'))
+})

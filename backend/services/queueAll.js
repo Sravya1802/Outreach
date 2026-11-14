@@ -282,7 +282,8 @@ export async function fillQueue(userId) {
   const keys = new Set(taken.map(t => t.k));
   const urls = new Set(taken.map(t => t.url).filter(Boolean));
   const rids = new Set(taken.map(t => t.rid).filter(Boolean));
-  const groups = groupRoles(roles).filter(g => !offFieldReason(g.lead.title) &&
+  // PhD and MBA are the posting check's (a Master's option keeps them); the title rule here is only for off-field titles.
+  const groups = groupRoles(roles).filter(g => offFieldReason(g.lead.title) !== 'field' &&
     !keys.has(key(g.lead.company_name, g.lead.title)) && !g.ids.some(id => rids.has(id)) && !urls.has(g.lead.apply_url));
   if (!groups.length) return { roles: roles.length, groups: 0, queued: 0, reused: 0 };
 

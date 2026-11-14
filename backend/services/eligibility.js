@@ -100,6 +100,19 @@ const PHD_REQUIRED = [
 ];
 const OR_ALTERNATIVE = /\b(?:or|and\/or)\b[^.]{0,40}\b(?:master'?s?|masters|ms|bachelor'?s?|bs|undergrad)|\b(?:master'?s?|masters|ms|m\.s\.|bachelor'?s?|bs)\b[^.]{0,40}\b(?:or|and\/or|\/)\s*(?:an?\s+)?(?:ph\.?\s?d|doctoral|doctorate)/i;
 
+// A Master's is acceptable somewhere in the posting (or the title): then it's never removed for PhD or MBA.
+// "MS" only in capitals and not as Microsoft's ("MS Office", "MS SQL").
+const MASTERS_WORDS = /\b(?:master'?s|masters|master of (?:science|engineering|arts|computer|data|information|applied|business|financial|quantitative|statistics|mathematics)|m\.\s?s\.|m\.?\s?sc\.?|m\.?\s?eng\.?|graduate degree)(?=\W|$)/i;
+const MASTERS_MS = /\bMS\b(?!\s*(?:Office|Excel|Word|SQL|Teams|Project|Access|PowerPoint|Outlook|Azure|Dynamics|Visio|Windows|365|Fabric|Power|Edge|Defender)\b)/;
+/** The words that show a Master's will do, or null. Pure. */
+export function mastersOption(title, text) {
+  for (const src of [String(title || ''), String(text || '')]) {
+    const m = MASTERS_WORDS.exec(src) || MASTERS_MS.exec(src);
+    if (m) return clip(src.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60));
+  }
+  return null;
+}
+
 // ── Return to school (internships) ───────────────────────────────────────────
 const RETURN_RE = new RegExp(RETURN_TO_SCHOOL, 'i');
 const REMAINING = /\b(?:at least|minimum of|a minimum of)?\s*(?:one|1|a|two|2)\s+(?:full\s+)?(?:academic\s+)?(?:semester|quarter|term|year)s?\s+(?:of\s+(?:school|study|studies|coursework|classes)\s+)?(?:remaining|left)\s+(?:after|following|upon)\b[^.]{0,60}/i;
@@ -186,9 +199,12 @@ export function eligibilityFor({ title = '', text = '', quote = '', roleType = '
     if (soft) flags.push(`Mentions a clearance: “${around(t, soft, 80, 60)}”`);
   }
 
+  // MBA and PhD: only when no Master's option is mentioned anywhere.
+  const masters = mastersOption(ti, t);
+
   // MBA: an MBA intern by title, or the posting requires one.
-  if (MBA_TITLE.test(ti) && !/\b(?:or|preferred)\b|mba\s*\/|\/\s*mba/i.test(ti)) return { reason: 'mba', phrase: `Title: ${clip(ti)}` };
-  const mba = MBA_REQUIRED.exec(t);
+  if (!masters && MBA_TITLE.test(ti) && !/\b(?:or|preferred)\b|mba\s*\/|\/\s*mba/i.test(ti)) return { reason: 'mba', phrase: `Title: ${clip(ti)}` };
+  const mba = masters ? null : MBA_REQUIRED.exec(t);
   if (mba) {
     const span = t.slice(Math.max(0, mba.index - 60), mba.index + mba[0].length);
     if (NOT_REQUIRED.test(mba[0]) || MBA_OR.test(span)) {
@@ -197,8 +213,8 @@ export function eligibilityFor({ title = '', text = '', quote = '', roleType = '
   }
 
   // PhD: a PhD title that names no other degree, or the posting requires one.
-  if (PHD_TITLE.test(ti) && !OTHER_DEGREE.test(ti)) return { reason: 'phd', phrase: `Title: ${clip(ti)}` };
-  const p = first(PHD_REQUIRED, t);
+  if (!masters && PHD_TITLE.test(ti) && !OTHER_DEGREE.test(ti)) return { reason: 'phd', phrase: `Title: ${clip(ti)}` };
+  const p = masters ? null : first(PHD_REQUIRED, t);
   if (p) {
     const span = t.slice(Math.max(0, p.index - 60), p.index + p[0].length);
     if (NOT_REQUIRED.test(p[0]) || OR_ALTERNATIVE.test(span)) flags.push(`Mentions a PhD: “${around(t, p, 0, 0)}”`);

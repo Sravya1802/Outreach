@@ -1,4 +1,5 @@
 import { Link, useSearchParams } from 'react-router-dom'
+import { X } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
@@ -7,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CLOSED_LABEL, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -46,7 +47,17 @@ function Days({ r }: { r: ReviewRow }) {
   return <span title={r.posted_known ? `Opened ${n} ${n === 1 ? 'day' : 'days'} ago` : `First seen ${n} ${n === 1 ? 'day' : 'days'} ago (the site gives no posting date)`}>{r.posted_known ? n : `~${n}`}</span>
 }
 
-function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (on: boolean) => void }) {
+/** × takes a role out of the lists (to Closed, never deleted); Restore brings back one the user removed. */
+type RowActions = { onRemove?: (r: ReviewRow) => void; onRestore?: (r: ReviewRow) => void; busy?: boolean }
+
+function RemoveButton({ r, onRemove, busy }: { r: ReviewRow; onRemove: (r: ReviewRow) => void; busy?: boolean }) {
+  return (
+    <Button size="sm" variant="ghost" disabled={busy} onClick={() => onRemove(r)} aria-label={`Remove ${r.company_name} · ${r.title}`}
+      title="Remove: take it out of your lists. It goes to Closed, where you can restore it." icon={<X className="size-4" />} />
+  )
+}
+
+function Row({ r, picked, onPick, onRemove, onRestore, busy }: { r: ReviewRow; picked?: boolean; onPick?: (on: boolean) => void } & RowActions) {
   return (
     <tr>
       {onPick && (
@@ -77,13 +88,19 @@ function Row({ r, picked, onPick }: { r: ReviewRow; picked?: boolean; onPick?: (
       <td className={cn(cell, num)}>{r.version == null ? blank : `v${r.version}`}</td>
       <td className={cn(cell, num)}>{r.open_comments || blank}</td>
       <td className={cn(cell, num)}>{r.outreach || blank}</td>
-      <td className={cn(cell, 'text-right')}><ButtonLink size="sm" variant={r.status === 'ready' ? 'primary' : 'secondary'} to={`/review/${r.id}`}>{r.status === 'ready' ? 'Review' : 'Open'}</ButtonLink></td>
+      <td className={cn(cell, 'text-right')}>
+        <div className="flex items-center justify-end gap-1">
+          <ButtonLink size="sm" variant={r.status === 'ready' ? 'primary' : 'secondary'} to={`/review/${r.id}`}>{r.status === 'ready' ? 'Review' : 'Open'}</ButtonLink>
+          {onRemove && canRemove(r) && <RemoveButton r={r} onRemove={onRemove} busy={busy} />}
+          {onRestore && r.status === 'closed' && r.closed_reason === 'removed' && <Button size="sm" disabled={busy} onClick={() => onRestore(r)}>Restore</Button>}
+        </div>
+      </td>
     </tr>
   )
 }
 
 /** A role with no resume yet: its turn in line, or the run on it now. */
-function LineRow({ r }: { r: ReviewRow }) {
+function LineRow({ r, onRemove, busy }: { r: ReviewRow } & RowActions) {
   return (
     <tr>
       <td className={cn(cell, num)}>{r.no_posting ? blank : r.place ?? `Run ${r.run}`}</td>
@@ -103,6 +120,7 @@ function LineRow({ r }: { r: ReviewRow }) {
       </td>
       <td className={cn(cell, num)}>{fit(r)}</td>
       <td className={cn(cell, r.status === 'queued' ? num : 'text-[13px] whitespace-nowrap text-muted')}>{r.status === 'queued' ? <Days r={r} /> : timeAgo(r.locked_at)}</td>
+      {onRemove && <td className={cn(cell, 'w-10 text-right')}>{canRemove(r) && <RemoveButton r={r} onRemove={onRemove} busy={busy} />}</td>}
     </tr>
   )
 }
@@ -110,7 +128,7 @@ function LineRow({ r }: { r: ReviewRow }) {
 const COLUMNS = ['Company and role', 'Days', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
 const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
   working: ['Run', 'Company and role', 'Fit', 'Started'],
-  waiting: ['Turn', 'Company and role', 'Fit', 'Days'],
+  waiting: ['Turn', 'Company and role', 'Fit', 'Days', ''],
 }
 
 const CAPS = [15, 30, 45, 60, 90, 120]
@@ -170,6 +188,33 @@ export default function ReviewPage() {
   const safe = rows.filter(safeToBulk)
   const allSafe = safe.length > 0 && safe.every(r => picked.has(r.id))
   const pick = (id: string, on: boolean) => setPicked(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n })
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
+  const busyOn = (ids: string[], on: boolean) => setBusyIds(b => { const n = new Set(b); for (const id of ids) { if (on) n.add(id); else n.delete(id) } return n })
+
+  // Remove: out of the lists, to Closed ("Removed by you"), never deleted; Restore brings it back.
+  async function removeRoles(list: ReviewRow[]) {
+    const ids = list.map(r => r.id)
+    busyOn(ids, true)
+    let done = 0
+    const failed: string[] = []
+    for (const r of list) {
+      try { await api.removeRole(r.id); done += 1 } catch (e) { failed.push(`${r.company_name}: ${(e as Error).message}`) }
+    }
+    busyOn(ids, false)
+    setPicked(p => { const n = new Set(p); for (const id of ids) n.delete(id); return n })
+    await qc.invalidateQueries({ queryKey: qk.review })
+    if (done) toast.success(list.length === 1 ? `Removed ${list[0]?.company_name ?? "it"}. It’s under Closed if you want it back.` : `Removed ${done} roles. They’re under Closed if you want any back.`)
+    if (failed.length) toast.error(failed.slice(0, 3).join(' '))
+  }
+  async function restoreRole(r: ReviewRow) {
+    busyOn([r.id], true)
+    try {
+      const out = await api.restoreRemovedRole(r.id)
+      toast.success(`${r.company_name} is back ${out.status === 'ready' ? 'in Ready for you' : 'in Waiting for a run'}.`)
+    } catch (e) { toast.error((e as Error).message) }
+    busyOn([r.id], false)
+    await qc.invalidateQueries({ queryKey: qk.review })
+  }
 
   // One at a time: each one uploads a PDF and writes to Gmail, and one failure shouldn't stop the rest.
   async function approveChosen() {
@@ -252,6 +297,11 @@ export default function ReviewPage() {
                 {progress != null ? `Approving ${progress} of ${chosen.length}` : `Approve ${chosen.length}`}
               </Button>
             )}
+            {bulk && chosen.length > 0 && progress == null && (
+              <Button size="sm" icon={<X className="size-3.5" />} disabled={chosen.some(r => busyIds.has(r.id))} onClick={() => void removeRoles(chosen)}>
+                {`Remove ${chosen.length}`}
+              </Button>
+            )}
             <label className="ml-auto flex items-center gap-2 text-[13px] whitespace-nowrap text-muted">
               Sort by
               <Select value={sort} onChange={e => { setSort(e.target.value); save(SORT_KEY, e.target.value) }} aria-label="Sort by" className="w-48">
@@ -268,7 +318,10 @@ export default function ReviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (line ? <LineRow key={r.id} r={r} /> : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined} />))}
+                {rows.map(r => (line
+                  ? <LineRow key={r.id} r={r} onRemove={tab === 'waiting' ? (x => void removeRoles([x])) : undefined} busy={busyIds.has(r.id)} />
+                  : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined}
+                      onRemove={x => void removeRoles([x])} onRestore={x => void restoreRole(x)} busy={busyIds.has(r.id)} />))}
                 {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened || kind ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>

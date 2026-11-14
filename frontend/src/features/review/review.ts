@@ -257,7 +257,11 @@ export const CLOSED_LABEL: Record<string, string> = {
   field: 'Outside your field',
   posting_closed: 'Posting closed',
   deadline_passed: 'Closing date passed',
+  removed: 'Removed by you',
 }
+
+/** A role the user can take out of their lists (waiting, Ready or revising). */
+export const canRemove = (r: Pick<ReviewRow, 'status'>) => ['queued', 'ready', 'revision_requested'].includes(r.status)
 
 /** The Type menu. */
 export const TYPE_OPTIONS = [

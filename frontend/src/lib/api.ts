@@ -1243,6 +1243,10 @@ export const api = {
   applyWithoutReferral: (id: string): Promise<{ ok: boolean }> => legacy.career.applyWithoutReferral(id),
   /** You applied on the company's site: the role moves to Applied and nothing applies for you. */
   markRoleApplied: (id: string): Promise<{ emailsWaiting: number }> => legacy.career.markRoleApplied(id),
+  /** Take a waiting or Ready role out (Closed, "Removed by you"); never deleted. */
+  removeRole: (id: string): Promise<{ ok: boolean }> => legacy.career.removeRole(id),
+  /** Undo a removal. */
+  restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** Write this role's emails and notes from the plain template now, for the user to edit. */

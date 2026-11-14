@@ -372,3 +372,10 @@ describe('typeMatch', () => {
     expect(typeMatch('new_grad', 'new_grad')).toBe(true)
   })
 })
+
+describe('canRemove', () => {
+  it('only waiting, Ready or revising roles can be removed', async () => {
+    const { canRemove } = await import('./review')
+    expect(['queued', 'ready', 'revision_requested', 'in_progress', 'approved', 'applied', 'closed'].map(status => canRemove({ status } as never))).toEqual([true, true, true, false, false, false, false])
+  })
+})

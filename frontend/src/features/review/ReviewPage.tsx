@@ -284,7 +284,10 @@ export default function ReviewPage() {
             </Select>
           </div>
           <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="text-[13px] text-muted"><span className="font-medium text-fg">{rows.length}</span> {rows.length === 1 ? 'role' : 'roles'}</p>
+            <p className="text-[13px] text-muted">
+              <span className="font-medium text-fg">{rows.length}</span> {rows.length === 1 ? 'role' : 'roles'}
+              {sort === 'closing' && rows.length > 0 && !rows.some(r => r.deadline) && <span> · none of these state a closing date, so they stay in turn order</span>}
+            </p>
             {bulk && safe.length > 0 && (
               <label className="inline-flex items-center gap-2 text-[13px] text-fg">
                 <input type="checkbox" className="size-4 accent-accent" checked={allSafe} disabled={progress != null}

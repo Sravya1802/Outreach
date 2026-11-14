@@ -92,8 +92,11 @@ function RoleRow({ role, field, onTrack, onAutoApply, onRestore, busy }: {
             {role.ineligible_phrase && <span className="line-clamp-2">“{role.ineligible_phrase}”</span>}
           </p>
         )}
-        {!removed && role.eligibility_flag && (
-          <p className="mt-1 text-xs" title={role.eligibility_flag}><Badge tone="warning">Check eligibility</Badge></p>
+        {!removed && (role.eligibility_flag || role.no_opt_phrase) && (
+          <p className="mt-1 flex flex-wrap gap-1.5 text-xs">
+            {role.eligibility_flag && <span title={role.eligibility_flag}><Badge tone="warning">Check eligibility</Badge></span>}
+            {role.no_opt_phrase && <span title={`“${role.no_opt_phrase}”`}><Badge tone="warning">Says no OPT/CPT</Badge></span>}
+          </p>
         )}
       </div>
       <p className={cn('hidden truncate font-mono text-[13px] md:block', role.salary_range ? 'text-fg' : 'text-subtle')}

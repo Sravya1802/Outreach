@@ -275,6 +275,8 @@ export interface CatalogListing {
   eligibility_flag: string | null
   /** The user said the check was wrong. */
   restored: boolean
+  /** The posting's words saying OPT / CPT / F-1 students aren't eligible (shown, never removed). */
+  no_opt_phrase: string | null
 }
 
 export type IneligibleReason = 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school'
@@ -935,6 +937,8 @@ export interface ReviewRow {
   place: number | null
   /** Waiting, but its posting couldn't be read, so a run can't take it yet. */
   no_posting: boolean
+  /** The posting's words saying OPT / CPT / F-1 students aren't eligible (shown, never removed). */
+  no_opt: string | null
   /** Why a Closed role was closed (citizenship, clearance, mba, phd, return_to_school, field, posting_closed, deadline_passed). */
   closed_reason: string | null
   company_name: string

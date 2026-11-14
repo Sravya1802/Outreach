@@ -1994,3 +1994,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Run live:** read the 272 unread won't-sponsor postings (6 closed, 11 return-to-school, 119 unreadable), 191 roles queued; queue roles labelled no sponsorship 28 → 219. Queue 1,672 waiting, 236 Ready.
 - **tailoring_config version 10** (id 13) = version 9 + "Sponsorship rule (Sravya, Nov 14)": never close or skip for no sponsorship.
 - **Verified:** backend 268, frontend 182; live browser badge on Ready and waiting rows at 1440 and 390 px (test roles removed).
+
+## 2026-11-14 — Internships and new grad split evenly
+
+- **Asked:** "In the daily 60, split the slots evenly: 30 internships and 30 new grad, both ordered by deadline soon first, then big companies, then the newest/oldest mix. If one type runs out, fill the rest with the other."
+- **Built** (commit `bcbb6c2`, VM cherry-picked): `queueOrderByType` in [queueOrder.js](backend/services/queueOrder.js): `queueOrder` per type (`roleKind`: scraped role_type, else intern/co-op in the title), roles with posting text before those without, then alternating intern / new grad; `prioritizeQueue` uses it. Any 60 in a row is 30/30 while both last.
+- **Live:** next three days 30/30 each. Left with posting text: 1,122 internships, 178 new grad, so new grad runs out in about 6 days at 30 a day; internships then fill the 60.
+- **Verified:** backend 269 (new test).

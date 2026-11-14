@@ -949,6 +949,8 @@ export interface ReviewRow {
   score: string | number | null
   version: number | null
   ats_after: number | null
+  /** The run's estimate of the interview callback chance with this resume (%). */
+  callback_after: number | null
   check_status: 'passed' | 'flagged' | null
   /** Skills the run added to Technical Skills that the user should learn before interviews. */
   to_learn: number

@@ -379,3 +379,10 @@ describe('canRemove', () => {
     expect(['queued', 'ready', 'revision_requested', 'in_progress', 'approved', 'applied', 'closed'].map(status => canRemove({ status } as never))).toEqual([true, true, true, false, false, false, false])
   })
 })
+
+describe('readReport: callback', () => {
+  it('reads the callback reason the run wrote', () => {
+    expect(readReport({ scores: { callback_reason: 'Strong ML match, no referral yet' } }).callbackReason).toBe('Strong ML match, no referral yet')
+    expect(readReport({}).callbackReason).toBeNull()
+  })
+})

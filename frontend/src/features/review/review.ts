@@ -327,6 +327,7 @@ export function readReport(report: unknown) {
     eligibility: text(r.eligibility_flag),
     nextChange: text(r.one_more_change),
     atsReason: text(scores.ats_reason),
+    callbackReason: text(scores.callback_reason),
     skillsToLearn: skillList(r.skills_to_learn),
   }
 }

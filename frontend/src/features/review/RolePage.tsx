@@ -47,6 +47,7 @@ function ReportPanel({ v }: { v: ResumeVersion }) {
       {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}</p>}
       <div className="flex flex-wrap gap-4">
         <Score label="ATS" before={v.ats_before} after={v.ats_after} note={r.atsReason} good={atsOk(v.ats_after)} />
+        <Score label="Interview callback" before={v.callback_before} after={v.callback_after} note={r.callbackReason} />
       </div>
       <List title="Added skills to learn before interviews" items={r.skillsToLearn} />
       {r.verdict && <section><h3 className={heading}>Verdict</h3><p className="text-[14px] text-muted">{r.verdict}</p></section>}

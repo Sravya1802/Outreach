@@ -85,6 +85,7 @@ function Row({ r, picked, onPick, onRemove, onRestore, busy }: { r: ReviewRow; p
       <td className={cn(cell, num)}><Days r={r} /></td>
       <td className={cn(cell, num)}>{fit(r)}</td>
       <td className={cn(cell, num)}>{r.ats_after == null ? blank : <span className={atsOk(r.ats_after) ? 'text-success' : 'text-warning'}>{r.ats_after}%</span>}</td>
+      <td className={cn(cell, num)} title="The run's estimate of the interview callback chance with this resume">{r.callback_after == null ? blank : `${r.callback_after}%`}</td>
       <td className={cn(cell, num)}>{r.version == null ? blank : `v${r.version}`}</td>
       <td className={cn(cell, num)}>{r.open_comments || blank}</td>
       <td className={cn(cell, num)}>{r.outreach || blank}</td>
@@ -125,7 +126,7 @@ function LineRow({ r, onRemove, busy }: { r: ReviewRow } & RowActions) {
   )
 }
 
-const COLUMNS = ['Company and role', 'Days', 'Fit', 'ATS', 'Version', 'Comments', 'Outreach', '']
+const COLUMNS = ['Company and role', 'Days', 'Fit', 'ATS', 'Callback', 'Version', 'Comments', 'Outreach', '']
 const LINE_COLUMNS: Partial<Record<ReviewTab, string[]>> = {
   working: ['Run', 'Company and role', 'Fit', 'Started'],
   waiting: ['Turn', 'Company and role', 'Fit', 'Days', ''],

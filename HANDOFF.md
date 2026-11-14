@@ -1986,3 +1986,11 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Restored:** return to school 362 scraped roles back on the Roles tab, 195 queue roles reopened (7 Ready); field 15 queue roles reopened (Corning optical R&D, Smucker Finance Technology, NVIDIA FP&A, Equitable Actuarial, NEC optical, Daiichi Sankyo Corporate Finance…); OPT/CPT: nothing had been removed by eligibility, but 4 more roles were queued that "won't sponsor" had kept out; 57 postings carry the phrase, 33 queue roles (2 Ready: BioSpace, Vertiv) show the badge. No new removals from the re-check. Queue 1,481 waiting, 236 Ready, 476 closed. Reports `~/eligibility-loosen-report-2026-11-14.json`, before-state `~/eligibility-before-loosen-2026-11-14.json` on the VM.
 - **tailoring_config version 9** (id 12) = version 8 + "Loosened rules (Sravya, Nov 14)"; other fields verified identical.
 - **Verified:** backend 268, frontend typecheck + 182; live browser: badge on the Roles tab at 1440 and 390 px.
+
+## 2026-11-14 — "Won't sponsor" roles queued
+
+- **Asked:** "queue the won't sponsor roles too, with a No sponsorship badge".
+- **Built** (commit `89175b7` backend, VM cherry-picked; frontend badge commit after it): `rolesTabWhere` takes `sponsorship IN ('sponsors', 'no_sponsorship')` or null ("US citizens only" stays out; the citizenship rule covers it). Review queue badge renamed "No sponsorship" (was "Won't sponsor", warning tone), shown on waiting rows too; the Roles tab already showed it. Bulk "Select all above 90% ATS" still leaves these out (`safeToBulk`), so they're approved one at a time.
+- **Run live:** read the 272 unread won't-sponsor postings (6 closed, 11 return-to-school, 119 unreadable), 191 roles queued; queue roles labelled no sponsorship 28 → 219. Queue 1,672 waiting, 236 Ready.
+- **tailoring_config version 10** (id 13) = version 9 + "Sponsorship rule (Sravya, Nov 14)": never close or skip for no sponsorship.
+- **Verified:** backend 268, frontend 182; live browser badge on Ready and waiting rows at 1440 and 390 px (test roles removed).

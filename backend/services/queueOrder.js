@@ -48,6 +48,32 @@ export function queueOrder(rows, { now = new Date() } = {}) {
   return [...closing, ...top, ...mix];
 }
 
+/** 'intern' or 'new_grad': the role's own type, else read from the title. */
+export const roleKind = (r) => (r.role_type === 'intern' || r.role_type === 'new_grad' ? r.role_type
+  : /\b(intern(ship)?|co-?op)\b/i.test(String(r.title || '')) ? 'intern' : 'new_grad');
+
+/**
+ * The run order with internships and new grad roles taking turns, so any 60 in
+ * a row is about 30 and 30 (a run of 20 about 10 and 10). Each type is ordered
+ * by queueOrder on its own (closing dates, top companies, then the mix), roles
+ * a run can take (`has_text` not false) before the rest; when one type runs
+ * out, the other fills the rest. Pure.
+ */
+export function queueOrderByType(rows, { now = new Date() } = {}) {
+  const ordered = (kind) => {
+    const list = queueOrder(rows.filter(r => roleKind(r) === kind), { now });
+    return [...list.filter(r => r.has_text !== false), ...list.filter(r => r.has_text === false)];
+  };
+  const a = ordered('intern');
+  const b = ordered('new_grad');
+  const out = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+  }
+  return out;
+}
+
 /** Roles that are the same job (company + title), the one to apply on first: an auto-apply form, then the newest. Pure. */
 export function groupRoles(roles) {
   const groups = new Map();

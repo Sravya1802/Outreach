@@ -20,7 +20,7 @@ import { all, one, run } from '../db.js';
 import { US_PERSON_FLAG, postingFacts, studentsWelcome } from './postingFacts.js';
 import { closedNote, eligibilityFor, noOptCpt } from './eligibility.js';
 
-import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, rolesTabWhere, time } from './queueOrder.js';
+import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, queueOrderByType, rolesTabWhere, time } from './queueOrder.js';
 
 export { groupRoles, queueOrder, rolesTabWhere };
 
@@ -358,7 +358,7 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
   const { getSettings } = await import('./dailyPlan.js');
   const settings = await getSettings(userId);
   const rows = await all(
-    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url, ${HAS_POSTING_SQL} AS has_text, pi.company_name, sr.tier,
+    `SELECT j.id, j.plan_item_id, j.scraped_role_id, j.live_checked_at, pi.apply_url, ${HAS_POSTING_SQL} AS has_text, pi.company_name, pi.title, sr.role_type, sr.tier,
             COALESCE(pi.apply_deadline, sr.apply_deadline) AS deadline, COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
       WHERE j.user_id = $1 AND j.status = 'queued' AND j.claimed_at IS NULL`,
@@ -368,7 +368,8 @@ export async function prioritizeQueue(userId, { now = new Date(), isOpen = posti
   const { companyTiers, tierFor } = await import('./companyTier.js');
   const tiers = await companyTiers();
   for (const r of rows) r.top = r.tier === 'faang' || r.tier === 'quant' || Boolean(tierFor(r.company_name, tiers));
-  let order = queueOrder(rows, { now });
+  // Internships and new grad take turns: the day's 60 is about 30 and 30.
+  let order = queueOrderByType(rows, { now });
   const closed = [];
   const checked = [];
   if (checkLive) {

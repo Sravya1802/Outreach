@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupRoles, offFieldReason, queueOrder, rolesTabWhere } from '../services/queueOrder.js'
+import { groupRoles, offFieldReason, queueOrder, queueOrderByType, rolesTabWhere } from '../services/queueOrder.js'
 
 const now = new Date('2026-11-11T15:00:00Z')
 const d = (days) => new Date(now.getTime() + days * 86_400_000).toISOString()
@@ -84,4 +84,17 @@ test('offFieldReason: MBA, PhD-only and off-field titles skipped; software, data
   assert.equal(offFieldReason('2027 Summer Internship Digital Design- Miramar, FL or Atlanta, GA'), 'field')
   assert.equal(offFieldReason('Software/Systems Engineering Intern (Summer 2027)'), null)
   assert.equal(offFieldReason('Software Engineering Intern - Design Systems'), null)
+})
+
+test('queueOrderByType: internships and new grad take turns, each in its own order; the other fills when one runs out', () => {
+  const rows = [
+    { id: 'i-old', role_type: 'intern', posted: d(-30) }, { id: 'i-new', role_type: 'intern', posted: d(-1) },
+    { id: 'i-top', role_type: 'intern', posted: d(-20), top: true }, { id: 'i-soon', role_type: 'intern', posted: d(-40), deadline: d(3).slice(0, 10) },
+    { id: 'i-notext', role_type: 'intern', posted: d(0), deadline: d(1).slice(0, 10), has_text: false },
+    { id: 'g-top', role_type: 'new_grad', posted: d(-5), top: true }, { id: 'g-new', role_type: 'new_grad', posted: d(-2) },
+    { id: 'own-intern', title: 'Software Engineering Intern', posted: d(-3) },
+  ]
+  assert.deepEqual(queueOrderByType(rows, { now }).map(r => r.id), ['i-soon', 'g-top', 'i-top', 'g-new', 'i-new', 'i-old', 'own-intern', 'i-notext'])
+  const split = queueOrderByType([...Array(40)].map((_, k) => ({ id: `i${k}`, role_type: 'intern', posted: d(-k) })).concat([...Array(40)].map((_, k) => ({ id: `g${k}`, role_type: 'new_grad', posted: d(-k) }))), { now }).slice(0, 60)
+  assert.equal(split.filter(r => r.role_type === 'intern').length, 30)
 })

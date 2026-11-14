@@ -36,7 +36,8 @@ test('groupRoles: one role per company and title, auto-apply link first, locatio
 test('rolesTabWhere matches the Roles tab filters', () => {
   const w = rolesTabWhere(1)
   assert.match(w.sql, /region = 'usa'/)
-  assert.match(w.sql, /sponsorship IS NULL OR sponsorship = 'sponsors'/)
+  assert.match(w.sql, /sponsorship IS NULL OR sponsorship IN \('sponsors', 'no_sponsorship'\)/)
+  assert.doesNotMatch(w.sql, /citizens_only/)
   assert.match(w.sql, /return_to_school/)
   assert.equal(w.params.length, 2)
   assert.doesNotMatch(rolesTabWhere(1, { keepReturnToSchool: true }).sql, /return_to_school/)

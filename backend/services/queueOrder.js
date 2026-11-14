@@ -14,8 +14,8 @@ const ATS = /(greenhouse\.io|lever\.co|ashbyhq\.com)/i;
 /** WHERE (on scraped_roles, unqualified) for the Roles tab's roles; `next` is the first free $ index. */
 export function rolesTabWhere(next, { keepReturnToSchool = false } = {}) { // keepReturnToSchool: keep ineligible roles too (to read them)
   const y = yearCondition({ year: QUEUE_YEAR, orUnstated: false }, next);
-  // "Won't sponsor" stays out, unless all it says is that OPT / CPT / F-1 students aren't eligible (the user applies anyway).
-  const parts = ['is_active = 1', "region = 'usa'", "role_type IN ('intern', 'new_grad')", "(sponsorship IS NULL OR sponsorship = 'sponsors' OR (sponsorship = 'no_sponsorship' AND no_opt_phrase IS NOT NULL))", y.sql];
+  // "Won't sponsor" roles go in too (the user applies anyway; they show a No sponsorship badge). "US citizens only" stays out.
+  const parts = ['is_active = 1', "region = 'usa'", "role_type IN ('intern', 'new_grad')", "(sponsorship IS NULL OR sponsorship IN ('sponsors', 'no_sponsorship'))", y.sql];
   if (!keepReturnToSchool) parts.push(eligibleSql());
   return { sql: parts.join(' AND '), params: y.params };
 }

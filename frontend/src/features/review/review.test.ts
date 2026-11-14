@@ -355,3 +355,11 @@ describe('sortRows', () => {
     expect(names(rows)).toEqual(['beta', 'Acme', 'Cyan', 'dune'])
   })
 })
+
+describe('markPosting: combined keywords', () => {
+  it('marks each part of "C++, Python" and matches C++ literally', () => {
+    const { parts, placed } = markPosting('We use C++ and Python, not C.', [{ keyword: 'C++, Python', state: 'found' }])
+    expect(parts.filter(p => 'state' in p).map(p => p.text)).toEqual(['C++', 'Python'])
+    expect(placed.has('C++, Python')).toBe(true)
+  })
+})

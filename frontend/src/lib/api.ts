@@ -279,7 +279,7 @@ export interface CatalogListing {
   no_opt_phrase: string | null
 }
 
-export type IneligibleReason = 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school'
+export type IneligibleReason = 'citizenship' | 'clearance' | 'mba' | 'phd' | 'return_to_school' | 'graduation'
 
 export type Sponsorship = 'sponsors' | 'no_sponsorship' | 'citizens_only'
 export type VisaFilter = 'sponsors' | 'open' | 'citizens'

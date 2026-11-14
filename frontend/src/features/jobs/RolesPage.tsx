@@ -52,6 +52,7 @@ const REASON_LABEL: Record<IneligibleReason, string> = {
   mba: 'MBA required',
   phd: 'PhD required',
   return_to_school: 'Return to school',
+  graduation: 'Graduation date',
 }
 
 function RoleRow({ role, field, onTrack, onAutoApply, onRestore, busy }: {

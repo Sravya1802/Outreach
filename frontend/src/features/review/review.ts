@@ -253,6 +253,7 @@ export const CLOSED_LABEL: Record<string, string> = {
   mba: 'MBA required',
   phd: 'PhD required',
   return_to_school: 'Return to school',
+  graduation: 'Graduation date',
   field: 'Outside your field',
   posting_closed: 'Posting closed',
   deadline_passed: 'Closing date passed',
@@ -355,7 +356,8 @@ export function keywordStates(keywords: { keyword: string }[], check: { present?
 }
 
 /** What to look for in the text: "A / B" and "A (B)" are two things, "CI/CD" is one. */
-const termsOf = (keyword: string) => keyword.split(/\s+\/\s+|\s*[()]\s*/).map(t => t.trim()).filter(Boolean)
+/** "A / B", "C++, Python", "Go; Rust" and "X (Y)" are separate terms; "CI/CD" and "C++" are one. */
+const termsOf = (keyword: string) => keyword.split(/\s+\/\s+|\s*[(),;|]\s*/).map(t => t.trim().replace(/^(?:and|or|&)\s+/i, '').trim()).filter(Boolean)
 
 /** Spaces and hyphens match each other and a plural matches its singular. */
 function termPattern(term: string) {

@@ -2016,3 +2016,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Built:** `reviewQueue` returns `role_kind` (scraped role_type, else intern/internship/co-op in the title); Type menu (Any type / Internships / New grad) first among the menus, remembered like the others (`typeMatch` in [review.ts](frontend/src/features/review/review.ts)). Filter row is now search + 5 menus.
 - **Live counts:** Ready 87 internships / 149 new grad; waiting 1,396 / 272.
 - **Verified:** backend 271, frontend 184; live browser 12 of 12 at 1440 and 390 px (test roles removed).
+
+## 2026-11-14 — Remove (×) on the Review queue; type fixes
+
+- **Asked:** "a remove option like X near review … like a delete option"; then "those filters are not working" (screenshot: New grad + Closing soonest).
+- **Built:** `removeRole` / `restoreRemovedRole` in [tailorPipeline.js](backend/services/tailorPipeline.js) (`POST /review/:id/remove`, `/restore`): a waiting, Ready or revising role goes to Closed with `closed_reason = 'removed'` ("Removed by you"), never deleted, never re-queued (fillQueue skips roles with a tailor_jobs row); Restore puts it back (Ready if it has a resume). UI: × beside Review (and on waiting rows), "Remove N" beside "Approve N" for ticked roles, Restore on removed rows in Closed.
+- **Filters:** they work (New grad = 149); none of the 149 new grad Ready roles states a closing date, so Closing soonest left the turn order; the count line now says so. `role_kind` / `roleKind`: a title with intern / co-op / summer analyst / summer associate is an internship even when the board listed it as new grad (Blackstone Summer Analyst, JPMorgan Summer Associate); the 30/30 queue split uses the same rule.
+- **Verified:** backend 272, frontend 185; live browser: × removes (toast, gone from Ready, in Closed as Removed by you), Restore brings it back, × at 390 px; test roles removed.

@@ -186,7 +186,7 @@ export async function reviewQueue(userId) {
     `SELECT j.plan_item_id AS id, j.status, j.closed_reason, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
             COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted_at, (sr.posted_at IS NOT NULL) AS posted_known, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             (j.status = 'queued' AND NOT ${hasPosting}) AS no_posting, sr.no_opt_phrase AS no_opt,
-            CASE WHEN sr.role_type IN ('intern', 'new_grad') THEN sr.role_type WHEN pi.title ~* '\\m(intern|internship|co-?op)\\M' THEN 'intern' ELSE 'new_grad' END AS role_kind,
+            CASE WHEN pi.title ~* '\\m(intern|internship|co-?op|summer analyst|summer associate)\\M' THEN 'intern' WHEN sr.role_type IN ('intern', 'new_grad') THEN sr.role_type ELSE 'new_grad' END AS role_kind,
             CASE WHEN j.status = 'queued' AND ${hasPosting}
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,

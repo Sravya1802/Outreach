@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupRoles, offFieldReason, queueOrder, queueOrderByType, rolesTabWhere } from '../services/queueOrder.js'
+import { groupRoles, offFieldReason, queueOrder, queueOrderByType, roleKind, rolesTabWhere } from '../services/queueOrder.js'
 
 const now = new Date('2026-11-11T15:00:00Z')
 const d = (days) => new Date(now.getTime() + days * 86_400_000).toISOString()
@@ -97,4 +97,12 @@ test('queueOrderByType: internships and new grad take turns, each in its own ord
   assert.deepEqual(queueOrderByType(rows, { now }).map(r => r.id), ['i-soon', 'g-top', 'i-top', 'g-new', 'i-new', 'i-old', 'own-intern', 'i-notext'])
   const split = queueOrderByType([...Array(40)].map((_, k) => ({ id: `i${k}`, role_type: 'intern', posted: d(-k) })).concat([...Array(40)].map((_, k) => ({ id: `g${k}`, role_type: 'new_grad', posted: d(-k) }))), { now }).slice(0, 60)
   assert.equal(split.filter(r => r.role_type === 'intern').length, 30)
+})
+
+test('roleKind: an intern-type title wins over the listing', () => {
+  assert.equal(roleKind({ role_type: 'new_grad', title: '2027 Credit and Insurance - Quant Summer Analyst - London' }), 'intern')
+  assert.equal(roleKind({ role_type: 'new_grad', title: 'Machine Learning Center of Excellence (Quant AI) - Summer Associate' }), 'intern')
+  assert.equal(roleKind({ role_type: 'new_grad', title: 'Technology Associate Full-Time - Summer 2027' }), 'new_grad')
+  assert.equal(roleKind({ role_type: 'intern', title: 'Data Science Intern' }), 'intern')
+  assert.equal(roleKind({ title: 'Software Engineer, New Grad' }), 'new_grad')
 })

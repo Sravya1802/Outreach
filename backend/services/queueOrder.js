@@ -48,9 +48,9 @@ export function queueOrder(rows, { now = new Date() } = {}) {
   return [...closing, ...top, ...mix];
 }
 
-/** 'intern' or 'new_grad': the role's own type, else read from the title. */
-export const roleKind = (r) => (r.role_type === 'intern' || r.role_type === 'new_grad' ? r.role_type
-  : /\b(intern(ship)?|co-?op)\b/i.test(String(r.title || '')) ? 'intern' : 'new_grad');
+/** 'intern' or 'new_grad': a title that says intern / co-op / summer analyst wins (boards mislabel those), else the listing's type. */
+export const roleKind = (r) => (/\b(intern(ship)?|co-?op|summer analyst|summer associate)\b/i.test(String(r.title || '')) ? 'intern'
+  : r.role_type === 'intern' || r.role_type === 'new_grad' ? r.role_type : 'new_grad');
 
 /**
  * The run order with internships and new grad roles taking turns, so any 60 in

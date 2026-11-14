@@ -42,7 +42,7 @@ import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
-import { checkNewVersions, markApplied, notifyRuns, recoverApprovals } from './services/tailorPipeline.js';
+import { checkNewVersions, fillMissingCallbacks, markApplied, notifyRuns, recoverApprovals } from './services/tailorPipeline.js';
 import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
 import { fillGmailDrafts, runOutbox } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
@@ -534,6 +534,8 @@ cron.schedule('*/2 * * * *', async () => {
   try {
     const n = await checkNewVersions();
     if (n) console.log(`[review] checked ${n} resume versions`);
+    const cb = await fillMissingCallbacks().catch(() => 0);
+    if (cb) console.log(`[review] callback estimated for ${cb} version`);
     await markApplied();
     await notifyRuns();
     const lost = await recoverApprovals();

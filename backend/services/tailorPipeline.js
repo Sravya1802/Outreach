@@ -149,6 +149,42 @@ async function checkVersion(v) {
   if (v.callback_after == null) await fillCallback(v, text).catch(err => console.warn('[review] callback estimate failed', v.id, err.message));
 }
 
+let callbackPauseUntil = 0;
+
+/**
+ * Catch up callback estimates a few at a time: the latest version of a Ready,
+ * revising or approved role that has a PDF but no callback chance (a run left
+ * it empty, or the AI providers were busy). When a provider says "rate limit",
+ * wait 10 minutes.
+ */
+export async function fillMissingCallbacks(limit = 1) {
+  if (Date.now() < callbackPauseUntil) return 0;
+  const rows = await all(
+    `SELECT v.id, v.user_id, v.plan_item_id, v.report, v.ats_before, v.ats_after, v.callback_after, v.pdf_path, pi.title, pi.company_name, ${POSTING_TEXT} AS description
+       FROM tailor_jobs j
+       JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
+       JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN scraped_roles sr ON sr.id = COALESCE(j.scraped_role_id, pi.scraped_role_id)
+      WHERE j.status IN ('ready', 'revision_requested', 'approved') AND v.callback_after IS NULL AND v.pdf_path IS NOT NULL
+        AND COALESCE((v.report->'scores'->>'callback_tries')::int, 0) < 5
+      ORDER BY (j.status = 'ready') DESC, v.created_at DESC LIMIT $1`,
+    [limit],
+  );
+  let filled = 0;
+  for (const v of rows) {
+    try {
+      const text = await pdfText(await downloadVersionPdf(v.pdf_path));
+      if (await fillCallback(v, text)) filled += 1;
+      else await run(`UPDATE resume_versions SET report = COALESCE(report, '{}'::jsonb) || jsonb_build_object('scores', COALESCE(report->'scores', '{}'::jsonb) || jsonb_build_object('callback_tries', 5)) WHERE id = $1`, [v.id]);
+    } catch (err) {
+      if (/\b429\b|rate limit/i.test(err.message)) { callbackPauseUntil = Date.now() + 10 * 60_000; break; }
+      // Anything else: count the try, so one bad version doesn't block the rest.
+      await run(`UPDATE resume_versions SET report = COALESCE(report, '{}'::jsonb) || jsonb_build_object('scores', COALESCE(report->'scores', '{}'::jsonb) || jsonb_build_object('callback_tries', COALESCE((report->'scores'->>'callback_tries')::int, 0) + 1)) WHERE id = $1`, [v.id]);
+    }
+  }
+  return filled;
+}
+
 /** Save a callback estimate (before, after and why) on a version that has none. */
 export async function fillCallback(v, text) {
   const c = await estimateCallback({

@@ -17,7 +17,7 @@ import { RETURN_TO_SCHOOL, notReturnToSchool } from './gradYear.js';
  * internship by the older check (for rows not read yet).
  */
 export const eligibleSql = (p = '') =>
-  `(${p}eligibility_restored_at IS NOT NULL OR (${p}ineligible_reason IS NULL AND ${notReturnToSchool(`${p}role_type`, `${p}description`, `${p}return_to_school`)}))`;
+  `(${p}eligibility_restored_at IS NOT NULL OR (${p}ineligible_reason IS NULL AND (${p}eligibility_checked_at IS NOT NULL OR ${notReturnToSchool(`${p}role_type`, `${p}description`, `${p}return_to_school`)})))`;
 /** SQL: removed for eligibility, not restored. */
 export const removedSql = (p = '') => `(${p}ineligible_reason IS NOT NULL AND ${p}eligibility_restored_at IS NULL)`;
 
@@ -64,7 +64,8 @@ const CITIZENSHIP = [
 // A softer mention: worth a look, not a removal.
 const CITIZENSHIP_SOFT = new RegExp(String.raw`\b${US}\s+persons?\b|\bexport (?:license|licence|authorization)\b|\b(?:itar|export[-\s]controlled)\b`, 'i');
 // The bar has a door: F-1/CPT/OPT students, or anyone authorized to work.
-const STUDENTS_WELCOME = /\b(?:f-?1|cpt|opt|stem opt)\b[^.]{0,80}\b(?:accepted|eligible|welcome|considered)\b|\bstudents?\s+with\s+(?:valid\s+)?work authorization\b|\bor\s+(?:be\s+)?(?:otherwise\s+)?(?:authorized|eligible)\s+to\s+work\b/i;
+// No "not / no / ineligible" between the visa words and the welcome: "OPT not eligible" is the opposite.
+const STUDENTS_WELCOME = /\b(?:f-?1|cpt|opt|stem opt)\b(?:(?!\bnot\b|\bno\b|n't\b|\bineligible\b|\bexcluded\b)[^.]){0,80}\b(?:accepted|eligible|welcome|considered)\b|\bstudents?\s+with\s+(?:valid\s+)?work authorization\b|\bor\s+(?:be\s+)?(?:otherwise\s+)?(?:authorized|eligible)\s+to\s+work\b/i;
 
 // ── Clearance ─────────────────────────────────────────────────────────────────
 const LEVEL = String.raw`(?:an?\s+)?(?:active\s+|interim\s+|current\s+)?(?:u\.?s\.?\s+)?(?:dod\s+|dow\s+|government\s+|federal\s+|u\.?s\.?\s+government\s+)?(?:secret|top secret|ts\/sci|ts|security|public trust)(?:\s*\/?\s*sci)?(?:\s+level)?(?:\s+security)?\s+clearance`;
@@ -123,11 +124,14 @@ const DATE_TOKEN = /\b(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|j
 const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
 // "graduating by / before / no later than <date>" is a ceiling the user meets: those dates don't count.
 const CEILING = /\b(?:before|by|no later th[ae]n|not later th[ae]n|prior to|until|through|up to|on or before)\s+((?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|spring|summer|fall|autumn|winter)\s*(?:of\s+)?,?\s*)?20[2-3]\d\b/gi;
-const USER_GRAD = 2027 * 12 + 6; // June 2027: graduating after this means returning to school
+// The latest graduation the user takes on: December 2027 (they graduate May 2027 but want Fall 2027 roles too).
+// A window that allows any date up to then stays; only an earliest date in 2028 or later removes the role.
+const LATEST_GRAD = 2027 * 12 + 12;
 
 /** The earliest graduation date a sentence asks for, as year*12+month, ignoring ceilings; null without one. */
 function earliestGraduation(sentence) {
-  const s = sentence.replace(CEILING, ' ');
+  // "not graduating before / prior to <date>" is a floor: keep its date.
+  const s = sentence.replace(/\bnot\s+(?:be\s+)?graduat\w*\s+(?:before|prior to)\s+/gi, 'graduating from ').replace(CEILING, ' ');
   let best = null;
   for (const m of s.matchAll(DATE_TOKEN)) {
     const [, when, year] = m;
@@ -155,7 +159,24 @@ function returnToSchool(t) {
     // Only the dates near the graduation words, not the internship's own dates later on.
     const near = sentence.slice(Math.max(0, g.index - 40), g.index + 160);
     const earliest = earliestGraduation(near);
-    if (earliest != null && earliest > USER_GRAD) return clip(near);
+    if (earliest != null && earliest > LATEST_GRAD) return clip(near);
+  }
+  return null;
+}
+
+// ── Says OPT / CPT / F-1 students aren't eligible: shown, never removed ─────────
+const VISA_WORDS = String.raw`(?:f-?1|stem[-\s]opt|opt|cpt|student visas?|international students)`;
+const NOT_ELIGIBLE = String.raw`(?:not\s+(?:be\s+)?eligible|ineligible|not\s+(?:be\s+)?(?:considered|accepted)|do(?:es)?\s+not\s+(?:meet|qualify)|cannot\s+(?:be\s+)?(?:considered|accept|hire|sponsor)|unable\s+to\s+(?:consider|accept|hire|employ)|excluded|not\s+an?\s+option|will\s+not\s+(?:be\s+)?(?:considered|accepted)|are\s+not\s+able)`;
+const NO_OPT = [
+  new RegExp(String.raw`\b${VISA_WORDS}\b[^.]{0,140}?\b${NOT_ELIGIBLE}\b[^.]{0,40}`, 'i'),
+  new RegExp(String.raw`\b${NOT_ELIGIBLE}\b[^.]{0,80}?\b(?:on|holding|with|under)?\s*${VISA_WORDS}\b[^.]{0,40}`, 'i'),
+];
+/** The words saying OPT / CPT / F-1 students aren't eligible, or null. Pure. */
+export function noOptCpt(text) {
+  const t = String(text || '');
+  for (const re of NO_OPT) {
+    const m = re.exec(t);
+    if (m) return clip(t.slice(Math.max(0, m.index - 20), m.index + m[0].length));
   }
   return null;
 }

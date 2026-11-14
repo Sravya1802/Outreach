@@ -18,7 +18,7 @@
 // Nothing here applies, emails or drafts anything: approval stays the user's.
 import { all, one, run } from '../db.js';
 import { US_PERSON_FLAG, postingFacts, studentsWelcome } from './postingFacts.js';
-import { closedNote, eligibilityFor } from './eligibility.js';
+import { closedNote, eligibilityFor, noOptCpt } from './eligibility.js';
 
 import { DAY, OFF_FIELD_NOTE, OLD_DAYS, RECHECK_DAYS, SOON_DAYS, day, groupRoles, key, offFieldReason, queueOrder, rolesTabWhere, time } from './queueOrder.js';
 
@@ -196,12 +196,12 @@ export async function checkEligibility({ limit = 3000 } = {}) {
       const v = eligibilityFor({ title: r.title, text: r.description, quote: r.sponsorship_quote, roleType: r.role_type });
       if (v?.reason) stats.removed += 1;
       if (v?.flag) stats.flagged += 1;
-      return { id: r.id, reason: v?.reason || null, phrase: v?.phrase || null, flag: v?.flag || null };
+      return { id: r.id, reason: v?.reason || null, phrase: v?.phrase || null, flag: v?.flag || null, noOpt: noOptCpt([r.description, r.sponsorship_quote].filter(Boolean).join('\n')) };
     });
     await run(
-      `UPDATE scraped_roles s SET ineligible_reason = u.reason, ineligible_phrase = u.phrase, eligibility_flag = u.flag, eligibility_checked_at = NOW()
-         FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[]) AS u(id, reason, phrase, flag) WHERE s.id = u.id`,
-      [c.map(x => x.id), c.map(x => x.reason), c.map(x => x.phrase), c.map(x => x.flag)],
+      `UPDATE scraped_roles s SET ineligible_reason = u.reason, ineligible_phrase = u.phrase, eligibility_flag = u.flag, no_opt_phrase = u.no_opt, eligibility_checked_at = NOW()
+         FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, reason, phrase, flag, no_opt) WHERE s.id = u.id`,
+      [c.map(x => x.id), c.map(x => x.reason), c.map(x => x.phrase), c.map(x => x.flag), c.map(x => x.noOpt)],
     );
   }
   return stats;

@@ -14,7 +14,8 @@ const ATS = /(greenhouse\.io|lever\.co|ashbyhq\.com)/i;
 /** WHERE (on scraped_roles, unqualified) for the Roles tab's roles; `next` is the first free $ index. */
 export function rolesTabWhere(next, { keepReturnToSchool = false } = {}) { // keepReturnToSchool: keep ineligible roles too (to read them)
   const y = yearCondition({ year: QUEUE_YEAR, orUnstated: false }, next);
-  const parts = ['is_active = 1', "region = 'usa'", "role_type IN ('intern', 'new_grad')", "(sponsorship IS NULL OR sponsorship = 'sponsors')", y.sql];
+  // "Won't sponsor" stays out, unless all it says is that OPT / CPT / F-1 students aren't eligible (the user applies anyway).
+  const parts = ['is_active = 1', "region = 'usa'", "role_type IN ('intern', 'new_grad')", "(sponsorship IS NULL OR sponsorship = 'sponsors' OR (sponsorship = 'no_sponsorship' AND no_opt_phrase IS NOT NULL))", y.sql];
   if (!keepReturnToSchool) parts.push(eligibleSql());
   return { sql: parts.join(' AND '), params: y.params };
 }
@@ -68,7 +69,9 @@ export function groupRoles(roles) {
 // they don't have. A title that names software/data/AI work stays, whatever
 // else it says ("Marketing Data Science Intern").
 const IN_FIELD = /\b(software|data|machine learning|ml|ai|artificial intelligence|deep learning|llm|nlp|computer vision|developer|devops|sre|site reliability|backend|back-end|frontend|front-end|full[- ]?stack|cloud|platform engineer|infrastructure|security engineer|cyber ?security|analytics|quantitative|quant|algorithm|robotics software|embedded software|firmware|programmer|coding|computer science|research engineer|research scientist|applied scientist|swe|sde|statistic(s|al)|informatics|engineer, development)\b/i;
-const OFF_FIELD = /\b(financial analyst|finance|accounting|accountant|audit|tax|treasury|fp&a|actuarial|underwriting|insurance|sales|marketing|communications|public relations|human resources|hr|recruiting|talent acquisition|legal|paralegal|supply chain|procurement|logistics|operations intern|business operations|strategy|strategic partnerships|consulting|ux|ui|user experience|graphic|visual design|product design|industrial design|content|journalism|editorial|wastewater|civil|mechanical|electrical engineer(ing)?|mechanical engineering|geotechnical|structural|surveying|digital design|graphic design|design intern|chemical|manufacturing|process engineer|quality engineer|facilities|construction|environmental|vlsi|asic|rtl|analog|circuit|physical design|hardware engineer|biology|biolog|chemistry|clinical|pharma|nursing|medical|public policy|economics|real estate|investment banking|wealth|private equity)\b/i;
+// Work with no computer science in it at all; anything else (finance, insurance, healthcare,
+// operations, consulting, risk, revenue management…) stays, and when unsure the role stays.
+const OFF_FIELD = /\b(mechanical|civil|structural|geotechnical|surveying|construction|facilities|wastewater|electrical engineer(?:ing)?|hardware engineer(?:ing)?|vlsi|asic|rtl|analog|circuit design|pcb|physical design|chemical engineer(?:ing)?|process engineer(?:ing)?|manufacturing engineer(?:ing)?|sales|business development|account executive|marketing|brand|public relations|corporate communications|human resources|hr|people operations|recruiting|recruiter|talent acquisition|ux|ui|user experience|graphic|visual design|product design|industrial design|interior design|digital design|design intern|clinical|nursing|nurse|pharmacy|wet lab|lab technician|bench|medical affairs|legal|paralegal|journalism|editorial)\b/i;
 const MBA = /\bmba\b/i;
 const PHD_ONLY = /\b(ph\.?\s?d|doctoral|doctorate)\b/i;
 const OTHER_DEGREE = /\b(master'?s?|masters|ms|m\.s\.|bachelor'?s?|bs|b\.s\.|undergrad(uate)?|graduate)\b/i;

@@ -10,6 +10,7 @@ test('citizenship: citizen, green card, refugee/asylee, ITAR/EAR U.S. persons', 
   assert.equal(reason('applicant must be a (i) U.S. citizen or national, (ii) U.S. lawful, permanent resident (aka green card holder), (iii) Refugee'), 'citizenship')
   assert.equal(reason('Due to ITAR regulations, applicants must be U.S. persons (citizen, permanent resident, refugee or asylee).'), 'citizenship')
   assert.equal(reason('US Citizenship Required:'), 'citizenship')
+  assert.equal(reason('ITAR: applicants must be U.S. persons (citizen, permanent resident or protected person); F-1/OPT not eligible.'), 'citizenship')
   // The sponsorship check's saved quote counts too.
   assert.equal(eligibilityFor({ text: '', quote: 'Candidates must be US Citizens', roleType: 'new_grad' })?.reason, 'citizenship')
 })
@@ -35,13 +36,19 @@ test('MBA and PhD only when required', () => {
 test('return to school (internships only)', () => {
   assert.equal(reason('Must be returning to school after the internship.'), 'return_to_school')
   assert.equal(reason('You must have at least one semester remaining after the internship.'), 'return_to_school')
-  assert.equal(reason('This internship is designed for students graduating between December 2027 and June 2028.'), 'return_to_school')
-  assert.equal(reason('Expected graduation date between Fall 2027 and Summer 2028.'), 'return_to_school')
+  assert.equal(reason('This internship is designed for students graduating between January 2028 and June 2028.'), 'return_to_school')
+  // Up to December 2027 is fine: a window that includes it stays.
+  assert.equal(reason('This internship is designed for students graduating between December 2027 and June 2028.'), null)
+  assert.equal(reason('Expected graduation date between Fall 2027 and Summer 2028.'), null)
+  assert.equal(reason('Graduating in Fall 2027.'), null)
+  assert.equal(reason('Not graduating prior to December 2027.'), null)
+  assert.equal(reason('Not graduating prior to May 2028.'), 'return_to_school')
   assert.equal(reason('Open to the Class of 2028.'), 'return_to_school')
   assert.equal(reason('Students graduating in 2028 or later.'), 'return_to_school')
   assert.equal(reason("Corning's research team is hiring a graduate-level intern for Summer 2027 to contribute to modeling."), null)
   assert.equal(reason('Open to graduate students for Summer 2027.'), null)
-  assert.equal(reason('You will graduate in fall 2027 or spring 2028 with a Master\'s degree.'), 'return_to_school')
+  assert.equal(reason('You will graduate in fall 2027 or spring 2028 with a Master\'s degree.'), null)
+  assert.equal(reason('You will graduate in spring 2028 or fall 2028.'), 'return_to_school')
   assert.equal(reason('Tech stack: Python. 2028 or 2029 graduation year.'), 'return_to_school')
   // Graduating by / no later than a date: the user meets it.
   assert.equal(reason('Must be graduating no later than December 2027.'), null)
@@ -85,9 +92,20 @@ test("PhD and MBA: never removed when a Master's is acceptable anywhere; other r
   // Master's mentioned, other reasons still remove.
   assert.equal(e('Software Intern', 'Pursuing a Master\'s degree. Must be a U.S. citizen.')?.reason, 'citizenship')
   assert.equal(e('Software Intern', 'Pursuing a Master\'s degree. Ability to obtain a Secret clearance.')?.reason, 'clearance')
-  assert.equal(e('Software Intern', 'Pursuing a Master\'s degree, graduating between December 2027 and June 2028.')?.reason, 'return_to_school')
+  assert.equal(e('Software Intern', 'Pursuing a Master\'s degree, graduating between February 2028 and June 2028.')?.reason, 'return_to_school')
   assert.equal(mastersOption('', 'Experience with MS SQL Server and MS Excel.'), null)
   assert.equal(mastersOption('', 'Are you a master of natural language processing?'), null)
   assert.ok(mastersOption('', 'Pursuing a Master of Science in CS'))
   assert.ok(mastersOption('', 'Pursuing an M.S. in Computer Science'))
+})
+
+test('OPT / CPT / F-1 exclusions are shown, never a reason to remove', async () => {
+  const { noOptCpt } = await import('../services/eligibility.js')
+  const text = 'Students currently on CPT, OPT, or STEM OPT do not meet the requirements for this program.'
+  assert.equal(eligibilityFor({ text, roleType: 'intern' }), null)
+  assert.ok(noOptCpt(text))
+  assert.ok(noOptCpt('Requires permanent work authorization; CPT/OPT not eligible.'))
+  assert.ok(noOptCpt('F-1 students are not eligible for this role.'))
+  assert.equal(noOptCpt('F1 Visa on CPT accepted only for masters-level students.'), null)
+  assert.equal(noOptCpt('We welcome international students and sponsor visas.'), null)
 })

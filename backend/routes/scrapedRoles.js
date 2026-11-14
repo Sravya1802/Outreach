@@ -76,7 +76,7 @@ router.get('/', async (req, res) => {
     const sql = `
       SELECT r.id, r.role_type, r.region, r.tracks, r.title, r.company_name, r.company_url, r.location, r.apply_url, r.source, r.tier,
              r.salary_range, r.posted_at, r.scraped_at, r.sponsorship, r.sponsorship_quote, (r.jd_checked_at IS NOT NULL) AS jd_read,
-             r.ineligible_reason, r.ineligible_phrase, r.eligibility_flag, (r.eligibility_restored_at IS NOT NULL) AS restored,
+             r.ineligible_reason, r.ineligible_phrase, r.eligibility_flag, (r.eligibility_restored_at IS NOT NULL) AS restored, r.no_opt_phrase,
              ${YEARS_SELECT},
              -- The same job listed by another source (matched on company + title).
              ARRAY(

@@ -5,7 +5,7 @@ import { ArrowLeft, Copy, ExternalLink } from 'lucide-react'
 import { api, type OutreachDraft, type ReferralMode, type ReviewComment, type ReviewRole, type ResumeVersion } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
-import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, useToast, type Tone } from '@/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
 import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
@@ -147,7 +147,10 @@ function CommentsPanel({ data, onDone }: { data: ReviewRole; onDone: () => void 
             {p => <Textarea {...p} value={body} onChange={e => setBody(e.target.value)} rows={4} />}
           </Field>
           {data.role.status === 'approved' && <p className="text-[13px] text-subtle">This takes the role’s emails back out of Gmail Drafts and stops the wait. Approve the new version to start again.</p>}
-          <Button type="submit" variant="primary" loading={send.isPending} disabled={!body.trim()}>Request revision</Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" variant="primary" loading={send.isPending} disabled={!body.trim()}>Request revision</Button>
+            <VoiceInput onText={spoken => setBody(b => appendSpoken(b, spoken))} disabled={send.isPending} />
+          </div>
         </form>
       ) : <p className="text-[13px] text-subtle">This role can’t take a revision while it’s {STATUS_LABEL[data.role.status].toLowerCase()}.</p>}
     </div>

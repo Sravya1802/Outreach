@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -384,5 +384,22 @@ describe('readReport: callback', () => {
   it('reads the callback reason the run wrote', () => {
     expect(readReport({ scores: { callback_reason: 'Strong ML match, no referral yet' } }).callbackReason).toBe('Strong ML match, no referral yet')
     expect(readReport({}).callbackReason).toBeNull()
+  })
+})
+
+describe('parseContacts', () => {
+  it('reads one person per line, comma separated', () => {
+    expect(parseContacts('Jane Doe, Technical Recruiter, Jane.Doe@acme.com', 'Acme')).toEqual([{ name: 'Jane Doe', title: 'Technical Recruiter', email: 'jane.doe@acme.com', linkedin_url: '' }])
+  })
+  it("reads Apollo's table copy (tabs) and skips the company name", () => {
+    expect(parseContacts('Sam Lee\tSoftware Engineer\tAcme\tsam@acme.com\tSan Francisco, CA', 'Acme')).toEqual([{ name: 'Sam Lee', title: 'Software Engineer', email: 'sam@acme.com', linkedin_url: '' }])
+  })
+  it('takes the name and title from the lines above the email, and LinkedIn links', () => {
+    expect(parseContacts('Priya Shah\nUniversity Recruiter\npriya@acme.com\nlinkedin.com/in/priya-shah\n')).toEqual([
+      { name: 'Priya Shah', title: 'University Recruiter', email: 'priya@acme.com', linkedin_url: 'https://linkedin.com/in/priya-shah' },
+    ])
+  })
+  it('guesses a name from the address, drops repeats and lines with nothing to reach', () => {
+    expect(parseContacts('jordan.kim@acme.com\nJORDAN.KIM@acme.com\nRandom note')).toEqual([{ name: 'Jordan Kim', title: '', email: 'jordan.kim@acme.com', linkedin_url: '' }])
   })
 })

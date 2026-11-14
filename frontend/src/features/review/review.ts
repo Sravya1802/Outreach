@@ -260,6 +260,46 @@ export const CLOSED_LABEL: Record<string, string> = {
   removed: 'Removed by you',
 }
 
+export type PastedPerson = { name: string; title: string; email: string; linkedin_url: string }
+
+const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+const PROFILE = /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%-]+\/?/i
+const NAME = /^[\p{L}][\p{L} .'’-]{1,60}$/u
+const TITLE_WORDS = /\b(recruit\w*|talent|sourc\w*|engineer\w*|developer|manager|director|head|lead|partner|coordinator|specialist|scientist|analyst|hr|people|university|campus|intern\w*|vp|president|officer|founder|staff|senior|principal)\b/i
+
+/** "jane.doe@acme.com" → "Jane Doe" (a guess when the paste has no name). */
+const nameFromEmail = (email: string) => email.split('@')[0]!.split(/[._-]+/).filter(w => /^[a-z]{2,}$/i.test(w)).map(w => w[0]!.toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+
+/**
+ * People pasted from Apollo (or anywhere): one per line ("Jane Doe, Technical
+ * Recruiter, jane@acme.com"), Apollo's table copy (tabs), or a name and title on
+ * lines above the email or LinkedIn link. The company's own name is skipped.
+ */
+export function parseContacts(text: string, company = ''): PastedPerson[] {
+  const out: PastedPerson[] = []
+  let pending: string[] = []
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line) continue
+    const chunks = line.split(/\t|\s+[|•·–—-]\s+|\s*,\s*|\s{3,}/).map(c => c.trim()).filter(Boolean)
+    const email = line.match(EMAIL)?.[0] ?? ''
+    const profile = line.match(PROFILE)?.[0] ?? ''
+    if (!email && !profile) { pending = [...pending, ...chunks].slice(-4); continue }
+    // A LinkedIn link on its own line belongs to the person just above it.
+    const last = out[out.length - 1]
+    if (!email && profile && !pending.length && last && !last.linkedin_url) { last.linkedin_url = profile.startsWith('http') ? profile : `https://${profile}`; continue }
+    const parts = [...pending, ...chunks].filter(c => !EMAIL.test(c) && !PROFILE.test(c) && c.toLowerCase() !== company.trim().toLowerCase())
+    pending = []
+    const nameAt = parts.findIndex(c => NAME.test(c) && !TITLE_WORDS.test(c) && c.split(/\s+/).length >= 2 && c.split(/\s+/).length <= 5)
+    const name = nameAt >= 0 ? parts[nameAt]! : (email ? nameFromEmail(email) : '')
+    const title = parts.find((c, i) => i !== nameAt && TITLE_WORDS.test(c)) ?? ''
+    const key = (email || profile).toLowerCase()
+    if (out.some(p => (p.email || p.linkedin_url).toLowerCase() === key)) continue
+    out.push({ name, title, email: email.toLowerCase(), linkedin_url: profile && !profile.startsWith('http') ? `https://${profile}` : profile })
+  }
+  return out
+}
+
 /** A role the user can take out of their lists (waiting, Ready or revising). */
 export const canRemove = (r: Pick<ReviewRow, 'status'>) => ['queued', 'ready', 'revision_requested'].includes(r.status)
 

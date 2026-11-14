@@ -7,7 +7,7 @@ import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
+import { parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -253,6 +253,53 @@ function MyContact({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
 }
 
 /** A recruiter role with nothing written: what stands between it and Approve. */
+/** Paste people copied from Apollo (or anywhere); check them; save them as this role's contacts. */
+function PasteContacts({ data, onDone, open: startOpen = false }: { data: ReviewRole; onDone: () => void; open?: boolean }) {
+  const toast = useToast()
+  const [open, setOpen] = useState(startOpen)
+  const [text, setText] = useState('')
+  const [people, setPeople] = useState<PastedPerson[] | null>(null)
+  const save = useMutation({
+    mutationFn: (list: PastedPerson[]) => api.addRoleContacts(data.role.id, list),
+    onSuccess: (r) => {
+      toast.success(`Added ${r.people === 1 ? '1 person' : `${r.people} people`}. Use template to write the emails now, or the next run writes them.`)
+      setText(''); setPeople(null); setOpen(false); onDone()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  if (!open) return <Button variant="ghost" onClick={() => setOpen(true)}>Paste from Apollo</Button>
+  const edit = (i: number, patch: Partial<PastedPerson>) => setPeople(list => list && list.map((p, k) => (k === i ? { ...p, ...patch } : p)))
+  return (
+    <div className="space-y-2 rounded-[4px] border border-border p-3">
+      <Field label="Paste people from Apollo" hint="One person per line: name, title, email (and LinkedIn link if you have it). Apollo's table copy works as is.">
+        {p => <Textarea {...p} value={text} rows={4} placeholder={'Jane Doe, Technical Recruiter, jane.doe@company.com\nSam Lee\tSoftware Engineer\tsam@company.com'} onChange={e => { setText(e.target.value); setPeople(null) }} />}
+      </Field>
+      {people === null ? (
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={!text.trim()} onClick={() => { const list = parseContacts(text, data.role.company_name); if (!list.length) toast.error('No email address or LinkedIn link found in that text.'); setPeople(list) }}>Read them</Button>
+          <Button variant="ghost" onClick={() => { setOpen(false); setText('') }}>Cancel</Button>
+        </div>
+      ) : people.length ? (
+        <div className="space-y-2">
+          <p className="text-[13px] text-muted">Check them, fix anything, then add.</p>
+          {people.map((p, i) => (
+            <div key={i} className="grid grid-cols-1 gap-2 rounded-[4px] border border-border p-2 sm:grid-cols-[1fr_1fr_1.3fr_auto]">
+              <Input aria-label={`Name ${i + 1}`} value={p.name} placeholder="Name" onChange={e => edit(i, { name: e.target.value })} />
+              <Input aria-label={`Title ${i + 1}`} value={p.title} placeholder="Title" onChange={e => edit(i, { title: e.target.value })} />
+              <Input aria-label={`Email ${i + 1}`} value={p.email} placeholder="Email" onChange={e => edit(i, { email: e.target.value })} />
+              <Button variant="ghost" size="sm" aria-label={`Leave out ${p.name || p.email}`} onClick={() => setPeople(list => list && list.filter((_, k) => k !== i))}>Leave out</Button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" loading={save.isPending} onClick={() => save.mutate(people)}>Add {people.length === 1 ? '1 person' : `${people.length} people`}</Button>
+            <Button variant="ghost" onClick={() => setPeople(null)}>Back</Button>
+          </div>
+        </div>
+      ) : <Button variant="ghost" onClick={() => setPeople(null)}>Back</Button>}
+    </div>
+  )
+}
+
 function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
   const toast = useToast()
   const find = useMutation({
@@ -283,7 +330,10 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
           </li>
         ))}
       </ul>
-      <Button variant="primary" loading={template.isPending} onClick={() => template.mutate()}>Use template</Button>
+      <div className="flex flex-wrap items-start gap-2">
+        <Button variant="primary" loading={template.isPending} onClick={() => template.mutate()}>Use template</Button>
+        <PasteContacts data={data} onDone={onDone} />
+      </div>
     </div>
   )
   return (
@@ -293,6 +343,7 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
         {!data.role.contacts_at && <Button loading={find.isPending && find.variables === 'all'} disabled={find.isPending} onClick={() => find.mutate('all')}>Find contacts</Button>}
         <Button variant="ghost" loading={find.isPending && find.variables === 'apollo'} disabled={find.isPending} onClick={() => find.mutate('apollo')}>Search Apollo</Button>
       </div>
+      <PasteContacts data={data} onDone={onDone} />
     </div>
   )
 }

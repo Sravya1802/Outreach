@@ -518,6 +518,7 @@ export const api = {
     removeRole: (id) => apiCall(`/review/${id}/remove`, { method: 'POST' }),
     restoreRemovedRole: (id) => apiCall(`/review/${id}/restore`, { method: 'POST' }),
     findRoleContacts: (id, source) => apiCall(`/review/${id}/contacts`, { method: 'POST', body: { source } }),
+    addRoleContacts: (id, people) => apiCall(`/review/${id}/contacts/add`, { method: 'POST', body: { people } }),
     templateOutreach: (id) => apiCall(`/review/${id}/template-outreach`, { method: 'POST' }),
     saveOutreachDraft: (id, patch) => apiCall(`/review/outreach/${id}`, { method: 'PATCH', body: patch }),
     resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),

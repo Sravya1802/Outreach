@@ -122,7 +122,7 @@ const REMAINING = /\b(?:at least|minimum of|a minimum of)?\s*(?:one|1|a|two|2)\s
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 // A season is a span of months; a bare year is the whole year.
 const SEASON = { spring: [3, 5], summer: [6, 8], fall: [9, 12], autumn: [9, 12], winter: [12, 12] };
-const DATE = String.raw`(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?20[2-3]\d\b`;
+const DATE = String.raw`(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?(?<!\d)20[2-3]\d`;
 const DATE_PARTS = /(?:(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|spring|summer|fall|autumn|winter)\.?\s*(?:of\s+)?,?\s*)?(20[2-3]\d)/i;
 // Graduation wording only: not "graduate-level", "graduate students" or "graduate degree".
 const GRAD_SENTENCE = /\b(?:graduating|graduation|graduates|graduated\s+(?:in|by|between|from|after|before|no|within|during)|graduates?\s+(?:in|by|between|from|after|before|no)|(?:will|you|expect(?:ed)?\s+to|plan(?:s|ning)?\s+to)\s+graduate\b(?!\s*(?:students?|level|degree|program|school))|class of|degree (?:completion|conferral)|complet\w* (?:your|their) (?:degree|program) (?:in|by|between))\b/i;
@@ -144,7 +144,7 @@ function span(token) {
 
 const RANGE = new RegExp(String.raw`(${DATE})\s*(?:–|—|-|to|through|thru|and|until|till)\s*(${DATE})`, 'i');
 const OR_LATER = new RegExp(String.raw`(${DATE})\s*(?:or|and)\s+(?:later|after|beyond|onwards?)`, 'i');
-const FLOOR = new RegExp(String.raw`\b(?:after|no earlier than|not earlier than|starting(?:\s+in)?|beginning(?:\s+in)?|from|not\s+(?:be\s+)?graduat\w*\s+(?:before|prior to))\s+(${DATE})`, 'i');
+const FLOOR = new RegExp(String.raw`\b(?:after|no earlier than|not earlier than|no sooner than|not sooner than|starting(?:\s+in)?|beginning(?:\s+in)?|from|not\s+(?:be\s+)?graduat\w*\s+(?:before|prior to))\s+(${DATE})`, 'i');
 const CEILING = new RegExp(String.raw`\b(?:by|before|no later th[ae]n|not later th[ae]n|prior to|until|up to|on or before|through)\s+(${DATE})`, 'i');
 const ANY_DATE = new RegExp(DATE, 'gi');
 
@@ -167,7 +167,12 @@ export function graduationWindow(clause) {
   const floor = FLOOR.exec(c);
   if (floor && lo == null) lo = span(floor[1])?.[0] ?? null;
   const ceiling = CEILING.exec(c);
-  if (ceiling && !/\bnot\s+(?:be\s+)?graduat\w*\s+$/i.test(c.slice(0, ceiling.index))) hi = span(ceiling[1])?.[1] ?? null;
+  if (ceiling && !/\bnot\s+(?:be\s+)?graduat\w*\s+$/i.test(c.slice(0, ceiling.index))) {
+    // "by December 2026 or Summer 2027": the ceiling is the latest date listed after "by".
+    const listed = c.slice(ceiling.index).match(new RegExp(String.raw`^\S+(?:\s+(?:th[ae]n|to|before))?\s+${DATE}(?:\s*(?:,|or|and\/or)\s*${DATE})*`, 'i'))?.[0] || ceiling[0];
+    const his = [...listed.matchAll(ANY_DATE)].map(m => span(m[0])?.[1]).filter(Boolean);
+    hi = his.length ? Math.max(...his) : null;
+  }
   if (lo != null || hi != null) return { lo, hi };
   const spans = [...c.matchAll(ANY_DATE)].map(m => span(m[0])).filter(Boolean);
   if (!spans.length) return null;

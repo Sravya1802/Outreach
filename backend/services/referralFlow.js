@@ -546,11 +546,14 @@ const LEADER = /\b(s?vp|evp|vice president|director|head of|chief|ceo|founder|co
 /** Saved recruiters at a company, best first. */
 export async function recruitersAt(userId, companyName) {
   const saved = await all(
-    `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+    `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url, c.source FROM job_contacts c JOIN jobs j ON j.id = c.job_id
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
     [userId, companyName],
   );
-  return saved.filter(c => isRecruiterTitle(c.title) && !LEADER.test(c.title) && !isCompanyPage(c.name, companyName)).sort((a, b) => askRank(a) - askRank(b));
+  // People the user added themselves come first, whatever their title (an engineer goes to the engineer slot).
+  const mine = (c) => c.source === 'manual';
+  return saved.filter(c => (mine(c) && askRank(c) !== 2) || (isRecruiterTitle(c.title) && !LEADER.test(c.title) && !isCompanyPage(c.name, companyName)))
+    .sort((a, b) => Number(mine(b)) - Number(mine(a)) || askRank(a) - askRank(b));
 }
 
 const canEmail = c => c.email && c.email_status !== 'invalid';
@@ -567,12 +570,12 @@ export async function outreachTargets(userId, company, mode = 'recruiters_engine
     .map(c => ({ ...c, audience: 'recruiter' }));
   if (mode === 'recruiters_engineers') {
     const saved = await all(
-      `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url FROM job_contacts c JOIN jobs j ON j.id = c.job_id
+      `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url, c.source FROM job_contacts c JOIN jobs j ON j.id = c.job_id
         WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
       [userId, company],
     );
     const engineer = saved.filter(c => askRank(c) === 2 && !isCompanyPage(c.name, company) && (canEmail(c) || isProfile(c.linkedin_url)))
-      .sort((a, b) => Number(!canEmail(a)) - Number(!canEmail(b)))[0];
+      .sort((a, b) => Number(b.source === 'manual') - Number(a.source === 'manual') || Number(!canEmail(a)) - Number(!canEmail(b)))[0];
     if (engineer) picked.push({ ...engineer, audience: 'engineer' });
   }
   return picked;

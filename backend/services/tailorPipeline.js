@@ -728,6 +728,51 @@ export async function templateOutreach(userId, planItemId) {
  * Recruiters for a Ready role with no outreach. The next run writes the emails
  * and notes. `source: 'apollo'` asks Apollo alone, even after other sources found nobody.
  */
+const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const PROFILE_RE = /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%-]+\/?$/i;
+
+/**
+ * People the user copied from Apollo (or anywhere) for this role: saved as the
+ * company's contacts, marked as the user's own (source 'manual', picked first),
+ * and the role's outreach comes next (the next run writes it, or Use template now).
+ * Each person needs an email or a LinkedIn profile. → { added, people }
+ */
+export async function addRoleContacts(userId, planItemId, people) {
+  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (!['ready', 'revision_requested', 'approved'].includes(job.status)) throw fail(409, 'Add people once the resume is ready for review.');
+  const clean = (Array.isArray(people) ? people : []).slice(0, 10).map(p => ({
+    name: String(p?.name || '').trim().slice(0, 80),
+    title: String(p?.title || '').trim().slice(0, 120),
+    email: String(p?.email || '').trim().toLowerCase(),
+    linkedin_url: String(p?.linkedin_url || '').trim(),
+  })).map(p => ({
+    ...p,
+    email: EMAIL_RE.test(p.email) ? p.email : '',
+    linkedin_url: PROFILE_RE.test(p.linkedin_url.startsWith('http') ? p.linkedin_url : `https://${p.linkedin_url}`) ? (p.linkedin_url.startsWith('http') ? p.linkedin_url : `https://${p.linkedin_url}`) : '',
+  })).filter(p => p.email || p.linkedin_url);
+  if (!clean.length) throw fail(400, 'Each person needs an email address or a LinkedIn profile link.');
+  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  const { companyRow } = await import('./referralFlow.js');
+  const { upsertContact } = await import('./contactFinder.js');
+  const { seniorityScore } = await import('./contactRules.js');
+  const jobId = await companyRow(userId, item.company_name, item.location);
+  let added = 0;
+  for (const p of clean) {
+    const r = await upsertContact({ all, run }, {
+      userId, jobId, seniorityScore: seniorityScore(p.title),
+      contact: { name: p.name || null, title: p.title, email: p.email || null, linkedin_url: p.linkedin_url || null, status: 'unverified', source: 'manual' },
+    });
+    // Someone already saved: theirs now (picked first).
+    await run(`UPDATE job_contacts SET source = 'manual' WHERE user_id = $1 AND job_id = $2 AND (($3::text <> '' AND lower(email) = $3) OR ($4::text <> '' AND lower(linkedin_url) = lower($4)))`, [userId, jobId, p.email, p.linkedin_url]);
+    if (r === 'inserted') added += 1;
+  }
+  await run('UPDATE plan_items SET contacts_at = COALESCE(contacts_at, NOW()) WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  const hasOutreach = await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId]);
+  if (!hasOutreach && !NO_EMAILS.includes(job.referral_mode)) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  return { added, people: clean.length };
+}
+
 export async function findRoleContacts(userId, planItemId, { source = 'all' } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');

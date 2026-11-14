@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  applyWithoutReferral, approveRole, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
+  addRoleContacts, applyWithoutReferral, approveRole, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
 } from '../services/tailorPipeline.js';
 
 const router = Router();
@@ -103,6 +103,11 @@ router.post('/:id/restore', withId(async (req, res, id) => {
 
 router.post('/:id/applied', withId(async (req, res, id) => {
   res.json(await markRoleApplied(req.user.id, id));
+}));
+
+// People the user pasted (from Apollo or anywhere): saved as this role's contacts.
+router.post('/:id/contacts/add', withId(async (req, res, id) => {
+  res.json(await addRoleContacts(req.user.id, id, req.body?.people));
 }));
 
 router.post('/:id/contacts', withId(async (req, res, id) => {

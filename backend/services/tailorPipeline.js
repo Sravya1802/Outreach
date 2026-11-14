@@ -155,7 +155,7 @@ let callbackPauseUntil = 0;
  * Catch up callback estimates a few at a time: the latest version of a Ready,
  * revising or approved role that has a PDF but no callback chance (a run left
  * it empty, or the AI providers were busy). When a provider says "rate limit",
- * wait 10 minutes.
+ * wait 3 minutes (Groq's limit is per minute; each estimate is ~8k tokens).
  */
 export async function fillMissingCallbacks(limit = 1) {
   if (Date.now() < callbackPauseUntil) return 0;
@@ -177,7 +177,7 @@ export async function fillMissingCallbacks(limit = 1) {
       if (await fillCallback(v, text)) filled += 1;
       else await run(`UPDATE resume_versions SET report = COALESCE(report, '{}'::jsonb) || jsonb_build_object('scores', COALESCE(report->'scores', '{}'::jsonb) || jsonb_build_object('callback_tries', 5)) WHERE id = $1`, [v.id]);
     } catch (err) {
-      if (/\b429\b|rate limit/i.test(err.message)) { callbackPauseUntil = Date.now() + 10 * 60_000; break; }
+      if (/\b429\b|rate limit/i.test(err.message)) { callbackPauseUntil = Date.now() + 3 * 60_000; console.warn('[review] callback estimate waiting on a rate limit:', err.message.slice(0, 160)); break; }
       // Anything else: count the try, so one bad version doesn't block the rest.
       await run(`UPDATE resume_versions SET report = COALESCE(report, '{}'::jsonb) || jsonb_build_object('scores', COALESCE(report->'scores', '{}'::jsonb) || jsonb_build_object('callback_tries', COALESCE((report->'scores'->>'callback_tries')::int, 0) + 1)) WHERE id = $1`, [v.id]);
     }

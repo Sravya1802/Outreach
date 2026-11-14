@@ -2029,3 +2029,9 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Asked:** "where did interview call back % go?" → "add it" (it was removed on Nov 11 by the user's own spec, point 4; the Claude chat run prompt also says to leave callback empty).
 - **Built:** `reviewQueue` returns `v.callback_after`; Review queue Callback column (after ATS); Report tab "Interview callback" before → after with `report.scores.callback_reason` (`readReport().callbackReason`). tailoring_config **version 12** (id 15) = version 11 + "Callback rule (Sravya, Nov 14)": fill callback_before / callback_after (0–100) and callback_reason for every version, overriding any instruction to leave it empty (the run prompt in Claude chat isn't in the DB; the user may want to remove that line there).
 - **Verified:** backend 272, frontend 186; live browser: column shows 24%, Report shows 12% → 24% with the reason (test roles removed).
+
+## 2026-11-14 — Callback % filled in by the app when a run leaves it empty
+
+- **Asked:** "why did you not put number here" (Report showed "Not estimated").
+- **Built** (commit after `179f2a6`): `estimateCallback` in [resumeEngine.js](backend/services/resumeEngine.js) reuses the recruiter check (`judge`, JUDGE_SYSTEM, task `evaluate` → Groq gpt-oss-120b, Gemini/OpenAI backup) with the master resume text (`meta.user_resume_text`) as before and the version's PDF text as after. `checkVersion` in [tailorPipeline.js](backend/services/tailorPipeline.js) calls `fillCallback` for any new version without `callback_after`, saving callback_before/after and `report.scores.callback_reason` (`callback_by: 'app'`).
+- **Backfill:** `backend/cbfill.mjs` on the VM (log `~/cbfill.log`) for the 111 Ready/approved versions without a number, about 7 s each.

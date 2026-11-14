@@ -2009,3 +2009,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Run live:** all 26,801 rechecked twice (second time after fixing DoorDash "Fall 2026 and Summer 2027At", Adobe "June 20270-1+", Micron "no sooner than June 2027", Applied Intuition "by December 2026 or Summer 2027"). Roles tab: 16 restored from return-to-school; 51 newly removed as graduation (32 new grad, 19 intern); now graduation 89 (49 on the tab), return to school 146 (116). Queue: reopened 9 (SIG ×2, DV Trading, Entegris, Zebra, BioSpace…); graduation closes now 36 (4 had a resume; 23 relabelled from return to school). Job descriptions copied into plan_items for 1,586 queue roles (99 Ready); 0 Ready without text now. Keyword check re-run on 235 Ready versions: 164 changed, 36 had combined keywords, 159 found more. Reports `~/graduation-keywords-report-2026-11-14.json`; before-state `~/eligibility-before-graduation-2026-11-14.json`.
 - **tailoring_config version 11** (id 14) = version 10 + "Graduation rule (Sravya, Nov 14)".
 - **Verified:** backend 271, frontend 183 (highlighter test for "C++, Python").
+
+## 2026-11-14 — Type menu on the Review queue
+
+- **Asked:** "i need a filter of intern and new grad".
+- **Built:** `reviewQueue` returns `role_kind` (scraped role_type, else intern/internship/co-op in the title); Type menu (Any type / Internships / New grad) first among the menus, remembered like the others (`typeMatch` in [review.ts](frontend/src/features/review/review.ts)). Filter row is now search + 5 menus.
+- **Live counts:** Ready 87 internships / 149 new grad; waiting 1,396 / 272.
+- **Verified:** backend 271, frontend 184; live browser 12 of 12 at 1440 and 390 px (test roles removed).

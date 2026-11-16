@@ -1218,8 +1218,9 @@ async function applyItem(userId, item) {
     }
   }
   if (!AUTO_PLATFORMS.includes(detectPlatform(url))) {
+    const closes = item.apply_deadline || (item.scraped_role_id && (await one('SELECT apply_deadline FROM scraped_roles WHERE id = $1', [item.scraped_role_id]))?.apply_deadline);
     await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'apply', stage_note = $2 WHERE id = $1",
-      [item.id, 'This job site can’t be filled in automatically. Apply yourself with the tailored resume (download it from the role), then press “I applied”.']);
+      [item.id, `${closes ? `The posting closes ${closesOn(closes)}. ` : ''}This job site can’t be filled in automatically. Apply yourself with the tailored resume (download it from the role), then press “I applied”.`]);
     return;
   }
   await run("UPDATE plan_items SET stage = 'applying', stage_note = 'Filling in the application…' WHERE id = $1", [item.id]);
@@ -1254,6 +1255,25 @@ async function sendAppliedNotes(userId, item) {
 
 // ── The tick ────────────────────────────────────────────────────────────────
 
+const CLOSING_SOON_DAYS = 3;
+const dayIn = (d, tz) => new Date(d).toLocaleDateString('en-CA', { timeZone: tz || 'America/Chicago' }); // YYYY-MM-DD
+
+/**
+ * Is the posting closing early enough that the role shouldn't wait for
+ * anything? Its stated closing date is within 3 days (today in the user's
+ * zone counts), or before the referral wait would end. Pure.
+ */
+export function closingEarly(deadline, { applyAfter = null, tz = 'America/Chicago', now = new Date() } = {}) {
+  if (!deadline) return false;
+  const closes = String(deadline instanceof Date ? deadline.toISOString() : deadline).slice(0, 10);
+  const today = dayIn(now, tz);
+  if (closes < today) return false; // already closed: closePastDeadlines takes it out
+  const soon = dayIn(new Date(now.getTime() + CLOSING_SOON_DAYS * 86_400_000), tz);
+  return closes <= soon || Boolean(applyAfter && closes <= dayIn(applyAfter, tz));
+}
+
+const closesOn = (d) => new Date(`${String(d).slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
 /** Move this user's roles through ask → wait → apply. At most one application per call. */
 export async function advanceReferrals(userId, settings) {
   for (const item of await all("SELECT * FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'asking_referral' ORDER BY decided_at LIMIT 5", [userId])) {
@@ -1262,8 +1282,19 @@ export async function advanceReferrals(userId, settings) {
     }
   }
   // Someone answered: say so (the user decides what it means).
-  const waiting = await all("SELECT * FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'waiting_referral'", [userId]);
+  const waiting = await all(
+    `SELECT pi.*, COALESCE(pi.apply_deadline, sr.apply_deadline) AS closes
+       FROM plan_items pi LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
+      WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.stage = 'waiting_referral'`,
+    [userId],
+  );
   for (const item of waiting) {
+    // Closing early: apply now, without waiting for referrals, unsent emails or Apply without referral.
+    if (closingEarly(item.closes, { applyAfter: item.apply_after, tz: settings?.timezone })) {
+      await run("UPDATE plan_items SET stage = 'ready_to_apply', apply_after = NOW(), stage_note = $2 WHERE id = $1",
+        [item.id, `The posting closes ${closesOn(item.closes)}, so it applies now without waiting for referrals.`]);
+      continue;
+    }
     const replied = await all(
       `SELECT a.id, a.person_name FROM referral_asks a JOIN job_contacts c ON c.id = a.contact_id
         WHERE a.plan_item_id = $1 AND a.status <> 'replied' AND c.status = 'replied'`,
@@ -1289,7 +1320,13 @@ export async function advanceReferrals(userId, settings) {
       await run("UPDATE plan_items SET stage = 'ready_to_apply', stage_note = 'No referral came through in time. Applying now, in the company’s morning.' WHERE id = $1", [item.id]);
     }
   }
-  const due = await one("SELECT * FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'ready_to_apply' AND apply_after <= NOW() ORDER BY apply_after LIMIT 1", [userId]);
+  // The soonest closing date goes first.
+  const due = await one(
+    `SELECT pi.* FROM plan_items pi LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
+      WHERE pi.user_id = $1 AND pi.decision = 'approved' AND pi.stage = 'ready_to_apply' AND pi.apply_after <= NOW()
+      ORDER BY COALESCE(pi.apply_deadline, sr.apply_deadline, DATE '9999-12-31'), pi.apply_after LIMIT 1`,
+    [userId],
+  );
   if (due) await applyItem(userId, due);
 }
 

@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  addRoleContacts, applyWithoutReferral, approveRole, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
+  addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
 } from '../services/tailorPipeline.js';
 
 const router = Router();
@@ -91,6 +91,11 @@ router.post('/:id/approve', withId(async (req, res, id) => {
 router.post('/:id/apply-without-referral', withId(async (req, res, id) => {
   const r = await applyWithoutReferral(req.user.id, id);
   res.json({ ok: true, ...r });
+}));
+
+// Take back a change request and keep the current version (Revising → Ready).
+router.post('/:id/keep-version', withId(async (req, res, id) => {
+  res.json(await keepVersion(req.user.id, id));
 }));
 
 // Remove a role the user doesn't want (closed, never deleted), and undo it.

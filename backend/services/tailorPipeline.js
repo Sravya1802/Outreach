@@ -632,6 +632,24 @@ export async function restoreRemovedRole(userId, planItemId) {
   return { status: row.status };
 }
 
+/**
+ * The user takes back their change request and keeps the version they have:
+ * open comments become 'withdrawn' (kept, never answered), and the role is
+ * Ready again, so Approve and Apply without referral work now.
+ */
+export async function keepVersion(userId, planItemId) {
+  const job = await one('SELECT status FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (!job) throw fail(404, 'That role isn’t in the queue.');
+  if (job.status === 'in_progress') throw fail(409, 'A run is writing the new version right now. Wait for it to finish.');
+  if (job.status !== 'revision_requested') throw fail(409, 'This role isn’t waiting on a revision.');
+  if (!await one('SELECT 1 AS x FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 AND pdf_path IS NOT NULL LIMIT 1', [userId, planItemId])) {
+    throw fail(409, 'This role has no resume PDF yet, so there’s nothing to use.');
+  }
+  await run("UPDATE resume_comments SET status = 'withdrawn' WHERE plan_item_id = $1 AND status = 'open'", [planItemId]);
+  await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'revision_requested'", [userId, planItemId]);
+  return { ok: true };
+}
+
 export async function applyWithoutReferral(userId, planItemId) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');

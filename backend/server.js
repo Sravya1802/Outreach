@@ -63,7 +63,14 @@ let inflight = 0;
 app.use((req, res, next) => {
   inflight += 1;
   let done = false;
-  const end = () => { if (!done) { done = true; inflight -= 1; } };
+  const started = Date.now();
+  const end = () => {
+    if (done) return;
+    done = true;
+    inflight -= 1;
+    const ms = Date.now() - started;
+    if (ms > 1500) console.log(`[slow] ${req.method} ${req.originalUrl.split('?')[0].replace(/\/\d+(?=\/|$)/g, '/:id')} ${ms} ms`);
+  };
   res.on('finish', end);
   res.on('close', end);
   next();

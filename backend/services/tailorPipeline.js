@@ -410,7 +410,7 @@ export async function reviewRole(userId, planItemId) {
   );
   if (!role) return null;
   // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
-  await run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]);
+  run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]).catch(() => {});
   const [versions, comments, outreach, contacts] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,
@@ -488,7 +488,7 @@ const finishing = new Set();
 const finishQueue = new Map();
 export const APPROVE_FAILED = 'Approve didn’t finish';
 
-export async function approveRole(userId, planItemId, { withoutReferral = false, wait = false } = {}) {
+export async function approveRole(userId, planItemId, { withoutReferral = false, wait = false, then = null } = {}) {
   const [job, latest, item, written] = await Promise.all([
     one('SELECT status, referral_mode, outreach_due FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
     one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]),
@@ -527,7 +527,9 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   const done = (finishQueue.get(userId) || Promise.resolve()).then(work, work);
   finishQueue.set(userId, done.catch(() => {}));
   if (wait) return done;
-  done.catch(() => {});
+  // Something to do once the approval has finished (Apply without referral), without holding up the click.
+  if (then) done.then(() => then()).catch(err => console.warn('[review] after approve failed', planItemId, err.message));
+  else done.catch(() => {});
   return {
     emails: fresh.filter(d => d.email_body).length, inGmail: 0, notes: fresh.filter(d => d.linkedin_note).length,
     skipped: [], repeated: repeats.length, pending: true, blankDraft: blank,
@@ -639,9 +641,12 @@ export async function applyWithoutReferral(userId, planItemId) {
   if (job.status === 'ready') {
     const written = !NO_EMAILS.includes(job.referral_mode) && await one("SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('draft', 'edited') LIMIT 1", [userId, planItemId]);
     if (written) throw fail(409, 'This role has outreach waiting. Approve it instead.');
-    await approveRole(userId, planItemId, { withoutReferral: true, wait: true });
+    // The checks run now (a problem still answers the click); the approval and the apply step finish in the background.
+    await approveRole(userId, planItemId, { withoutReferral: true, then: () => referralAction(userId, planItemId, { action: 'no_referral' }) });
+    return { pending: true };
   }
   await referralAction(userId, planItemId, { action: 'no_referral' });
+  return { pending: false };
 }
 
 /**
@@ -715,15 +720,19 @@ export async function templateOutreach(userId, planItemId) {
   if (!people.length) throw fail(409, 'No recruiter found at this company yet. Find contacts first.');
   const base = { me: who.name, school: who.school, major: who.major, sig: signature(who), title: item.title, company: item.company_name, jobUrl: item.apply_url, attached: true };
   await tx(async (q) => {
-    for (const p of people) {
+    const rows = people.map(p => {
       const t = templateAsk({ ...base, personName: p.name });
       const mail = Boolean(p.email && p.email_status !== 'invalid');
-      await q.query(
-        `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, email_subject, email_body, linkedin_note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
-        [userId, planItemId, p.id, p.audience, mail ? t.subject : null, mail ? t.body : null, t.note],
-      );
-    }
+      return { id: p.id, audience: p.audience, subject: mail ? t.subject : null, body: mail ? t.body : null, note: t.note };
+    });
+    // All of them in one statement: each round trip to the database is ~200 ms from the server.
+    await q.query(
+      `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, email_subject, email_body, linkedin_note)
+       SELECT $1, $2, u.id, u.audience, u.subject, u.body, u.note
+         FROM unnest($3::bigint[], $4::text[], $5::text[], $6::text[], $7::text[]) AS u(id, audience, subject, body, note)
+       ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
+      [userId, planItemId, rows.map(r => r.id), rows.map(r => r.audience), rows.map(r => r.subject), rows.map(r => r.body), rows.map(r => r.note)],
+    );
     await q.query('UPDATE tailor_jobs SET outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   });
   return { drafts: people.length, emails: people.filter(p => p.email && p.email_status !== 'invalid').length };
@@ -763,15 +772,20 @@ export async function addRoleContacts(userId, planItemId, people) {
   const { seniorityScore } = await import('./contactRules.js');
   const jobId = await companyRow(userId, item.company_name, item.location);
   let added = 0;
-  for (const p of clean) {
-    const r = await upsertContact({ all, run }, {
+  // Five at a time: each person is a few round trips to the database.
+  for (let i = 0; i < clean.length; i += 5) {
+    const results = await Promise.all(clean.slice(i, i + 5).map(p => upsertContact({ all, run }, {
       userId, jobId, seniorityScore: seniorityScore(p.title),
       contact: { name: p.name || null, title: p.title, email: p.email || null, linkedin_url: p.linkedin_url || null, status: 'unverified', source: 'manual' },
-    });
-    // Someone already saved: theirs now (picked first).
-    await run(`UPDATE job_contacts SET source = 'manual' WHERE user_id = $1 AND job_id = $2 AND (($3::text <> '' AND lower(email) = $3) OR ($4::text <> '' AND lower(linkedin_url) = lower($4)))`, [userId, jobId, p.email, p.linkedin_url]);
-    if (r === 'inserted') added += 1;
+    })));
+    added += results.filter(r => r === 'inserted').length;
   }
+  // Anyone already saved: theirs now (picked first). One statement for all of them.
+  await run(
+    `UPDATE job_contacts SET source = 'manual' WHERE user_id = $1 AND job_id = $2
+       AND (lower(email) = ANY($3::text[]) OR lower(linkedin_url) = ANY($4::text[]))`,
+    [userId, jobId, clean.map(p => p.email).filter(Boolean), clean.map(p => p.linkedin_url.toLowerCase()).filter(Boolean)],
+  );
   await run('UPDATE plan_items SET contacts_at = COALESCE(contacts_at, NOW()) WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   const hasOutreach = await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId]);
   if (!hasOutreach && !NO_EMAILS.includes(job.referral_mode)) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);

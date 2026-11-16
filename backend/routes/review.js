@@ -89,8 +89,8 @@ router.post('/:id/approve', withId(async (req, res, id) => {
 }));
 
 router.post('/:id/apply-without-referral', withId(async (req, res, id) => {
-  await applyWithoutReferral(req.user.id, id);
-  res.json({ ok: true });
+  const r = await applyWithoutReferral(req.user.id, id);
+  res.json({ ok: true, ...r });
 }));
 
 // Remove a role the user doesn't want (closed, never deleted), and undo it.

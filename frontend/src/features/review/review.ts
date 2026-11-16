@@ -300,6 +300,24 @@ export function parseContacts(text: string, company = ''): PastedPerson[] {
   return out
 }
 
+/** "Lakshmi_Sravya_Rachakonda_Resume_Adobe.pdf": the user's name, then the company, so downloads for different roles don't clash. */
+export function resumeFileName(first: string | null | undefined, last: string | null | undefined, company: string | null | undefined) {
+  const part = (s: string | null | undefined) => String(s ?? '').normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '')
+  return [part(first), part(last), 'Resume', part(company)].filter(Boolean).join('_') + '.pdf'
+}
+
+/** Save a file the browser has in memory (a downloaded PDF) under a name. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /** A role the user can take out of their lists (waiting, Ready or revising). */
 export const canRemove = (r: Pick<ReviewRow, 'status'>) => ['queued', 'ready', 'revision_requested'].includes(r.status)
 

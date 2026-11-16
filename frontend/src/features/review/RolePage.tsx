@@ -1,13 +1,14 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Copy, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Copy, Download, ExternalLink } from 'lucide-react'
 import { api, type OutreachDraft, type ReferralMode, type ReviewComment, type ReviewRole, type ResumeVersion } from '@/lib/api'
 import { qk } from '@/app/queryClient'
+import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
+import { resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -429,8 +430,17 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
   )
 }
 
-function ResumePanel({ versions, current, onPick }: { versions: ResumeVersion[]; current: ResumeVersion; onPick: (id: string) => void }) {
+function ResumePanel({ versions, current, onPick, company }: { versions: ResumeVersion[]; current: ResumeVersion; onPick: (id: string) => void; company: string }) {
   const load = useCallback(() => api.reviewPdf(current.id), [current.id])
+  const toast = useToast()
+  const profile = useProfile()
+  const [saving, setSaving] = useState(false)
+  async function download() {
+    setSaving(true)
+    try { saveBlob(await api.reviewPdf(current.id), resumeFileName(profile.data?.first_name, profile.data?.last_name, company)) }
+    catch (e) { toast.error((e as Error).message) }
+    setSaving(false)
+  }
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -440,6 +450,7 @@ function ResumePanel({ versions, current, onPick }: { versions: ResumeVersion[];
         {current.check_status === 'passed' && <Badge tone="success">Passed checks</Badge>}
         {current.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
         {current.check_status === null && <Badge tone="info">Checking</Badge>}
+        {current.has_pdf && <Button size="sm" className="ml-auto" icon={<Download className="size-3.5" />} loading={saving} onClick={() => void download()}>Download PDF</Button>}
       </div>
       {current.check_errors.length > 0 && (
         <ul className="list-disc rounded-[4px] bg-danger-soft py-2 pr-3 pl-7 text-[14px] text-fg">{current.check_errors.map(e => <li key={e}>{e}</li>)}</ul>
@@ -497,7 +508,7 @@ export default function RolePage() {
       </header>
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="min-w-0">
-          {current ? <ResumePanel versions={d.versions} current={current} onPick={setPicked} /> : <EmptyState title="No resume yet" description="It shows up here once a run writes it." />}
+          {current ? <ResumePanel versions={d.versions} current={current} onPick={setPicked} company={d.role.company_name} /> : <EmptyState title="No resume yet" description="It shows up here once a run writes it." />}
         </div>
         <div className="min-w-0">
           <div className="mb-4 max-w-full overflow-x-auto"><Segmented value={panel} onChange={setPanel} options={panels} label="Section" /></div>

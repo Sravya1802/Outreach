@@ -1,14 +1,15 @@
 import { Link, useSearchParams } from 'react-router-dom'
-import { X } from 'lucide-react'
+import { Download, X } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
+import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CALLBACK_OPTIONS, callbackMatch, CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { resumeFileName, saveBlob, CALLBACK_OPTIONS, callbackMatch, CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -50,6 +51,21 @@ function Days({ r }: { r: ReviewRow }) {
 
 /** × takes a role out of the lists (to Closed, never deleted); Restore brings back one the user removed. */
 type RowActions = { onRemove?: (r: ReviewRow) => void; onRestore?: (r: ReviewRow) => void; busy?: boolean }
+
+/** Saves the role's latest resume PDF (for a referral link, or applying yourself). */
+function DownloadButton({ r }: { r: ReviewRow }) {
+  const toast = useToast()
+  const profile = useProfile()
+  const [busy, setBusy] = useState(false)
+  if (!r.version_id || r.pdf_pending) return null
+  async function save() {
+    setBusy(true)
+    try { saveBlob(await api.reviewPdf(r.version_id!), resumeFileName(profile.data?.first_name, profile.data?.last_name, r.company_name)) }
+    catch (e) { toast.error((e as Error).message) }
+    setBusy(false)
+  }
+  return <Button size="sm" variant="ghost" loading={busy} onClick={() => void save()} aria-label={`Download the resume for ${r.company_name} · ${r.title}`} title="Download the resume PDF" icon={<Download className="size-4" />} />
+}
 
 function RemoveButton({ r, onRemove, busy }: { r: ReviewRow; onRemove: (r: ReviewRow) => void; busy?: boolean }) {
   return (
@@ -94,6 +110,7 @@ function Row({ r, picked, onPick, onRemove, onRestore, busy }: { r: ReviewRow; p
       <td className={cn(cell, 'text-right')}>
         <div className="flex items-center justify-end gap-1">
           <ButtonLink size="sm" variant={r.status === 'ready' ? 'primary' : 'secondary'} to={`/review/${r.id}`}>{r.status === 'ready' ? 'Review' : 'Open'}</ButtonLink>
+          <DownloadButton r={r} />
           {onRemove && canRemove(r) && <RemoveButton r={r} onRemove={onRemove} busy={busy} />}
           {onRestore && r.status === 'closed' && r.closed_reason === 'removed' && <Button size="sm" disabled={busy} onClick={() => onRestore(r)}>Restore</Button>}
         </div>

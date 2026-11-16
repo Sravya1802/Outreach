@@ -957,6 +957,8 @@ export interface ReviewRow {
   update_note: string | null
   /** No PDF yet: the app is building it. */
   pdf_pending: boolean
+  /** The latest version's id (its PDF is /review/versions/:id/pdf). */
+  version_id: string | null
   check_status: 'passed' | 'flagged' | null
   /** Skills the run added to Technical Skills that the user should learn before interviews. */
   to_learn: number

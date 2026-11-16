@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { resumeFileName, callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -418,5 +418,13 @@ describe('callbackMatch and the callback sort', () => {
   it('sorts highest callback first, not estimated last', () => {
     const rows = [{ company_name: 'A', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: 8 }, { company_name: 'B', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: null }, { company_name: 'C', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: 22 }]
     expect(sortRows(rows, 'callback').map(r => r.company_name)).toEqual(['C', 'A', 'B'])
+  })
+})
+
+describe('resumeFileName', () => {
+  it('name, Resume, company; safe characters only', () => {
+    expect(resumeFileName('Lakshmi Sravya', 'Rachakonda', 'Adobe')).toBe('Lakshmi_Sravya_Rachakonda_Resume_Adobe.pdf')
+    expect(resumeFileName('Lakshmi', 'Rachakonda', "Southern Glazer’s Wine & Spirits")).toBe('Lakshmi_Rachakonda_Resume_Southern_Glazer_s_Wine_Spirits.pdf')
+    expect(resumeFileName(null, null, 'Lutron')).toBe('Resume_Lutron.pdf')
   })
 })

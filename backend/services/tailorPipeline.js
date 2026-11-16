@@ -129,7 +129,7 @@ export function keywordCheck(text, table) {
   return { found: present.length, total: terms.length, present, missing: terms.filter(t => !present.includes(t)) };
 }
 
-async function checkVersion(v) {
+export async function checkVersion(v) {
   let built;
   try {
     built = await compileTex(v.latex);

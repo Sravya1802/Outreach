@@ -264,7 +264,9 @@ function PasteContacts({ data, onDone, open: startOpen = false }: { data: Review
   const save = useMutation({
     mutationFn: (list: PastedPerson[]) => api.addRoleContacts(data.role.id, list),
     onSuccess: (r) => {
-      toast.success(`Added ${r.people === 1 ? '1 person' : `${r.people} people`}. Use template to write the emails now, or the next run writes them.`)
+      toast.success(r.drafted
+        ? `Added ${r.people === 1 ? '1 person' : `${r.people} people`} and wrote ${r.drafted === 1 ? 'their email' : `${r.drafted} emails`} from the template below. Edit them, then approve.`
+        : `Added ${r.people === 1 ? '1 person' : `${r.people} people`}. Use template to write the emails now, or the next run writes them.`)
       setText(''); setPeople(null); setOpen(false); onDone()
     },
     onError: (e: Error) => toast.error(e.message),
@@ -545,6 +547,7 @@ export default function RolePage() {
                 : d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}
               {d.outreach.map(o => <DraftCard key={o.id} d={o} onDone={refresh} />)}
               {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approving puts the emails in Gmail Drafts, and each one still needs your OK in Outbox.</p>}
+              {d.outreach.length > 0 && d.role.status === 'ready' && !['my_contact', 'none'].includes(d.role.referral_mode) && <PasteContacts data={d} onDone={refresh} />}
             </div>
           )}
           {panel === 'apply' && <ApplyPanel data={d} latest={latest} onDone={refresh} />}

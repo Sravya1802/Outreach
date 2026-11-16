@@ -1263,7 +1263,7 @@ export const api = {
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */
-  addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number }> => legacy.career.addRoleContacts(id, people),
+  addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number; drafted?: number }> => legacy.career.addRoleContacts(id, people),
   /** Write this role's emails and notes from the plain template now, for the user to edit. */
   templateOutreach: (id: string): Promise<{ drafts: number; emails: number }> => legacy.career.templateOutreach(id),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),

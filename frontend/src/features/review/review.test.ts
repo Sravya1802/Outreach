@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -401,5 +401,22 @@ describe('parseContacts', () => {
   })
   it('guesses a name from the address, drops repeats and lines with nothing to reach', () => {
     expect(parseContacts('jordan.kim@acme.com\nJORDAN.KIM@acme.com\nRandom note')).toEqual([{ name: 'Jordan Kim', title: '', email: 'jordan.kim@acme.com', linkedin_url: '' }])
+  })
+})
+
+describe('callbackMatch and the callback sort', () => {
+  it('filters by the callback estimate', () => {
+    expect(callbackMatch(24, '20')).toBe(true)
+    expect(callbackMatch(12, '20')).toBe(false)
+    expect(callbackMatch(12, '10')).toBe(true)
+    expect(callbackMatch(4, 'under5')).toBe(true)
+    expect(callbackMatch(5, 'under5')).toBe(false)
+    expect(callbackMatch(null, 'none')).toBe(true)
+    expect(callbackMatch(null, '5')).toBe(false)
+    expect(callbackMatch(null, '')).toBe(true)
+  })
+  it('sorts highest callback first, not estimated last', () => {
+    const rows = [{ company_name: 'A', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: 8 }, { company_name: 'B', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: null }, { company_name: 'C', title: '', posted_at: null, deadline: null, ats_after: null, callback_after: 22 }]
+    expect(sortRows(rows, 'callback').map(r => r.company_name)).toEqual(['C', 'A', 'B'])
   })
 })

@@ -8,7 +8,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
-import { CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
+import { CALLBACK_OPTIONS, callbackMatch, CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
 const YEAR_KEY = 'snj.review.year'
@@ -17,6 +17,7 @@ const OPENED_KEY = 'snj.review.opened'
 const CLOSES_KEY = 'snj.review.closes'
 const SORT_KEY = 'snj.review.sort'
 const TYPE_KEY = 'snj.review.type'
+const CALLBACK_KEY = 'snj.review.callback'
 function saved(key: string) {
   try { return localStorage.getItem(key) ?? '' } catch { return '' }
 }
@@ -168,10 +169,11 @@ export default function ReviewPage() {
   const [closes, setCloses] = useState(() => saved(CLOSES_KEY))
   const [sort, setSort] = useState(() => saved(SORT_KEY))
   const [kind, setKind] = useState(() => saved(TYPE_KEY))
+  const [callback, setCallback] = useState(() => saved(CALLBACK_KEY))
   const queue = useQuery({ queryKey: qk.review, queryFn: api.reviewQueue, refetchInterval: 60_000 })
   const everything = queue.data?.roles ?? []
   // The menus narrow the tiles, the rows and Select all; the backlog bar counts everything.
-  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach) && openedMatch(r.posted_at, opened) && closesMatch(r.deadline, closes) && typeMatch(r.role_kind, kind))
+  const all = everything.filter(r => yearMatch(r.grad_years, year) && outreachMatch(r, outreach) && openedMatch(r.posted_at, opened) && closesMatch(r.deadline, closes) && typeMatch(r.role_kind, kind) && callbackMatch(r.callback_after, callback))
   const run = queue.data?.lastRun ?? null
   const tab = (TABS.find(t => t.value === params.get('tab'))?.value ?? 'ready')
   const setTab = (t: ReviewTab) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n }, { replace: true })
@@ -262,7 +264,7 @@ export default function ReviewPage() {
               <div className="h-full rounded-full bg-accent" style={{ width: `${percent}%` }} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-[minmax(0,1.1fr)_repeat(6,minmax(0,1fr))]">
             <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="Search company" aria-label="Search company" className="col-span-2 w-full lg:col-span-1" />
             <Select value={kind} onChange={e => { setKind(e.target.value); save(TYPE_KEY, e.target.value) }} aria-label="Type" className="w-full">
               <option value="">Any type</option>
@@ -283,6 +285,10 @@ export default function ReviewPage() {
             <Select value={closes} onChange={e => { setCloses(e.target.value); save(CLOSES_KEY, e.target.value) }} aria-label="Closes" className="w-full">
               <option value="">Any closing date</option>
               {CLOSES_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            <Select value={callback} onChange={e => { setCallback(e.target.value); save(CALLBACK_KEY, e.target.value) }} aria-label="Callback" className="w-full">
+              <option value="">Any callback</option>
+              {CALLBACK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </div>
           <div className="flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2">
@@ -327,7 +333,7 @@ export default function ReviewPage() {
                   ? <LineRow key={r.id} r={r} onRemove={tab === 'waiting' ? (x => void removeRoles([x])) : undefined} busy={busyIds.has(r.id)} />
                   : <Row key={r.id} r={r} picked={picked.has(r.id)} onPick={bulk ? on => pick(r.id, on) : undefined}
                       onRemove={x => void removeRoles([x])} onRestore={x => void restoreRole(x)} busy={busyIds.has(r.id)} />))}
-                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened || kind ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-muted">{s ? 'No company matches that search here.' : closes && closes !== 'none' ? 'No role here states a closing date in that window. Most postings don’t say when they close.' : year || outreach || opened || kind || callback ? 'No role here matches those filters.' : 'Nothing here right now.'}</td></tr>}
               </tbody>
             </table>
           </div>

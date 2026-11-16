@@ -303,6 +303,24 @@ export function parseContacts(text: string, company = ''): PastedPerson[] {
 /** A role the user can take out of their lists (waiting, Ready or revising). */
 export const canRemove = (r: Pick<ReviewRow, 'status'>) => ['queued', 'ready', 'revision_requested'].includes(r.status)
 
+/** The Callback menu: the run's (or the app's) estimate of the interview callback chance. */
+export const CALLBACK_OPTIONS = [
+  { value: '20', label: 'Callback 20%+' },
+  { value: '10', label: 'Callback 10%+' },
+  { value: '5', label: 'Callback 5%+' },
+  { value: 'under5', label: 'Callback under 5%' },
+  { value: 'none', label: 'Callback not estimated' },
+] as const
+
+/** '' keeps every role. */
+export function callbackMatch(callback: number | null | undefined, filter: string) {
+  if (!filter) return true
+  if (filter === 'none') return callback == null
+  if (callback == null) return false
+  if (filter === 'under5') return callback < 5
+  return callback >= Number(filter)
+}
+
 /** The Type menu. */
 export const TYPE_OPTIONS = [
   { value: 'intern', label: 'Internships' },
@@ -318,10 +336,11 @@ export const SORT_OPTIONS = [
   { value: 'oldest', label: 'Oldest opened first' },
   { value: 'closing', label: 'Closing soonest' },
   { value: 'ats', label: 'Highest ATS' },
+  { value: 'callback', label: 'Highest callback' },
   { value: 'company', label: 'Company A–Z' },
 ] as const
 
-type Sortable = Pick<ReviewRow, 'posted_at' | 'deadline' | 'ats_after' | 'company_name' | 'title'>
+type Sortable = Pick<ReviewRow, 'posted_at' | 'deadline' | 'ats_after' | 'company_name' | 'title'> & { callback_after?: number | null }
 const at = (d: string | null | undefined) => { const t = d ? new Date(d).getTime() : NaN; return Number.isNaN(t) ? null : t }
 /** null sorts last whichever way the rest go. */
 const by = (a: number | null, b: number | null, dir: 1 | -1) => (a == null ? (b == null ? 0 : 1) : b == null ? -1 : (a - b) * dir)
@@ -333,6 +352,7 @@ export function sortRows<T extends Sortable>(rows: T[], sort: string): T[] {
     oldest: (a, b) => by(at(a.posted_at), at(b.posted_at), 1),
     closing: (a, b) => by(at(a.deadline), at(b.deadline), 1),
     ats: (a, b) => by(a.ats_after, b.ats_after, -1),
+    callback: (a, b) => by(a.callback_after ?? null, b.callback_after ?? null, -1),
     company: (a, b) => a.company_name.localeCompare(b.company_name, 'en', { sensitivity: 'base' }) || a.title.localeCompare(b.title, 'en', { sensitivity: 'base' }),
   }
   const f = cmp[sort]

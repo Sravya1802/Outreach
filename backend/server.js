@@ -18,7 +18,7 @@ validateConfig();
 import companiesRouter  from './routes/companies.js';
 import generateRouter   from './routes/generate.js';
 import prospectsRouter  from './routes/prospects.js';
-import db, { one, all, run, pingDb } from './db.js';
+import db, { one, all, run, pingDb, setShutdownGate } from './db.js';
 import jobsRouter from './routes/jobs.js';
 import internRolesRouter from './routes/internRoles.js';
 import unifiedRouter    from './routes/unified.js';
@@ -58,6 +58,16 @@ import { runSubscriptionDigests } from './services/dailyDigest.js';
 import { mailerConfigured } from './services/mailer.js';
 
 const app = express();
+// Requests in flight, so a restart lets them finish before the database pool closes.
+let inflight = 0;
+app.use((req, res, next) => {
+  inflight += 1;
+  let done = false;
+  const end = () => { if (!done) { done = true; inflight -= 1; } };
+  res.on('finish', end);
+  res.on('close', end);
+  next();
+});
 
 // ── CORS — allow local dev + configured production frontend origin(s) ──────
 // Single origin: set FRONTEND_ORIGIN=https://scoutnjobs.vercel.app
@@ -725,11 +735,18 @@ async function startup() {
     .then(n => { if (n) console.log(`[referrals] added LinkedIn notes for ${n} emailed people`); })
     .catch(err => console.error('[referrals] note backfill failed:', err.message));
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);
     // Per-user reclassification now runs on demand via /api/jobs/reclassify-unclassified
     // and as part of the daily refresh job (when a userId is supplied). The previous
     // global startup pass mutated all users' jobs, so it has been removed.
+  });
+  // On a restart: take no new requests, let the ones in flight finish (up to 20 s), then the pool closes.
+  setShutdownGate(async () => {
+    server.close();
+    const until = Date.now() + 20_000;
+    while (inflight > 0 && Date.now() < until) await new Promise(r => setTimeout(r, 200));
+    if (inflight > 0) console.warn(`[server] closing with ${inflight} request(s) still running`);
   });
 }
 

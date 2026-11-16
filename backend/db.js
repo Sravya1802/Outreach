@@ -181,14 +181,19 @@ const db = {
 
 export default db
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('[db] SIGTERM received — closing pool')
+// Graceful shutdown. The server registers a gate that waits for requests in
+// flight (an approval mid-way, say) before the pool closes; without one (a
+// script), the pool closes at once.
+let shutdownGate = null
+export function setShutdownGate(fn) { shutdownGate = fn }
+let closing = false
+async function shutdown(signal) {
+  if (closing) return
+  closing = true
+  console.log(`[db] ${signal} received — finishing requests, then closing pool`)
+  if (shutdownGate) { try { await shutdownGate() } catch {} }
   try { await pool.end() } catch {}
   process.exit(0)
-})
-process.on('SIGINT', async () => {
-  console.log('[db] SIGINT received — closing pool')
-  try { await pool.end() } catch {}
-  process.exit(0)
-})
+}
+process.on('SIGTERM', () => { void shutdown('SIGTERM') })
+process.on('SIGINT', () => { void shutdown('SIGINT') })

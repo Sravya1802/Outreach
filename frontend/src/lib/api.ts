@@ -1250,7 +1250,8 @@ export const api = {
   requestRevision: (id: string, body: string): Promise<{ ok: boolean }> => legacy.career.requestRevision(id, body),
   setReferralMode: (id: string, mode: ReferralMode): Promise<{ ok: boolean }> => legacy.career.setReferralMode(id, mode),
   approveRole: (id: string): Promise<ApproveResult> => legacy.career.approveRole(id),
-  applyWithoutReferral: (id: string): Promise<{ ok: boolean }> => legacy.career.applyWithoutReferral(id),
+  /** pending: the approval is still finishing in the background (the role was Ready). */
+  applyWithoutReferral: (id: string): Promise<{ ok: boolean; pending?: boolean }> => legacy.career.applyWithoutReferral(id),
   /** You applied on the company's site: the role moves to Applied and nothing applies for you. */
   markRoleApplied: (id: string): Promise<{ emailsWaiting: number }> => legacy.career.markRoleApplied(id),
   /** Take a waiting or Ready role out (Closed, "Removed by you"); never deleted. */

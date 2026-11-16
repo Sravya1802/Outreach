@@ -360,7 +360,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
   })
   const withoutReferral = useMutation({
     mutationFn: () => api.applyWithoutReferral(data.role.id),
-    onSuccess: () => { toast.success('It applies at the company’s next morning slot.'); onDone() },
+    onSuccess: (r) => { toast.success(r.pending ? 'Approved. It applies at the company’s next morning slot; this page catches up in a few seconds.' : 'It applies at the company’s next morning slot.'); onDone(); if (r.pending) setTimeout(onDone, 6000) },
     onError: (e: Error) => toast.error(e.message),
   })
   const approve = useMutation({

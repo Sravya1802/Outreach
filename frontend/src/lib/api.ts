@@ -1013,7 +1013,7 @@ export interface ReviewComment {
   id: string
   version_id: string
   body: string
-  status: 'open' | 'addressed'
+  status: 'open' | 'addressed' | 'withdrawn'
   addressed_in_version: number | null
   created_at: string
 }
@@ -1256,6 +1256,8 @@ export const api = {
   markRoleApplied: (id: string): Promise<{ emailsWaiting: number }> => legacy.career.markRoleApplied(id),
   /** Take a waiting or Ready role out (Closed, "Removed by you"); never deleted. */
   removeRole: (id: string): Promise<{ ok: boolean }> => legacy.career.removeRole(id),
+  /** Take back a change request and keep the current version (Revising → Ready). */
+  keepVersion: (id: string): Promise<{ ok: boolean }> => legacy.career.keepVersion(id),
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */

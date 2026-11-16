@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resumeFileName, callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { nextScheduledRun, resumeFileName, callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -426,5 +426,13 @@ describe('resumeFileName', () => {
     expect(resumeFileName('Lakshmi Sravya', 'Rachakonda', 'Adobe')).toBe('Lakshmi_Sravya_Rachakonda_Resume_Adobe.pdf')
     expect(resumeFileName('Lakshmi', 'Rachakonda', "Southern Glazer’s Wine & Spirits")).toBe('Lakshmi_Rachakonda_Resume_Southern_Glazer_s_Wine_Spirits.pdf')
     expect(resumeFileName(null, null, 'Lutron')).toBe('Resume_Lutron.pdf')
+  })
+})
+
+describe('nextScheduledRun', () => {
+  it('is the next :05 past 00, 05, 10, 15 or 20 UTC', () => {
+    expect(nextScheduledRun(Date.UTC(2026, 10, 16, 19, 20)).toISOString()).toBe('2026-11-16T20:05:00.000Z')
+    expect(nextScheduledRun(Date.UTC(2026, 10, 16, 20, 5)).toISOString()).toBe('2026-11-17T00:05:00.000Z')
+    expect(nextScheduledRun(Date.UTC(2026, 10, 16, 22, 0)).toISOString()).toBe('2026-11-17T00:05:00.000Z')
   })
 })

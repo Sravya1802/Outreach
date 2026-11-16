@@ -516,6 +516,7 @@ export const api = {
     applyWithoutReferral: (id) => apiCall(`/review/${id}/apply-without-referral`, { method: 'POST' }),
     markRoleApplied: (id) => apiCall(`/review/${id}/applied`, { method: 'POST' }),
     removeRole: (id) => apiCall(`/review/${id}/remove`, { method: 'POST' }),
+    keepVersion: (id) => apiCall(`/review/${id}/keep-version`, { method: 'POST' }),
     restoreRemovedRole: (id) => apiCall(`/review/${id}/restore`, { method: 'POST' }),
     findRoleContacts: (id, source) => apiCall(`/review/${id}/contacts`, { method: 'POST', body: { source } }),
     addRoleContacts: (id, people) => apiCall(`/review/${id}/contacts/add`, { method: 'POST', body: { people } }),

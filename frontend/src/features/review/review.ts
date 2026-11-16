@@ -152,6 +152,16 @@ export function yearsLabel(years: string[]) {
   return first === last ? first : `${first}–${last.slice(2)}`
 }
 
+/** The next scheduled run: :05 past 00, 05, 10, 15 or 20 UTC. */
+export function nextScheduledRun(now = Date.now()) {
+  const d = new Date(now)
+  for (let add = 0; add < 48; add++) {
+    const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours() + add, 5)
+    if (t > now && new Date(t).getUTCHours() % 5 === 0) return new Date(t)
+  }
+  return new Date(now + 5 * 3600_000)
+}
+
 /** "About 3:05 PM", or Due now once the time has passed. */
 export function nextRunLine(at: string | null, now = Date.now()) {
   if (!at) return 'Not scheduled'

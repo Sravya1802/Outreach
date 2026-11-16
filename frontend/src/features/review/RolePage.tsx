@@ -8,7 +8,7 @@ import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
+import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -121,6 +121,7 @@ function PostingPanel({ data, v }: { data: ReviewRole; v: ResumeVersion | undefi
 
 function commentState(c: ReviewComment, status: ReviewRole['role']['status']) {
   if (c.status === 'addressed') return c.addressed_in_version ? `Answered in v${c.addressed_in_version}` : 'Answered'
+  if (c.status === 'withdrawn') return 'Withdrawn: you kept the version as it was'
   return status === 'in_progress' ? 'A run is working on this' : 'Waiting for the next run'
 }
 
@@ -349,6 +350,26 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
   )
 }
 
+/** Revising: say why Approve and Apply aren't here, when the new version comes, and offer to keep this one. */
+function RevisionPending({ data, onDone }: { data: ReviewRole; onDone: () => void }) {
+  const toast = useToast()
+  const keep = useMutation({
+    mutationFn: () => api.keepVersion(data.role.id),
+    onSuccess: () => { toast.success('Using this version. Approve or Apply without referral is ready.'); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const at = nextScheduledRun().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return (
+    <div className="space-y-2">
+      <p className="text-[14px] leading-relaxed text-fg">
+        You asked for changes in Comments, so this role waits for the new version. The next run, about {at}, writes it; Approve and Apply without referral come back then.
+      </p>
+      <Button loading={keep.isPending} onClick={() => keep.mutate()}>Use this version anyway</Button>
+      <p className="text-[12px] text-subtle">This takes back your change request (it stays in Comments, marked withdrawn) and makes the role Ready now.</p>
+    </div>
+  )
+}
+
 function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: ResumeVersion | undefined; onDone: () => void }) {
   const toast = useToast()
   const [confirming, setConfirming] = useState(false)
@@ -389,6 +410,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {visaLine(data.role.sponsorship) && <p className="text-[14px] text-danger">The posting says {visaLine(data.role.sponsorship)}. Check this before you approve it.</p>}
       {latest && !atsOk(latest.ats_after) && <p className="text-[14px] text-warning">ATS is {latest.ats_after ?? '?'}%, under your 90% rule. You can still approve it.</p>}
       {latest && !passed && <p className="text-[14px] text-danger">This version hasn’t passed its checks, so it can’t be approved.</p>}
+      {data.role.status === 'revision_requested' && <RevisionPending data={data} onDone={onDone} />}
       {data.role.status === 'ready' && noOutreach && <NoOutreach data={data} onDone={onDone} />}
       {(data.role.status === 'ready' || canGoAlone || canMarkApplied(data.role)) && (
         <div className="flex flex-wrap gap-2">

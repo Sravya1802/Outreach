@@ -40,8 +40,8 @@ const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https:
 // The best 2 recruiters per role (the user's call): Gmail sends 20 a day, and more
 // from a personal address risks the spam folder.
 const MAX_PEOPLE_PER_ROLE = 2;
-// People the user pastes in are all written to, up to this many a company.
-const MAX_OWN_PEOPLE = 10;
+// People the user pastes in are all written to (a sanity bound, not a pick).
+const MAX_OWN_PEOPLE = 200;
 // Prospeo people search: recruiters and engineers in the US, 1 credit per 25 people.
 const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recruiter', 'campus recruiter', 'talent acquisition'];
 const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
@@ -564,10 +564,10 @@ const canEmail = c => c.email && c.email_status !== 'invalid';
  * Who a role's outreach goes to: the best 2 recruiters (a found address before
  * a guess, then anyone with a LinkedIn profile for a note), and in
  * 'recruiters_engineers' mode (the default) the best engineer too. People the
- * user added themselves replace that pick: all of them (up to 10). → contacts with `audience`.
+ * user added themselves replace that pick: all of them. → contacts with `audience`.
  */
 export async function outreachTargets(userId, company, mode = 'recruiters_engineers') {
-  // People the user added themselves (Paste from Apollo) are the list: all of them, up to 10, whatever the mode's usual 2 + 1.
+  // People the user added themselves (Paste from Apollo) are the list: all of them, whatever the mode's usual 2 + 1.
   const own = (await all(
     `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url, c.source FROM job_contacts c JOIN jobs j ON j.id = c.job_id
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND c.source = 'manual' AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')

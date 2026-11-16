@@ -741,7 +741,7 @@ export async function addRoleContacts(userId, planItemId, people) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (!['ready', 'revision_requested', 'approved'].includes(job.status)) throw fail(409, 'Add people once the resume is ready for review.');
-  const clean = (Array.isArray(people) ? people : []).slice(0, 10).map(p => ({
+  const clean = (Array.isArray(people) ? people : []).slice(0, 200).map(p => ({
     name: String(p?.name || '').trim().slice(0, 80),
     title: String(p?.title || '').trim().slice(0, 120),
     email: String(p?.email || '').trim().toLowerCase(),

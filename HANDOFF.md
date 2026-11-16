@@ -2071,3 +2071,9 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Asked:** "if the post is very old just wait for a day or so for referral and apply it off".
 - **Built:** `isOldPosting` (30+ days since `scraped_roles.posted_at`, else first seen) and `referralWait(item, settings)` in [referralFlow.js](backend/services/referralFlow.js): 1 business day for an old posting, else `referralWaitDays` (2). Used at every place the wait is set (email sent, askForReferral twice, approve, held role's note marked sent); the status note adds "The posting is over 30 days old, so the wait is 1 business day." `advanceReferrals` pulls in roles already waiting: an old posting's `apply_after` becomes 1 business day after its first sent email if that's sooner. The wait still starts when emails actually go out; a held role (no outreach) still waits for Apply without referral. Live: of the 5 approved waiting roles only MSD is old, and all 5 are held.
 - **Verified:** backend 274.
+
+## 2026-11-16 — Callback filter and sort
+
+- **Asked:** "i want filter by callback % too".
+- **Built:** Callback menu on the Review queue (20%+, 10%+, 5%+, under 5%, not estimated; `callbackMatch` in [review.ts](frontend/src/features/review/review.ts), remembered like the others) and "Highest callback" in Sort by (not estimated last). Filter row is now search + 6 menus (2 across on a phone, 4 at md, all in one row at xl).
+- **Verified:** frontend typecheck + 193; live browser 18 of 18 at 1440, 1024 and 390 px (test roles removed).

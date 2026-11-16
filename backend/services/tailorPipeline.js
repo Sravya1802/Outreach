@@ -210,7 +210,8 @@ export async function checkNewVersions(limit = 10) {
     const rows = await all(
       `SELECT v.id, v.user_id, v.plan_item_id, v.version, v.latex, v.report, v.ats_before, v.ats_after, v.callback_after, pi.title, pi.company_name, ${POSTING_TEXT} AS description
          FROM resume_versions v JOIN plan_items pi ON pi.id = v.plan_item_id LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
-        WHERE v.checked_at IS NULL ORDER BY v.created_at LIMIT $1`,
+        WHERE v.checked_at IS NULL OR (v.pdf_path IS NULL AND v.latex IS NOT NULL AND v.check_status IS DISTINCT FROM 'flagged')
+        ORDER BY v.created_at LIMIT $1`,
       [limit],
     );
     for (const v of rows) await checkVersion(v).catch(err => console.warn('[review] check failed', v.id, err.message));
@@ -243,6 +244,8 @@ export async function reviewQueue(userId) {
             CASE WHEN j.status = 'queued' AND ${hasPosting}
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
             v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
+            (v.edited_at IS NOT NULL AND v.edited_at > COALESCE(v.update_seen_at, 'epoch'::timestamptz)) AS updated,
+            CASE WHEN v.edited_at IS NOT NULL THEN regexp_replace(COALESCE(v.change_log, ''), '^.*;\\s*', '') END AS update_note, (v.pdf_path IS NULL) AS pdf_pending,
             CASE WHEN jsonb_typeof(v.report->'skills_to_learn') = 'array' THEN jsonb_array_length(v.report->'skills_to_learn') ELSE 0 END AS to_learn,
             COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,
             ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
@@ -406,6 +409,8 @@ export async function reviewRole(userId, planItemId) {
     [userId, planItemId],
   );
   if (!role) return null;
+  // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
+  await run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]);
   const [versions, comments, outreach, contacts] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,

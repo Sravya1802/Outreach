@@ -2077,3 +2077,10 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Asked:** "i want filter by callback % too".
 - **Built:** Callback menu on the Review queue (20%+, 10%+, 5%+, under 5%, not estimated; `callbackMatch` in [review.ts](frontend/src/features/review/review.ts), remembered like the others) and "Highest callback" in Sort by (not estimated last). Filter row is now search + 6 menus (2 across on a phone, 4 at md, all in one row at xl).
 - **Verified:** frontend typecheck + 193; live browser 18 of 18 at 1440, 1024 and 390 px (test roles removed).
+
+## 2026-11-16 — Resume download; Apply without referral cut off by a deploy
+
+- **Asked:** "i need resume download option too because sometimes we get referral link"; then "apply without referral not working".
+- **Download:** Review queue returns `version_id`; role page "Download PDF" beside the version picker (the version shown) and a download icon on each list row with a PDF; file name `First_Last_Resume_Company.pdf` (`resumeFileName`, `saveBlob` in [review.ts](frontend/src/features/review/review.ts)). Browser: both save a real PDF (`%PDF-`).
+- **Apply without referral:** the user pressed it on Netic 5118 (Agent Platform) at 18:58:43, as `pm2 restart` for a deploy ran; db.js closed the pool on SIGINT at once ("Cannot use a pool after calling end"), leaving tailor_jobs approved / plan_items pending. Put back to Ready with "Approve didn’t finish (the server restarted). Press it again." Fix: server.js counts requests in flight; db.js `setShutdownGate`: on SIGINT/SIGTERM the server stops accepting, waits up to 20 s for in-flight requests, then closes the pool; pm2 `kill_timeout` 25000 (saved). Confirmed on a restart ("finishing requests, then closing pool"). Note: held LinkedIn/Workday roles (MSD, Vertex, GALLO, Archer, Synchrony) can't be filled in automatically, so Apply without referral moves them to "Apply yourself".
+- **PDF rebuild finished:** 884 of 884, none failed; all 885 Azure-edited versions have a PDF.

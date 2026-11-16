@@ -68,6 +68,7 @@ function Row({ r, picked, onPick, onRemove, onRestore, busy }: { r: ReviewRow; p
       <td className={cell}>
         <RoleName r={r} opened />
         <div className="mt-1 flex flex-wrap gap-1.5 empty:hidden">
+          {r.updated && <span title={[r.update_note, r.pdf_pending ? 'The new PDF is being built.' : 'The PDF is rebuilt.'].filter(Boolean).join(' · ')}><Badge tone="info">Updated</Badge></span>}
           {r.version != null && r.check_status === null && <Badge tone="info">Checking</Badge>}
           {r.check_status === 'flagged' && <Badge tone="danger">Failed a check</Badge>}
           {r.eligibility && <Badge tone="warning">Check eligibility</Badge>}

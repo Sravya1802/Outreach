@@ -951,6 +951,12 @@ export interface ReviewRow {
   ats_after: number | null
   /** The run's estimate of the interview callback chance with this resume (%). */
   callback_after: number | null
+  /** Edited in place (e.g. a fix across many resumes) since the user last opened the role. */
+  updated: boolean
+  /** The change log's latest entry, for an edited version. */
+  update_note: string | null
+  /** No PDF yet: the app is building it. */
+  pdf_pending: boolean
   check_status: 'passed' | 'flagged' | null
   /** Skills the run added to Technical Skills that the user should learn before interviews. */
   to_learn: number

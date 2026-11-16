@@ -243,7 +243,7 @@ export async function reviewQueue(userId) {
             CASE WHEN pi.title ~* '\\m(intern|internship|co-?op|summer analyst|summer associate)\\M' THEN 'intern' WHEN sr.role_type IN ('intern', 'new_grad') THEN sr.role_type ELSE 'new_grad' END AS role_kind,
             CASE WHEN j.status = 'queued' AND ${hasPosting}
                  THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
-            v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
+            v.id AS version_id, v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
             (v.edited_at IS NOT NULL AND v.edited_at > COALESCE(v.update_seen_at, 'epoch'::timestamptz)) AS updated,
             CASE WHEN v.edited_at IS NOT NULL THEN regexp_replace(COALESCE(v.change_log, ''), '^.*;\\s*', '') END AS update_note, (v.pdf_path IS NULL) AS pdf_pending,
             CASE WHEN jsonb_typeof(v.report->'skills_to_learn') = 'array' THEN jsonb_array_length(v.report->'skills_to_learn') ELSE 0 END AS to_learn,

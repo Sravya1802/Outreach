@@ -727,12 +727,13 @@ async function apolloOnly(userId, item) {
  * an engineer in that mode; a note only for someone with no address. Drafts
  * like a run's: edit them, then Approve sends them with the resume attached.
  */
-export async function templateOutreach(userId, planItemId) {
+export async function templateOutreach(userId, planItemId, { more = false } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review gets new outreach.');
   if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody.');
-  if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
+  // more: add drafts for people who have none yet (pasted after outreach was written); existing drafts stay.
+  if (!more && await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   const [people, who] = await Promise.all([outreachTargets(userId, item.company_name, job.referral_mode), me(userId)]);
   if (!people.length) throw fail(409, 'No recruiter found at this company yet. Find contacts first.');
@@ -807,7 +808,14 @@ export async function addRoleContacts(userId, planItemId, people) {
   await run('UPDATE plan_items SET contacts_at = COALESCE(contacts_at, NOW()) WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   const hasOutreach = await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId]);
   if (!hasOutreach && !NO_EMAILS.includes(job.referral_mode)) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  return { added, people: clean.length };
+  // Outreach already written for this role: the new people get theirs from the template now, beside it.
+  let drafted = 0;
+  if (hasOutreach && job.status === 'ready' && !NO_EMAILS.includes(job.referral_mode)) {
+    const before = Number((await one('SELECT COUNT(*)::int AS n FROM outreach_drafts WHERE plan_item_id = $1', [planItemId]))?.n || 0);
+    await templateOutreach(userId, planItemId, { more: true });
+    drafted = Number((await one('SELECT COUNT(*)::int AS n FROM outreach_drafts WHERE plan_item_id = $1', [planItemId]))?.n || 0) - before;
+  }
+  return { added, people: clean.length, drafted };
 }
 
 export async function findRoleContacts(userId, planItemId, { source = 'all' } = {}) {

@@ -840,14 +840,31 @@ export async function referralEmailMoved(userId, row) {
   const { getSettings } = await import('./dailyPlan.js');
   const settings = await getSettings(userId);
   const tz = item.company_tz || settings.timezone;
+  const wait = await referralWait(item, settings);
   let applyAfter = item.apply_after ? new Date(item.apply_after) : new Date();
   if (goesOut) {
-    const at = businessDaysLater(new Date(row.sent_at || row.send_after), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+    const at = businessDaysLater(new Date(row.sent_at || row.send_after), wait.days, tz, { startHour: 6, endHour: 10 });
     if (at > applyAfter) applyAfter = at;
   }
   const asks = await liveAsks(item.id);
   if (!asks.length) return holdRole(item.id);
-  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, referralNote(asks, describeDay(applyAfter, tz))]);
+  await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [item.id, applyAfter, referralNote(asks, describeDay(applyAfter, tz)) + wait.note]);
+}
+
+const OLD_POSTING_DAYS = 30;
+const OLD_NOTE = ' The posting is over 30 days old, so the wait is 1 business day.';
+
+/** Has the posting been up 30 days or more? Pure. */
+export function isOldPosting(posted, now = new Date()) {
+  const t = posted ? new Date(posted).getTime() : NaN;
+  return Number.isFinite(t) && now.getTime() - t >= OLD_POSTING_DAYS * 86_400_000;
+}
+
+/** The referral wait for a role: 1 business day when its posting is 30+ days old (it may close soon), else the setting. */
+async function referralWait(item, settings) {
+  const posted = item.scraped_role_id ? (await one('SELECT COALESCE(posted_at, scraped_at) AS posted FROM scraped_roles WHERE id = $1', [item.scraped_role_id]))?.posted : null;
+  const old = isOldPosting(posted);
+  return { days: old ? 1 : settings.referralWaitDays, old, note: old ? OLD_NOTE : '' };
 }
 
 /** No date to apply by: the role stays here until the user presses Apply without referral. */
@@ -859,9 +876,10 @@ export async function askForReferral(userId, item, settings) {
   const existing = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
   if (existing.length) {
     const tz0 = item.company_tz || settings.timezone;
-    const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), settings.referralWaitDays, tz0, { startHour: 6, endHour: 10 });
+    const wait = await referralWait(item, settings);
+    const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), wait.days, tz0, { startHour: 6, endHour: 10 });
     await run("UPDATE plan_items SET stage = 'waiting_referral', referral_status = CASE WHEN referral_status = 'none' THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
-      [item.id, at, referralNote(await liveAsks(item.id), describeDay(at, tz0))]);
+      [item.id, at, referralNote(await liveAsks(item.id), describeDay(at, tz0)) + wait.note]);
     return;
   }
   // People first: wait for a search that's running, or run it now.
@@ -965,9 +983,10 @@ export async function askForReferral(userId, item, settings) {
   }
 
   const tz = item.company_tz || settings.timezone;
-  const applyAt = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
+  const wait = await referralWait(item, settings);
+  const applyAt = businessDaysLater(new Date(), wait.days, tz, { startHour: 6, endHour: 10 });
   const asked = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
-  const note = referralNote(asked, describeDay(applyAt, tz));
+  const note = referralNote(asked, describeDay(applyAt, tz)) + wait.note;
   await run(
     "UPDATE plan_items SET stage = 'waiting_referral', referral_status = 'asked', wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
     [item.id, applyAt, note],
@@ -1037,7 +1056,8 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
   }
   const tz = item.company_tz || settings.timezone;
   const asks = await liveAsks(item.id);
-  const applyAt = asks.length ? businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 }) : null;
+  const wait = await referralWait(item, settings);
+  const applyAt = asks.length ? businessDaysLater(new Date(), wait.days, tz, { startHour: 6, endHour: 10 }) : null;
   const names = repeats.map(r => r.name).join(' and ');
   const held = repeats.length
     ? `${names} ${repeats.length === 1 ? 'was' : 'were'} already asked for ${repeats[0].title}, so nobody was asked again for this role. It won’t apply on its own: press Apply without referral when you want it to go.`
@@ -1046,7 +1066,7 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
     `UPDATE plan_items SET decision = 'approved', decided_at = NOW(), apply_mode = 'auto', stage = 'waiting_referral', needs_reason = NULL,
             referral_status = CASE WHEN referral_status = 'none' AND $4 THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3
       WHERE id = $1`,
-    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) : held, asks.length > 0],
+    [item.id, applyAt, asks.length ? referralNote(asks, describeDay(applyAt, tz)) + wait.note : held, asks.length > 0],
   );
   return result;
 }
@@ -1187,8 +1207,9 @@ export async function markAskSent(userId, askId) {
     const { getSettings } = await import('./dailyPlan.js');
     const settings = await getSettings(userId);
     const tz = held.company_tz || settings.timezone;
-    const at = businessDaysLater(new Date(), settings.referralWaitDays, tz, { startHour: 6, endHour: 10 });
-    await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [held.id, at, referralNote(await liveAsks(held.id), describeDay(at, tz))]);
+    const wait = await referralWait(held, settings);
+    const at = businessDaysLater(new Date(), wait.days, tz, { startHour: 6, endHour: 10 });
+    await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1', [held.id, at, referralNote(await liveAsks(held.id), describeDay(at, tz)) + wait.note]);
   }
   return r.rows[0] || null;
 }
@@ -1289,6 +1310,20 @@ export async function advanceReferrals(userId, settings) {
     [userId],
   );
   for (const item of waiting) {
+    // An old posting waits 1 business day after its first email went out, not the full wait.
+    if (item.apply_after) {
+      const wait = await referralWait(item, settings);
+      if (wait.old) {
+        const first = await one(`SELECT MIN(o.sent_at) AS at FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id WHERE a.plan_item_id = $1 AND o.status = 'sent'`, [item.id]);
+        const tz = item.company_tz || settings?.timezone || 'America/Chicago';
+        const sooner = first?.at ? businessDaysLater(new Date(first.at), 1, tz, { startHour: 6, endHour: 10 }) : null;
+        if (sooner && sooner < new Date(item.apply_after)) {
+          await run('UPDATE plan_items SET apply_after = $2, wait_until = $2, stage_note = $3 WHERE id = $1',
+            [item.id, sooner, referralNote(await liveAsks(item.id), describeDay(sooner, tz)) + wait.note]);
+          item.apply_after = sooner;
+        }
+      }
+    }
     // Closing early: apply now, without waiting for referrals, unsent emails or Apply without referral.
     if (closingEarly(item.closes, { applyAfter: item.apply_after, tz: settings?.timezone })) {
       await run("UPDATE plan_items SET stage = 'ready_to_apply', apply_after = NOW(), stage_note = $2 WHERE id = $1",

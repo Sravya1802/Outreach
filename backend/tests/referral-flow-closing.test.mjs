@@ -14,3 +14,11 @@ test('closingEarly: within 3 days (today counts), or before the referral wait en
   assert.equal(closingEarly('2026-11-15', { now }), false)
   assert.equal(closingEarly(null, { now }), false)
 })
+
+test('isOldPosting: 30 days or more', async () => {
+  const { isOldPosting } = await import('../services/referralFlow.js')
+  const now = new Date('2026-11-16T15:00:00Z')
+  assert.equal(isOldPosting('2026-10-17T15:00:00Z', now), true)
+  assert.equal(isOldPosting('2026-10-18T15:00:00Z', now), false)
+  assert.equal(isOldPosting(null, now), false)
+})

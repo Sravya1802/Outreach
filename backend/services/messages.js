@@ -9,7 +9,7 @@ import { inAppEmails } from './features.js';
 import { all, one, run } from '../db.js';
 import { complete } from './llm.js';
 import { companyKey } from './linkedinConnections.js';
-import { FORMAL, candidateHighlights, companyRow, contactFor, me, closedNote, postingUrl, schoolName, signature, signed } from './referralFlow.js';
+import { ABOUT_ME, FORMAL, candidateHighlights, companyRow, contactFor, me, closedNote, postingUrl, schoolName, signature, signed } from './referralFlow.js';
 import { marketFor, regionForMarket } from './markets.js';
 
 const PAGE = 25;
@@ -129,8 +129,12 @@ export function templateMessages({ personName, me: myName, school, sig, company,
     ? `I am applying for the ${role.title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person on the hiring team?`
     : `I would appreciate the chance to learn how you joined ${company} and what the team looks for in interns and new graduates.`;
   const note = closedNote(`Hello ${first}, I am ${who}. ${ask} Thank you.`);
-  const body = `Dear ${first},\n\nMy name is ${who}${isConnection ? ', and we are connected on LinkedIn' : ''}. ${ask}${role?.url ? `\n\nThe job posting is available here: ${postingUrl(role.url)}` : ''}\n\nThank you for your time and consideration.`;
-  return { note, subject: role ? `Referral request: ${role.title} at ${company}`.slice(0, 120) : `Question about ${company}`, body: signed(body, myName, sig) };
+  const opener = role
+    ? `I am applying for the ${role.title} role at ${company}${isConnection ? ', and since we are connected on LinkedIn, I hoped you might help' : ''}. Would you be willing to refer me, or direct me to the appropriate person on the hiring team?`
+    : `${isConnection ? 'We are connected on LinkedIn, and ' : ''}I would appreciate the chance to learn how you joined ${company} and what the team looks for in interns and new graduates.`;
+  const close = role?.url ? `My resume is attached, and the posting is here: ${postingUrl(role.url)}. Thank you for your time and consideration.` : 'Thank you for your time and consideration.';
+  const body = [`Dear ${first},`, opener, ABOUT_ME, close].join('\n\n');
+  return { note, subject: role ? `${role.title}: ${myName || 'Lakshmi Sravya Rachakonda'}`.slice(0, 120) : `Question about ${company}`, body: signed(body, myName, sig) };
 }
 
 /** Draft (or redraft) one person's LinkedIn note + email and save it on their contact. */

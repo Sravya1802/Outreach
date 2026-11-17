@@ -24,7 +24,7 @@ import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, signature, startApprovedAsks, templateAsk, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, askedElsewhere, companyRow, emailSignature, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, signature, startApprovedAsks, templateAsk, withdrawApprovedAsks } from './referralFlow.js';
 import { estimateCallback, pdfText } from './resumeEngine.js';
 import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -81,6 +81,13 @@ export function checkOutreach({ email_body, linkedin_note, name, company, quant 
 
 /** The posting's text: the role's own when it has 200+ characters, else the scraped posting's (joined as sr). */
 const POSTING_TEXT = "CASE WHEN length(COALESCE(pi.job_description, '')) >= 200 THEN pi.job_description ELSE COALESCE(NULLIF(sr.description, ''), pi.job_description) END";
+
+/** The role's requirements the latest resume shows, most important first (the run's keyword table, as the PDF check found them). */
+async function resumeMatches(planItemId) {
+  const v = await one('SELECT report, keywords FROM resume_versions WHERE plan_item_id = $1 ORDER BY version DESC LIMIT 1', [planItemId]);
+  const present = new Set((v?.keywords?.present || []).map(k => String(k).toLowerCase()));
+  return keywordTerms(v?.report?.keyword_table).filter(k => present.has(k.toLowerCase())).slice(0, 3);
+}
 
 /** A run writes the table as [{ keyword, where }] or as { keyword: where }. */
 const keywordList = (table) => (Array.isArray(table) ? table.map(k => String(k?.keyword || '')) : Object.keys(table && typeof table === 'object' ? table : {})).filter(Boolean);
@@ -571,7 +578,10 @@ async function finishApproval(userId, item, latest, drafts, { blank = false } = 
  * stays held; it applies when the user presses Apply without referral.
  */
 async function blankDraftFor(userId, item, who, pdf, filename) {
-  const t = templateAsk({ me: who.name, school: who.school, major: who.major, sig: signature(who), title: item.title, company: item.company_name, jobUrl: item.apply_url, attached: true, personName: '' });
+  const t = templateAsk({
+    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), title: item.title, company: item.company_name,
+    location: item.location, jd: item.job_description, matches: await resumeMatches(item.id), jobUrl: item.apply_url, attached: true, personName: '',
+  });
   let note;
   try {
     const { putBlankDraft } = await import('./gmail.js');
@@ -735,12 +745,15 @@ export async function templateOutreach(userId, planItemId, { more = false } = {}
   // more: add drafts for people who have none yet (pasted after outreach was written); existing drafts stay.
   if (!more && await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
-  const [people, who] = await Promise.all([outreachTargets(userId, item.company_name, job.referral_mode), me(userId)]);
+  const [people, who, matches] = await Promise.all([outreachTargets(userId, item.company_name, job.referral_mode), me(userId), resumeMatches(planItemId)]);
   if (!people.length) throw fail(409, 'No recruiter found at this company yet. Find contacts first.');
-  const base = { me: who.name, school: who.school, major: who.major, sig: signature(who), title: item.title, company: item.company_name, jobUrl: item.apply_url, attached: true };
+  const base = {
+    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), title: item.title, company: item.company_name,
+    location: item.location, jd: item.job_description, matches, jobUrl: item.apply_url, attached: true,
+  };
   await tx(async (q) => {
     const rows = people.map(p => {
-      const t = templateAsk({ ...base, personName: p.name });
+      const t = templateAsk({ ...base, personName: p.name, audience: p.audience });
       const mail = Boolean(p.email && p.email_status !== 'invalid');
       return { id: p.id, audience: p.audience, subject: mail ? t.subject : null, body: mail ? t.body : null, note: t.note };
     });

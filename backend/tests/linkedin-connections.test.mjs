@@ -51,12 +51,11 @@ test('referral status line', async () => {
   ], 'Fri'), 'Emailing Ana at their next morning. Applying Fri unless a referral comes first.');
   const t = templateAsk({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', why: '' });
   assert.ok(t.note.length <= 300 && t.note.startsWith('Hello Ana,'));
-  assert.ok(t.body.startsWith('Dear Ana,\n\n'));
-  assert.match(t.body, /The job posting is available here: https:\/\/x/);
-  assert.match(t.body, /I would be glad to send my résumé/);
+  assert.ok(t.body.startsWith('Dear Ana,\n\nI am applying for the SWE Intern role at Ramp, and I would be grateful if you could review my application'));
+  assert.match(t.body, /I would be glad to send my resume, and the posting is here: https:\/\/x\. Thank you/);
   assert.match(t.body, /consideration\.\n\nBest regards,\nSravya R$/);
-  assert.doesNotMatch(t.body + t.note, /\b(I'm|I'd|Hi)\b|!/);
-  assert.match(templateAsk({ personName: 'Ana', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', attached: true }).body, /attached my résumé for your reference\. The job posting/);
+  assert.doesNotMatch(t.body + t.note, /\b(I'm|I'd|Hi)\b|!|My name is/);
+  assert.match(templateAsk({ personName: 'Ana', title: 'SWE Intern', company: 'Ramp', jobUrl: 'https://x', attached: true }).body, /My resume is attached, and the posting is here: https:\/\/x\. Thank you/);
   assert.ok(templateAsk({ personName: '', me: 'S', title: 'SWE', company: 'Ramp', jobUrl: 'https://x' }).note.startsWith('Hello, I am S'));
   assert.match(linkedinSearchUrl('Ramp', 'UIC'), /keywords=Ramp%20UIC/);
 });
@@ -80,11 +79,15 @@ test('referral email: public job link, grammatical school name, our own signatur
   const { noteFit } = await import('../services/referralFlow.js');
   assert.equal(noteFit('Short.'), 'Short.');
   assert.equal(noteFit(`${'a'.repeat(200)}. Would you refer me? ${'b'.repeat(120)}`), `${'a'.repeat(200)}. Would you refer me?`);
-  const t = templateAsk({ personName: 'Murat K', me: who.name, school: who.school, major: who.major, sig: signature(who), title: 'Forward Deployed Engineer', company: 'Domino Data Lab', jobUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=dominodatalab&token=7992556', attached: true, why: 'Strong match on Python and SQL' });
-  assert.match(t.body, /a Computer Science student at the University of Illinois at Chicago/);
-  assert.doesNotMatch(t.body, /Strong match/); // the match note is for the user, not the recipient
-  assert.match(t.body, /available here: https:\/\/job-boards\.greenhouse\.io\/dominodatalab\/jobs\/7992556/);
-  assert.equal(t.subject, 'Referral request: Forward Deployed Engineer at Domino Data Lab');
+  const sig = 'Best regards,\nLakshmi Sravya Rachakonda\nMasters in Computer Science, University of Illinois at Chicago\nhttps://www.linkedin.com/in/sravya-rl/'
+  const jd = 'About the role. Domino Data Lab builds the enterprise AI platform that the world’s top companies run on. We offer great benefits.'
+  const t = templateAsk({ personName: 'Murat K', me: who.name, school: who.school, major: who.major, sig, title: 'Forward Deployed Engineer', company: 'Domino Data Lab', location: 'New York, NY; Remote', audience: 'engineer', jd, matches: ['Python', 'SQL', 'Kubernetes'], jobUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=dominodatalab&token=7992556', attached: true, why: 'Strong match on Python and SQL' });
+  assert.ok(t.body.startsWith('Dear Murat,\n\nI am applying for the Forward Deployed Engineer role at Domino Data Lab in New York, NY, and I would be grateful if you would consider referring me.'))
+  assert.doesNotMatch(t.body, /Strong match|My name is/); // the match note is for the user, not the recipient
+  assert.match(t.body, /Master of Science in Computer Science at the University of Illinois at Chicago \(May 2027\), after two years as a Software Engineer at Mercedes-Benz Research and Development India/)
+  assert.match(t.body, /hands-on work with Python, SQL and Kubernetes, which this role lists/)
+  assert.match(t.body, /My resume is attached, and the posting is here: https:\/\/job-boards\.greenhouse\.io\/dominodatalab\/jobs\/7992556\. Thank you for your time and consideration\.\n\nBest regards,\nLakshmi Sravya Rachakonda\nMasters in Computer Science/);
+  assert.equal(t.subject, 'Forward Deployed Engineer: Lakshmi Sravya Rachakonda');
 });
 
 test('message template: referral when there is a role, a short chat otherwise', async () => {
@@ -92,9 +95,10 @@ test('message template: referral when there is a role, a short chat otherwise', 
   const withRole = templateMessages({ personName: 'Ana Lee', me: 'Sravya R', school: 'UIC', company: 'Ramp', role: { title: 'SWE Intern', url: 'https://jobs.ashbyhq.com/ramp/1' }, isConnection: true });
   assert.ok(withRole.note.startsWith('Hello Ana,') && withRole.note.length <= 300);
   assert.match(withRole.note, /SWE Intern position/);
-  assert.ok(withRole.body.startsWith('Dear Ana,'));
+  assert.ok(withRole.body.startsWith('Dear Ana,\n\nI am applying for the SWE Intern role at Ramp'));
   assert.match(withRole.body, /we are connected on LinkedIn/);
-  assert.match(withRole.body, /The job posting is available here: https:\/\/jobs\.ashbyhq\.com\/ramp\/1/);
+  assert.doesNotMatch(withRole.body, /My name is/);
+  assert.match(withRole.body, /the posting is here: https:\/\/jobs\.ashbyhq\.com\/ramp\/1\. Thank you/);
   assert.match(withRole.body, /Best regards,\nSravya R$/);
   assert.doesNotMatch(withRole.body + withRole.note, /\b(I'm|I'd|Hi)\b|’re|!/);
   const noRole = templateMessages({ personName: 'Bo', me: '', school: '', company: 'Stripe', role: null, isConnection: false });
@@ -156,3 +160,14 @@ test('referral email: a closing claim about what a project shows is cut, the fac
   assert.equal(plainFit('I built an engine. This experience demonstrates my ability to deliver.\n\nThank you.'), 'I built an engine.\n\nThank you.');
   assert.equal(plainFit('I built an engine for the demonstrating team.'), 'I built an engine for the demonstrating team.');
 });
+
+test('companyDetail: a true sentence about the company from the posting, never benefits or hype', async () => {
+  const { companyDetail, signatureFromTemplate } = await import('../services/referralFlow.js')
+  assert.equal(companyDetail('Join us! Lutron designs lighting controls that save energy in homes and offices. We offer great benefits and pay.', 'Lutron'), 'Lutron designs lighting controls that save energy in homes and offices.')
+  assert.equal(companyDetail('We build developer tools used by 10,000 engineering teams worldwide.', 'Acme'), 'We build developer tools used by 10,000 engineering teams worldwide.')
+  assert.equal(companyDetail('Acme is an equal opportunity employer that provides benefits to all.', 'Acme'), null)
+  assert.equal(companyDetail('Acme builds amazing things!', 'Acme'), null)
+  assert.equal(companyDetail('', 'Acme'), null)
+  assert.equal(signatureFromTemplate('Rules...\n\nEnd with exactly this signature:\n\nBest regards,\nA B\nhttps://x'), 'Best regards,\nA B\nhttps://x')
+  assert.equal(signatureFromTemplate('no signature here'), null)
+})

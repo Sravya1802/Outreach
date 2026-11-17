@@ -127,15 +127,72 @@ const squash = (s) => str(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 export const isCompanyPage = (name, company) => Boolean(squash(name)) && squash(name) === squash(company);
 
 /** Plain template, used when the AI is unavailable and for the "search" case. */
-export function templateAsk({ personName: found, me, school, major, sig, title, company, jobUrl, attached = false }) {
+// Who she is, for every email (the facts tailoring_config.email_template names).
+export const ABOUT_ME = 'I am completing a Master of Science in Computer Science at the University of Illinois at Chicago (May 2027), after two years as a Software Engineer at Mercedes-Benz Research and Development India.';
+
+const WORDS_AFTER = /\b(equal opportunity|benefits?|salary|compensation|pay range|accommodation|privacy|cookie|apply|application|visa|sponsor|background check|drug|e-verify|401\(k\)|insurance|pto|paid time off)\b/i;
+
+/**
+ * One true sentence from the posting about what the company does or values,
+ * for "Why this company" (never generic praise): mentions the company (or
+ * "we" / "our"), says what it builds, makes or values, 40 to 220 characters,
+ * no hype punctuation. Null when the posting has none. Pure.
+ */
+export function companyDetail(jd, company) {
+  const name = str(company).split(/\s+/)[0]?.toLowerCase() || '';
+  const text = str(jd).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z])/).map(s => s.trim());
+  for (const s of sentences.slice(0, 40)) {
+    if (s.length < 40 || s.length > 220 || /[!?]|\b\w+'(re|ll|ve|s|t|d)\b|’/.test(s) || /[—–]/.test(s)) continue;
+    if (WORDS_AFTER.test(s)) continue;
+    const about = (name && s.toLowerCase().includes(name)) || /^(we|our)\b/i.test(s);
+    const doing = /\b(build|builds|building|develop|develops|design|designs|make|makes|create|creates|power|powers|help|helps|provide|provides|deliver|delivers|enable|enables|transform|transforms|mission|leader|leading|pioneer|serve|serves|operate|operates|manufacture|manufactures)\b/i.test(s);
+    if (about && doing) return s.replace(/\s+([,.;:])/g, '$1').replace(/\.*$/, '.');
+  }
+  return null;
+}
+
+/** "Python, SQL and Kafka". */
+const andList = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+/** The signature tailoring_config.email_template asks for ("End with exactly this signature:"), or null. Pure. */
+export function signatureFromTemplate(template) {
+  const m = str(template).match(/End with exactly this signature:\s*\n+([\s\S]+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+/**
+ * The plain email (no AI) to someone at the company, in the shape
+ * tailoring_config.email_template sets: "Dear <first name>,", the ask with the
+ * exact role and location (recruiters: review or point to the right person;
+ * engineers: a referral), one true detail about the company from the posting,
+ * who she is plus the role's requirements her resume shows, the posting link,
+ * and the signature. Subject "<Role title>: <name>". And the LinkedIn note.
+ */
+export function templateAsk({ personName: found, me, school, major, sig, title, company, location, jobUrl, attached = false, audience = 'recruiter', jd = '', matches = [] }) {
   const personName = isCompanyPage(found, company) ? '' : found;
   const student = major ? `a ${major} student` : 'a student';
-  // The role's match note (FIT) is written for the user, not for a stranger, so it stays out.
-  const intro = `My name is ${me || 'a student'}, and I am ${student}${school ? ` at ${schoolName(school)}` : ''}. I am applying for the ${title} position at ${company}.`;
-  const note = closedNote(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person? Thank you.`);
-  const resume = attached ? 'I have attached my résumé for your reference.' : 'I would be glad to send my résumé.';
-  const body = `Dear ${str(personName) ? first(personName) : 'Hiring Team'},\n\n${intro}\n\nWould you be willing to refer me for this position, or direct me to the appropriate person on the hiring team? ${resume} The job posting is available here: ${postingUrl(jobUrl)}\n\nThank you for your time and consideration.`;
-  return { subject: `Referral request: ${title} at ${company}`.slice(0, 120), body: signed(body, me, sig), note };
+  const where = str(location).split(/;|\s\+\d/)[0].trim();
+  const ask = audience === 'engineer'
+    ? `I am applying for the ${title} role at ${company}${where ? ` in ${where}` : ''}, and I would be grateful if you would consider referring me.`
+    : `I am applying for the ${title} role at ${company}${where ? ` in ${where}` : ''}, and I would be grateful if you could review my application or point me to the right person on the hiring team.`;
+  const detail = companyDetail(jd, company);
+  const why = detail ? `What draws me to ${company} is how the posting describes it: "${detail}"` : null;
+  const shown = (matches || []).map(str).filter(Boolean).slice(0, 3);
+  const me_ = `${ABOUT_ME}${shown.length ? ` My resume shows hands-on work with ${andList(shown)}, which this role lists among its requirements.` : ''}`;
+  const link = postingUrl(jobUrl);
+  const close = attached
+    ? `My resume is attached, and the posting is here: ${link}. Thank you for your time and consideration.`
+    : `I would be glad to send my resume, and the posting is here: ${link}. Thank you for your time and consideration.`;
+  const body = [`Dear ${str(personName) ? first(personName) : 'Hiring Team'},`, ask, why, me_, close].filter(Boolean).join('\n\n');
+  const note = closedNote(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} role at ${company}. Would you be willing to ${audience === 'engineer' ? 'refer me' : 'review my application'}, or direct me to the appropriate person? Thank you.`);
+  return { subject: `${title}: ${me || 'Lakshmi Sravya Rachakonda'}`.slice(0, 120), body: signed(body, me, sig), note };
+}
+
+/** The signature for a user's emails: the one their latest email_template sets, else built from the profile. */
+export async function emailSignature(userId, who) {
+  const row = await one('SELECT email_template FROM tailoring_config WHERE user_id = $1 ORDER BY version DESC LIMIT 1', [userId]).catch(() => null);
+  return signatureFromTemplate(row?.email_template) || signature(who);
 }
 
 export async function draftAsk(userId, ctx) {
@@ -149,12 +206,12 @@ export async function draftAsk(userId, ctx) {
       system: `You write a formal referral request email from a student to someone at a company.
 Return JSON: {"subject": "...", "body": "...", "note": "..."}
 - body: under 120 words of plain text: the greeting, then 3 short paragraphs separated by a blank line.
-  1. Who the student is and the exact role and company, e.g. "My name is <full name>, and I am a <MAJOR> student at <SCHOOL>. I am applying for the <role> position at <company>." No class year unless given.
+  1. The ask with the exact role, company and location: "I am applying for the <role> role at <company> in <location>, and I would be grateful if you could review my application or point me to the right person on the hiring team." (for an engineer: "...if you would consider referring me."). Never start with "My name is".
   2. One concrete reason they fit: a project, internship or result from BACKGROUND or FIT, with a specific detail, stated plainly. Never invent facts, never describe the company's or team's focus, and don't add a clause saying it "demonstrates" skills or "matches the role".
   3. The ask: whether they would be willing to refer the student, or direct them to the appropriate person on the hiring team; ${ctx.attached ? '"I have attached my résumé for your reference."' : 'an offer to send the résumé'}; then, as the paragraph\'s last sentence, "The job posting is available here: <link>" (never a label like "Job link:").
 - ${FORMAL}
 - note: a LinkedIn connection note under 250 characters with the same ask, starting "Hello <first name>,", also formal with no contractions. No link and no mention of a résumé or attachment (a note can carry neither).
-- subject: under 60 characters, e.g. "Referral request: <role>".
+- subject: exactly "<role>: <student>".
 - ${ctx.knows ? 'They are a LinkedIn connection of the student: you may mention that, in the same formal tone.' : 'They don\'t know the student; keep it brief and respectful.'}`,
       user: JSON.stringify({ to: ctx.personName, theirTitle: ctx.personTitle, student: ctx.me, MAJOR: ctx.major, SCHOOL: ctx.school, role: ctx.title, company: ctx.company, jobLink: postingUrl(ctx.jobUrl), FIT: ctx.why, BACKGROUND: ctx.background }),
     });
@@ -947,8 +1004,8 @@ export async function askForReferral(userId, item, settings) {
   const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
 
   const base = {
-    me: who.name, school: who.school, major: who.major, sig: signature(who), background: people.length ? await candidateHighlights(userId) : '',
-    title: item.title, company: item.company_name, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId),
+    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), background: people.length ? await candidateHighlights(userId) : '',
+    title: item.title, company: item.company_name, location: item.location, jd: item.job_description, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId),
   };
   if (!people.length) {
     const t = templateAsk({ ...base, personName: '' });

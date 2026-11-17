@@ -162,12 +162,21 @@ test('referral email: a closing claim about what a project shows is cut, the fac
 });
 
 test('companyDetail: a true sentence about the company from the posting, never benefits or hype', async () => {
-  const { companyDetail, signatureFromTemplate } = await import('../services/referralFlow.js')
+  const { companyDetail, placePhrase, signatureFromTemplate } = await import('../services/referralFlow.js')
   assert.equal(companyDetail('Join us! Lutron designs lighting controls that save energy in homes and offices. We offer great benefits and pay.', 'Lutron'), 'Lutron designs lighting controls that save energy in homes and offices.')
   assert.equal(companyDetail('We build developer tools used by 10,000 engineering teams worldwide.', 'Acme'), 'We build developer tools used by 10,000 engineering teams worldwide.')
   assert.equal(companyDetail('Acme is an equal opportunity employer that provides benefits to all.', 'Acme'), null)
   assert.equal(companyDetail('Acme builds amazing things!', 'Acme'), null)
   assert.equal(companyDetail('', 'Acme'), null)
+  assert.equal(placePhrase('Remote - New York City, NY'), ' in New York City, NY (remote)')
+  assert.equal(placePhrase('Remote'), ' (remote)')
+  assert.equal(placePhrase('San Francisco, CA; Seattle, WA'), ' in San Francisco, CA')
+  assert.equal(placePhrase('Austin, TX +2'), ' in Austin, TX')
+  assert.equal(placePhrase('Chicago, IL (Remote)'), ' in Chicago, IL (remote)')
+  assert.equal(placePhrase(''), '')
+  assert.equal(placePhrase('Remote · San Rafael, CA, US'), ' in San Rafael, CA (remote)')
+  assert.equal(placePhrase('Boston, MA, US; Boston, MA'), ' in Boston, MA')
+  assert.equal(placePhrase('Remote - Georgia, USA'), ' in Georgia (remote)')
   assert.equal(companyDetail('Software Engineer - New Grad, 2027 New York City, New York Who we are At Domino, we build solutions that help the largest, highly regulated organizations adopt AI to accelerate mission-critical use cases.', 'Domino Data Lab'), 'At Domino, we build solutions that help the largest, highly regulated organizations adopt AI to accelerate mission-critical use cases.')
   assert.equal(signatureFromTemplate('Rules...\n\nEnd with exactly this signature:\n\nBest regards,\nA B\nhttps://x'), 'Best regards,\nA B\nhttps://x')
   assert.equal(signatureFromTemplate('no signature here'), null)

@@ -167,6 +167,20 @@ export function signatureFromTemplate(template) {
 }
 
 /**
+ * " in New York City, NY" for the ask: the first place only, and a remote
+ * role reads " in New York City, NY (remote)" or " (remote)", never
+ * "in Remote - New York City, NY". Empty when there is no place. Pure.
+ */
+export function placePhrase(location) {
+  const first_ = str(location).split(/;|\s\+\d/)[0].trim().replace(/,\s*(US|USA|United States)$/i, '');
+  if (!first_) return '';
+  const m = first_.match(/^remote\b\s*(?:[-–:,(·|]\s*)?(.*?)\)?$/i) || first_.match(/^(.*?)\s*[-–,(·|]\s*remote\)?$/i);
+  if (!m) return ` in ${first_}`;
+  const place = m[1].replace(/^(us|usa|united states)$/i, 'the United States').trim();
+  return place ? ` in ${place} (remote)` : ' (remote)';
+}
+
+/**
  * The plain email (no AI) to someone at the company, in the shape
  * tailoring_config.email_template sets: "Dear <first name>,", the ask with the
  * exact role and location (recruiters: review or point to the right person;
@@ -177,10 +191,10 @@ export function signatureFromTemplate(template) {
 export function templateAsk({ personName: found, me, school, major, sig, title, company, location, jobUrl, attached = false, audience = 'recruiter', jd = '', matches = [] }) {
   const personName = isCompanyPage(found, company) ? '' : found;
   const student = major ? `a ${major} student` : 'a student';
-  const where = str(location).split(/;|\s\+\d/)[0].trim();
+  const where = placePhrase(location);
   const ask = audience === 'engineer'
-    ? `I am applying for the ${title} role at ${company}${where ? ` in ${where}` : ''}, and I would be grateful if you would consider referring me.`
-    : `I am applying for the ${title} role at ${company}${where ? ` in ${where}` : ''}, and I would be grateful if you could review my application or point me to the right person on the hiring team.`;
+    ? `I am applying for the ${title} role at ${company}${where}, and I would be grateful if you would consider referring me.`
+    : `I am applying for the ${title} role at ${company}${where}, and I would be grateful if you could review my application or point me to the right person on the hiring team.`;
   const detail = companyDetail(jd, company);
   const why = detail ? `What draws me to ${company} is how the posting describes it: "${detail}"` : null;
   const shown = (matches || []).map(str).filter(Boolean).slice(0, 3);

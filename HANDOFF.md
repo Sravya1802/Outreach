@@ -2109,3 +2109,32 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Built (`referralFlow.js`):** `templateAsk` writes "Dear <first name>," → "I am applying for the <role> role at <company> in <place>, and I would be grateful if you could review my application or point me to the right person on the hiring team." (engineer audience: "…consider referring me.") → one true company sentence from the posting (`companyDetail`; null → paragraph left out) → `ABOUT_ME` (UIC MS CS May 2027, two years at Mercedes-Benz R&D India) plus up to 3 role requirements the resume shows (`resumeMatches` in tailorPipeline.js) → "My resume is attached, and the posting is here: <link>. Thank you for your time and consideration." → the config's signature (`signatureFromTemplate` / `emailSignature`, falling back to the profile). Subject `<Role title>: Lakshmi Sravya Rachakonda`. LinkedIn note: "Hello <first>, I am …, applying for the <role> role at <company>…". `messages.js` `templateMessages` and the AI draftAsk prompt also follow it (the prompt says never start with "My name is").
 - **Fixes after the live sample:** `companyDetail` starts at the company sentence (Domino's posting ran "…New York Who we are At Domino, we build…" together). `placePhrase` gives " in New York City, NY (remote)" / " (remote)" / the first of several places, and drops ", US"; checked against all 393 Ready-role locations.
 - **Existing emails (user: "UPDATE ALL THE EXISTING ONES AS WELL"):** my first check only looked at `outreach_drafts`; `email_outbox` had 15 waiting-for-OK rows (Solace 5986 ×8, Domino 5964 ×7) still in the old "My name is" text. Rewrote: 26 unsent drafts not in the new format (old `Referral request:` / `Application for` subjects, older bodies; incl. 3 on closed roles) rebuilt with `templateAsk`; the 15 outbox rows (and their `referral_asks` subject/message) given their approved draft's new-format text. Old text saved to `/home/ubuntu/outreach/backups/email-rewrite-1794904013669.json` on the VM. After: 335 unsent drafts + 15 waiting outbox emails, 0 with "My name is", 0 with old subjects. LinkedIn notes not touched. Domino 5964 sample (Andrew Bayly) reads correctly. 275 backend tests pass; VM on 398ca5a-equivalent, health ok.
+
+## 2026-11-17 — Gmail was off since Nov 11; approved roles stuck
+
+**What the user saw:** 32 approved outreach_drafts with gmail_draft_id NULL, 23 approved tailor_jobs with 2 applied.
+
+**Cause (emails):** On 2026-11-11 one IMAP login was refused, and `markError` set `gmail_connections.status = 'error'`. Nothing ever retried: `checkAllInboxes` and `withImap` skip 'error' rows until the user reconnects. Every Gmail step failed silently from then on:
+- outbox draft copies
+- blank role templates (stage_note "The Gmail draft couldn’t be made…")
+- sends and reply reads
+
+The stored app password is fine: a login test on 2026-11-17 was accepted.
+
+**Note:** `outreach_drafts.gmail_draft_id` is never written by any code. The Gmail copy is tracked on `email_outbox.gmail_draft_hash`, linked via `referral_asks.outbox_id`.
+
+**Fix (79e0c24, VM 2a605c2):**
+- `gmail.retryRefusedConnections()` re-verifies a refused connection (SMTP + IMAP) at most every 6 h, using an in-memory `lastRetry`. It runs at the top of `checkAllInboxes`.
+- On recovery, `tailorPipeline.retryBlankDrafts(userId)` remakes the failed blank drafts for approved roles whose posting is still open. All unsent `email_outbox` drafts without a Gmail copy are also copied, with no 3-day limit.
+- `last_checked_at` is not touched, so replies from the outage window are still read.
+
+**Apply side:** the auto-applier did run on the rest; it can't fill these:
+- LinkedIn: Garmin, Emonics, Dow Jones, Archer, Synchrony, Nooks
+- Workday: Freddie Mac, Vertex, MSD
+- Captcha: Yext, Netic ×2, Anthelion, Verkada, Global Lending, WhiteWater
+- Waiting on email OK: Solace, Domino (the 2-business-day hold starts when the emails go out)
+- Waiting until Nov 19: Addx, Nooks
+- Gmail-blocked blank templates: HP IQ, Innovative Systems, Schonfeld
+- Closed before anything happened: GALLO, Vertex, MSD
+
+Nothing was sent; the 27 outbox drafts still need the user's OK.

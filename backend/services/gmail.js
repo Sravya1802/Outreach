@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { ImapFlow } from 'imapflow';
-import { one, run } from '../db.js';
+import { all, one, run } from '../db.js';
 import { seal, open } from './secretBox.js';
 
 const SMTP = { host: 'smtp.gmail.com', port: 465, secure: true };
@@ -105,6 +105,40 @@ export async function markError(userId, err) {
 }
 
 const transports = new Map();
+
+const RETRY_MS = 6 * 3600_000;
+const lastRetry = new Map();
+
+/** May a connection Google refused be tried again? At most once every 6 hours, so a bad password can't get the account locked. Pure. */
+export function dueForRetry(last, now = Date.now()) {
+  return !last || now - last >= RETRY_MS;
+}
+
+/**
+ * Connections Google refused, tried again every 6 hours. Google sometimes
+ * turns a good app password away once (it did on 2026-11-11), and without
+ * this Gmail stayed off until the user noticed and reconnected: no drafts,
+ * no sends, no replies read. Returns the users whose Gmail works again.
+ */
+export async function retryRefusedConnections(verify = verifyCredentials) {
+  const back = [];
+  for (const r of await all("SELECT user_id FROM gmail_connections WHERE status = 'error'")) {
+    if (!dueForRetry(lastRetry.get(r.user_id))) continue;
+    lastRetry.set(r.user_id, Date.now());
+    const c = await connectionFor(r.user_id);
+    if (!c?.pass) continue;
+    try {
+      await verify(c.email, c.pass);
+    } catch (err) {
+      await run("UPDATE gmail_connections SET last_error = $2 WHERE user_id = $1 AND status = 'error'", [r.user_id, err.message]).catch(() => {});
+      continue;
+    }
+    const ok = await run("UPDATE gmail_connections SET status = 'ok', last_error = NULL WHERE user_id = $1 AND status = 'error'", [r.user_id]);
+    transports.delete(r.user_id);
+    if (ok.rowCount) back.push(r.user_id);
+  }
+  return back;
+}
 
 async function transportFor(userId) {
   const c = await connectionFor(userId);

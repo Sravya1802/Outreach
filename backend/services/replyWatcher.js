@@ -11,8 +11,8 @@
  */
 
 import { all, one, run } from '../db.js';
-import { connectionFor, friendlyGmailError, imapClient, markError, sendToSelf } from './gmail.js';
-import { cancelForContact, syncDrafts } from './outbox.js';
+import { connectionFor, friendlyGmailError, imapClient, markError, retryRefusedConnections, sendToSelf } from './gmail.js';
+import { cancelForContact, copyDraftsToGmail, syncDrafts } from './outbox.js';
 import { referralEmailMoved } from './referralFlow.js';
 import { notify as whatsappNotify } from './whatsapp.js';
 
@@ -213,8 +213,16 @@ export async function checkAllInboxes() {
   let checked = 0;
   let events = 0;
   try {
+    // A refused login is tried again every 6 hours (not every pass: Google locks accounts that keep failing).
+    for (const userId of await retryRefusedConnections().catch(() => [])) {
+      console.log(`[replies] ${String(userId).slice(0, 8)}: Gmail works again`);
+      const { retryBlankDrafts } = await import('./tailorPipeline.js');
+      await retryBlankDrafts(userId).catch(err => console.warn('[replies] blank drafts retry failed:', err.message));
+      // Emails waiting for the user's OK that never reached Gmail Drafts, however long Gmail was off.
+      const waiting = await all("SELECT id FROM email_outbox WHERE user_id = $1 AND status = 'draft' AND gmail_draft_hash IS NULL ORDER BY id LIMIT 50", [userId]);
+      if (waiting.length) await copyDraftsToGmail(userId, waiting.map(w => w.id)).catch(() => {});
+    }
     const users = await all(
-      // A rejected password isn't retried (Google locks accounts that keep failing); reconnecting sets it back to ok.
       "SELECT user_id FROM gmail_connections WHERE status = 'ok'",
     );
     for (const u of users) {

@@ -75,3 +75,11 @@ test('gmail: only a refused login stops the inbox checks', () => {
   assert.equal(isAuthFailure({ authenticationFailed: true }), true);
   assert.equal(isAuthFailure({ responseCode: 535, message: '535 5.7.8 Username and Password not accepted' }), true);
 });
+
+test('dueForRetry: a refused Gmail login is tried again at most every 6 hours', async () => {
+  const { dueForRetry } = await import('../services/gmail.js');
+  const t = Date.UTC(2026, 10, 17, 12);
+  assert.equal(dueForRetry(undefined, t), true);
+  assert.equal(dueForRetry(t - 5 * 3600_000, t), false);
+  assert.equal(dueForRetry(t - 6 * 3600_000, t), true);
+});

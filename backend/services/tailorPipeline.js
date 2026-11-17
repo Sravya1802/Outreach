@@ -594,6 +594,27 @@ async function blankDraftFor(userId, item, who, pdf, filename) {
   await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1 AND user_id = $3', [item.id, note, userId]);
 }
 
+/** Approved roles whose blank Gmail draft failed while Gmail was off: made now, while the posting is open. */
+export async function retryBlankDrafts(userId) {
+  const items = await all(
+    `SELECT pi.* FROM plan_items pi JOIN tailor_jobs j ON j.plan_item_id = pi.id
+      WHERE pi.user_id = $1 AND j.status = 'approved' AND pi.stage_note LIKE '%The Gmail draft couldn’t be made%'
+        AND (pi.apply_deadline IS NULL OR pi.apply_deadline >= CURRENT_DATE)`,
+    [userId],
+  );
+  if (!items.length) return 0;
+  const who = await me(userId);
+  let made = 0;
+  for (const item of items) {
+    const v = await one('SELECT pdf_path FROM resume_versions WHERE plan_item_id = $1 AND pdf_path IS NOT NULL ORDER BY is_final DESC, version DESC LIMIT 1', [item.id]);
+    const pdf = v && await downloadVersionPdf(v.pdf_path).catch(() => null);
+    if (!pdf) continue;
+    await blankDraftFor(userId, item, who, pdf, resumeFileName(who.name));
+    made += 1;
+  }
+  return made;
+}
+
 async function backToReady(userId, planItemId, why) {
   await run("UPDATE tailor_jobs SET status = 'ready', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'approved'", [userId, planItemId]);
   await run('UPDATE plan_items SET stage_note = $3 WHERE id = $1 AND user_id = $2', [planItemId, userId, `${APPROVE_FAILED} (${why}). Approve it again.`]);

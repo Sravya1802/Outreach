@@ -333,6 +333,9 @@ export const canRemove = (r: Pick<ReviewRow, 'status'>) => ['queued', 'ready', '
 
 /** The Callback menu: the run's (or the app's) estimate of the interview callback chance. */
 export const CALLBACK_OPTIONS = [
+  { value: '50', label: 'Callback 50%+' },
+  { value: '40', label: 'Callback 40%+' },
+  { value: '30', label: 'Callback 30%+' },
   { value: '20', label: 'Callback 20%+' },
   { value: '10', label: 'Callback 10%+' },
   { value: '5', label: 'Callback 5%+' },

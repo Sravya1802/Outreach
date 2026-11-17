@@ -407,6 +407,9 @@ describe('parseContacts', () => {
 describe('callbackMatch and the callback sort', () => {
   it('filters by the callback estimate', () => {
     expect(callbackMatch(24, '20')).toBe(true)
+    expect(callbackMatch(45, '40')).toBe(true)
+    expect(callbackMatch(38, '40')).toBe(false)
+    expect(callbackMatch(50, '50')).toBe(true)
     expect(callbackMatch(12, '20')).toBe(false)
     expect(callbackMatch(12, '10')).toBe(true)
     expect(callbackMatch(4, 'under5')).toBe(true)

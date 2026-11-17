@@ -168,6 +168,7 @@ test('companyDetail: a true sentence about the company from the posting, never b
   assert.equal(companyDetail('Acme is an equal opportunity employer that provides benefits to all.', 'Acme'), null)
   assert.equal(companyDetail('Acme builds amazing things!', 'Acme'), null)
   assert.equal(companyDetail('', 'Acme'), null)
+  assert.equal(companyDetail('Software Engineer - New Grad, 2027 New York City, New York Who we are At Domino, we build solutions that help the largest, highly regulated organizations adopt AI to accelerate mission-critical use cases.', 'Domino Data Lab'), 'At Domino, we build solutions that help the largest, highly regulated organizations adopt AI to accelerate mission-critical use cases.')
   assert.equal(signatureFromTemplate('Rules...\n\nEnd with exactly this signature:\n\nBest regards,\nA B\nhttps://x'), 'Best regards,\nA B\nhttps://x')
   assert.equal(signatureFromTemplate('no signature here'), null)
 })

@@ -142,7 +142,12 @@ export function companyDetail(jd, company) {
   const name = str(company).split(/\s+/)[0]?.toLowerCase() || '';
   const text = str(jd).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
   const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z])/).map(s => s.trim());
-  for (const s of sentences.slice(0, 40)) {
+  // Headings run into the text in many postings ("…New York Who we are At Domino, we build…"): start where the company sentence does.
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const START = new RegExp(String.raw`\b(?:At ${name ? esc(str(company).split(/\s+/)[0]) : '[A-Z]\\w+'}\b[^.]{0,30}?, we\b|We\b|Our\b${name ? `|${esc(str(company).split(/\s+/)[0])}\b` : ''})`);
+  for (const raw of sentences.slice(0, 40)) {
+    const at = raw.search(START);
+    const s = at > 0 ? raw.slice(at) : raw;
     if (s.length < 40 || s.length > 220 || /[!?]|\b\w+'(re|ll|ve|s|t|d)\b|’/.test(s) || /[—–]/.test(s)) continue;
     if (WORDS_AFTER.test(s)) continue;
     const about = (name && s.toLowerCase().includes(name)) || /^(we|our)\b/i.test(s);

@@ -2098,3 +2098,7 @@ Two read-only audits (pipeline + rest of backend), verified against code, then f
 - **Asked:** "in domino data lab - i want more option to add from apollo too … like paste from apollo" (Domino 5964: Ready with 1 Hunter draft, so the paste box didn't show).
 - **Built:** the Outreach tab shows Paste from Apollo under the drafts on a Ready role with outreach (not in my_contact / none). `addRoleContacts` on such a role calls `templateOutreach(..., { more: true })` (skips the "already has outreach" refusal; ON CONFLICT keeps existing drafts) and returns `drafted`; toast "Added N people and wrote N emails from the template below". Browser: an existing draft plus 2 pasted → 3 drafts; test data removed.
 - **Revising (asked earlier):** 121 roles in Revising, 124 from one batch comment at 18:53 ("Add the IoT-Based Fish Aquarium project … ONLY if"); scheduled runs at 10:05 and 15:05 UTC never started today, and runs claim 20 at a time, so ~6 runs to clear. Offered a bulk "Use this version anyway".
+
+## 2026-11-17 — Callback 30/40/50%+ options
+
+- **Asked:** "i want callback about 40 or 50 as well". Added 50%+, 40%+, 30%+ to the Callback menu. Live: of 1,082 Ready roles none is 40%+ (max 38, 46 at 30%+, average 14): the run prompt and the app estimate start from cold-application base rates and cap near 35%. Asked the user whether they meant raising the target instead.

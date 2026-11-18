@@ -2181,3 +2181,60 @@ Nothing was sent; the 27 outbox drafts still need the user's OK.
 - Auto-detecting the confirmation page: it can't be tested without submitting.
 
 Commits: 2b29883 (backend), cfc7581 (extension, page). VM: 106cf4e, df67b68 (backend only; frontend conflicts resolved to the VM's own files).
+
+## 2026-11-17 — The app writes no email text; the Claude run writes every email
+
+**Asked:**
+- Remove the app's own email writer completely.
+- Adding contacts creates `outreach_drafts` rows with subject and body empty, and the UI shows "Claude is writing this email". No template or fallback text.
+- When an email's text changes, its Gmail draft is updated.
+
+**Removed (backend):**
+- `referralFlow.js`:
+  - `templateAsk`, `draftAsk`, `companyDetail`, `placePhrase`, `ABOUT_ME`, `emailSignature`/`signatureFromTemplate`, `FORMAL`, `signed`, `plainFit`, `noteFit`, `closedNote`, `candidateHighlights`;
+  - `askForReferral`, the old daily-list ask (`advanceReferrals` now moves `asking_referral` roles to `needs_you` with a note);
+  - `addMissingNotes`, the startup template-note backfill;
+  - `sendAppliedNotes`, the "quick update: I applied" email.
+- `tailorPipeline.js`: `templateOutreach` and its route `POST /review/:id/template-outreach`, `blankDraftFor`/`retryBlankDrafts`, `resumeMatches`. `gmail.putBlankDraft`.
+- `outbox.js`: `followupBody`, `queueFollowups`, `scheduleThreadNote` (follow-ups). None were queued; checked first.
+- `ai.js`: everything but the cover letter (`generateOutreach`, the WaaS writer, the static `TEMPLATES`).
+- Routes: `generate.js` keeps only `/cover-letter`; removed `/jobs/contacts/:id/generate`, `/prospects/:id/generate`, `/messages/companies/:key/write(-all)`.
+- Files: `services/outreachTemplates.js`, the `IN_APP_EMAILS` flag.
+
+**Removed (frontend):**
+- Use template.
+- People → Messages Write, Rewrite and Write all.
+- The Company page's AI Write and WaaS (the composer is now write-it-yourself).
+- The Templates tab (`/people/templates` redirects to Messages).
+- Follow-up wording in Outbox and Gmail.
+
+**New:**
+- `queueOutreachDrafts(userId, planItemId)`:
+  - inserts one empty row per `outreachTargets` person (the same rule as run step 7; the per-role limit trigger still applies), for roles in Ready or Revising;
+  - sets `outreach_due`;
+  - is called by `addRoleContacts`, `findRoleContacts` and `POST /review/:id/queue-outreach` (the "Have Claude write these" button on a role with people found but no rows).
+- `stillWriting(d)` means an empty email for a person with a valid address, or an empty note:
+  - `approveRole` refuses with "Claude is still writing the outreach for N people…";
+  - the queue counts `writing`, and the list holds Approve and bulk approve;
+  - the Role page shows "Claude is writing this email" / "…this LinkedIn note".
+- Migration `055_outreach_text_sync.sql` (applied live):
+  - an `outreach_drafts` text change is copied to its waiting (`draft`/`scheduled`) `email_outbox` row and its `referral_asks`, and a note change to the unsent LinkedIn ask;
+  - an outbox text change on a draft with a Gmail copy sets `gmail_sync_due`;
+  - `syncEditedDrafts()` (2-minute cron) replaces the Gmail draft and clears the flag;
+  - copies clear the flag only if the text didn't change meanwhile;
+  - empty text never overwrites.
+- `tailoring_config` v23 copies v22, changing only `standing_rules` steps 7 and 9: the run UPDATEs the app's empty rows, inserts only when a role has none, and never changes written text.
+
+**Verified:**
+- Backend 272 tests, frontend 200 tests, type check and build.
+- Every service and route imports cleanly.
+- Trigger tested in a rolled-back transaction.
+- Live with a seeded test role on the e2e account, 15/15 at 1440 and 390 px: empty rows, `outreach_due`, Approve refused with the message, the writing labels, then the email showing after a simulated run write. Test rows removed.
+- Gmail resync on a real waiting email (outbox 85, text unchanged): replaced at 02:30 UTC, still exactly one draft with the same text.
+
+**Incident:** the first deploy crashed the API (`routes/review.js` still imported `templateOutreach`) from about 02:21 to 02:24 UTC; fixed in the next commit. Tests don't load route files, so I now import-check all services and routes before deploying.
+
+**Not changed:**
+- The 330 unsent drafts already written. Some are app-template text from earlier today. They stay as they are; ask the user before clearing any.
+- 53 Ready roles have people saved at their company but no rows. They weren't auto-queued (about 150 emails, and the same people across roles); "Have Claude write these" does it per role.
+- Dead legacy files `components/Dashboard.jsx` and `components/CompanyDetail.jsx` still reference the removed generator calls; neither is imported anywhere.

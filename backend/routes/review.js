@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
+  addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf,
 } from '../services/tailorPipeline.js';
 import { fillLink, readyRoles } from '../services/readyToSubmit.js';
 
@@ -127,11 +127,6 @@ router.post('/:id/contacts/add', withId(async (req, res, id) => {
 
 router.post('/:id/contacts', withId(async (req, res, id) => {
   res.json(await findRoleContacts(req.user.id, id, { source: req.body?.source === 'apollo' ? 'apollo' : 'all' }));
-}));
-
-// The role's outreach from the plain template, now (no run needed).
-router.post('/:id/template-outreach', withId(async (req, res, id) => {
-  res.json(await templateOutreach(req.user.id, id));
 }));
 
 export default router;

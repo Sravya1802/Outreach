@@ -1274,6 +1274,8 @@ export const api = {
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
+  /** Empty outreach rows for the people found here, for your next Claude run to write. */
+  queueOutreach: (id: string): Promise<{ drafts: number }> => legacy.career.queueOutreach(id),
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */
   addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number; drafted?: number }> => legacy.career.addRoleContacts(id, people),

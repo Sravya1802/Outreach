@@ -328,10 +328,15 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
     },
     onError: (e: Error) => toast.error(e.message),
   })
+  const queue = useMutation({
+    mutationFn: () => api.queueOutreach(data.role.id),
+    onSuccess: (r) => { toast.success(r.drafts ? `Claude is writing ${r.drafts === 1 ? '1 email' : `${r.drafts} emails`}; they show here after your next run.` : 'Nobody new to write to.'); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
   const people = data.contacts ?? []
   if (people.length) return (
     <div className="space-y-3">
-      <p className="text-[14px] text-fg">People found here. Claude is writing their emails and notes; they show here after your next run.</p>
+      <p className="text-[14px] text-fg">{data.role.outreach_due ? 'People found here. Claude is writing their emails and notes; they show here after your next run.' : 'People found here. Your Claude run writes their emails and notes once you ask it to.'}</p>
       <ul className="divide-y divide-border rounded-[4px] border border-border">
         {people.map(c => (
           <li key={c.id} className="px-3 py-2 text-[14px]">
@@ -343,6 +348,7 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
         ))}
       </ul>
       <div className="flex flex-wrap items-start gap-2">
+        {!data.role.outreach_due && <Button variant="primary" loading={queue.isPending} onClick={() => queue.mutate()}>Have Claude write these</Button>}
         <PasteContacts data={data} onDone={onDone} />
       </div>
     </div>

@@ -2238,3 +2238,44 @@ Commits: 2b29883 (backend), cfc7581 (extension, page). VM: 106cf4e, df67b68 (bac
 - The 330 unsent drafts already written. Some are app-template text from earlier today. They stay as they are; ask the user before clearing any.
 - 53 Ready roles have people saved at their company but no rows. They weren't auto-queued (about 150 emails, and the same people across roles); "Have Claude write these" does it per role.
 - Dead legacy files `components/Dashboard.jsx` and `components/CompanyDetail.jsx` still reference the removed generator calls; neither is imported anywhere.
+
+## 2026-11-17 — Outreach queued for the 53 Ready roles; one email per person per company
+
+**Asked:**
+- Queue empty outreach rows (best 2 recruiters, plus 1 engineer) for the 53 Ready roles that have saved contacts but no outreach.
+- If one person would be emailed for several roles at a company, create one row on the best-fit role and note the other role titles, for one line: "I would also be glad to be considered for...".
+
+**Built:**
+- Migration `056_outreach_also_roles.sql` (applied live) adds `outreach_drafts.also_plan_items BIGINT[]`.
+- `planOutreach` (pure, tested) groups people by company:
+  - each person gets one row, on the best-fit role (`byFit`: callback_after, then ats_after, then score), with the other roles in `also_plan_items`;
+  - someone with an unwritten row on another open role has these roles added to that row;
+  - someone with a written, approved or sent row elsewhere is skipped.
+- `queueOutreachForRoles(userId, ids, { dryRun })` does the reads and writes. `queueOutreachDrafts` (Paste from Apollo, Find contacts, Have Claude write these) now goes through it.
+- `reviewRole` returns `also_roles` (titles) on each draft and `covered_by` on a role whose people are asked in another role's email. The Role page shows "it also asks about …" and, on a covered role, who asks about it, with a link to the best-fit role.
+- `tailoring_config` v24 copies v23 and adds one paragraph to step 7: for a row with `also_plan_items`, add exactly one "I would also be glad to be considered for the … roles." sentence (distinct titles), stay within the length limit, keep the note about the row's own role, and never write separate rows for those roles.
+
+**Applied** (dry run first): 15 empty rows on 7 roles, all `outreach_due`; 11 more roles named through `also`:
+- Garmin 1787: 2 recruiters and 1 engineer, also 2 roles.
+- Verkada 5227: 3 people, note only, also 3 roles.
+- Archer 7713: 3, note only, also 2.
+- Plexus 4937: 3, note only, also 2.
+- IBM 4547: Dan Gutmacher, also 1.
+- Adobe 5457: the engineer Gabriel Rodríguez, also 1.
+- ArmgaSys 2433: Kenny Lee, note only.
+
+**Skipped** (36 people), because they already have a written or approved row on another role at the company:
+- TikTok, all 3 of its people (Kyle Martone has ~45 unsent drafts across TikTok roles).
+- Lutron, its 10 own people (on 5963).
+- IBM: Dave Nguyen and Stephen Bohner.
+- Adobe: Christina Turner and Jason Smith.
+- Solace (8) and Netic (11): already approved into the Outbox.
+- TaskVerse and LaunchAI had nobody.
+
+**Open question for the user:** merge the existing duplicates (TikTok, Lutron, IBM, Adobe) under the same rule. That means keeping one row per person on the best-fit role and clearing its text so the run rewrites it with the "also" line. Each other row would need a way to retire it, since rows are never deleted.
+
+**Verified:**
+- Backend 275 tests; every service and route imports cleanly; frontend type check and build.
+- Live on the e2e account, 14/14 at 1440 and 390 px: two seeded roles at one company gave one row on the better-fit role with the other in `also`, and both pages say so. Test rows removed.
+
+Commits: 9859689 (backend), its frontend twin. VM cherry-pick: backend only.

@@ -71,7 +71,6 @@ export const SECTIONS: NavSection[] = [
       { label: 'Messages', to: '/people/messages', keywords: 'linkedin notes connections personalized email copy send referral' },
       { label: 'Contacts', to: '/people/contacts', keywords: 'outreach referrals emails messages crm' },
       { label: 'My referrers', to: '/people/referrers', keywords: 'referral friend contact who can refer me amazon meta microsoft ask' },
-      { label: 'Templates', to: '/people/templates', keywords: 'outreach email linkedin dm referral ask' },
       { label: 'Outbox', to: '/people/outbox', keywords: 'outreach gmail scheduled sent follow-ups replies' },
     ],
   },
@@ -159,7 +158,7 @@ export const LEGACY_REDIRECTS: Record<string, string> = {
   // The Outreach section was renamed People.
   '/outreach': '/people/contacts',
   '/outreach/contacts': '/people/contacts',
-  '/outreach/templates': '/people/templates',
+  '/outreach/templates': '/people/messages',
   '/outreach/outbox': '/people/outbox',
   '/outreach/messages': '/people/contacts',
   // Pre-IA-refactor paths

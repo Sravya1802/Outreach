@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Copy, Download, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Copy, Download, ExternalLink, PenLine } from 'lucide-react'
 import { api, type OutreachDraft, type ReferralMode, type ReviewComment, type ReviewRole, type ResumeVersion } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { useProfile } from '@/app/queries'
@@ -159,6 +159,15 @@ function CommentsPanel({ data, onDone }: { data: ReviewRole; onDone: () => void 
   )
 }
 
+/** A part of the outreach your Claude run hasn't written yet. */
+function Writing({ what }: { what: string }) {
+  return (
+    <p className="flex items-center gap-2 rounded-[4px] border border-dashed border-line-strong px-3 py-3 text-[14px] text-muted">
+      <PenLine className="size-4 shrink-0 text-accent" aria-hidden /> Claude is writing this {what}. It shows here after your next run.
+    </p>
+  )
+}
+
 function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
   const toast = useToast()
   const [subject, setSubject] = useState(d.email_subject ?? '')
@@ -167,6 +176,9 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
   const changed = subject !== (d.email_subject ?? '') || body !== (d.email_body ?? '') || note !== (d.linkedin_note ?? '')
   const over = note.length > NOTE_LIMIT
   const locked = d.status === 'approved' || d.status === 'sent'
+  // Your Claude run writes every email and note; until it has, there's nothing here to edit.
+  const emailWriting = Boolean(d.email) && d.email_status !== 'invalid' && !(d.email_body ?? '').trim()
+  const noteWriting = !(d.linkedin_note ?? '').trim()
   const save = useMutation({
     mutationFn: () => api.saveOutreachDraft(d.id, { email_subject: subject, email_body: body, linkedin_note: note }),
     onSuccess: () => { toast.success('Saved.'); onDone() },
@@ -194,19 +206,22 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
           Also in the outreach for {d.also_for.join(', ')}. Only the first of these roles you approve contacts {d.name?.split(' ')[0] || 'them'}; the others don’t ask again.
         </p>
       )}
-      {d.email_body !== null || d.email ? (
-        <>
-          <Field label="Subject">{p => <Input {...p} value={subject} disabled={locked} onChange={e => setSubject(e.target.value)} />}</Field>
-          <Field label="Email">{p => <Textarea {...p} value={body} disabled={locked} onChange={e => setBody(e.target.value)} rows={10} />}</Field>
-        </>
-      ) : <p className="text-[13px] text-subtle">No email address, so this person gets the LinkedIn note only.</p>}
-      <Field label="LinkedIn note" error={over ? `${note.length}/${NOTE_LIMIT}, ${note.length - NOTE_LIMIT} over the limit` : null} hint={<span className="font-mono">{note.length}/{NOTE_LIMIT}</span>}>
-        {p => <Textarea {...p} value={note} disabled={locked} onChange={e => setNote(e.target.value)} rows={4} />}
-      </Field>
+      {emailWriting ? <Writing what="email" />
+        : d.email_body !== null || d.email ? (
+          <>
+            <Field label="Subject">{p => <Input {...p} value={subject} disabled={locked} onChange={e => setSubject(e.target.value)} />}</Field>
+            <Field label="Email">{p => <Textarea {...p} value={body} disabled={locked} onChange={e => setBody(e.target.value)} rows={10} />}</Field>
+          </>
+        ) : <p className="text-[13px] text-subtle">No email address, so this person gets the LinkedIn note only.</p>}
+      {noteWriting ? <Writing what="LinkedIn note" /> : (
+        <Field label="LinkedIn note" error={over ? `${note.length}/${NOTE_LIMIT}, ${note.length - NOTE_LIMIT} over the limit` : null} hint={<span className="font-mono">{note.length}/{NOTE_LIMIT}</span>}>
+          {p => <Textarea {...p} value={note} disabled={locked} onChange={e => setNote(e.target.value)} rows={4} />}
+        </Field>
+      )}
       <div className="flex flex-wrap gap-2">
         {locked ? <Link to="/people/outbox" className="self-center text-[13px] text-accent hover:underline">Edit it in Outbox</Link>
-          : <Button variant="primary" loading={save.isPending} disabled={!changed || over} onClick={() => save.mutate()}>Save</Button>}
-        <Button variant="ghost" icon={<Copy className="size-4" />} disabled={!note} onClick={copy}>Copy note</Button>
+          : !d.writing && <Button variant="primary" loading={save.isPending} disabled={!changed || over} onClick={() => save.mutate()}>Save</Button>}
+        {!noteWriting && <Button variant="ghost" icon={<Copy className="size-4" />} disabled={!note} onClick={copy}>Copy note</Button>}
         {d.linkedin_url && <a href={d.linkedin_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 self-center text-[13px] text-accent hover:underline">LinkedIn profile <ExternalLink className="size-3.5" /></a>}
       </div>
     </article>
@@ -264,9 +279,7 @@ function PasteContacts({ data, onDone, open: startOpen = false }: { data: Review
   const save = useMutation({
     mutationFn: (list: PastedPerson[]) => api.addRoleContacts(data.role.id, list),
     onSuccess: (r) => {
-      toast.success(r.drafted
-        ? `Added ${r.people === 1 ? '1 person' : `${r.people} people`} and wrote ${r.drafted === 1 ? 'their email' : `${r.drafted} emails`} from the template below. Edit them, then approve.`
-        : `Added ${r.people === 1 ? '1 person' : `${r.people} people`}. Use template to write the emails now, or the next run writes them.`)
+      toast.success(`Added ${r.people === 1 ? '1 person' : `${r.people} people`}. ${r.drafted ? `Claude is writing ${r.drafted === 1 ? 'their email' : `${r.drafted} emails`}; they show here after your next run.` : 'Your next run writes their outreach.'}`)
       setText(''); setPeople(null); setOpen(false); onDone()
     },
     onError: (e: Error) => toast.error(e.message),
@@ -309,21 +322,16 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
   const find = useMutation({
     mutationFn: (source: 'all' | 'apollo') => api.findRoleContacts(data.role.id, source),
     onSuccess: (r, source) => {
-      if (r.recruiters) toast.success(`Found ${r.recruiters === 1 ? '1 recruiter' : `${r.recruiters} recruiters`}. The next run writes the outreach.`)
+      if (r.recruiters) toast.success(`Found ${r.recruiters === 1 ? '1 recruiter' : `${r.recruiters} recruiters`}. Claude is writing their emails; they show here after your next run.`)
       else toast.error(source === 'apollo' ? 'Apollo found no recruiter with an email here.' : 'No recruiter found at this company.')
       onDone()
     },
     onError: (e: Error) => toast.error(e.message),
   })
-  const template = useMutation({
-    mutationFn: () => api.templateOutreach(data.role.id),
-    onSuccess: (r) => { toast.success(`Wrote ${r.drafts === 1 ? '1 draft' : `${r.drafts} drafts`} from the template. Edit them here, then approve.`); onDone() },
-    onError: (e: Error) => toast.error(e.message),
-  })
   const people = data.contacts ?? []
   if (people.length) return (
     <div className="space-y-3">
-      <p className="text-[14px] text-fg">{data.role.outreach_due ? 'Recruiters found. The next run writes the emails and notes, or write them now from the template.' : 'People found here. Write the emails and notes from the template, then edit and approve.'}</p>
+      <p className="text-[14px] text-fg">People found here. Claude is writing their emails and notes; they show here after your next run.</p>
       <ul className="divide-y divide-border rounded-[4px] border border-border">
         {people.map(c => (
           <li key={c.id} className="px-3 py-2 text-[14px]">
@@ -335,7 +343,6 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
         ))}
       </ul>
       <div className="flex flex-wrap items-start gap-2">
-        <Button variant="primary" loading={template.isPending} onClick={() => template.mutate()}>Use template</Button>
         <PasteContacts data={data} onDone={onDone} />
       </div>
     </div>
@@ -397,6 +404,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
   })
   const passed = latest?.check_status === 'passed'
   const noOutreach = needsOutreach({ referral_mode: data.role.referral_mode, outreach: data.outreach.length })
+  const writing = data.outreach.filter(o => o.writing && ['draft', 'edited'].includes(o.status)).length
   const held = data.role.status === 'approved' && data.role.stage === 'waiting_referral' && !data.role.apply_after
   const canGoAlone = held || (data.role.status === 'ready' && passed && data.outreach.length === 0)
   return (
@@ -416,17 +424,19 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {data.role.status === 'ready' && noOutreach && <NoOutreach data={data} onDone={onDone} />}
       {(data.role.status === 'ready' || canGoAlone || canMarkApplied(data.role)) && (
         <div className="flex flex-wrap gap-2">
-          {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed || (noOutreach && data.role.outreach_due)} onClick={() => approve.mutate()}>Approve</Button>}
+          {data.role.status === 'ready' && <Button variant="primary" loading={approve.isPending} disabled={!passed || (noOutreach && data.role.outreach_due) || writing > 0} onClick={() => approve.mutate()}>Approve</Button>}
           {canGoAlone && <Button loading={withoutReferral.isPending} onClick={() => setConfirming(true)}>Apply without referral</Button>}
           {canMarkApplied(data.role) && <Button variant="ghost" loading={applied.isPending} onClick={() => setMarkingApplied(true)}>I already applied</Button>}
         </div>
       )}
       {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
         ? 'Approving makes this version final. This role’s mode emails nobody, so it applies only when you press Apply without referral.'
+        : writing > 0
+          ? `Claude is still writing ${writing === 1 ? '1 email' : `${writing} emails`} for this role. Approve it once your next run has written ${writing === 1 ? 'it' : 'them'}, or press Apply without referral.`
         : noOutreach
           ? (data.role.outreach_due
-            ? 'This role’s emails come with the next run. Approve it once they’re written, or press Apply without referral.'
-            : 'No recruiter found yet. Approving makes this version final and puts your template in Gmail Drafts with the resume attached and an empty To line, for the address you find. It applies only when you press Apply without referral.')
+            ? 'Claude is writing this role’s emails with your next run. Approve it once they’re written, or press Apply without referral.'
+            : 'No recruiter found yet. Approving makes this version final; no email goes out, so it applies only when you press Apply without referral.')
           : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days after outreach goes out.'}</p>}
       {data.role.status === 'ready' && data.role.stage_note?.startsWith('Approve didn’t finish') && <p className="text-[14px] text-danger">{data.role.stage_note}</p>}
       {data.role.finishing && <p className="text-[14px] text-muted">Finishing: saving the resume and putting the emails in Outbox and Gmail Drafts. This takes about a minute.</p>}

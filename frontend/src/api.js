@@ -186,7 +186,6 @@ export const api = {
   messages: {
     companies: (params)       => apiCall(`/messages/companies${qs(params)}`),
     company:   (key)          => apiCall(`/messages/companies/${encodeURIComponent(key)}`),
-    write:     (key, ref)     => apiCall(`/messages/companies/${encodeURIComponent(key)}/write`, { method: 'POST', body: { ref } }),
     plan:      ()             => apiCall('/messages/plan'),
     planCompany: (key)        => apiCall(`/messages/plan/${encodeURIComponent(key)}`),
   },
@@ -301,20 +300,8 @@ export const api = {
   },
 
   generate: {
-    email:    (body) => apiCall('/generate/email',    { method: 'POST', body }),
-    linkedin: (body) => apiCall('/generate/linkedin', { method: 'POST', body }),
-    templates: () => apiCall('/generate/templates'),
-    saveTemplates: (body) => apiCall('/generate/templates', { method: 'PUT', body }),
-    both: async (body) => {
-      const [emailRes, linkedinRes] = await Promise.all([
-        apiCall('/generate/email',    { method: 'POST', body }),
-        apiCall('/generate/linkedin', { method: 'POST', body }),
-      ])
-      return { email: emailRes.email, linkedin: linkedinRes.linkedin }
-    },
-    // Dedicated routes: /generate/email ignores any `format` and always writes a cold email.
+    // The app writes no outreach (your Claude run does); only the cover letter is left.
     coverLetter: (body) => apiCall('/generate/cover-letter', { method: 'POST', body }),
-    waas:        (body) => apiCall('/generate/waas', { method: 'POST', body }),
   },
 
   unified: {
@@ -352,10 +339,6 @@ export const api = {
       body: domain ? { domain } : {},
     }),
     findEmailForContact: (contactId) => apiCall(`/jobs/contacts/${contactId}/find-email`, { method: 'POST', body: {} }),
-    generate: (contactId, type = 'email', extraContext = '') => apiCall(`/jobs/contacts/${contactId}/generate`, {
-      method: 'POST',
-      body: { type, extraContext },
-    }),
     updateContact: (contactId, data) => apiCall(`/jobs/contacts/${contactId}`, { method: 'PUT', body: data }),
     deleteContact: (contactId) => apiCall(`/jobs/contacts/${contactId}`, { method: 'DELETE' }),
     scrapeLinkedInCompany: (id, linkedinUrl) => apiCall(`/jobs/${id}/scrape-linkedin-company`, {
@@ -522,7 +505,6 @@ export const api = {
     restoreRemovedRole: (id) => apiCall(`/review/${id}/restore`, { method: 'POST' }),
     findRoleContacts: (id, source) => apiCall(`/review/${id}/contacts`, { method: 'POST', body: { source } }),
     addRoleContacts: (id, people) => apiCall(`/review/${id}/contacts/add`, { method: 'POST', body: { people } }),
-    templateOutreach: (id) => apiCall(`/review/${id}/template-outreach`, { method: 'POST' }),
     saveOutreachDraft: (id, patch) => apiCall(`/review/outreach/${id}`, { method: 'PATCH', body: patch }),
     resumeFileLink: (id) => apiCall(`/career/resume/files/${id}/link`),
     tailoredResume: (id) => apiCall(`/career/tailored-resume/${id}`, { method: 'POST' }),

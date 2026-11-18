@@ -28,7 +28,6 @@ export default function ContactsPage() {
       <PageHeader
         title="Contacts"
         description="The companies you’re reaching out to. Open one to see every email planned for people there, each with the LinkedIn note that goes with it."
-        actions={<ButtonLink to="/people/templates">Email templates</ButtonLink>}
       />
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">

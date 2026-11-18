@@ -987,6 +987,8 @@ export interface ReviewRow {
   eligibility: string | null
   open_comments: number
   outreach: number
+  /** Drafts your Claude run hasn't written yet (an email or a LinkedIn note); Approve waits for them. */
+  writing: number
   /** Recruiters found; the next run writes the emails and notes. */
   outreach_due: boolean
   /** When people were last searched for. */
@@ -1049,6 +1051,9 @@ export interface OutreachDraft {
   title: string | null
   email: string | null
   linkedin_url: string | null
+  email_status?: string | null
+  /** Your Claude run hasn't written this one yet ("Claude is writing this email"). */
+  writing: boolean
   /** What breaks your outreach rules; Approve refuses until they're fixed. */
   problems: string[]
   /** Other roles whose outreach goes to this person; only the first approved asks them. */
@@ -1064,8 +1069,6 @@ export interface ApproveResult {
   repeated?: number
   /** The PDF, file and emails are still being done after Approve answered. */
   pending?: boolean
-  /** No recruiter found: the template goes to Gmail Drafts with an empty To line. */
-  blankDraft?: boolean
 }
 
 export interface PipelineSummary {
@@ -1104,15 +1107,6 @@ export const api = {
     if (email === 'without') params.set('noEmail', 'true')
     return legacy.unified.allContacts(params)
   },
-  templates: async (): Promise<{ templates: OutreachTemplates; defaults: { email: string; linkedin: string } }> => {
-    const d = await legacy.generate.templates()
-    const t = d.templates ?? {}
-    return {
-      templates: { email: t.email ?? '', linkedin: t.linkedin ?? '', variants: Array.isArray(t.variants) ? t.variants : [] },
-      defaults: { email: d.defaults?.email ?? '', linkedin: d.defaults?.linkedin ?? '' },
-    }
-  },
-  saveTemplates: (t: OutreachTemplates): Promise<unknown> => legacy.generate.saveTemplates(t),
   company: (id: number): Promise<{ company: CompanyDetail; contacts: CompanyContact[]; roles: CompanyRole[] }> => legacy.jobs.detail(id),
   companyContacts: (id: number): Promise<CompanyContact[]> => legacy.jobs.contacts(id),
   companyRoles: (id: number): Promise<CompanyRole[]> => legacy.jobs.roles(id),
@@ -1122,10 +1116,6 @@ export const api = {
     legacy.jobs.scrapeRoles(id, roleType),
   findEmails: (id: number): Promise<{ added?: number; updated?: number; message?: string; hintText?: string; domain?: string }> => legacy.jobs.findEmails(id),
   findEmailFor: (contactId: number): Promise<{ email: string | null; email_status?: string | null; message?: string }> => legacy.jobs.findEmailForContact(contactId),
-  writeTo: (contactId: number, type: 'cold_email' | 'linkedin', extraContext: string): Promise<{ subject?: string; body?: string; message?: string; dm?: string }> =>
-    legacy.jobs.generate(contactId, type, extraContext),
-  writeWaas: (body: { companyName: string; companyDescription?: string; contactName?: string; extraContext?: string; ycBatch?: string }): Promise<{ message: string }> =>
-    legacy.generate.waas(body),
   updateContact: (contactId: number, patch: Record<string, string>): Promise<CompanyContact> => legacy.jobs.updateContact(contactId, patch),
   deleteContact: (contactId: number): Promise<unknown> => legacy.jobs.deleteContact(contactId),
   /** Find people at a company, reporting progress as the server streams it. */
@@ -1173,7 +1163,6 @@ export const api = {
   messageCompany: (key: string): Promise<MessageCompanyDetail> => legacy.messages.company(key),
   planCompanies: async (): Promise<PlanCompany[]> => (await legacy.messages.plan()).companies ?? [],
   planCompany: (key: string): Promise<PlanCompanyDetail> => legacy.messages.planCompany(key),
-  writeMessage: (key: string, ref: string): Promise<MessagePerson> => legacy.messages.write(key, ref),
   dailyPlan: (): Promise<DailyPlanOverview> => legacy.dailyPlan.overview(),
   /** Just the evening-list settings: fast, unlike the whole overview. */
   dailyPlanSettings: (): Promise<DailyPlanSettings> => legacy.dailyPlan.getSettings(),
@@ -1288,8 +1277,6 @@ export const api = {
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */
   addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number; drafted?: number }> => legacy.career.addRoleContacts(id, people),
-  /** Write this role's emails and notes from the plain template now, for the user to edit. */
-  templateOutreach: (id: string): Promise<{ drafts: number; emails: number }> => legacy.career.templateOutreach(id),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

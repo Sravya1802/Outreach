@@ -60,7 +60,7 @@ export default function OutboxPage() {
   if (!gmail.data?.connected) {
     return (
       <Page>
-        <PageHeader title="Outbox" description="Emails scheduled from your Gmail, their follow-ups, and the replies that came back." />
+        <PageHeader title="Outbox" description="Emails waiting for your OK or scheduled from your Gmail, and the replies that came back. Your Claude run writes them; the app writes none." />
         <div className="border-t border-rule">
           <EmptyState title="Connect your Gmail first" description="Outreach sends from your own address, so replies come to you and can be tracked here."
             action={<ButtonLink to="/integrations/gmail" variant="primary" size="sm">Connect Gmail</ButtonLink>} />

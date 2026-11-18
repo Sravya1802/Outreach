@@ -21,37 +21,23 @@ const CONTACT_STATUSES = [
 ]
 const key = (id: number) => ['company', id] as const
 
-type Kind = 'email' | 'linkedin' | 'waas'
+type Kind = 'email' | 'linkedin'
 
 function Composer({ company, contact, onClose }: { company: CompanyDetail; contact: CompanyContact; onClose: () => void }) {
   const qc = useQueryClient()
   const toast = useToast()
+  // The app writes nothing: what's here is yours (or saved on the contact before).
   const [kind, setKind] = useState<Kind>('email')
-  const [extra, setExtra] = useState('')
   const [subject, setSubject] = useState(contact.generated_subject ?? '')
   const [body, setBody] = useState(contact.generated_body ?? '')
   const [dm, setDm] = useState(contact.generated_dm ?? '')
-  const [waas, setWaas] = useState('')
-
-  const write = useMutation({
-    mutationFn: async () => {
-      if (kind === 'waas') {
-        const r = await api.writeWaas({ companyName: company.name, companyDescription: companyBlurb(company), contactName: contact.name ?? undefined, extraContext: extra, ycBatch: company.yc_batch ?? undefined })
-        setWaas(r.message)
-      } else {
-        const r = await api.writeTo(contact.id, kind === 'email' ? 'cold_email' : 'linkedin', extra)
-        if (kind === 'email') { setSubject(r.subject ?? ''); setBody(r.body ?? '') } else setDm(r.message || r.dm || r.body || '')
-      }
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
   const gmail = useQuery({ queryKey: qk.gmail, queryFn: api.gmailStatus })
   const send = useMutation({
     mutationFn: (when: 'best' | 'now') => api.scheduleEmail({ contactId: contact.id, subject, body, when }),
     onSuccess: (r) => {
-      toast.success(r.status === 'sent' ? `Sent to ${contact.name || contact.email}. Follow-ups are scheduled.`
+      toast.success(r.status === 'sent' ? `Sent to ${contact.name || contact.email}.`
         : r.status === 'failed' ? `Couldn’t send: ${r.error || 'unknown error'}`
-        : `Scheduled for ${r.when} their time. Follow-ups go out on their own unless they reply.`)
+        : `Scheduled for ${r.when} their time.`)
       void qc.invalidateQueries({ queryKey: key(company.id) })
       void qc.invalidateQueries({ queryKey: qk.outbox })
       onClose()
@@ -65,7 +51,7 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const text = kind === 'email' ? `${subject ? `Subject: ${subject}\n\n` : ''}${body}` : kind === 'linkedin' ? dm : waas
+  const text = kind === 'email' ? `${subject ? `Subject: ${subject}\n\n` : ''}${body}` : dm
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); toast.success('Copied') } catch { toast.error('Couldn’t copy; select the text instead') }
   }
@@ -77,12 +63,9 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
         <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
       </div>
       <Segmented label="Message type" value={kind} onChange={setKind}
-        options={[{ value: 'email', label: 'Email' }, { value: 'linkedin', label: 'LinkedIn' }, ...(company.yc_batch ? [{ value: 'waas' as const, label: 'Work at a Startup' }] : [])]} />
+        options={[{ value: 'email', label: 'Email' }, { value: 'linkedin', label: 'LinkedIn' }]} />
       <div className="mt-4 space-y-3">
-        <Field label="Anything to mention?" hint="Optional: a role you applied to, a shared interest, a project of theirs.">
-          {f => <Input {...f} value={extra} onChange={e => setExtra(e.target.value)} placeholder="I applied to the SWE intern role last night" />}
-        </Field>
-        <Button variant="primary" onClick={() => write.mutate()} loading={write.isPending}>{text.trim() ? 'Rewrite' : 'Write it'}</Button>
+        <p className="text-[13px] text-subtle">Write it yourself here. The app doesn’t write outreach: your Claude run writes the emails for roles in your queue.</p>
         {kind === 'email' && (
           <>
             <Field label="Subject">{f => <Input {...f} value={subject} onChange={e => setSubject(e.target.value)} />}</Field>
@@ -94,7 +77,6 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
             {f => <Textarea {...f} rows={5} value={dm} onChange={e => setDm(e.target.value)} />}
           </Field>
         )}
-        {kind === 'waas' && <Field label="Message">{f => <Textarea {...f} rows={6} value={waas} onChange={e => setWaas(e.target.value)} />}</Field>}
         {text.trim() && (
           <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
             {kind === 'email' && contact.email && gmail.data?.connected && (
@@ -118,11 +100,11 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
           </div>
         )}
         {kind === 'email' && contact.email && gmail.data?.connected && text.trim() && (
-          <p className="text-[13px] text-subtle">“Best time” is 8–11 AM on a weekday in their time zone. Two short follow-ups go out in the same thread 4 and 10 business days later, unless they reply.</p>
+          <p className="text-[13px] text-subtle">“Best time” is 8–11 AM on a weekday in their time zone. No follow-ups are sent on their own.</p>
         )}
         {kind === 'email' && gmail.data && !gmail.data.connected && text.trim() && (
           <p className="flex flex-wrap items-center gap-2 text-[13px] text-subtle">
-            Connect your Gmail to send from here, schedule follow-ups and track replies.
+            Connect your Gmail to send from here and track replies.
             <ButtonLink to="/integrations/gmail" size="sm" variant="ghost">Connect Gmail</ButtonLink>
           </p>
         )}

@@ -107,7 +107,7 @@ describe('bulk approve', () => {
   })
   it('holds back a recruiter role with no outreach, but not one that emails nobody', () => {
     expect(needsOutreach({ ...row, outreach: 0 })).toBe(true)
-    // No recruiter found: Approve is open (the template goes to Gmail with an empty To line), but never in bulk.
+    // No recruiter found: Approve is open (no email goes out; it waits for Apply without referral), but never in bulk.
     expect(canApprove({ ...row, outreach: 0 })).toBe(true)
     expect(canApprove({ ...row, outreach: 0, outreach_due: true })).toBe(false)
     expect(safeToBulk({ ...row, outreach: 0 })).toBe(false)
@@ -115,9 +115,16 @@ describe('bulk approve', () => {
     expect(canApprove({ ...row, outreach: 0, referral_mode: 'none' })).toBe(true)
   })
   it('says where a role with no outreach stands', () => {
-    expect(outreachLine({ outreach_due: true, contacts_at: '2026-11-06' })).toBe('Emails coming')
+    expect(outreachLine({ outreach_due: true, contacts_at: '2026-11-06' })).toBe('Claude is writing the emails')
     expect(outreachLine({ outreach_due: false, contacts_at: '2026-11-06' })).toBe('No recruiter found')
     expect(outreachLine({ outreach_due: false, contacts_at: null })).toBe('No outreach yet')
+  })
+  it('waits while Claude is still writing any email or note', () => {
+    expect(canApprove({ ...row, outreach: 3, writing: 2 })).toBe(false)
+    expect(safeToBulk({ ...row, outreach: 3, writing: 1 })).toBe(false)
+    expect(canApprove({ ...row, outreach: 3, writing: 0 })).toBe(true)
+    expect(outreachState({ ...row, contacts_at: null, outreach: 3, writing: 1 })).toBe('coming')
+    expect(outreachState({ ...row, contacts_at: null, outreach: 3, writing: 0 })).toBe('written')
   })
   it('leaves anything under the ATS rule or with an eligibility question out of Select all', () => {
     expect(safeToBulk(row)).toBe(true)
@@ -286,9 +293,10 @@ describe('skills to learn and deadlines', () => {
     expect(deadlineLabel(null)).toBeNull()
     expect(deadlineLabel('soon')).toBeNull()
   })
-  it('approves a no-recruiter role with its template, never in bulk', () => {
-    const r = { emails: 0, inGmail: 0, notes: 0, skipped: [], blankDraft: true }
-    expect(approvedLine(r)).toMatch(/Gmail Drafts with the resume attached and an empty To line/)
+  it('approves a no-recruiter role without any email (the app writes none)', () => {
+    const r = { emails: 0, inGmail: 0, notes: 0, skipped: [] }
+    expect(approvedLine(r)).toMatch(/No outreach went out, so it applies only when you press Apply without referral/)
+    expect(approvedLine(r)).not.toMatch(/template|Gmail Drafts/)
   })
 })
 

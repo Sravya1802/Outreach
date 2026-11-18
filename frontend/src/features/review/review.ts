@@ -65,9 +65,8 @@ export function runLine(run: PipelineRun | null, now = Date.now()) {
 const againLine = (n = 0) => (n ? ` ${n === 1 ? '1 person' : `${n} people`} already asked for another role ${n === 1 ? 'wasn’t' : 'weren’t'} contacted again.` : '')
 
 /** What Approve did, for the toast. */
-export function approvedLine({ emails, notes, repeated, blankDraft }: ApproveResult) {
+export function approvedLine({ emails, notes, repeated }: ApproveResult) {
   const again = againLine(repeated)
-  if (blankDraft) return 'Approved. Your template goes to Gmail Drafts with the resume attached and an empty To line: add the address you find and send it. It applies only when you press Apply without referral.'
   if (!emails && notes) return `Approved. LinkedIn notes are waiting in People → Contacts; mark each one sent, and applying waits 2 business days from then.${again}`
   if (!emails) return `Approved.${again} No outreach went out, so it applies only when you press Apply without referral.`
   const count = emails === 1 ? '1 email' : `${emails} emails`
@@ -84,20 +83,21 @@ export const visaLine = (s: string | null | undefined) => (s === 'citizens_only'
 export const needsOutreach = (r: Pick<ReviewRow, 'referral_mode' | 'outreach'>) => ['recruiters', 'recruiters_engineers'].includes(r.referral_mode) && r.outreach === 0
 
 /** Where a role with no outreach stands. */
-export const outreachLine = (r: Pick<ReviewRow, 'outreach_due' | 'contacts_at'>) => (r.outreach_due ? 'Emails coming' : r.contacts_at ? 'No recruiter found' : 'No outreach yet')
+export const outreachLine = (r: Pick<ReviewRow, 'outreach_due' | 'contacts_at'>) => (r.outreach_due ? 'Claude is writing the emails' : r.contacts_at ? 'No recruiter found' : 'No outreach yet')
 
 export type OutreachState = 'written' | 'coming' | 'none' | 'nobody' | 'self'
 
 /** The outreach menu: one state per role, the same ones the badges show. */
 export const OUTREACH_OPTIONS: { value: OutreachState; label: string }[] = [
   { value: 'written', label: 'Has outreach' },
-  { value: 'coming', label: 'Emails coming' },
+  { value: 'coming', label: 'Claude is writing' },
   { value: 'none', label: 'No outreach yet' },
   { value: 'nobody', label: 'No recruiter found' },
   { value: 'self', label: 'My contact or none' },
 ]
 
-export function outreachState(r: Pick<ReviewRow, 'referral_mode' | 'outreach' | 'outreach_due' | 'contacts_at'>): OutreachState {
+export function outreachState(r: Pick<ReviewRow, 'referral_mode' | 'outreach' | 'outreach_due' | 'contacts_at'> & { writing?: number }): OutreachState {
+  if (r.writing) return 'coming'
   if (r.outreach > 0) return 'written'
   if (!needsOutreach(r)) return 'self'
   return r.outreach_due ? 'coming' : r.contacts_at ? 'nobody' : 'none'
@@ -115,11 +115,12 @@ export const appliedLine = (emailsWaiting: number) =>
   `Marked as applied. Nothing will apply for you.${emailsWaiting ? ` ${emailsWaiting === 1 ? '1 email is' : `${emailsWaiting} emails are`} still in Outbox: OK or discard ${emailsWaiting === 1 ? 'it' : 'them'} there.` : ''}`
 
 /** A role Approve can take. */
-// No recruiter found: Approve puts the template in Gmail Drafts with an empty To line. Emails a run is about to write are waited for.
-export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due'>) => r.status === 'ready' && r.check_status === 'passed' && !(needsOutreach(r) && r.outreach_due)
+// Emails your Claude run is still writing are waited for: nothing goes out half written. No recruiter found: the role is held for Apply without referral.
+export const canApprove = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due'> & { writing?: number }) =>
+  r.status === 'ready' && r.check_status === 'passed' && !(needsOutreach(r) && r.outreach_due) && !r.writing
 
 /** What Select all takes: nothing under the ATS rule or with an eligibility question goes in unread. */
-export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due' | 'ats_after' | 'eligibility' | 'sponsorship'>) => canApprove(r) && !needsOutreach(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
+export const safeToBulk = (r: Pick<ReviewRow, 'status' | 'check_status' | 'referral_mode' | 'outreach' | 'outreach_due' | 'ats_after' | 'eligibility' | 'sponsorship'> & { writing?: number }) => canApprove(r) && !needsOutreach(r) && atsOk(r.ats_after) && !r.eligibility && !visaLine(r.sponsorship)
 
 /** How a bulk approve went, for the toast. */
 export function bulkLine(done: ApproveResult[], failed: number) {

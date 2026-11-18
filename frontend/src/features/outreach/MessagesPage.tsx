@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, Clock, Copy, ExternalLink, Mail, PenLine, RefreshCw } from 'lucide-react'
+import { ChevronDown, Clock, Copy, ExternalLink, Mail } from 'lucide-react'
 import { api, type MessageCompany, type MessageCompanyDetail, type MessageFilter, type MessagePerson } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { cn } from '@/lib/cn'
@@ -80,46 +80,19 @@ function CompanyRow({ c, open, onToggle }: { c: MessageCompany; open: boolean; o
 }
 
 function CompanyPeople({ companyKey }: { companyKey: string }) {
-  const qc = useQueryClient()
-  const toast = useToast()
   const detail = useQuery({ queryKey: qk.messageCompany(companyKey), queryFn: () => api.messageCompany(companyKey) })
-  const [progress, setProgress] = useState<string | null>(null)
-  const writeAll = useMutation({
-    mutationFn: async (people: MessagePerson[]) => {
-      let i = 0
-      for (const p of people) {
-        i += 1
-        setProgress(`Writing ${i} of ${people.length}…`)
-        await api.writeMessage(companyKey, p.ref)
-      }
-    },
-    onSuccess: () => toast.success('Messages written'),
-    onError: (e: Error) => toast.error(e.message),
-    onSettled: () => {
-      setProgress(null)
-      void qc.invalidateQueries({ queryKey: qk.messageCompany(companyKey) })
-      void qc.invalidateQueries({ queryKey: ['message-companies'] })
-    },
-  })
-
   if (detail.error) return <div className="pb-4"><ErrorState compact error={detail.error} onRetry={() => detail.refetch()} /></div>
   if (detail.isLoading || !detail.data) return <div className="pb-4"><Skeleton className="h-24" /></div>
   const d = detail.data
-  const missing = d.people.filter(p => !p.note)
 
   return (
     <div className="space-y-3 pb-5 pl-7">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[13px] text-muted">
           {d.role
-            ? <>Messages ask about <a href={d.role.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">{d.role.title}</a>, the best open role for you here.</>
-            : 'No open role for you here right now, so messages ask for a short chat about the team.'}
+            ? <>The best open role for you here: <a href={d.role.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">{d.role.title}</a>. The app doesn’t write messages: queue the role and your Claude run writes its emails and notes.</>
+            : 'No open role for you here right now. The app doesn’t write messages.'}
         </p>
-        {missing.length > 0 && (
-          <Button size="sm" variant="primary" icon={<PenLine className="size-3.5" />} loading={writeAll.isPending} onClick={() => writeAll.mutate(missing)}>
-            {progress ?? `Write messages for ${missing.length === d.people.length ? 'everyone' : `the other ${missing.length}`}`}
-          </Button>
-        )}
       </div>
       <ul className="space-y-3">
         {d.people.map(p => <PersonCard key={p.ref} p={p} company={d} />)}
@@ -136,7 +109,6 @@ function PersonCard({ p, company }: { p: MessagePerson; company: MessageCompanyD
     void qc.invalidateQueries({ queryKey: qk.messageCompany(company.key) })
     void qc.invalidateQueries({ queryKey: ['message-companies'] })
   }
-  const write = useMutation({ mutationFn: () => api.writeMessage(company.key, p.ref), onSuccess: refresh, onError: (e: Error) => toast.error(e.message) })
   const mark = useMutation({
     mutationFn: (status: string) => api.updateContact(p.contactId ?? 0, { status }),
     onSuccess: () => { toast.success('Marked as sent'); refresh() },
@@ -168,9 +140,6 @@ function PersonCard({ p, company }: { p: MessagePerson; company: MessageCompanyD
             <span className={status.tone}>{status.text}</span>
           </p>
         </div>
-        {p.note
-          ? <Button size="sm" variant="ghost" icon={<RefreshCw className="size-3.5" />} loading={write.isPending} onClick={() => write.mutate()}>Rewrite</Button>
-          : <Button size="sm" icon={<PenLine className="size-3.5" />} loading={write.isPending} onClick={() => write.mutate()}>Write message</Button>}
       </div>
 
       {p.note && (

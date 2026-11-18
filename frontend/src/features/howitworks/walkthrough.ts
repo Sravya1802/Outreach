@@ -64,8 +64,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/people/messages': 'Every company where you know someone. Each person gets a LinkedIn note and an email written for them. Copy, send, and mark as sent.',
       '/people/contacts': 'Everyone you’ve found at the companies you track, with an email address when one was found.',
       '/people/referrers': 'The people you can ask yourself. Roles at these companies skip recruiter emails and show who to ask.',
-      '/people/templates': 'What your Claude runs follow for emails and LinkedIn notes, and the tone the app’s own drafts use.',
-      '/people/outbox': 'Emails scheduled from your Gmail, their follow-ups, and the replies that came back. Needs Gmail connected.',
+      '/people/outbox': 'Emails your Claude run wrote, waiting for your OK or scheduled from your Gmail, and the replies that came back. Needs Gmail connected.',
     },
   },
   profile: {

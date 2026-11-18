@@ -36,7 +36,6 @@ const RolePage = lazyWithRetry(() => import('@/features/review/RolePage'), 'Role
 const AppliedPage = lazyWithRetry(() => import('@/features/resumes/AppliedPage'), 'AppliedPage')
 const ResumeJobPage = lazyWithRetry(() => import('@/features/resumes/ResumeJobPage'), 'ResumeJobPage')
 const ContactsPage = lazyWithRetry(() => import('@/features/outreach/ContactsPage'), 'ContactsPage')
-const TemplatesPage = lazyWithRetry(() => import('@/features/outreach/TemplatesPage'), 'TemplatesPage')
 const OutboxPage = lazyWithRetry(() => import('@/features/outreach/OutboxPage'), 'OutboxPage')
 const MessagesPage = lazyWithRetry(() => import('@/features/outreach/MessagesPage'), 'MessagesPage')
 const LoginPage = lazyWithRetry(() => import('@/features/auth/LoginPage'), 'LoginPage')
@@ -111,7 +110,8 @@ function SignedInRoutes() {
         <Route path="/people" element={<Navigate to="/people/contacts" replace />} />
         <Route path="/people/contacts" element={<ContactsPage />} />
         <Route path="/people/referrers" element={<ReferrersPage />} />
-        <Route path="/people/templates" element={<TemplatesPage />} />
+        {/* The app writes no outreach any more, so there are no templates to edit. */}
+        <Route path="/people/templates" element={<Navigate to="/people/messages" replace />} />
         <Route path="/people/outbox" element={<OutboxPage />} />
         <Route path="/people/messages" element={<MessagesPage />} />
 

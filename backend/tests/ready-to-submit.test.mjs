@@ -23,14 +23,16 @@ test('readyKind: LinkedIn is never filled; its company-board twin is', () => {
   assert.equal(readyKind('https://grnh.se/whd76nsp1us', null).kind, 'fill');
 });
 
-test('sortReady: closing soonest first, no date last, then longest waiting', () => {
+test('sortReady: closing soonest first, then no date, then already closed', () => {
   const rows = [
     { id: 'a', deadline: null, waiting_since: '2026-11-09' },
     { id: 'b', deadline: '2026-11-20', waiting_since: '2026-11-14' },
     { id: 'c', deadline: null, waiting_since: '2026-11-01' },
     { id: 'd', deadline: '2026-11-18', waiting_since: '2026-11-16' },
   ];
-  assert.deepEqual(sortReady(rows).map(r => r.id), ['d', 'b', 'c', 'a']);
+  const now = new Date(Date.UTC(2026, 10, 17, 12));
+  assert.deepEqual(sortReady(rows, now).map(r => r.id), ['d', 'b', 'c', 'a']);
+  assert.deepEqual(sortReady([...rows, { id: 'gone', deadline: '2026-11-13', waiting_since: '2026-11-01' }], now).map(r => r.id), ['d', 'b', 'c', 'a', 'gone']);
 });
 
 test('fill tokens: one role, 24 hours, and never interchangeable with an OAuth state', () => {

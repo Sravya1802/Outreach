@@ -501,6 +501,8 @@ export const api = {
     downloadResumeFile: (id, filename) => downloadAuthenticatedFile(`/career/resume/files/${id}/download`, filename),
     resumeFileBlob: (id) => fetchAuthenticatedBlob(`/career/resume/files/${id}/download`),
     reviewQueue: () => apiCall('/review'),
+    readyToSubmit: () => apiCall('/review/ready'),
+    fillLink: (id) => apiCall(`/review/${id}/fill-link`, { method: 'POST' }),
     reviewRuns: () => apiCall('/review/runs'),
     reviewCompany: (name) => apiCall(`/review/company?name=${encodeURIComponent(name)}`),
     runConfig: () => apiCall('/review/config'),

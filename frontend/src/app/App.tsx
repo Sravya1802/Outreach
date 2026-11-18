@@ -29,6 +29,7 @@ const TrackerPage = lazyWithRetry(() => import('@/features/applications/TrackerP
 const ProjectsPage = lazyWithRetry(() => import('@/features/profile/ProjectsPage'), 'ProjectsPage')
 const ResumesPage = lazyWithRetry(() => import('@/features/resumes/ResumesPage'), 'ResumesPage')
 const ToApplyPage = lazyWithRetry(() => import('@/features/toapply/ToApplyPage'), 'ToApplyPage')
+const ReadyPage = lazyWithRetry(() => import('@/features/review/ReadyPage'), 'ReadyPage')
 const ReferrersPage = lazyWithRetry(() => import('@/features/outreach/ReferrersPage'), 'ReferrersPage')
 const ReviewPage = lazyWithRetry(() => import('@/features/review/ReviewPage'), 'ReviewPage')
 const RolePage = lazyWithRetry(() => import('@/features/review/RolePage'), 'RolePage')
@@ -94,6 +95,7 @@ function SignedInRoutes() {
         <Route path="/dashboard/tracker" element={<TrackerPage />} />
         <Route path="/to-apply" element={<ToApplyPage />} />
         <Route path="/review" element={<ReviewPage />} />
+        <Route path="/review/ready" element={<ReadyPage />} />
         <Route path="/review/:id" element={<RolePage />} />
         <Route path="/resumes" element={<Navigate to="/resumes/jobs" replace />} />
         <Route path="/resumes/jobs" element={<ResumesPage />} />

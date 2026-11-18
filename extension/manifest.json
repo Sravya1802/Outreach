@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Scout'n'Jobs filler",
+  "version": "1.0.0",
+  "description": "Fills your approved Scout'n'Jobs applications in your own browser. You do the CAPTCHA and press Submit.",
+  "permissions": ["storage", "scripting", "webNavigation", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://scoutnjobs.vercel.app/*", "http://localhost:5173/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

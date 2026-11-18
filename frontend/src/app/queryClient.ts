@@ -45,6 +45,7 @@ export const qk = {
   projects: ['planned-projects'] as const,
   resumeJobs: ['resume-jobs'] as const,
   review: ['review'] as const,
+  ready: ['review', 'ready'] as const,
   reviewRole: (id: string) => ['review', id] as const,
   reviewRuns: ['review', 'runs'] as const,
   reviewCompany: (name: string) => ['review', 'company', name] as const,

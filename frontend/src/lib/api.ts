@@ -922,6 +922,26 @@ export interface ParsedResume {
 export type ReviewStatus = 'queued' | 'in_progress' | 'ready' | 'revision_requested' | 'approved' | 'applied' | 'closed'
 export type ReferralMode = 'recruiters' | 'recruiters_engineers' | 'my_contact' | 'none'
 
+/** A role waiting for the user to submit it: 'fill' opens in the filler extension, 'linkedin' is applied to by hand. */
+export interface ReadyRole {
+  id: string
+  company: string
+  title: string
+  location: string | null
+  deadline: string | null
+  waiting_since: string
+  why: string | null
+  apply_url: string
+  kind: 'fill' | 'linkedin'
+  open_url: string
+  filled_at: string | null
+  filled: number | null
+  unanswered: string[]
+  resume_attached: boolean | null
+}
+
+export interface FillLink { token: string; url: string; company: string; title: string }
+
 export interface ReviewRow {
   id: string
   status: ReviewStatus
@@ -1258,6 +1278,10 @@ export const api = {
   removeRole: (id: string): Promise<{ ok: boolean }> => legacy.career.removeRole(id),
   /** Take back a change request and keep the current version (Revising → Ready). */
   keepVersion: (id: string): Promise<{ ok: boolean }> => legacy.career.keepVersion(id),
+  /** Approved roles the app couldn't submit (a CAPTCHA, a site it can't fill), closing soonest first. */
+  readyToSubmit: (): Promise<{ roles: ReadyRole[] }> => legacy.career.readyToSubmit(),
+  /** A signed 24-hour link for the filler extension to fill one role's application. */
+  fillLink: (id: string): Promise<FillLink> => legacy.career.fillLink(id),
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */

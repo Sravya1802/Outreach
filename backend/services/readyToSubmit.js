@@ -38,10 +38,19 @@ export function formUrl(url) {
   return u.toString();
 }
 
-/** Closing soonest first (no date last), then the longest waiting. Pure. */
-export function sortReady(rows) {
-  const day = (d) => (d ? new Date(d).getTime() : Infinity);
-  return [...rows].sort((a, b) => day(a.deadline) - day(b.deadline) || new Date(a.waiting_since) - new Date(b.waiting_since));
+/** Closing soonest first, then no date, then already closed; ties by longest waiting. Pure. */
+export function sortReady(rows, now = new Date()) {
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const key = (d) => {
+    if (!d) return [1, 0];
+    const t = new Date(d).getTime();
+    return t < today ? [2, -t] : [0, t];
+  };
+  return [...rows].sort((a, b) => {
+    const [ra, ta] = key(a.deadline);
+    const [rb, tb] = key(b.deadline);
+    return ra - rb || ta - tb || new Date(a.waiting_since) - new Date(b.waiting_since);
+  });
 }
 
 /** Kind and link for one role: 'fill' (the extension opens `open_url`) or 'linkedin' (by hand). Pure. */

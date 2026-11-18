@@ -391,8 +391,10 @@ export async function sendReviewDigest(userId) {
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id WHERE j.user_id = $1`,
     [userId],
   );
-  if (!d.ready && !d.tomorrow && !d.emails) return { skipped: 'nothing' };
-  await tell(userId, reviewMessage(d));
+  const { readyRoles } = await import('./readyToSubmit.js');
+  const submit = await readyRoles(userId, { resolve: false }).catch(() => []);
+  if (!d.ready && !d.tomorrow && !d.emails && !submit.length) return { skipped: 'nothing' };
+  await tell(userId, reviewMessage({ ...d, submit }));
   return d;
 }
 

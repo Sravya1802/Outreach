@@ -28,8 +28,8 @@ export function open(sealed, env) {
   return Buffer.concat([d.update(Buffer.from(ct, 'base64url')), d.final()]).toString('utf8');
 }
 
-function hmac(data, env) {
-  return crypto.createHmac('sha256', key(env)).update(`oauth-state:${data}`).digest('base64url');
+function hmac(data, env, purpose = 'oauth-state') {
+  return crypto.createHmac('sha256', key(env)).update(`${purpose}:${data}`).digest('base64url');
 }
 
 /** State binding a user id to a short-lived sign-in attempt. */
@@ -48,6 +48,31 @@ export function verifyState(state, { now = Date.now(), env } = {}) {
     const { u, e } = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (typeof u !== 'string' || !u || typeof e !== 'number' || e < now) return null;
     return u;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A link for the browser extension to fill one role's application: who and
+ * which role, valid 24 hours. Signed for this purpose only, so an OAuth state
+ * can't be used as one (or the other way round).
+ */
+export function signFillToken(userId, planItemId, { ttlMs = 24 * 3600_000, now = Date.now(), env } = {}) {
+  const body = b64u(JSON.stringify({ u: String(userId), p: String(planItemId), e: now + ttlMs }));
+  return `${body}.${hmac(body, env, 'fill-token')}`;
+}
+
+/** { userId, planItemId } inside a valid, unexpired fill token, else null. */
+export function verifyFillToken(token, { now = Date.now(), env } = {}) {
+  const [body, sig] = String(token || '').split('.');
+  if (!body || !sig) return null;
+  const expected = hmac(body, env, 'fill-token');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const { u, p, e } = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (typeof u !== 'string' || !u || !/^\d+$/.test(String(p)) || typeof e !== 'number' || e < now) return null;
+    return { userId: u, planItemId: String(p) };
   } catch {
     return null;
   }

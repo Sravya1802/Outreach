@@ -6,6 +6,7 @@ import { addReferrer, listReferrers, removeReferrer } from '../services/referrer
 import {
   addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, templateOutreach, versionPdf,
 } from '../services/tailorPipeline.js';
+import { fillLink, readyRoles } from '../services/readyToSubmit.js';
 
 const router = Router();
 
@@ -20,6 +21,15 @@ const withId = (fn) => async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Bad id' });
   try { await fn(req, res, id); } catch (err) { fail(res, err); }
 };
+
+// Ready to submit: approved roles the app couldn't send (a CAPTCHA, a site it can't fill), for the browser extension.
+router.get('/ready', async (req, res) => {
+  try { res.json({ roles: await readyRoles(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/:id/fill-link', withId(async (req, res, id) => {
+  res.json(await fillLink(req.user.id, id));
+}));
 
 router.get('/', async (req, res) => {
   try {

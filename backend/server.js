@@ -38,6 +38,7 @@ import dailyPlanRouter from './routes/dailyPlan.js';
 import messagesRouter from './routes/messages.js';
 import trackerRouter from './routes/tracker.js';
 import reviewRouter from './routes/review.js';
+import fillRouter from './routes/fill.js';
 import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
@@ -129,6 +130,8 @@ app.get('/api/health', (req, res) => {
 app.get('/api/github/callback', githubCallback);
 app.get('/api/whatsapp/webhook', whatsappWebhookVerify);
 app.post('/api/whatsapp/webhook', whatsappWebhookReceive);
+// The filler extension: a signed per-role link stands in for the sign-in.
+app.use('/api/fill', fillRouter);
 
 // ── Auth middleware for everything else under /api ──────────────────────────
 // Controlled by AUTH_MODE env var. See backend/middleware/requireAuth.js.

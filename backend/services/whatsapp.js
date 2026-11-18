@@ -509,15 +509,30 @@ export function runMessage({ roles_done: done, roles_failed: failed = 0, outreac
   return { params: { header: done || !outreach ? plural(done, 'resume') : plural(outreach, 'role'), body: [line] }, text, plain: text.replace(/\*/g, ''), subject: line };
 }
 
-/** The 9 PM digest: what's ready, what's going tomorrow and what has sat for over a day. */
-export function reviewMessage({ ready = 0, unreviewed = 0, tomorrow = 0, emails = 0 }) {
+const closesOn = (d) => new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(d));
+
+/** "Archer · FAST Analyst · closes Fri, Nov 20" for the Ready to submit list. */
+function submitLine(r) {
+  return [r.company, r.title, r.deadline ? `closes ${closesOn(r.deadline)}` : '', r.kind === 'linkedin' ? 'apply on LinkedIn by hand' : ''].filter(Boolean).join(' · ');
+}
+
+/**
+ * The 9 PM digest: what's ready, what's going tomorrow, what has sat for over
+ * a day, and the approved roles ready to submit by hand (closing soonest first).
+ */
+export function reviewMessage({ ready = 0, unreviewed = 0, tomorrow = 0, emails = 0, submit = [] }) {
+  const soon = submit.find(r => r.deadline);
   const lines = [
-    `${plural(ready, 'role')} ready for review`,
+    ready || !submit.length ? `${plural(ready, 'role')} ready for review` : '',
     unreviewed ? `${unreviewed} of them unreviewed for over a day` : '',
+    submit.length ? `${plural(submit.length, 'role')} ready to submit${soon ? ` (${soon.company} closes ${closesOn(soon.deadline)})` : ''}` : '',
     tomorrow ? `${plural(tomorrow, 'approved role')} due to apply by tomorrow` : '',
     emails ? `${plural(emails, 'email')} waiting for your OK in Outbox` : '',
   ].filter(Boolean);
-  const text = `*Tonight’s review*\n\n${lines.map(l => `• ${l}`).join('\n')}\n\n${SITE}/review`;
+  const list = submit.length
+    ? `\n\n*Ready to submit* (Open fills the form; you do the CAPTCHA and press Submit)\n${submit.slice(0, 15).map(r => `• ${submitLine(r)}`).join('\n')}${submit.length > 15 ? `\n• and ${submit.length - 15} more` : ''}\n${SITE}/review/ready`
+    : '';
+  const text = `*Tonight’s review*\n\n${lines.map(l => `• ${l}`).join('\n')}${list}\n\n${SITE}/review`;
   return { params: { header: plural(ready, 'role'), body: [lines.join(' · ')] }, text, plain: text.replace(/\*/g, ''), subject: lines[0] };
 }
 

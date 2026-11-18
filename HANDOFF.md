@@ -2138,3 +2138,46 @@ The stored app password is fine: a login test on 2026-11-17 was accepted.
 - Closed before anything happened: GALLO, Vertex, MSD
 
 Nothing was sent; the 27 outbox drafts still need the user's OK.
+
+## 2026-11-17 — Ready to submit + the Scout'n'Jobs filler extension
+
+**Why:** approved roles the auto-applier can't send are left at stage `needs_you`. These are CAPTCHA forms (Greenhouse, Ashby, Lever) and sites it can't fill (Workday, LinkedIn). The user wants them filled, then to do the CAPTCHA and press Submit herself.
+
+**Design (user's choice: Chrome extension):** a form filled on the VM can't be handed to her browser, so the filling happens in her browser.
+
+**Backend:**
+- `services/readyToSubmit.js` builds the list: approved `tailor_jobs` with `plan_items.stage = 'needs_you'`.
+  - Sorted by deadline (`COALESCE(pi.apply_deadline, scraped_roles.apply_deadline)`), then no date, then already closed.
+  - A LinkedIn role resolves once to the company's own board (`boardResolver`); the result is cached in `plan_items.fill_report.board_*`. With no board found, it goes on the by-hand list.
+  - `formUrl` adds Lever's `/apply` and Ashby's `/application`.
+- `routes/review.js` (signed in):
+  - `GET /review/ready`
+  - `POST /review/:id/fill-link` returns a 24 h token signed by `secretBox.signFillToken`, with purpose `fill-token`, so it can't be used as an OAuth state.
+- `routes/fill.js` is mounted before `requireAuth`; the token stands in for the sign-in:
+  - `GET /api/fill/:token`: profile, plus the resume PDF in base64.
+  - `POST /answers`: matched with `pickAnswer`; a miss is saved as a pending answer.
+  - `POST /report`: saved to `plan_items.fill_report`.
+  - `POST /submitted`: calls `markRoleApplied`.
+- Migration `054_fill_report.sql` (applied live).
+- The 9 PM digest (`reviewMessage({ submit })`) lists them, nearest deadline first. Still one notification a day.
+
+**Extension (`extension/`, zip at `frontend/public/scoutnjobs-filler.zip`; rebuild the zip on any change):**
+- How it opens a role: `bridge.js` marks the app page; Open sends a postMessage; the background opens the tab; `filler.js` is injected into every frame on load.
+- Filling order: resume first, then a 4 s wait. Greenhouse reads the resume and clears name and email, so each field is refilled up to 3 times.
+- React selects need a full pointer sequence (pointerdown, mousedown, pointerup, mouseup, click); a plain `.click()` doesn't open them.
+- Searchable selects get the first 3 words of the answer typed in.
+- Options are matched by shared words and numeric ranges; Masters is mapped to "Master's Degree".
+- It never touches CAPTCHA frames or LinkedIn, and never submits. Confirmation-page text marks the role applied, but only after the tab was filled.
+
+**Tested live (fill only, never submitted):**
+- Greenhouse (Verkada): 26 fields. Flagged: "When do you graduate?" (no May 2027 option) and work authorization (no saved answer).
+- Ashby (Netic).
+- Lever (Global Lending Services).
+- The site end to end: the extension is detected, Open fills the form, the install box shows without it, no sideways scroll on a phone.
+- These tests wrote `fill_report` for roles 5039/5118/5929, and pending questions to her answer bank.
+
+**Not tested live:**
+- Workday: it needs her sign-in first; the filler then fills each step as it appears.
+- Auto-detecting the confirmation page: it can't be tested without submitting.
+
+Commits: 2b29883 (backend), cfc7581 (extension, page). VM: 106cf4e, df67b68 (backend only; frontend conflicts resolved to the VM's own files).

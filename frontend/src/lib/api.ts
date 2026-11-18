@@ -1058,6 +1058,8 @@ export interface OutreachDraft {
   problems: string[]
   /** Other roles whose outreach goes to this person; only the first approved asks them. */
   also_for: string[] | null
+  /** Other roles at this company this one email also asks about (one email per person); Claude mentions them in one line. */
+  also_roles: string[] | null
 }
 
 export interface ApproveResult {
@@ -1089,6 +1091,8 @@ export interface ReviewRole {
   outreach: OutreachDraft[]
   /** Who the outreach would go to, while the role has none yet. */
   contacts: { id: string; name: string; title: string | null; email: string | null; email_status: string | null; linkedin_url: string | null; audience: 'recruiter' | 'engineer' }[]
+  /** This role's people are asked in another role's email at the company, which mentions this one too. */
+  covered_by?: { id: string; name: string | null; role_id: string; title: string; status: string }[]
 }
 
 export const api = {

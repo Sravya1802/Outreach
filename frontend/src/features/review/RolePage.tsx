@@ -201,6 +201,11 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
       {d.problems.length > 0 && (
         <ul className="list-disc rounded-[4px] bg-danger-soft py-2 pr-3 pl-7 text-[14px] text-fg">{d.problems.map(x => <li key={x}>{x}</li>)}</ul>
       )}
+      {d.also_roles && d.also_roles.length > 0 && (
+        <p className="rounded-[4px] bg-accent-soft px-3 py-2 text-[14px] text-fg">
+          One email for {d.name?.split(' ')[0] || 'them'} at this company: it also asks about {[...new Set(d.also_roles)].join(', ')}, in one line (“I would also be glad to be considered for…”).
+        </p>
+      )}
       {!locked && d.also_for && d.also_for.length > 0 && (
         <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg">
           Also in the outreach for {d.also_for.join(', ')}. Only the first of these roles you approve contacts {d.name?.split(' ')[0] || 'them'}; the others don’t ask again.
@@ -334,6 +339,20 @@ function NoOutreach({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
     onError: (e: Error) => toast.error(e.message),
   })
   const people = data.contacts ?? []
+  const covered = data.covered_by ?? []
+  if (covered.length) {
+    const roles = [...new Map(covered.map(c => [c.role_id, c.title])).entries()]
+    return (
+      <div className="space-y-2">
+        <p className="text-[14px] text-fg">
+          {covered.map(c => c.name).filter(Boolean).join(', ')} {covered.length === 1 ? 'is' : 'are'} asked about this role in one email, written for{' '}
+          {roles.map(([id, title], i) => <span key={id}>{i ? ', ' : ''}<Link to={`/review/${id}`} className="text-accent hover:underline">{title}</Link></span>)}
+          {' '}(the best fit here). One email per person at a company, so nobody hears from you twice.
+        </p>
+        <PasteContacts data={data} onDone={onDone} />
+      </div>
+    )
+  }
   if (people.length) return (
     <div className="space-y-3">
       <p className="text-[14px] text-fg">{data.role.outreach_due ? 'People found here. Claude is writing their emails and notes; they show here after your next run.' : 'People found here. Your Claude run writes their emails and notes once you ask it to.'}</p>
@@ -439,6 +458,8 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
         ? 'Approving makes this version final. This role’s mode emails nobody, so it applies only when you press Apply without referral.'
         : writing > 0
           ? `Claude is still writing the outreach for ${writing === 1 ? '1 person' : `${writing} people`} on this role. Approve it once your next run has written it, or press Apply without referral.`
+        : noOutreach && (data.covered_by ?? []).length
+          ? 'This role’s people are asked in one email written for another role at the company, which mentions this one. Approving makes this version final; it applies only when you press Apply without referral.'
         : noOutreach
           ? (data.role.outreach_due
             ? 'Claude is writing this role’s emails with your next run. Approve it once they’re written, or press Apply without referral.'

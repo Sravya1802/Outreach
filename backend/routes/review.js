@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { addReferrer, listReferrers, removeReferrer } from '../services/referrers.js';
 import {
-  addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf,
+  addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf, queueOutreachDrafts,
 } from '../services/tailorPipeline.js';
 import { fillLink, readyRoles } from '../services/readyToSubmit.js';
 
@@ -123,6 +123,11 @@ router.post('/:id/applied', withId(async (req, res, id) => {
 // People the user pasted (from Apollo or anywhere): saved as this role's contacts.
 router.post('/:id/contacts/add', withId(async (req, res, id) => {
   res.json(await addRoleContacts(req.user.id, id, req.body?.people));
+}));
+
+// People already found here: empty rows for the next Claude run to write (the app writes no text).
+router.post('/:id/queue-outreach', withId(async (req, res, id) => {
+  res.json({ drafts: await queueOutreachDrafts(req.user.id, id) });
 }));
 
 router.post('/:id/contacts', withId(async (req, res, id) => {

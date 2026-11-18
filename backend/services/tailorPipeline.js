@@ -516,7 +516,7 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   if (!noEmails && !drafts.length && job.outreach_due) throw fail(409, 'This role’s emails come with the next run. Approve it once they’re written, or press Apply without referral.');
   // Your Claude run writes every email and note: nothing goes out half written.
   const writing = drafts.filter(stillWriting).length;
-  if (writing) throw fail(409, `Claude is still writing ${writing === 1 ? '1 email' : `${writing} emails`} for this role. Approve it once your next run has written ${writing === 1 ? 'it' : 'them'}, or press Apply without referral.`);
+  if (writing) throw fail(409, `Claude is still writing the outreach for ${writing === 1 ? '1 person' : `${writing} people`} on this role. Approve it once your next run has written it, or press Apply without referral.`);
   const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
   for (const d of drafts) {
     const [problem] = checkOutreach({ ...d, company: item.company_name, quant });

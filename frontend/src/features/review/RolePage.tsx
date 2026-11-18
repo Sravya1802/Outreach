@@ -438,7 +438,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
       {data.role.status === 'ready' && <p className="text-[13px] leading-relaxed text-subtle">{['my_contact', 'none'].includes(data.role.referral_mode)
         ? 'Approving makes this version final. This role’s mode emails nobody, so it applies only when you press Apply without referral.'
         : writing > 0
-          ? `Claude is still writing ${writing === 1 ? '1 email' : `${writing} emails`} for this role. Approve it once your next run has written ${writing === 1 ? 'it' : 'them'}, or press Apply without referral.`
+          ? `Claude is still writing the outreach for ${writing === 1 ? '1 person' : `${writing} people`} on this role. Approve it once your next run has written it, or press Apply without referral.`
         : noOutreach
           ? (data.role.outreach_due
             ? 'Claude is writing this role’s emails with your next run. Approve it once they’re written, or press Apply without referral.'

@@ -2279,3 +2279,38 @@ Commits: 2b29883 (backend), cfc7581 (extension, page). VM: 106cf4e, df67b68 (bac
 - Live on the e2e account, 14/14 at 1440 and 390 px: two seeded roles at one company gave one row on the better-fit role with the other in `also`, and both pages say so. Test rows removed.
 
 Commits: 9859689 (backend), its frontend twin. VM cherry-pick: backend only.
+
+## 2026-11-17 — Duplicate outreach merged: one email per person per company
+
+**Asked:**
+- Merge duplicates under the one-email-per-person rule: one row on the best-fit role, its text cleared for the run, and the other copies closed with a reason, not deleted.
+- Only unsent, unapproved drafts. Leave approved Outbox/Gmail emails (Solace, Netic) alone.
+
+**Built:**
+- Migration `057_outreach_closed.sql` (applied live):
+  - `outreach_drafts.status` may be `'closed'`, with `closed_reason` and `closed_at`;
+  - the per-role limit trigger ignores closed rows.
+- Closed rows are left out of the queue counts (`outreach`, `writing`), the Role page list, `also_for`, `covered_by`, `queueOutreachForRoles` and `findRoleContacts`.
+- `planMerge` (pure, tested) and `mergeCompanyOutreach(userId, { dryRun })`:
+  - A person (keyed by email, else contact) with open rows on Ready or Revising roles at a company, plus the roles there with no open rows that `outreachTargets` would reach them from, plus roles already in their `also`, keeps one row on the best-fit role (`byFit`). Its subject, body and note are cleared, status set to draft, `also_plan_items` set best fit first. If the best-fit role had no row, a new one is inserted.
+  - The other copies close with "Merged into the email for <title> (one email per person per company)."
+  - Someone already in an approved or sent email at the company gets all unsent copies closed with "Already asked in the approved email for <title>".
+  - A person on one role with nothing to add is untouched.
+  - Covered roles lose `outreach_due`.
+- `tailoring_config` v25 copies v24, adding two rules to `standing_rules`:
+  - ignore closed rows; write nothing for a role whose rows are all closed;
+  - the "also" sentence names the first 3 titles in `also_plan_items` order, then "and related roles at <company>".
+
+**Applied:**
+- 50 people: 46 keep one email (12 moved to a better-fit role, 10 of them at Lutron), and 240 copies closed (TikTok 154, IBM 48, Lutron 10, Adobe 9, Databricks 8, Pinterest 7, Garmin 2, Emonics 2).
+- Garmin and Emonics: 4 people already in an approved or sent email; only their extra unsent copies closed.
+- No hand-edited drafts were touched.
+- Backup: `/home/ubuntu/outreach/backups/outreach-merge-1794971664789.json` (274 rows, every touched row before the change).
+
+**Verified:**
+- 0 people with 2+ open emails at one company.
+- Outbox unchanged: 38 waiting, 5 sent, 16 cancelled. 46 approved/sent drafts untouched.
+- 47 rows wait for the run on 22 roles, all `outreach_due`; 46 of them carry an "also" list. Kyle Martone (TikTok) has one row, with 56 roles in `also`.
+- Backend 276 tests.
+
+Commit: 6adad92, the same on the VM (backend only).

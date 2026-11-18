@@ -1,4 +1,4 @@
-// Resumes and outreach come from the Claude chat runs now. These bring the app's
-// own versions back: IN_APP_TAILORING=on, IN_APP_EMAILS=on.
+// Resumes come from the Claude chat runs now. IN_APP_TAILORING=on brings the
+// app's own resume writer back. Outreach has no switch: the app writes no
+// emails or notes at all; the user's Claude run writes them.
 export const inAppTailoring = () => process.env.IN_APP_TAILORING === 'on';
-export const inAppEmails = () => process.env.IN_APP_EMAILS === 'on';

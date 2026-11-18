@@ -1,6 +1,6 @@
-// People → Messages: companies with people, and a personalized note + email per person.
+// People → Messages: companies with people, and any note + email saved for each person (the app writes none).
 import { Router } from 'express';
-import { companyList, companyPeople, writeAll, writeFor } from '../services/messages.js';
+import { companyList, companyPeople } from '../services/messages.js';
 import { companyPlan, planCompanies } from '../services/outreachPlan.js';
 
 const router = Router();
@@ -15,16 +15,6 @@ router.get('/companies', async (req, res) => {
 });
 router.get('/companies/:key', async (req, res) => {
   try { res.json(await companyPeople(req.user.id, keyOf(req))); } catch (err) { fail(res, err); }
-});
-router.post('/companies/:key/write', async (req, res) => {
-  try {
-    const ref = String(req.body?.ref || '');
-    if (!/^[cl]:\d+$/.test(ref)) return res.status(400).json({ error: 'Bad person' });
-    res.json(await writeFor(req.user.id, keyOf(req), ref));
-  } catch (err) { fail(res, err); }
-});
-router.post('/companies/:key/write-all', async (req, res) => {
-  try { res.json(await writeAll(req.user.id, keyOf(req))); } catch (err) { fail(res, err); }
 });
 
 // People → Contacts: companies, each with its planned emails and LinkedIn notes.

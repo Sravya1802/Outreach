@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 process.env.DATABASE_URL ||= 'postgres://x:y@127.0.0.1:1/z'; // modules import db.js; these tests make no queries
 const { normalizeAppPassword, isAppPassword, friendlyGmailError, newMessageId, buildMime, draftHash, isAuthFailure } = await import('../services/gmail.js');
 const { parseHeaderBlock, messageIdsIn, linkedinEvent, looksAutoReply, isBounceSender, normName, describeEvent } = await import('../services/replyWatcher.js');
-const { followupBody } = await import('../services/outbox.js');
 
 test('app passwords: Google shows them in four groups', () => {
   assert.equal(normalizeAppPassword('abcd efgh ijkl mnop'), 'abcdefghijklmnop');
@@ -46,13 +45,6 @@ test('bounces and event wording', () => {
   assert.ok(!isBounceSender('ana@ramp.com'));
   assert.equal(describeEvent({ kind: 'reply', snippet: 'Happy to chat Thursday', contact: { name: 'Ana Lee', company_name: 'Ramp' } }), 'Ana Lee (Ramp) replied: “Happy to chat Thursday”');
   assert.match(describeEvent({ kind: 'bounce', contact: { name: 'Ana Lee' } }), /bounced/);
-});
-
-test('follow-ups quote the original and stay short', () => {
-  const b = followupBody(1, { toName: 'Ana Lee', company: 'Ramp', sender: 'Sravya R', original: 'Hi Ana,\nI applied to the SWE intern role.', sentAt: new Date('2026-10-15T14:00:00Z'), tz: 'America/New_York' });
-  assert.match(b, /^Hi Ana,\n\nFollowing up on my note below/);
-  assert.match(b, /On Thu, Oct 15, 2026, Sravya R wrote:\n> Hi Ana,\n> I applied/);
-  assert.match(followupBody(2, { toName: '', company: 'Ramp', sender: '', original: 'x', sentAt: new Date(), tz: 'UTC' }), /^Hi there,\n\nOne last note.*Ramp's internship/s);
 });
 
 test('drafts: the resume rides along, and only real edits count as edits', async () => {

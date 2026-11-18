@@ -3,29 +3,30 @@
  *   • first email at the next 8–11 AM weekday slot in the recipient's zone
  *     (or right away when the user says so)
  *   • at most `daily_cap` (default 20) a day per user, at least 3 minutes apart
- *   • two follow-ups in the same thread, 4 and 10 business days after the
- *     first one; any reply (or bounce) cancels what's left
+ *   • no follow-ups and no text of its own: every email is written by the
+ *     user's Claude run (or the user); any reply (or bounce) cancels what's left
  *   • emails the app writes on its own (referral asks) start as drafts: a copy
  *     goes to the user's Gmail Drafts with the resume attached, and nothing is
  *     sent until they approve it here (their edits in Gmail are kept). Sending
  *     or deleting the draft in Gmail is noticed by syncDrafts().
  *     Approve writes those copies after it answers (copyDraftsToGmail), since
  *     each one takes seconds; fillGmailDrafts() retries any that didn't land.
- * runOutbox() and fillGmailDrafts() are called by a cron every 2 minutes.
+ *   • when a waiting email's text changes (an edit here, or the run rewriting
+ *     the role's draft: migration 055 copies it over and sets gmail_sync_due),
+ *     syncEditedDrafts() replaces its Gmail copy, so Gmail has the latest text.
+ * runOutbox(), fillGmailDrafts() and syncEditedDrafts() run every 2 minutes.
  */
 
 import { all, one, run } from '../db.js';
 import { appendDraft, connectionFor, deleteDrafts, draftHash, messagesTo, putDraft, readDraft, removeDraft, sendAs, specialFolder, withImap } from './gmail.js';
 import { fileBytes, fileForUser } from './resumeFiles.js';
-import { nextSendSlot, businessDaysLater, timezoneFor, describeSlot } from './sendWindow.js';
+import { nextSendSlot, timezoneFor, describeSlot } from './sendWindow.js';
 import { marketFor } from './markets.js';
 
-const FOLLOWUP_DAYS = [4, 10];
 const MIN_GAP_MS = 3 * 60_000;
 const MAX_ATTEMPTS = 3;
 
 const str = (v) => String(v ?? '').trim();
-const firstName = (name) => str(name).split(/\s+/)[0] || 'there';
 
 /** Where the recipient probably is: the company's location, else the user's market. */
 export async function recipientTimezone(userId, contactId) {
@@ -36,25 +37,6 @@ export async function recipientTimezone(userId, contactId) {
   const tz = timezoneFor(r?.location) || timezoneFor([r?.city, r?.state].filter(Boolean).join(', '));
   if (tz) return tz;
   return (await marketFor(userId)) === 'india' ? 'Asia/Kolkata' : 'America/New_York';
-}
-
-async function senderName(userId) {
-  const c = await one('SELECT display_name FROM gmail_connections WHERE user_id = $1', [userId]);
-  if (str(c?.display_name)) return str(c.display_name);
-  const p = await one('SELECT first_name, last_name FROM user_profile WHERE user_id = $1', [userId]);
-  return [p?.first_name, p?.last_name].filter(Boolean).join(' ').trim();
-}
-
-/** Short, polite follow-ups with the original quoted underneath. */
-export function followupBody(step, { toName, company, sender, original, sentAt, tz }) {
-  const hi = `Hi ${firstName(toName)},`;
-  const sign = sender ? `\n${sender}` : '';
-  const text = step === 1
-    ? `${hi}\n\nFollowing up on my note below in case it got buried. I'd really value a few minutes of your perspective on ${company || 'your team'}, whenever suits you.\n\nThanks,${sign}`
-    : `${hi}\n\nOne last note from me. If you're not the right person to ask about ${company ? `${company}'s` : 'your'} internship and new-grad hiring, I'd be grateful if you could point me to who is.\n\nThanks again,${sign}`;
-  const when = new Intl.DateTimeFormat('en-US', { timeZone: tz || 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(sentAt);
-  const quoted = str(original).split('\n').map(l => `> ${l}`).join('\n');
-  return `${text}\n\nOn ${when}, ${sender || 'I'} wrote:\n${quoted}`;
 }
 
 /**
@@ -133,7 +115,11 @@ export function copyDraftsToGmail(userId, ids, bytes = new Map()) {
       await withImap(userId, async (client, conn) => {
         for (const row of rows) {
           const hash = await appendDraft(client, conn, { to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, attachments: await attachmentsFor(row, bytes) });
-          const kept = await run("UPDATE email_outbox SET gmail_draft_hash = $2 WHERE id = $1 AND status = 'draft'", [row.id, hash]);
+          // The copy has this text: due again only if the text changed while it was written.
+          const kept = await run(
+            "UPDATE email_outbox SET gmail_draft_hash = $2, gmail_sync_due = (subject IS DISTINCT FROM $3 OR body IS DISTINCT FROM $4) WHERE id = $1 AND status = 'draft'",
+            [row.id, hash, row.subject, row.body],
+          );
           if (kept.rowCount) done += 1;
           else await deleteDrafts(client, await specialFolder(client, '\\Drafts'), row.to_email, row.created_at);
         }
@@ -163,13 +149,37 @@ export async function fillGmailDrafts() {
   return n;
 }
 
+/**
+ * Emails waiting for the user's OK whose text changed since their Gmail copy
+ * was made (gmail_sync_due, set by migration 055's trigger): the Gmail draft is
+ * replaced with the new text and the resume, so Gmail always has the latest
+ * version. A row with no copy yet clears the flag: fillGmailDrafts makes it
+ * from the current text. Gmail unreachable: it stays due for the next pass.
+ */
+export async function syncEditedDrafts() {
+  const rows = await all("SELECT * FROM email_outbox WHERE status = 'draft' AND gmail_sync_due ORDER BY id LIMIT 20");
+  let n = 0;
+  for (const row of rows) {
+    if (copying.has(String(row.id)) || gmailQueue.has(row.user_id)) continue;
+    if (!row.gmail_draft_hash) {
+      await run('UPDATE email_outbox SET gmail_sync_due = FALSE WHERE id = $1 AND gmail_draft_hash IS NULL', [row.id]);
+      continue;
+    }
+    if (await copyToGmailDrafts(row)) n += 1;
+  }
+  return n;
+}
+
 /** Put (or replace) the Gmail Drafts copy of a draft row. False when Gmail couldn't be reached. */
 async function copyToGmailDrafts(row) {
   try {
     const hash = await putDraft(row.user_id, {
       to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, attachments: await attachmentsFor(row), since: row.created_at,
     });
-    await run('UPDATE email_outbox SET gmail_draft_hash = $2 WHERE id = $1', [row.id, hash]);
+    await run(
+      'UPDATE email_outbox SET gmail_draft_hash = $2, gmail_sync_due = (subject IS DISTINCT FROM $3 OR body IS DISTINCT FROM $4) WHERE id = $1',
+      [row.id, hash, row.subject, row.body],
+    );
     return true;
   } catch (err) {
     console.warn('[outbox] Gmail draft copy failed', row.id, err.message);
@@ -231,7 +241,6 @@ async function markSentFromGmail(row, sent) {
   if (r.contact_id) {
     await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [r.contact_id]);
   }
-  if (r.purpose !== 'referral') await queueFollowups(r);
   return r;
 }
 
@@ -318,8 +327,6 @@ export async function sendOne(id) {
     if (row.contact_id) {
       await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [row.contact_id]);
     }
-    // Referral asks get no generic nudges; the referral flow adds an "I've applied" note in the thread.
-    if (row.step === 0 && row.purpose !== 'referral') await queueFollowups({ ...row, sent_at: new Date(), message_id: messageId });
   } catch (err) {
     // A rejected password isn't the email's fault: it waits for a reconnect instead of counting toward failure.
     const authFailed = /app password/.test(String(err.message));
@@ -335,40 +342,6 @@ export async function sendOne(id) {
 async function cancel(id, reason) {
   await run("UPDATE email_outbox SET status = 'cancelled', cancel_reason = $2 WHERE id = $1", [id, reason]);
   return one('SELECT * FROM email_outbox WHERE id = $1', [id]);
-}
-
-async function queueFollowups(root) {
-  const company = (await one('SELECT j.name FROM job_contacts c JOIN jobs j ON j.id = c.job_id WHERE c.id = $1', [root.contact_id]))?.name || '';
-  const sender = await senderName(root.user_id);
-  const subject = /^re:/i.test(root.subject) ? root.subject : `Re: ${root.subject}`;
-  for (const [i, days] of FOLLOWUP_DAYS.entries()) {
-    const step = i + 1;
-    await run(
-      `INSERT INTO email_outbox (user_id, contact_id, step, thread_root_id, to_email, to_name, subject, body, recipient_tz, send_after)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [root.user_id, root.contact_id, step, root.id, root.to_email, root.to_name, subject,
-        followupBody(step, { toName: root.to_name, company, sender, original: root.body, sentAt: root.sent_at, tz: root.recipient_tz }),
-        root.recipient_tz, businessDaysLater(root.sent_at, days, root.recipient_tz)],
-    );
-  }
-}
-
-/**
- * Add one short note in the same thread as a sent (or scheduled) email, at the
- * recipient's next morning slot. Returns the new row, or null if the thread is gone.
- */
-export async function scheduleThreadNote(userId, rootId, { body, when = 'best' }) {
-  const root = await one("SELECT * FROM email_outbox WHERE id = $1 AND user_id = $2 AND step = 0 AND status IN ('scheduled','sending','sent')", [rootId, userId]);
-  if (!root) return null;
-  const contact = root.contact_id ? await one('SELECT status FROM job_contacts WHERE id = $1', [root.contact_id]) : null;
-  if (contact?.status === 'replied') return null;
-  const subject = /^re:/i.test(root.subject) ? root.subject : `Re: ${root.subject}`;
-  const at = when === 'now' ? new Date() : nextSendSlot(root.recipient_tz, { now: new Date(Math.max(Date.now(), new Date(root.send_after).getTime() + 3600_000)) });
-  return (await run(
-    `INSERT INTO email_outbox (user_id, contact_id, step, thread_root_id, to_email, to_name, subject, body, recipient_tz, send_after, purpose)
-     VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-    [userId, root.contact_id, root.id, root.to_email, root.to_name, subject, str(body).slice(0, 20000), root.recipient_tz, at, root.purpose],
-  )).rows[0];
 }
 
 /** Cancel everything still scheduled for a contact (reply, bounce, user's call). */

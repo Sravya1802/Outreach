@@ -1,20 +1,17 @@
 /**
  * messages.js — the People → Messages page: every company where the user has
  * someone (LinkedIn connections export + contacts found for them), the people
- * there, and a personalized LinkedIn note + email for each, drafted on demand
- * and saved on the contact (job_contacts.generated_*).
+ * there, and any LinkedIn note + email already saved on the contact
+ * (job_contacts.generated_*). The app writes none of them: outreach is written
+ * by the user's Claude run.
  */
 
-import { inAppEmails } from './features.js';
-import { all, one, run } from '../db.js';
-import { complete } from './llm.js';
+import { all } from '../db.js';
 import { companyKey } from './linkedinConnections.js';
-import { ABOUT_ME, FORMAL, candidateHighlights, companyRow, contactFor, me, closedNote, postingUrl, schoolName, signature, signed } from './referralFlow.js';
 import { marketFor, regionForMarket } from './markets.js';
 
 const PAGE = 25;
 const lc = (s) => String(s ?? '').trim().toLowerCase();
-const str = (s) => String(s ?? '').trim();
 
 /** Every company with people, merged across connections and saved contacts, with open roles. */
 export async function companyList(userId, { q = '', filter = 'all', page = 1 } = {}) {
@@ -120,77 +117,4 @@ function person({ connection, contact }) {
     subject: contact?.generated_subject || null,
     body: contact?.generated_body || null,
   };
-}
-
-export function templateMessages({ personName, me: myName, school, sig, company, role, isConnection }) {
-  const first = str(personName).split(/\s+/)[0] || 'there';
-  const who = `${myName || 'a student'}${school ? `, a student at ${schoolName(school)}` : ''}`;
-  const ask = role
-    ? `I am applying for the ${role.title} position at ${company}. Would you be willing to refer me, or direct me to the appropriate person on the hiring team?`
-    : `I would appreciate the chance to learn how you joined ${company} and what the team looks for in interns and new graduates.`;
-  const note = closedNote(`Hello ${first}, I am ${who}. ${ask} Thank you.`);
-  const opener = role
-    ? `I am applying for the ${role.title} role at ${company}${isConnection ? ', and since we are connected on LinkedIn, I hoped you might help' : ''}. Would you be willing to refer me, or direct me to the appropriate person on the hiring team?`
-    : `${isConnection ? 'We are connected on LinkedIn, and ' : ''}I would appreciate the chance to learn how you joined ${company} and what the team looks for in interns and new graduates.`;
-  const close = role?.url ? `My resume is attached, and the posting is here: ${postingUrl(role.url)}. Thank you for your time and consideration.` : 'Thank you for your time and consideration.';
-  const body = [`Dear ${first},`, opener, ABOUT_ME, close].join('\n\n');
-  return { note, subject: role ? `${role.title}: ${myName || 'Lakshmi Sravya Rachakonda'}`.slice(0, 120) : `Question about ${company}`, body: signed(body, myName, sig) };
-}
-
-/** Draft (or redraft) one person's LinkedIn note + email and save it on their contact. */
-export async function writeFor(userId, key, ref) {
-  const data = await companyPeople(userId, key);
-  const p = data.people.find(x => x.ref === ref);
-  if (!p) throw Object.assign(new Error('Person not found'), { status: 404 });
-  let contactId = p.contactId;
-  if (!contactId) {
-    const conn = await one('SELECT * FROM linkedin_connections WHERE id = $1 AND user_id = $2', [p.connectionId, userId]);
-    const jobId = await companyRow(userId, data.name, null);
-    contactId = (await contactFor(userId, jobId, conn)).id;
-  }
-  const who = await me(userId);
-  const ctx = { personName: p.name, me: who.name, school: who.school, sig: signature(who), company: data.name, role: data.role, isConnection: p.isConnection };
-  let draft;
-  try {
-    if (!inAppEmails()) throw new Error('off');
-    const r = await complete({
-      task: 'email',
-      json: true,
-      maxTokens: 1200,
-      userId,
-      system: `You write personalized outreach from a student or new grad to one person at a company.
-Return JSON: {"note": "...", "subject": "...", "body": "..."}
-- note: a LinkedIn message under 250 characters, starting "Hello <first name>,", formal with no contractions, with no link and no mention of a résumé or attachment. body: an email under 120 words. subject: under 60 characters.
-- ${FORMAL}
-- Mention one specific thing from STUDENT.background (a project, internship or result, with a concrete detail) that fits the role.
-- Use only facts given. Describe the student only with STUDENT (don't guess their year or level). Describe the other person only by THEIR TITLE; don't claim what they work on or what their team focuses on.
-- If ROLE is given: ask whether they would be willing to refer the student, or direct them to the appropriate person, and give the link as a sentence ("The job posting is available here: <link>"). If not: ask for 15 minutes to learn about their team and how they hire interns and new graduates.
-- ${p.isConnection ? 'They are already a LinkedIn connection: you may mention that, in the same formal tone.' : 'They don’t know the student: brief and respectful.'}`,
-      user: JSON.stringify({ to: p.name, theirTitle: p.title, company: data.name, ROLE: data.role && { ...data.role, url: postingUrl(data.role.url) }, STUDENT: { name: who.name, major: who.major, school: who.school, background: await candidateHighlights(userId) } }),
-    });
-    const d = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
-    if (!str(d.note) || !str(d.body)) throw new Error('empty');
-    draft = { note: closedNote(d.note), subject: str(d.subject).slice(0, 120) || templateMessages(ctx).subject, body: signed(d.body, who.name, ctx.sig) };
-  } catch (err) {
-    if (err.status === 402) throw err;
-    draft = templateMessages(ctx);
-  }
-  await run(
-    `UPDATE job_contacts SET generated_dm = $2, generated_subject = $3, generated_body = $4,
-            status = CASE WHEN COALESCE(status, 'pending') = 'pending' THEN 'generated' ELSE status END
-      WHERE id = $1 AND user_id = $5`,
-    [contactId, draft.note, draft.subject, draft.body, userId],
-  );
-  return (await companyPeople(userId, key)).people.find(x => x.contactId === contactId) || null;
-}
-
-/** Draft everyone at a company who doesn't have a message yet (at most 15 per call). */
-export async function writeAll(userId, key) {
-  const data = await companyPeople(userId, key);
-  let n = 0;
-  for (const p of data.people.filter(x => !x.note).slice(0, 15)) {
-    await writeFor(userId, key, p.ref);
-    n += 1;
-  }
-  return { written: n, ...(await companyPeople(userId, key)) };
 }

@@ -4,9 +4,6 @@ import * as apify from '../services/apify.js';
 import { normalizeHost, resolveCompanyDomain } from '../services/companyDomain.js';
 import { seniorityScore } from '../services/contactRules.js';
 import { findCompanyEmails, findPersonEmail, upsertContact } from '../services/contactFinder.js';
-import { generateOutreach } from '../services/ai.js';
-import { loadSenderProfile } from '../services/senderProfile.js';
-import { loadUserTemplates } from '../services/outreachTemplates.js';
 import { scrapeAllSources, scraperHealth } from '../services/scraper.js';
 import { classifyCompanies } from '../services/categorize.js';
 import { safeFetch } from '../services/safeFetch.js';
@@ -1321,50 +1318,6 @@ router.post('/contacts/:contactId/find-email', async (req, res) => {
       ...(note ? { message: note } : {}),
     });
   });
-});
-
-// ── Generate outreach for a contact ──────────────────────────────────────────
-
-router.post('/contacts/:contactId/generate', async (req, res) => {
-  try {
-    const contact = await one(`
-      SELECT jc.*, j.name as company_name, j.category as company_type
-      FROM job_contacts jc
-      JOIN jobs j ON j.id = jc.job_id AND j.user_id = $2
-      WHERE jc.id = $1 AND jc.user_id = $2
-    `, [req.params.contactId, req.user.id]);
-    if (!contact) return res.status(404).json({ error: 'Contact not found' });
-
-    const { type = 'email', extraContext = '' } = req.body;
-
-    const params = {
-      recipientName:   contact.name,
-      recipientTitle:  contact.title || 'Decision Maker',
-      companyName:     contact.company_name,
-      companyCategory: contact.company_type,
-      isRecruiter:     /recruit|talent|people|hr\b|human resources/i.test(contact.title || ''),
-      extraContext,
-      sender:          await loadSenderProfile(req.user.id),
-      customTemplates: await loadUserTemplates(req.user.id),
-    };
-
-    if (type === 'linkedin') {
-      const result = await generateOutreach({ ...params, type: 'linkedin' });
-      const dm = result.message || result.body || '';
-      await run("UPDATE job_contacts SET generated_dm = $1, status = 'generated' WHERE id = $2 AND user_id = $3", [dm, contact.id, req.user.id]);
-      return res.json({ message: dm, dm });
-    } else {
-      const result = await generateOutreach({ ...params, type: 'cold_email' });
-      await run(
-        "UPDATE job_contacts SET generated_subject = $1, generated_body = $2, status = 'generated' WHERE id = $3 AND user_id = $4",
-        [result.subject, result.body, contact.id, req.user.id]
-      );
-      return res.json({ subject: result.subject, body: result.body });
-    }
-  } catch (err) {
-    console.error('generate contact error:', err.message);
-    res.status(err.status || 500).json({ error: err.message });
-  }
 });
 
 // ── Update contact (save edits / status) ──────────────────────────────────────

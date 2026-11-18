@@ -2,8 +2,6 @@ import { Router } from 'express';
 import { one, all, run, tx } from '../db.js';
 import * as apollo from '../services/apollo.js';
 import * as apify from '../services/apify.js';
-import { generateOutreach } from '../services/ai.js';
-import { loadSenderProfile } from '../services/senderProfile.js';
 
 const router = Router();
 
@@ -179,43 +177,6 @@ router.post('/add-company', async (req, res) => {
     );
     res.json({ added, people: saved });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Generate cold email + LinkedIn DM for a prospect
-router.post('/:id/generate', async (req, res) => {
-  try {
-    const prospect = await one(
-      'SELECT * FROM prospects WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-    if (!prospect) return res.status(404).json({ error: 'Prospect not found' });
-
-    const { extraContext = '' } = req.body;
-    const params = {
-      recipientName:  prospect.name,
-      recipientTitle: prospect.title,
-      companyName:    prospect.company_name,
-      companyStage:   prospect.company_type,
-      extraContext,
-      sender:         await loadSenderProfile(req.user.id),
-    };
-
-    const [email, linkedin] = await Promise.all([
-      generateOutreach({ ...params, type: 'cold_email' }),
-      generateOutreach({ ...params, type: 'linkedin' }),
-    ]);
-
-    await run(`
-      UPDATE prospects
-      SET email_subject = $1, email_body = $2, linkedin_dm = $3, status = 'generated', updated_at = NOW()
-      WHERE id = $4 AND user_id = $5
-    `, [email.subject, email.body, linkedin.message || linkedin.body, prospect.id, req.user.id]);
-
-    res.json({ email, linkedin });
-  } catch (err) {
-    console.error('Generate prospect outreach error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

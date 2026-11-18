@@ -39,13 +39,12 @@ import messagesRouter from './routes/messages.js';
 import trackerRouter from './routes/tracker.js';
 import reviewRouter from './routes/review.js';
 import fillRouter from './routes/fill.js';
-import { addMissingNotes } from './services/referralFlow.js';
 import { buildPlan, getSettings as getPlanSettings, localDate, tick as dailyPlanTick } from './services/dailyPlan.js';
 import { pumpBatches as pumpResumeBatches } from './services/resumeEngine.js';
 import { suggestProjectsForAll } from './services/projectIdeas.js';
 import { checkNewVersions, fillMissingCallbacks, markApplied, notifyRuns, recoverApprovals } from './services/tailorPipeline.js';
 import { retryWaiting as retryWhatsapp } from './services/whatsapp.js';
-import { fillGmailDrafts, runOutbox } from './services/outbox.js';
+import { fillGmailDrafts, runOutbox, syncEditedDrafts } from './services/outbox.js';
 import { checkAllInboxes } from './services/replyWatcher.js';
 import { marketFor, regionForMarket } from './services/markets.js';
 import { requestContext } from './services/requestContext.js';
@@ -547,6 +546,8 @@ cron.schedule('*/2 * * * *', async () => {
     if (r.sent) console.log(`[outbox] sent ${r.sent} of ${r.due} due`);
     const copied = await fillGmailDrafts();
     if (copied) console.log(`[outbox] ${copied} Gmail Drafts copies caught up`);
+    const resynced = await syncEditedDrafts();
+    if (resynced) console.log(`[outbox] ${resynced} Gmail drafts replaced with their new text`);
   } catch (err) { console.error('[outbox] pass failed:', err.message); }
 }, CRON_OPTS);
 // Claude chat runs: compile and check the resumes they've written.
@@ -740,10 +741,6 @@ async function resumeInterruptedPlans() {
 async function startup() {
   await pingDb();
   resumeInterruptedPlans().catch(err => console.error('[daily-plan] resume pass failed:', err.message));
-  // People emailed before LinkedIn notes were kept get theirs (template, once).
-  addMissingNotes()
-    .then(n => { if (n) console.log(`[referrals] added LinkedIn notes for ${n} emailed people`); })
-    .catch(err => console.error('[referrals] note backfill failed:', err.message));
 
   const server = app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);

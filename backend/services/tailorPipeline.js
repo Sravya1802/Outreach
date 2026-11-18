@@ -24,7 +24,7 @@ import { all, one, run, tx } from '../db.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { copyDraftsToGmail } from './outbox.js';
 import { compileTex } from './latex.js';
-import { NOTE_END, askedElsewhere, companyRow, emailSignature, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, signature, startApprovedAsks, templateAsk, withdrawApprovedAsks } from './referralFlow.js';
+import { NOTE_END, askedElsewhere, companyRow, findApolloRecruitersAt, findRecruitersFor, recruitersAt, isCompanyPage, me, outreachTargets, referralAction, startApprovedAsks, withdrawApprovedAsks } from './referralFlow.js';
 import { estimateCallback, pdfText } from './resumeEngine.js';
 import { markAppliedYourself, resumeFileName, saveForEvaluation } from './resumeFiles.js';
 import { roleKind } from './resumeRules.js';
@@ -81,13 +81,6 @@ export function checkOutreach({ email_body, linkedin_note, name, company, quant 
 
 /** The posting's text: the role's own when it has 200+ characters, else the scraped posting's (joined as sr). */
 const POSTING_TEXT = "CASE WHEN length(COALESCE(pi.job_description, '')) >= 200 THEN pi.job_description ELSE COALESCE(NULLIF(sr.description, ''), pi.job_description) END";
-
-/** The role's requirements the latest resume shows, most important first (the run's keyword table, as the PDF check found them). */
-async function resumeMatches(planItemId) {
-  const v = await one('SELECT report, keywords FROM resume_versions WHERE plan_item_id = $1 ORDER BY version DESC LIMIT 1', [planItemId]);
-  const present = new Set((v?.keywords?.present || []).map(k => String(k).toLowerCase()));
-  return keywordTerms(v?.report?.keyword_table).filter(k => present.has(k.toLowerCase())).slice(0, 3);
-}
 
 /** A run writes the table as [{ keyword, where }] or as { keyword: where }. */
 const keywordList = (table) => (Array.isArray(table) ? table.map(k => String(k?.keyword || '')) : Object.keys(table && typeof table === 'object' ? table : {})).filter(Boolean);
@@ -257,7 +250,11 @@ export async function reviewQueue(userId) {
             COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,
             ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
-            (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach
+            (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach,
+            (SELECT COUNT(*)::int FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
+              WHERE d.plan_item_id = j.plan_item_id AND d.status IN ('draft', 'edited')
+                AND ((COALESCE(btrim(c.email), '') <> '' AND c.email_status IS DISTINCT FROM 'invalid' AND COALESCE(btrim(d.email_body), '') = '')
+                     OR COALESCE(btrim(d.linkedin_note), '') = '')) AS writing
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
        LEFT JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
@@ -429,7 +426,7 @@ export async function reviewRole(userId, planItemId) {
     ),
     all('SELECT id, version_id, body, status, addressed_in_version, created_at FROM resume_comments WHERE user_id = $1 AND plan_item_id = $2 ORDER BY created_at', [userId, planItemId]),
     all(
-      `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.linkedin_url,
+      `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.email_status, c.linkedin_url,
               (SELECT array_agg(pi.title ORDER BY pi.id) FROM outreach_drafts o JOIN plan_items pi ON pi.id = o.plan_item_id JOIN tailor_jobs j ON j.plan_item_id = o.plan_item_id
                 WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed') AS also_for
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 ORDER BY d.audience DESC, d.id`,
@@ -440,7 +437,7 @@ export async function reviewRole(userId, planItemId) {
       .then(list => list.map(c => ({ id: c.id, name: c.name, title: c.title, email: c.email, email_status: c.email_status, linkedin_url: c.linkedin_url, audience: c.audience }))),
   ]);
   const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
-  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, outreach: outreach.map(d => ({ ...d, problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
+  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, outreach: outreach.map(d => ({ ...d, writing: stillWriting(d), problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
 
 /** A version's PDF, if it's the user's and it compiled. */
@@ -503,7 +500,7 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
     one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]),
     one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
     all(
-      `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.linkedin_url
+      `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.email_status, c.linkedin_url
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
         WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],
@@ -517,8 +514,9 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   const noEmails = withoutReferral || NO_EMAILS.includes(job.referral_mode);
   const drafts = noEmails ? [] : written;
   if (!noEmails && !drafts.length && job.outreach_due) throw fail(409, 'This role’s emails come with the next run. Approve it once they’re written, or press Apply without referral.');
-  // No recruiter found: the template goes to Gmail Drafts with the resume and an empty To line, for the address the user finds.
-  const blank = !noEmails && !drafts.length;
+  // Your Claude run writes every email and note: nothing goes out half written.
+  const writing = drafts.filter(stillWriting).length;
+  if (writing) throw fail(409, `Claude is still writing ${writing === 1 ? '1 email' : `${writing} emails`} for this role. Approve it once your next run has written ${writing === 1 ? 'it' : 'them'}, or press Apply without referral.`);
   const quant = isQuantRole({ title: item.title, company: item.company_name, description: item.job_description });
   for (const d of drafts) {
     const [problem] = checkOutreach({ ...d, company: item.company_name, quant });
@@ -526,13 +524,13 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   }
   const [repeats, gmail] = await Promise.all([askedElsewhere(userId, planItemId, drafts), connectionFor(userId)]);
   const fresh = drafts.filter(d => !repeats.some(r => r.id === d.id));
-  if ((blank || fresh.some(d => d.email_body)) && !gmail) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
+  if (fresh.some(d => d.email_body) && !gmail) throw fail(400, 'Connect your Gmail under Integrations → Gmail first.');
 
   // Two clicks at once: only one gets past this.
   const claimed = await one("UPDATE tailor_jobs SET status = 'approved', updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2 AND status = 'ready' RETURNING id", [userId, planItemId]);
   if (!claimed) throw fail(409, 'Only a role ready for review can be approved.');
   finishing.add(String(planItemId));
-  const work = () => finishApproval(userId, item, latest, drafts, { blank }).finally(() => finishing.delete(String(planItemId)));
+  const work = () => finishApproval(userId, item, latest, drafts).finally(() => finishing.delete(String(planItemId)));
   const done = (finishQueue.get(userId) || Promise.resolve()).then(work, work);
   finishQueue.set(userId, done.catch(() => {}));
   if (wait) return done;
@@ -541,12 +539,12 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
   else done.catch(() => {});
   return {
     emails: fresh.filter(d => d.email_body).length, inGmail: 0, notes: fresh.filter(d => d.linkedin_note).length,
-    skipped: [], repeated: repeats.length, pending: true, blankDraft: blank,
+    skipped: [], repeated: repeats.length, pending: true,
   };
 }
 
 /** The rest of an approval. Any failure puts the role back in Ready and says why on its page. */
-async function finishApproval(userId, item, latest, drafts, { blank = false } = {}) {
+async function finishApproval(userId, item, latest, drafts) {
   const planItemId = item.id;
   try {
     const { evaluationFor, getSettings } = await import('./dailyPlan.js');
@@ -565,56 +563,12 @@ async function finishApproval(userId, item, latest, drafts, { blank = false } = 
     await run('UPDATE resume_versions SET is_final = TRUE WHERE id = $1', [latest.id]);
     // Each Gmail copy takes seconds: written after this, on one connection, with the PDF already in hand.
     if (outboxIds.length) copyDraftsToGmail(userId, outboxIds, new Map([[String(file.id), pdf]])).catch(() => {});
-    if (blank) await blankDraftFor(userId, item, who, pdf, resumeFileName(who.name));
-    return { ...result, blankDraft: blank };
+    return result;
   } catch (err) {
     console.warn('[review] approve failed', planItemId, err.message);
     await backToReady(userId, planItemId, String(err.message || 'unknown problem').slice(0, 200));
     throw err;
   }
-}
-
-/**
- * A role approved with no recruiter found: the plain template ("Dear Hiring
- * Team,") in Gmail Drafts with the resume attached and nobody in To. The role
- * stays held; it applies when the user presses Apply without referral.
- */
-async function blankDraftFor(userId, item, who, pdf, filename) {
-  const t = templateAsk({
-    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), title: item.title, company: item.company_name,
-    location: item.location, jd: item.job_description, matches: await resumeMatches(item.id), jobUrl: item.apply_url, attached: true, personName: '',
-  });
-  let note;
-  try {
-    const { putBlankDraft } = await import('./gmail.js');
-    await putBlankDraft(userId, { subject: t.subject, text: t.body, attachments: [{ filename, content: pdf, contentType: 'application/pdf' }] });
-    note = 'Your template is in Gmail Drafts with the resume attached and an empty To line: add the address you find and send it. This role applies only when you press Apply without referral.';
-  } catch (err) {
-    console.warn('[review] blank Gmail draft failed', item.id, err.message);
-    note = `The Gmail draft couldn’t be made (${String(err.message).slice(0, 80)}). This role applies only when you press Apply without referral.`;
-  }
-  await run('UPDATE plan_items SET stage_note = $2 WHERE id = $1 AND user_id = $3', [item.id, note, userId]);
-}
-
-/** Approved roles whose blank Gmail draft failed while Gmail was off: made now, while the posting is open. */
-export async function retryBlankDrafts(userId) {
-  const items = await all(
-    `SELECT pi.* FROM plan_items pi JOIN tailor_jobs j ON j.plan_item_id = pi.id
-      WHERE pi.user_id = $1 AND j.status = 'approved' AND pi.stage_note LIKE '%The Gmail draft couldn’t be made%'
-        AND (pi.apply_deadline IS NULL OR pi.apply_deadline >= CURRENT_DATE)`,
-    [userId],
-  );
-  if (!items.length) return 0;
-  const who = await me(userId);
-  let made = 0;
-  for (const item of items) {
-    const v = await one('SELECT pdf_path FROM resume_versions WHERE plan_item_id = $1 AND pdf_path IS NOT NULL ORDER BY is_final DESC, version DESC LIMIT 1', [item.id]);
-    const pdf = v && await downloadVersionPdf(v.pdf_path).catch(() => null);
-    if (!pdf) continue;
-    await blankDraftFor(userId, item, who, pdf, resumeFileName(who.name));
-    made += 1;
-  }
-  return made;
 }
 
 async function backToReady(userId, planItemId, why) {
@@ -754,43 +708,45 @@ async function apolloOnly(userId, item) {
   return { recruiters: found.length, emails: found.filter(c => c.email && c.email_status !== 'invalid').length };
 }
 
+/** A draft your Claude run hasn't written yet: an email it owes (the person has an address) or the LinkedIn note. Pure. */
+export function stillWriting(d) {
+  const canMail = Boolean(String(d.email ?? '').trim()) && d.email_status !== 'invalid';
+  return (canMail && !String(d.email_body ?? '').trim()) || !String(d.linkedin_note ?? '').trim();
+}
+
 /**
- * The role's outreach from the plain template, now rather than at the next
- * run: an email (and a LinkedIn note) to each of the best 2 recruiters, plus
- * an engineer in that mode; a note only for someone with no address. Drafts
- * like a run's: edit them, then Approve sends them with the resume attached.
+ * Empty outreach rows for the people this role should reach (outreachTargets,
+ * the same rule as the run's step 7), for your Claude run to write: subject,
+ * body and note stay NULL until it does, and the role page says "Claude is
+ * writing this email". The app never fills in any text. Marks the role
+ * outreach_due so the next run picks it up. Returns the rows added.
  */
-export async function templateOutreach(userId, planItemId, { more = false } = {}) {
+export async function queueOutreachDrafts(userId, planItemId) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  if (!job) throw fail(404, 'That role isn’t in the queue.');
-  if (job.status !== 'ready') throw fail(409, 'Only a role ready for review gets new outreach.');
-  if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody.');
-  // more: add drafts for people who have none yet (pasted after outreach was written); existing drafts stay.
-  if (!more && await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
-  const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
-  const [people, who, matches] = await Promise.all([outreachTargets(userId, item.company_name, job.referral_mode), me(userId), resumeMatches(planItemId)]);
-  if (!people.length) throw fail(409, 'No recruiter found at this company yet. Find contacts first.');
-  const base = {
-    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), title: item.title, company: item.company_name,
-    location: item.location, jd: item.job_description, matches, jobUrl: item.apply_url, attached: true,
-  };
-  await tx(async (q) => {
-    const rows = people.map(p => {
-      const t = templateAsk({ ...base, personName: p.name, audience: p.audience });
-      const mail = Boolean(p.email && p.email_status !== 'invalid');
-      return { id: p.id, audience: p.audience, subject: mail ? t.subject : null, body: mail ? t.body : null, note: t.note };
-    });
-    // All of them in one statement: each round trip to the database is ~200 ms from the server.
-    await q.query(
-      `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, email_subject, email_body, linkedin_note)
-       SELECT $1, $2, u.id, u.audience, u.subject, u.body, u.note
-         FROM unnest($3::bigint[], $4::text[], $5::text[], $6::text[], $7::text[]) AS u(id, audience, subject, body, note)
-       ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
-      [userId, planItemId, rows.map(r => r.id), rows.map(r => r.audience), rows.map(r => r.subject), rows.map(r => r.body), rows.map(r => r.note)],
-    );
-    await q.query('UPDATE tailor_jobs SET outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  });
-  return { drafts: people.length, emails: people.filter(p => p.email && p.email_status !== 'invalid').length };
+  if (!job || NO_EMAILS.includes(job.referral_mode) || !['ready', 'revision_requested'].includes(job.status)) return 0;
+  const item = await one('SELECT company_name FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  let added = 0;
+  for (const p of await outreachTargets(userId, item.company_name, job.referral_mode)) {
+    try {
+      const r = await run(
+        `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
+        [userId, planItemId, p.id, p.audience || 'recruiter'],
+      );
+      added += r.rowCount;
+    } catch (err) {
+      // The per-role cap (migrations 040 and 050) refuses extra people: the rest still get theirs.
+      if (!/limit/i.test(String(err.message))) throw err;
+    }
+  }
+  const owed = await one(
+    `SELECT COUNT(*)::int AS n FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
+      WHERE d.plan_item_id = $1 AND d.status IN ('draft', 'edited')
+        AND ((c.email IS NOT NULL AND c.email_status IS DISTINCT FROM 'invalid' AND COALESCE(btrim(d.email_body), '') = '') OR COALESCE(btrim(d.linkedin_note), '') = '')`,
+    [planItemId],
+  );
+  if (owed.n) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  return added;
 }
 
 /**
@@ -842,15 +798,8 @@ export async function addRoleContacts(userId, planItemId, people) {
     [userId, jobId, clean.map(p => p.email).filter(Boolean), clean.map(p => p.linkedin_url.toLowerCase()).filter(Boolean)],
   );
   await run('UPDATE plan_items SET contacts_at = COALESCE(contacts_at, NOW()) WHERE id = $1 AND user_id = $2', [planItemId, userId]);
-  const hasOutreach = await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId]);
-  if (!hasOutreach && !NO_EMAILS.includes(job.referral_mode)) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  // Outreach already written for this role: the new people get theirs from the template now, beside it.
-  let drafted = 0;
-  if (hasOutreach && job.status === 'ready' && !NO_EMAILS.includes(job.referral_mode)) {
-    const before = Number((await one('SELECT COUNT(*)::int AS n FROM outreach_drafts WHERE plan_item_id = $1', [planItemId]))?.n || 0);
-    await templateOutreach(userId, planItemId, { more: true });
-    drafted = Number((await one('SELECT COUNT(*)::int AS n FROM outreach_drafts WHERE plan_item_id = $1', [planItemId]))?.n || 0) - before;
-  }
+  // Their emails: empty rows now, written by the next Claude run.
+  const drafted = await queueOutreachDrafts(userId, planItemId);
   return { added, people: clean.length, drafted };
 }
 
@@ -862,6 +811,6 @@ export async function findRoleContacts(userId, planItemId, { source = 'all' } = 
   if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   const found = source === 'apollo' ? await apolloOnly(userId, item) : await findRecruitersFor(userId, item, { engineer: job.referral_mode === 'recruiters_engineers' });
-  if (found.recruiters) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
+  if (found.recruiters) await queueOutreachDrafts(userId, planItemId);
   return found;
 }

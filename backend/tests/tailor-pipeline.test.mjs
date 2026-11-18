@@ -105,14 +105,32 @@ test('run message: outreach written on its own is announced', () => {
   assert.equal(runMessage({ roles_done: 2 }).subject, '2 resumes ready for review');
 });
 
-test('the app writes no resumes and no AI emails unless switched back on', async () => {
+test('the app writes no resumes and no emails: the outreach writers are gone', async () => {
   const { start } = await import('../services/resumeEngine.js');
   const { draftPicked } = await import('../services/dailyPlan.js');
-  const { draftAsk } = await import('../services/referralFlow.js');
   await assert.rejects(start('u', 1, 'resume'), /no longer writes resumes/);
   assert.equal(await draftPicked('u'), 0);
-  const ask = await draftAsk('u', { personName: 'Ana Lee', me: 'Sam Roe', school: 'UIC', major: 'CS', sig: 'Sam', title: 'SWE', company: 'Ramp', jobUrl: '' });
-  assert.match(ask.body, /Ana|Dear|Hello/);
+  const flow = await import('../services/referralFlow.js');
+  for (const name of ['templateAsk', 'draftAsk', 'askForReferral', 'addMissingNotes', 'companyDetail', 'placePhrase']) assert.equal(flow[name], undefined, name);
+  const pipe = await import('../services/tailorPipeline.js');
+  for (const name of ['templateOutreach', 'retryBlankDrafts']) assert.equal(pipe[name], undefined, name);
+  const ai = await import('../services/ai.js');
+  for (const name of ['generateOutreach', 'generateWaaSMessage', 'generateOutreachTemplate']) assert.equal(ai[name], undefined, name);
+  const msgs = await import('../services/messages.js');
+  for (const name of ['templateMessages', 'writeFor', 'writeAll']) assert.equal(msgs[name], undefined, name);
+  const ob = await import('../services/outbox.js');
+  for (const name of ['followupBody', 'scheduleThreadNote']) assert.equal(ob[name], undefined, name);
+});
+
+test('stillWriting: an empty email for someone with an address, or an empty note, is still being written', async () => {
+  const { stillWriting } = await import('../services/tailorPipeline.js');
+  const done = { email: 'ana@x.com', email_status: 'valid', email_body: 'Dear Ana,', linkedin_note: 'Hello Ana.' };
+  assert.equal(stillWriting(done), false);
+  assert.equal(stillWriting({ ...done, email_body: null }), true);
+  assert.equal(stillWriting({ ...done, email_body: '  ' }), true);
+  assert.equal(stillWriting({ ...done, linkedin_note: null }), true);
+  assert.equal(stillWriting({ ...done, email: null, email_body: null }), false);
+  assert.equal(stillWriting({ ...done, email_status: 'invalid', email_body: null }), false);
 });
 
 test('fit score: another field or a clearance title can not score as a fit', async () => {
@@ -136,7 +154,7 @@ test('locations: a wrong state is put right, and real places are left alone', as
 });
 
 test('outreach check: the rules that stop an approve', async () => {
-  const { NOTE_END, closedNote, isCompanyPage, templateAsk } = await import('../services/referralFlow.js');
+  const { NOTE_END, isCompanyPage } = await import('../services/referralFlow.js');
   const good = { email_body: 'Dear Ana,', linkedin_note: `Hello Ana. ${NOTE_END}`, name: 'Ana Lee', company: 'IBM' };
   assert.deepEqual(checkOutreach(good), []);
   assert.match(checkOutreach({ ...good, email_body: 'Cut latency to 83ns.' })[0], /83ns/);
@@ -145,10 +163,6 @@ test('outreach check: the rules that stop an approve', async () => {
   assert.match(checkOutreach({ ...good, name: 'Eye Appoint', company: 'EyeAppoint' })[0], /company page/);
   assert.match(checkOutreach({ ...good, linkedin_note: `${'a'.repeat(300)} ${NOTE_END}` })[0], /characters/);
   assert.ok(isCompanyPage('Eye Appoint', 'EyeAppoint') && !isCompanyPage('Ana Lee', 'IBM'));
-  const long = closedNote(`${'a'.repeat(200)}. ${'b'.repeat(200)}`);
-  assert.ok(long.length <= 300 && long.endsWith(NOTE_END));
-  const t = templateAsk({ personName: 'Eye Appoint', me: 'Sam', title: 'SWE', company: 'EyeAppoint', jobUrl: '' });
-  assert.ok(t.body.startsWith('Dear Hiring Team,') && t.note.startsWith('Hello,') && t.note.endsWith(NOTE_END));
 });
 
 test('sponsorship: citizen-only wording is caught, and equal-opportunity lines are not', async () => {

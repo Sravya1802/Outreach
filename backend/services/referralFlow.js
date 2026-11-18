@@ -24,11 +24,9 @@
  *   4. A morning summary email, once a day, when anything happened.
  */
 
-import { inAppEmails } from './features.js';
 import { all, one, run } from '../db.js';
-import { complete } from './llm.js';
-import { connectionsAt, companyKey } from './linkedinConnections.js';
-import { cancelScheduled, scheduleEmail, scheduleThreadNote } from './outbox.js';
+import { companyKey } from './linkedinConnections.js';
+import { cancelScheduled, scheduleEmail } from './outbox.js';
 import { businessDaysLater, nextSendSlot, partsIn } from './sendWindow.js';
 import { connectionFor, sendToSelf } from './gmail.js';
 import { notify as whatsappNotify } from './whatsapp.js';
@@ -54,7 +52,6 @@ const isProfile = (url) => /linkedin\.com\/in\//i.test(String(url || ''));
 const AUTO_PLATFORMS = ['greenhouse', 'lever', 'ashby'];
 
 const str = (v) => String(v ?? '').trim();
-const first = (name) => str(name).split(/\s+/)[0] || 'there';
 // "University of X" reads as "the University of X" mid-sentence.
 export const schoolName = (s) => (/^university\b/i.test(str(s)) ? `the ${str(s)}` : str(s));
 
@@ -76,171 +73,18 @@ export function postingUrl(url) {
   return str(url);
 }
 
-/** House style for every email to a contact (the user wants formal, not chatty). */
-export const FORMAL = `Email style: formal business English. Open with "Dear <first name>," then a blank line. Full sentences, no contractions (write "I am", not "I'm"), no exclamation marks. No filler or flattery: never "I hope this finds you well", "I believe I can contribute immediately", "aligns with", "passionate", "excited" or "reach out". Write school names grammatically ("the University of ..."). End the body with "Thank you for your time and consideration." and no sign-off or name: the signature is added after.`;
-
 /** The sign-off under every email: name, degree and school, LinkedIn. */
 export function signature(who = {}) {
   const study = who.degree && who.major ? `${who.degree} in ${who.major}` : str(who.degree || who.major);
   return ['Best regards,', str(who.name), [study, str(who.school)].filter(Boolean).join(', '), str(who.linkedin)].filter(Boolean).join('\n');
 }
 
-// The model sometimes signs off anyway; the signature is ours. A period stuck
-// to the end of a link can break it in some mail apps, so it goes.
-const SIGN_OFF = /^(best|best regards|kind regards|warm regards|regards|sincerely|thanks|thank you),?$/i;
-export function signed(body, name, sig) {
-  const lines = str(body).replace(/(https?:\/\/\S+?)\.(?=\n|$)/g, '$1').split('\n');
-  const last = () => lines[lines.length - 1].trim();
-  while (lines.length && (!last() || SIGN_OFF.test(last()) || (name && last().toLowerCase() === str(name).toLowerCase()))) lines.pop();
-  return `${lines.join('\n')}\n\n${sig || signature({ name })}`.trim();
-}
-
-// The prompt bans a closing claim about what a project shows, but the model
-// often adds one anyway, so it's cut here. Its non-breaking hyphens go too.
-export function plainFit(body) {
-  return str(body)
-    .replace(/,\s+(demonstrating|showcasing|highlighting|showing)\b[^.\n]*\./gi, '.')
-    .replace(/\s+This (experience )?(demonstrates|shows|highlights)\b[^.\n]*\./gi, '')
-    .replace(/\u2011/g, '-');
-}
-
-/** LinkedIn caps notes at 300 characters: cut at the last full sentence, not mid-word. */
-export function noteFit(note, max = 300) {
-  const s = str(note);
-  if (s.length <= max) return s;
-  const cut = s.slice(0, max);
-  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.endsWith('.') || cut.endsWith('?') ? max - 1 : -1);
-  return end > 0 ? cut.slice(0, end + 1) : cut;
-}
-
 export const NOTE_END = 'Would love to tell you more about my skillsets';
-
-/** Fits the note in with the closing line every LinkedIn note ends on. */
-export function closedNote(note) {
-  const body = str(note).replace(/\s*Would love to tell you more about my skillsets\.?$/i, '');
-  return `${noteFit(body, 300 - NOTE_END.length - 1)} ${NOTE_END}`.trim();
-}
 
 const squash = (s) => str(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** A company page saved as a contact: "Eye Appoint" at EyeAppoint. */
 export const isCompanyPage = (name, company) => Boolean(squash(name)) && squash(name) === squash(company);
-
-/** Plain template, used when the AI is unavailable and for the "search" case. */
-// Who she is, for every email (the facts tailoring_config.email_template names).
-export const ABOUT_ME = 'I am completing a Master of Science in Computer Science at the University of Illinois at Chicago (May 2027), after two years as a Software Engineer at Mercedes-Benz Research and Development India.';
-
-const WORDS_AFTER = /\b(equal opportunity|benefits?|salary|compensation|pay range|accommodation|privacy|cookie|apply|application|visa|sponsor|background check|drug|e-verify|401\(k\)|insurance|pto|paid time off)\b/i;
-
-/**
- * One true sentence from the posting about what the company does or values,
- * for "Why this company" (never generic praise): mentions the company (or
- * "we" / "our"), says what it builds, makes or values, 40 to 220 characters,
- * no hype punctuation. Null when the posting has none. Pure.
- */
-export function companyDetail(jd, company) {
-  const name = str(company).split(/\s+/)[0]?.toLowerCase() || '';
-  const text = str(jd).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z])/).map(s => s.trim());
-  // Headings run into the text in many postings ("…New York Who we are At Domino, we build…"): start where the company sentence does.
-  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const START = new RegExp(String.raw`\b(?:At ${name ? esc(str(company).split(/\s+/)[0]) : '[A-Z]\\w+'}\b[^.]{0,30}?, we\b|We\b|Our\b${name ? `|${esc(str(company).split(/\s+/)[0])}\b` : ''})`);
-  for (const raw of sentences.slice(0, 40)) {
-    const at = raw.search(START);
-    const s = at > 0 ? raw.slice(at) : raw;
-    if (s.length < 40 || s.length > 220 || /[!?]|\b\w+'(re|ll|ve|s|t|d)\b|’/.test(s) || /[—–]/.test(s)) continue;
-    if (WORDS_AFTER.test(s)) continue;
-    const about = (name && s.toLowerCase().includes(name)) || /^(we|our)\b/i.test(s);
-    const doing = /\b(build|builds|building|develop|develops|design|designs|make|makes|create|creates|power|powers|help|helps|provide|provides|deliver|delivers|enable|enables|transform|transforms|mission|leader|leading|pioneer|serve|serves|operate|operates|manufacture|manufactures)\b/i.test(s);
-    if (about && doing) return s.replace(/\s+([,.;:])/g, '$1').replace(/\.*$/, '.');
-  }
-  return null;
-}
-
-/** "Python, SQL and Kafka". */
-const andList = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
-
-/** The signature tailoring_config.email_template asks for ("End with exactly this signature:"), or null. Pure. */
-export function signatureFromTemplate(template) {
-  const m = str(template).match(/End with exactly this signature:\s*\n+([\s\S]+)$/i);
-  return m ? m[1].trim() : null;
-}
-
-/**
- * " in New York City, NY" for the ask: the first place only, and a remote
- * role reads " in New York City, NY (remote)" or " (remote)", never
- * "in Remote - New York City, NY". Empty when there is no place. Pure.
- */
-export function placePhrase(location) {
-  const first_ = str(location).split(/;|\s\+\d/)[0].trim().replace(/,\s*(US|USA|United States)$/i, '');
-  if (!first_) return '';
-  const m = first_.match(/^remote\b\s*(?:[-–:,(·|]\s*)?(.*?)\)?$/i) || first_.match(/^(.*?)\s*[-–,(·|]\s*remote\)?$/i);
-  if (!m) return ` in ${first_}`;
-  const place = m[1].replace(/^(us|usa|united states)$/i, 'the United States').trim();
-  return place ? ` in ${place} (remote)` : ' (remote)';
-}
-
-/**
- * The plain email (no AI) to someone at the company, in the shape
- * tailoring_config.email_template sets: "Dear <first name>,", the ask with the
- * exact role and location (recruiters: review or point to the right person;
- * engineers: a referral), one true detail about the company from the posting,
- * who she is plus the role's requirements her resume shows, the posting link,
- * and the signature. Subject "<Role title>: <name>". And the LinkedIn note.
- */
-export function templateAsk({ personName: found, me, school, major, sig, title, company, location, jobUrl, attached = false, audience = 'recruiter', jd = '', matches = [] }) {
-  const personName = isCompanyPage(found, company) ? '' : found;
-  const student = major ? `a ${major} student` : 'a student';
-  const where = placePhrase(location);
-  const ask = audience === 'engineer'
-    ? `I am applying for the ${title} role at ${company}${where}, and I would be grateful if you would consider referring me.`
-    : `I am applying for the ${title} role at ${company}${where}, and I would be grateful if you could review my application or point me to the right person on the hiring team.`;
-  const detail = companyDetail(jd, company);
-  const why = detail ? `What draws me to ${company} is how the posting describes it: "${detail}"` : null;
-  const shown = (matches || []).map(str).filter(Boolean).slice(0, 3);
-  const me_ = `${ABOUT_ME}${shown.length ? ` My resume shows hands-on work with ${andList(shown)}, which this role lists among its requirements.` : ''}`;
-  const link = postingUrl(jobUrl);
-  const close = attached
-    ? `My resume is attached, and the posting is here: ${link}. Thank you for your time and consideration.`
-    : `I would be glad to send my resume, and the posting is here: ${link}. Thank you for your time and consideration.`;
-  const body = [`Dear ${str(personName) ? first(personName) : 'Hiring Team'},`, ask, why, me_, close].filter(Boolean).join('\n\n');
-  const note = closedNote(`${str(personName) ? `Hello ${first(personName)},` : 'Hello,'} I am ${me || 'a student'}${school ? `, ${student} at ${schoolName(school)}` : ''}, applying for the ${title} role at ${company}. Would you be willing to ${audience === 'engineer' ? 'refer me' : 'review my application'}, or direct me to the appropriate person? Thank you.`);
-  return { subject: `${title}: ${me || 'Lakshmi Sravya Rachakonda'}`.slice(0, 120), body: signed(body, me, sig), note };
-}
-
-/** The signature for a user's emails: the one their latest email_template sets, else built from the profile. */
-export async function emailSignature(userId, who) {
-  const row = await one('SELECT email_template FROM tailoring_config WHERE user_id = $1 ORDER BY version DESC LIMIT 1', [userId]).catch(() => null);
-  return signatureFromTemplate(row?.email_template) || signature(who);
-}
-
-export async function draftAsk(userId, ctx) {
-  if (!inAppEmails()) return templateAsk(ctx);
-  try {
-    const r = await complete({
-      task: 'email',
-      json: true,
-      maxTokens: 900,
-      userId,
-      system: `You write a formal referral request email from a student to someone at a company.
-Return JSON: {"subject": "...", "body": "...", "note": "..."}
-- body: under 120 words of plain text: the greeting, then 3 short paragraphs separated by a blank line.
-  1. The ask with the exact role, company and location: "I am applying for the <role> role at <company> in <location>, and I would be grateful if you could review my application or point me to the right person on the hiring team." (for an engineer: "...if you would consider referring me."). Never start with "My name is".
-  2. One concrete reason they fit: a project, internship or result from BACKGROUND or FIT, with a specific detail, stated plainly. Never invent facts, never describe the company's or team's focus, and don't add a clause saying it "demonstrates" skills or "matches the role".
-  3. The ask: whether they would be willing to refer the student, or direct them to the appropriate person on the hiring team; ${ctx.attached ? '"I have attached my résumé for your reference."' : 'an offer to send the résumé'}; then, as the paragraph\'s last sentence, "The job posting is available here: <link>" (never a label like "Job link:").
-- ${FORMAL}
-- note: a LinkedIn connection note under 250 characters with the same ask, starting "Hello <first name>,", also formal with no contractions. No link and no mention of a résumé or attachment (a note can carry neither).
-- subject: exactly "<role>: <student>".
-- ${ctx.knows ? 'They are a LinkedIn connection of the student: you may mention that, in the same formal tone.' : 'They don\'t know the student; keep it brief and respectful.'}`,
-      user: JSON.stringify({ to: ctx.personName, theirTitle: ctx.personTitle, student: ctx.me, MAJOR: ctx.major, SCHOOL: ctx.school, role: ctx.title, company: ctx.company, jobLink: postingUrl(ctx.jobUrl), FIT: ctx.why, BACKGROUND: ctx.background }),
-    });
-    const d = JSON.parse(String(r.text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
-    if (!str(d.body) || !str(d.note)) throw new Error('empty draft');
-    return { subject: str(d.subject).slice(0, 120) || templateAsk(ctx).subject, body: signed(plainFit(d.body), ctx.me, ctx.sig), note: noteFit(d.note) };
-  } catch {
-    return templateAsk(ctx);
-  }
-}
 
 export async function me(userId) {
   const p = await one('SELECT first_name, last_name, education_school, education_degree, education_major, linkedin_url FROM user_profile WHERE user_id = $1', [userId]);
@@ -252,17 +96,6 @@ export async function me(userId) {
     major: str(p?.education_major),
     linkedin: str(p?.linkedin_url),
   };
-}
-
-/** A few lines from the master resume (jobs, projects, skills) for the model to pick a fit from. */
-export async function candidateHighlights(userId) {
-  const m = await one("SELECT parsed FROM resume_files WHERE user_id = $1 AND kind = 'master' AND is_current", [userId]);
-  const p = m?.parsed;
-  if (!p) return '';
-  const exp = (p.experience || []).slice(0, 2).map(e => `${e.title} at ${e.company}: ${(e.bullets || [])[0] || ''}`);
-  const proj = (p.projects || []).slice(0, 2).map(x => `${x.name}: ${(x.bullets || [])[0] || ''}`);
-  const skills = (p.skills || []).flatMap(s => s.items || []).slice(0, 10).join(', ');
-  return [...exp, ...proj, skills && `Skills: ${skills}`].filter(Boolean).join('\n');
 }
 
 /** The user's company row (jobs), created if needed, so contacts and outreach have a home. */
@@ -532,18 +365,6 @@ export async function findProspeoPeopleAt(userId, jobId, { recruitersOnly = fals
     }
   }
   return out;
-}
-
-/**
- * Check the guessed addresses about to get a draft (Hunter's verifier): a
- * bounce-to-be is marked invalid and dropped, a confirmed one stops being a
- * guess. Once the company's server turns out to accept any address, there's
- * nothing more to learn there, so checking stops.
- */
-async function checkGuesses(userId, people) {
-  for (const p of people) {
-    if (await checkGuess(userId, p) === 'stop') return;
-  }
 }
 
 /** One address through the email check, saved: the verdict, or 'stop' when there's nothing more to learn at the company (or no checks left). */
@@ -946,134 +767,6 @@ async function referralWait(item, settings) {
 /** No date to apply by: the role stays here until the user presses Apply without referral. */
 const holdRole = (itemId) => run('UPDATE plan_items SET apply_after = NULL, wait_until = NULL, stage_note = $2 WHERE id = $1', [itemId, NO_OUTREACH_NOTE]);
 
-/** Step 1: ask. Moves the role to waiting_referral with its apply time set. */
-export async function askForReferral(userId, item, settings) {
-  // Never ask twice for one role: if asks exist, only (re)set the wait.
-  const existing = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
-  if (existing.length) {
-    const tz0 = item.company_tz || settings.timezone;
-    const wait = await referralWait(item, settings);
-    const at = item.apply_after ? new Date(item.apply_after) : businessDaysLater(new Date(), wait.days, tz0, { startHour: 6, endHour: 10 });
-    await run("UPDATE plan_items SET stage = 'waiting_referral', referral_status = CASE WHEN referral_status = 'none' THEN 'asked' ELSE referral_status END, wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
-      [item.id, at, referralNote(await liveAsks(item.id), describeDay(at, tz0)) + wait.note]);
-    return;
-  }
-  // People first: wait for a search that's running, or run it now.
-  if (!item.contacts_at) {
-    if (peopleRunning.has(String(item.id))) return;
-    await findPeopleFor(userId, item);
-  }
-  const who = await me(userId);
-  const jobId = await companyRow(userId, item.company_name, item.location);
-  const latest = await one("SELECT report, file_id FROM resume_tailorings WHERE id = $1", [item.tailoring_id]);
-  const why = str(item.reason) || str(latest?.report?.notes).slice(0, 200);
-  // The role's tailored resume goes with the email.
-  const attachmentFileId = latest?.file_id
-    || (item.evaluation_id && (await one('SELECT resume_file_id FROM evaluations WHERE id = $1 AND user_id = $2', [item.evaluation_id, userId]))?.resume_file_id)
-    || null;
-  const gmail = await connectionFor(userId);
-
-  // Everyone known at the company: connections, then contacts found there.
-  const pool = [];
-  for (const c of (await connectionsAt(userId, item.company_name)).slice(0, 6)) {
-    const contact = await contactFor(userId, jobId, c);
-    pool.push({ name: c.full_name, title: c.position, linkedin: c.profile_url, email: contact.email || c.email, contactId: contact.id, connectionId: c.id, knows: true });
-  }
-  const saved = await all(
-    `SELECT c.* FROM job_contacts c JOIN jobs j ON j.id = c.job_id
-      WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')
-      ORDER BY (c.email IS NOT NULL AND COALESCE(c.email_status, '') <> 'invalid') DESC, c.seniority_score DESC NULLS LAST LIMIT 200`,
-    [userId, item.company_name],
-  );
-  for (const c of saved) {
-    if (pool.some(p => String(p.contactId) === String(c.id))) continue;
-    pool.push({ name: c.name, title: c.title, linkedin: c.linkedin_url, email: c.email_status === 'invalid' ? null : c.email, guessed: c.email_status === 'guessed', contactId: c.id, connectionId: null, knows: false });
-  }
-  // Nobody is asked twice: people asked for another role, or already emailed, are left out.
-  const before = await all(
-    `SELECT a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin FROM referral_asks a
-      WHERE a.user_id = $1 AND a.plan_item_id <> $2 AND a.channel IN ('email', 'linkedin')
-     UNION
-     SELECT o.contact_id, lower(o.to_email), NULL FROM email_outbox o
-      WHERE o.user_id = $1 AND o.step = 0 AND o.status IN ('draft', 'scheduled', 'sending', 'sent')`,
-    [userId, item.id],
-  );
-  const askedBefore = (p) => before.some(b =>
-    (b.contact_id && String(b.contact_id) === String(p.contactId))
-    || (b.email && p.email && b.email === String(p.email).toLowerCase())
-    || (b.linkedin && p.linkedin && b.linkedin === String(p.linkedin).toLowerCase()));
-  for (let i = pool.length - 1; i >= 0; i--) if (askedBefore(pool[i])) pool.splice(i, 1);
-  let targets = pickTargets(pool, { canEmail: Boolean(gmail) });
-  // Fewer than 2 recruiters have a found email: look up theirs (a guessed one gets checked first), at most 2 lookups.
-  if (gmail) {
-    const best = rankForAsk(pool).filter(p => isRecruiterTitle(p.title));
-    let tries = 0;
-    for (const p of best) {
-      if (tries >= 2 || best.filter(x => x.email && !x.guessed).length >= MAX_PEOPLE_PER_ROLE) break;
-      if ((p.email && !p.guessed) || !p.contactId) continue;
-      tries += 1;
-      const found = await findEmailFor(userId, jobId, p).catch(err => { console.warn('[referrals] person email lookup failed', p.name, err.message); return null; });
-      if (found) Object.assign(p, { email: found, guessed: false });
-    }
-    // Guessed addresses that would get a draft are checked first; a failed one makes room for the next person.
-    const guessed = pickTargets(pool, { canEmail: true }).email.filter(p => p.guessed);
-    if (guessed.length) await checkGuesses(userId, guessed);
-    targets = pickTargets(pool, { canEmail: true });
-  }
-  const people = [...targets.email.map(p => ({ ...p, via: 'email' })), ...targets.note.map(p => ({ ...p, via: 'linkedin' }))];
-
-  const base = {
-    me: who.name, school: who.school, major: who.major, sig: await emailSignature(userId, who), background: people.length ? await candidateHighlights(userId) : '',
-    title: item.title, company: item.company_name, location: item.location, jd: item.job_description, jobUrl: item.apply_url, why, attached: Boolean(attachmentFileId),
-  };
-  if (!people.length) {
-    const t = templateAsk({ ...base, personName: '' });
-    await run(
-      "INSERT INTO referral_asks (user_id, plan_item_id, channel, linkedin_url, message, status) VALUES ($1, $2, 'search', $3, $4, 'to_send')",
-      [userId, item.id, linkedinSearchUrl(item.company_name, who.school), t.note],
-    );
-  }
-  for (const p of people) {
-    const d = await draftAsk(userId, { ...base, personName: p.name, personTitle: p.title, knows: p.knows });
-    let outboxId = null;
-    let status = 'to_send';
-    let channel = 'linkedin';
-    if (p.via === 'email') {
-      try {
-        // A draft: nothing goes out until the user approves it.
-        const o = await scheduleEmail(userId, { contactId: p.contactId, subject: d.subject, body: d.body, purpose: 'referral', draft: true, attachmentFileId });
-        outboxId = o.id;
-        status = 'draft';
-        channel = 'email';
-      } catch { /* already emailed, no Gmail, etc.: fall back to a LinkedIn note */ }
-    }
-    const linkedinUrl = p.linkedin || linkedinSearchUrl(`${p.name} ${item.company_name}`);
-    await run(
-      `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, connection_id, outbox_id, subject, message, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [userId, item.id, channel, p.name, p.title, linkedinUrl, p.email, p.contactId, p.connectionId, outboxId,
-        channel === 'email' ? d.subject : null, channel === 'email' ? d.body : d.note, status],
-    );
-    // Everyone emailed also gets the LinkedIn note written with their email; the user sends it by hand.
-    if (channel === 'email') await insertNote(userId, item.id, { ...p, linkedin: linkedinUrl }, d.note);
-  }
-
-  const tz = item.company_tz || settings.timezone;
-  const wait = await referralWait(item, settings);
-  const applyAt = businessDaysLater(new Date(), wait.days, tz, { startHour: 6, endHour: 10 });
-  const asked = await all('SELECT channel, person_name, status FROM referral_asks WHERE plan_item_id = $1', [item.id]);
-  const note = referralNote(asked, describeDay(applyAt, tz)) + wait.note;
-  await run(
-    "UPDATE plan_items SET stage = 'waiting_referral', referral_status = 'asked', wait_until = $2, apply_after = $2, stage_note = $3 WHERE id = $1",
-    [item.id, applyAt, note],
-  );
-}
-
-/**
- * A role approved in the Review queue: each email a run wrote becomes a draft,
- * here and in Gmail Drafts, and nothing sends until the user OKs it. Each note is
- * theirs to send by hand. The wait starts now and restarts when an email goes out.
- */
 /**
  * Drafts to people already asked for another role, so nobody is asked twice: an
  * email not discarded, a note marked sent, or a note waiting on a role still in
@@ -1174,32 +867,6 @@ async function insertNote(userId, planItemId, p, note) {
      VALUES ($1, $2, 'linkedin', $3, $4, $5, $6, $7, $8, $9, 'to_send')`,
     [userId, planItemId, p.name, p.title, p.linkedin, p.email, p.contactId, p.connectionId, note],
   );
-}
-
-/**
- * People emailed before notes were kept get their LinkedIn note now, from the
- * template (no AI call). Idempotent; skips discarded emails and replies.
- */
-export async function addMissingNotes() {
-  const rows = await all(
-    `SELECT a.user_id, a.plan_item_id, a.person_name, a.person_title, a.linkedin_url, a.email, a.contact_id, a.connection_id,
-            pi.title, pi.company_name, pi.apply_url
-       FROM referral_asks a
-       JOIN plan_items pi ON pi.id = a.plan_item_id
-       LEFT JOIN email_outbox o ON o.id = a.outbox_id
-      WHERE a.channel = 'email' AND a.status <> 'replied' AND o.status IS DISTINCT FROM 'cancelled'
-        AND NOT EXISTS (SELECT 1 FROM referral_asks b WHERE b.plan_item_id = a.plan_item_id AND b.channel = 'linkedin'
-                         AND lower(COALESCE(b.person_name, '')) = lower(COALESCE(a.person_name, '')))`,
-  );
-  const mine = new Map();
-  for (const r of rows) {
-    if (!mine.has(r.user_id)) mine.set(r.user_id, await me(r.user_id));
-    const who = mine.get(r.user_id);
-    const { note } = templateAsk({ personName: r.person_name, me: who.name, school: who.school, major: who.major, title: r.title, company: r.company_name, jobUrl: r.apply_url });
-    await insertNote(r.user_id, r.plan_item_id,
-      { name: r.person_name, title: r.person_title, linkedin: r.linkedin_url, email: r.email, contactId: r.contact_id, connectionId: r.connection_id }, note);
-  }
-  return rows.length;
 }
 
 const names = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
@@ -1327,7 +994,6 @@ async function applyItem(userId, item) {
   const r = await processOneEvaluation(userId, item.evaluation_id, { headless: true }).catch(err => ({ ok: false, error: err.message }));
   if (r.ok) {
     await run("UPDATE plan_items SET stage = 'applied', applied_at = NOW(), stage_note = $2 WHERE id = $1", [item.id, `Applied on ${r.platform || 'the company site'} with your tailored resume.`]);
-    await sendAppliedNotes(userId, item);
   } else if (r.alreadySubmitted) {
     await run("UPDATE plan_items SET stage = 'applied', applied_at = NOW(), stage_note = 'Already applied.' WHERE id = $1", [item.id]);
   } else if (r.capReached || r.paused) {
@@ -1338,15 +1004,6 @@ async function applyItem(userId, item) {
   } else {
     await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'apply', stage_note = $2 WHERE id = $1",
       [item.id, `Couldn’t finish the application: ${r.error || 'unknown problem'}. Apply yourself with the tailored resume, then press “I applied”.`]);
-  }
-}
-
-async function sendAppliedNotes(userId, item) {
-  const who = await me(userId);
-  const asks = await all("SELECT * FROM referral_asks WHERE plan_item_id = $1 AND channel = 'email' AND outbox_id IS NOT NULL", [item.id]);
-  for (const a of asks) {
-    const body = `Hi ${first(a.person_name)},\n\nA quick update: I went ahead and applied for the ${item.title} role. If you're still open to referring me, the application is in under my name, ${who.name || 'as above'}. Thank you either way!\n\n${who.name || ''}`.trim();
-    await scheduleThreadNote(userId, a.outbox_id, { body }).catch(() => {});
   }
 }
 
@@ -1373,11 +1030,12 @@ const closesOn = (d) => new Date(`${String(d).slice(0, 10)}T12:00:00Z`).toLocale
 
 /** Move this user's roles through ask → wait → apply. At most one application per call. */
 export async function advanceReferrals(userId, settings) {
-  for (const item of await all("SELECT * FROM plan_items WHERE user_id = $1 AND decision = 'approved' AND stage = 'asking_referral' ORDER BY decided_at LIMIT 5", [userId])) {
-    try { await askForReferral(userId, item, settings); } catch (err) {
-      await run("UPDATE plan_items SET stage = 'needs_you', needs_reason = 'referral', stage_note = $2 WHERE id = $1", [item.id, `Couldn’t prepare the referral ask: ${String(err.message).slice(0, 200)}`]);
-    }
-  }
+  // The app writes no emails: a role from the old daily list that reaches the ask goes to the user.
+  await run(
+    `UPDATE plan_items SET stage = 'needs_you', needs_reason = 'referral', stage_note = $2
+      WHERE user_id = $1 AND decision = 'approved' AND stage = 'asking_referral'`,
+    [userId, 'The app doesn’t write referral emails. Add this role to the queue (To apply → Earlier resumes) and your Claude run writes them, or apply yourself and press I applied.'],
+  );
   // Someone answered: say so (the user decides what it means).
   const waiting = await all(
     `SELECT pi.*, COALESCE(pi.apply_deadline, sr.apply_deadline) AS closes

@@ -417,7 +417,7 @@ export async function reviewRole(userId, planItemId) {
   if (!role) return null;
   // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
   run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]).catch(() => {});
-  const [versions, comments, outreach, contacts] = await Promise.all([
+  const [versions, comments, outreach, contacts, coveredBy] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,
               keywords, pdf_path, pdf_path IS NOT NULL AS has_pdf, created_at
@@ -427,6 +427,7 @@ export async function reviewRole(userId, planItemId) {
     all('SELECT id, version_id, body, status, addressed_in_version, created_at FROM resume_comments WHERE user_id = $1 AND plan_item_id = $2 ORDER BY created_at', [userId, planItemId]),
     all(
       `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.email_status, c.linkedin_url,
+              (SELECT array_agg(p2.title ORDER BY p2.id) FROM plan_items p2 WHERE p2.id = ANY(d.also_plan_items)) AS also_roles,
               (SELECT array_agg(pi.title ORDER BY pi.id) FROM outreach_drafts o JOIN plan_items pi ON pi.id = o.plan_item_id JOIN tailor_jobs j ON j.plan_item_id = o.plan_item_id
                 WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed') AS also_for
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 ORDER BY d.audience DESC, d.id`,
@@ -435,9 +436,15 @@ export async function reviewRole(userId, planItemId) {
     // Who the outreach would go to, shown while the role has none yet.
     NO_EMAILS.includes(role.referral_mode) ? [] : outreachTargets(userId, role.company_name, role.referral_mode)
       .then(list => list.map(c => ({ id: c.id, name: c.name, title: c.title, email: c.email, email_status: c.email_status, linkedin_url: c.linkedin_url, audience: c.audience }))),
+    // This role's people are asked in another role's email at the company (one email per person).
+    all(
+      `SELECT d.id, c.name, pi.id::text AS role_id, pi.title, d.status FROM outreach_drafts d JOIN plan_items pi ON pi.id = d.plan_item_id
+         LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND $2::bigint = ANY(d.also_plan_items) ORDER BY d.id`,
+      [userId, planItemId],
+    ),
   ]);
   const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
-  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, outreach: outreach.map(d => ({ ...d, writing: stillWriting(d), problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
+  return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, covered_by: coveredBy, outreach: outreach.map(d => ({ ...d, writing: stillWriting(d), problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
 
 /** A version's PDF, if it's the user's and it compiled. */
@@ -714,39 +721,124 @@ export function stillWriting(d) {
   return (canMail && !String(d.email_body ?? '').trim()) || !String(d.linkedin_note ?? '').trim();
 }
 
+/** Best fit first: interview callback, then ATS, then the role's fit score; ties by the older role. */
+export function byFit(a, b) {
+  const n = (v) => (v == null ? -Infinity : Number(v));
+  return n(b.callback_after) - n(a.callback_after) || n(b.ats_after) - n(a.ats_after) || n(b.score) - n(a.score) || Number(a.id) - Number(b.id);
+}
+
 /**
- * Empty outreach rows for the people this role should reach (outreachTargets,
- * the same rule as the run's step 7), for your Claude run to write: subject,
- * body and note stay NULL until it does, and the role page says "Claude is
- * writing this email". The app never fills in any text. Marks the role
- * outreach_due so the next run picks it up. Returns the rows added.
+ * Who gets an empty outreach row on which role, for roles queued together.
+ * One person, one email per company: someone several roles would reach gets
+ * one row, on the best-fit of those roles, with the others in `also`. Someone
+ * who already has a row on another open role is left alone there: an
+ * unwritten one takes these roles into its `also`, a written, approved or
+ * sent one stays as it is (the run never rewrites an email) and they're
+ * skipped here. Pure.
+ *   roles:    [{ id, callback_after, ats_after, score }]
+ *   targets:  Map role id → [{ id: contact id, audience }]   (outreachTargets)
+ *   existing: Map contact id → { draftId, planItemId, unwritten }
+ * → { insert: [{ planItemId, contactId, audience, also }], append: [{ draftId, add }], skip: [{ contactId, planItemId, roles }] }
  */
-export async function queueOutreachDrafts(userId, planItemId) {
-  const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  if (!job || NO_EMAILS.includes(job.referral_mode) || !['ready', 'revision_requested'].includes(job.status)) return 0;
-  const item = await one('SELECT company_name FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
-  let added = 0;
-  for (const p of await outreachTargets(userId, item.company_name, job.referral_mode)) {
-    try {
-      const r = await run(
-        `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
-        [userId, planItemId, p.id, p.audience || 'recruiter'],
-      );
-      added += r.rowCount;
-    } catch (err) {
-      // The per-role cap (migrations 040 and 050) refuses extra people: the rest still get theirs.
-      if (!/limit/i.test(String(err.message))) throw err;
+export function planOutreach({ roles, targets, existing = new Map() }) {
+  const order = [...roles].sort(byFit).map(r => String(r.id));
+  const wanted = new Map(); // contact id → { audience, roles: [role ids, best fit first] }
+  for (const roleId of order) {
+    for (const p of targets.get(roleId) || targets.get(Number(roleId)) || []) {
+      const key = String(p.id);
+      if (!wanted.has(key)) wanted.set(key, { audience: p.audience || 'recruiter', roles: [] });
+      wanted.get(key).roles.push(roleId);
     }
   }
-  const owed = await one(
-    `SELECT COUNT(*)::int AS n FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
-      WHERE d.plan_item_id = $1 AND d.status IN ('draft', 'edited')
-        AND ((c.email IS NOT NULL AND c.email_status IS DISTINCT FROM 'invalid' AND COALESCE(btrim(d.email_body), '') = '') OR COALESCE(btrim(d.linkedin_note), '') = '')`,
-    [planItemId],
+  const insert = [];
+  const append = [];
+  const skip = [];
+  for (const [contactId, w] of wanted) {
+    const had = existing.get(contactId) || existing.get(Number(contactId));
+    if (had) {
+      const add = w.roles.filter(r => r !== String(had.planItemId));
+      if (had.unwritten && add.length) append.push({ draftId: String(had.draftId), add });
+      else if (add.length) skip.push({ contactId, planItemId: String(had.planItemId), roles: add });
+      continue;
+    }
+    const [best, ...rest] = w.roles;
+    insert.push({ planItemId: best, contactId, audience: w.audience, also: rest });
+  }
+  return { insert, append, skip };
+}
+
+/**
+ * Empty outreach rows for roles (Ready or Revising, a mode that emails), for
+ * your Claude run to write: subject, body and note stay NULL until it does,
+ * and the role page says "Claude is writing this email". The app never fills
+ * in any text. People come from outreachTargets (the run's step 7 rule: the
+ * best 2 recruiters, plus 1 engineer in that mode), grouped by company so each
+ * person gets one row (planOutreach). Roles given a row are marked
+ * outreach_due for the next run. → { inserted, appended, skipped, roles }
+ */
+export async function queueOutreachForRoles(userId, planItemIds, { dryRun = false } = {}) {
+  const roles = await all(
+    `SELECT pi.id, pi.company_name, pi.title, pi.score, j.referral_mode, v.callback_after, v.ats_after
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN LATERAL (SELECT callback_after, ats_after FROM resume_versions x WHERE x.plan_item_id = pi.id ORDER BY version DESC LIMIT 1) v ON TRUE
+      WHERE j.user_id = $1 AND pi.id = ANY($2::bigint[]) AND j.status IN ('ready', 'revision_requested') AND j.referral_mode NOT IN ('my_contact', 'none')`,
+    [userId, planItemIds.map(Number)],
   );
-  if (owed.n) await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
-  return added;
+  const result = { inserted: 0, appended: 0, skipped: [], roles: new Set(), plans: [] };
+  const companies = new Map();
+  for (const r of roles) {
+    const key = r.company_name.trim().toLowerCase();
+    if (!companies.has(key)) companies.set(key, []);
+    companies.get(key).push(r);
+  }
+  for (const group of companies.values()) {
+    const targets = new Map();
+    for (const r of group) targets.set(String(r.id), await outreachTargets(userId, r.company_name, r.referral_mode));
+    const contactIds = [...new Set([...targets.values()].flat().map(p => Number(p.id)))];
+    if (!contactIds.length) continue;
+    const rows = await all(
+      `SELECT DISTINCT ON (d.contact_id) d.id, d.contact_id, d.plan_item_id,
+              (d.status IN ('draft', 'edited') AND COALESCE(btrim(d.email_body), '') = '' AND COALESCE(btrim(d.linkedin_note), '') = '') AS unwritten
+         FROM outreach_drafts d JOIN tailor_jobs j ON j.plan_item_id = d.plan_item_id
+        WHERE d.user_id = $1 AND d.contact_id = ANY($2::bigint[]) AND j.status <> 'closed' AND NOT (d.plan_item_id = ANY($3::bigint[]))
+        ORDER BY d.contact_id, d.id`,
+      [userId, contactIds, group.map(r => Number(r.id))],
+    );
+    const existing = new Map(rows.map(r => [String(r.contact_id), { draftId: r.id, planItemId: r.plan_item_id, unwritten: r.unwritten }]));
+    const plan = planOutreach({ roles: group, targets, existing });
+    if (dryRun) { result.plans.push({ company: group[0].company_name, roles: group.map(r => ({ id: String(r.id), title: r.title, callback_after: r.callback_after, ats_after: r.ats_after })), targets: Object.fromEntries([...targets].map(([k, v]) => [k, v.map(p => ({ id: String(p.id), name: p.name, audience: p.audience, email: p.email || null }))])), ...plan }); continue; }
+    for (const x of plan.insert) {
+      try {
+        const r = await run(
+          `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, also_plan_items) VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (plan_item_id, contact_id) DO NOTHING`,
+          [userId, x.planItemId, x.contactId, x.audience, x.also.length ? x.also.map(Number) : null],
+        );
+        if (r.rowCount) { result.inserted += 1; result.roles.add(String(x.planItemId)); }
+      } catch (err) {
+        // The per-role cap (migrations 040 and 050) refuses extra people: the rest still get theirs.
+        if (!/limit/i.test(String(err.message))) throw err;
+      }
+    }
+    for (const a of plan.append) {
+      await run(
+        `UPDATE outreach_drafts SET also_plan_items = (SELECT array_agg(DISTINCT x) FROM unnest(COALESCE(also_plan_items, '{}') || $2::bigint[]) x), updated_at = NOW()
+          WHERE id = $1 AND COALESCE(btrim(email_body), '') = '' AND COALESCE(btrim(linkedin_note), '') = ''`,
+        [a.draftId, a.add.map(Number)],
+      );
+      result.appended += 1;
+    }
+    result.skipped.push(...plan.skip);
+  }
+  if (result.roles.size) {
+    await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = ANY($2::bigint[])', [userId, [...result.roles].map(Number)]);
+  }
+  return { ...result, roles: [...result.roles] };
+}
+
+/** One role's empty outreach rows (see queueOutreachForRoles). Returns the rows added. */
+export async function queueOutreachDrafts(userId, planItemId) {
+  return (await queueOutreachForRoles(userId, [planItemId])).inserted;
 }
 
 /**

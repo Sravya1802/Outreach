@@ -211,3 +211,45 @@ test('keywordCheck: combined keywords are separate terms; C++ and C# match liter
   assert.deepEqual(keywordCheck('I write C and C#.', [{ keyword: 'C++' }]).missing, ['C++'])
   assert.deepEqual(keywordCheck('Python, C++', [{ keyword: 'C++' }]).present, ['C++'])
 })
+
+test('planOutreach: one person, one row per company, on the best-fit role; the other roles go in also', async () => {
+  const { planOutreach } = await import('../services/tailorPipeline.js');
+  const roles = [
+    { id: 1, callback_after: 30, ats_after: 92 },
+    { id: 2, callback_after: 45, ats_after: 91 },
+    { id: 3, callback_after: 45, ats_after: 95 },
+  ];
+  const ana = { id: 10, audience: 'recruiter' };
+  const bo = { id: 11, audience: 'recruiter' };
+  const cy = { id: 12, audience: 'engineer' };
+  const targets = new Map([['1', [ana, bo]], ['2', [ana, bo]], ['3', [ana, bo, cy]]]);
+  const plan = planOutreach({ roles, targets });
+  // Role 3 fits best (same callback as 2, higher ATS): Ana and Bo go there, with 2 and 1 noted.
+  assert.deepEqual(plan.insert, [
+    { planItemId: '3', contactId: '10', audience: 'recruiter', also: ['2', '1'] },
+    { planItemId: '3', contactId: '11', audience: 'recruiter', also: ['2', '1'] },
+    { planItemId: '3', contactId: '12', audience: 'engineer', also: [] },
+  ]);
+  assert.deepEqual(plan.append, []);
+  assert.deepEqual(plan.skip, []);
+});
+
+test('planOutreach: someone already asked for another role stays there', async () => {
+  const { planOutreach } = await import('../services/tailorPipeline.js');
+  const roles = [{ id: 1, score: 8 }, { id: 2, score: 9 }];
+  const targets = new Map([['1', [{ id: 10 }, { id: 11 }]], ['2', [{ id: 10 }, { id: 11 }]]]);
+  const existing = new Map([
+    ['10', { draftId: 500, planItemId: 99, unwritten: true }],   // empty row elsewhere: these roles join it
+    ['11', { draftId: 501, planItemId: 98, unwritten: false }],  // written elsewhere: left alone
+  ]);
+  const plan = planOutreach({ roles, targets, existing });
+  assert.deepEqual(plan.insert, []);
+  assert.deepEqual(plan.append, [{ draftId: '500', add: ['2', '1'] }]);
+  assert.deepEqual(plan.skip, [{ contactId: '11', planItemId: '98', roles: ['2', '1'] }]);
+});
+
+test('byFit: callback, then ATS, then score; unknowns last', async () => {
+  const { byFit } = await import('../services/tailorPipeline.js');
+  const list = [{ id: 1 }, { id: 2, score: 9 }, { id: 3, ats_after: 93 }, { id: 4, callback_after: 20 }];
+  assert.deepEqual(list.sort(byFit).map(r => r.id), [4, 3, 2, 1]);
+});

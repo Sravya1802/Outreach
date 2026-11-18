@@ -250,7 +250,7 @@ export async function reviewQueue(userId) {
             COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,
             ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
-            (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id) AS outreach,
+            (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id AND d.status <> 'closed') AS outreach,
             (SELECT COUNT(*)::int FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
               WHERE d.plan_item_id = j.plan_item_id AND d.status IN ('draft', 'edited')
                 AND ((COALESCE(btrim(c.email), '') <> '' AND c.email_status IS DISTINCT FROM 'invalid' AND COALESCE(btrim(d.email_body), '') = '')
@@ -429,8 +429,8 @@ export async function reviewRole(userId, planItemId) {
       `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.email_status, c.linkedin_url,
               (SELECT array_agg(p2.title ORDER BY p2.id) FROM plan_items p2 WHERE p2.id = ANY(d.also_plan_items)) AS also_roles,
               (SELECT array_agg(pi.title ORDER BY pi.id) FROM outreach_drafts o JOIN plan_items pi ON pi.id = o.plan_item_id JOIN tailor_jobs j ON j.plan_item_id = o.plan_item_id
-                WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed') AS also_for
-         FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 ORDER BY d.audience DESC, d.id`,
+                WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed' AND o.status <> 'closed') AS also_for
+         FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status <> 'closed' ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],
     ),
     // Who the outreach would go to, shown while the role has none yet.
@@ -439,7 +439,7 @@ export async function reviewRole(userId, planItemId) {
     // This role's people are asked in another role's email at the company (one email per person).
     all(
       `SELECT d.id, c.name, pi.id::text AS role_id, pi.title, d.status FROM outreach_drafts d JOIN plan_items pi ON pi.id = d.plan_item_id
-         LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND $2::bigint = ANY(d.also_plan_items) ORDER BY d.id`,
+         LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND $2::bigint = ANY(d.also_plan_items) AND d.status <> 'closed' ORDER BY d.id`,
       [userId, planItemId],
     ),
   ]);
@@ -800,7 +800,7 @@ export async function queueOutreachForRoles(userId, planItemIds, { dryRun = fals
       `SELECT DISTINCT ON (d.contact_id) d.id, d.contact_id, d.plan_item_id,
               (d.status IN ('draft', 'edited') AND COALESCE(btrim(d.email_body), '') = '' AND COALESCE(btrim(d.linkedin_note), '') = '') AS unwritten
          FROM outreach_drafts d JOIN tailor_jobs j ON j.plan_item_id = d.plan_item_id
-        WHERE d.user_id = $1 AND d.contact_id = ANY($2::bigint[]) AND j.status <> 'closed' AND NOT (d.plan_item_id = ANY($3::bigint[]))
+        WHERE d.user_id = $1 AND d.contact_id = ANY($2::bigint[]) AND j.status <> 'closed' AND d.status <> 'closed' AND NOT (d.plan_item_id = ANY($3::bigint[]))
         ORDER BY d.contact_id, d.id`,
       [userId, contactIds, group.map(r => Number(r.id))],
     );
@@ -834,6 +834,133 @@ export async function queueOutreachForRoles(userId, planItemIds, { dryRun = fals
     await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = ANY($2::bigint[])', [userId, [...result.roles].map(Number)]);
   }
   return { ...result, roles: [...result.roles] };
+}
+
+/**
+ * One person's drafts at one company, merged into one email. The person has
+ * unsent rows on some roles (`rows`), and other roles would reach them too
+ * (`extra`: roles with no outreach of their own; `also`: roles already listed
+ * on their rows). Pure.
+ *  - Already asked in an approved or sent email there (`approvedOn`): every
+ *    unsent copy closes, and nothing is added.
+ *  - Otherwise one row stays, on the best-fit role (byFit), with every other
+ *    role in `also` (best fit first); its text is cleared so the run rewrites
+ *    it with the "also" line, and the other copies close. A person on one role
+ *    with nothing to add is left as they are.
+ * → { keep: { planItemId, draftId | null, also } | null, close: [{ draftId, reason }] }
+ */
+export function planMerge({ rows, extra = [], also = [], approvedOn = null, roles }) {
+  const title = (id) => roles.get(String(id))?.title || `role ${id}`;
+  if (approvedOn) {
+    return { keep: null, close: rows.map(r => ({ draftId: String(r.id), reason: `Already asked in the approved email for ${title(approvedOn)} (one email per person per company).` })) };
+  }
+  const all = [...new Set([...rows.map(r => String(r.planItemId)), ...extra.map(String), ...also.map(String)])]
+    .filter(id => roles.has(id))
+    .sort((a, b) => byFit(roles.get(a), roles.get(b)));
+  if (!all.length) return { keep: null, close: [] };
+  if (rows.length === 1 && all.length === 1) return { keep: null, close: [] };
+  const [best, ...rest] = all;
+  const kept = rows.find(r => String(r.planItemId) === best) || null;
+  return {
+    keep: { planItemId: best, draftId: kept ? String(kept.id) : null, also: rest },
+    close: rows.filter(r => r !== kept).map(r => ({ draftId: String(r.id), reason: `Merged into the email for ${title(best)} (one email per person per company).` })),
+  };
+}
+
+/**
+ * One email per person per company, for drafts already written: every person
+ * with unsent, unapproved drafts on more than one open role at a company (or
+ * whom other roles there would reach) keeps one row, on the best-fit role,
+ * listing the others; its text is cleared for the run to rewrite. The other
+ * copies close with a reason (never deleted). Approved or sent emails are
+ * never touched. → { kept, inserted, closed, backup, perCompany }
+ */
+export async function mergeCompanyOutreach(userId, { dryRun = true } = {}) {
+  const open = await all(
+    `SELECT d.id, d.plan_item_id, d.contact_id, d.audience, d.status, d.email_subject, d.email_body, d.linkedin_note, d.also_plan_items,
+            lower(trim(pi.company_name)) AS company, pi.company_name, lower(NULLIF(trim(c.email), '')) AS email
+       FROM outreach_drafts d JOIN tailor_jobs j ON j.plan_item_id = d.plan_item_id JOIN plan_items pi ON pi.id = d.plan_item_id
+       LEFT JOIN job_contacts c ON c.id = d.contact_id
+      WHERE d.user_id = $1 AND d.status IN ('draft', 'edited') AND j.status IN ('ready', 'revision_requested')`,
+    [userId],
+  );
+  const asked = await all(
+    `SELECT d.plan_item_id::text AS plan_item_id, d.contact_id, pi.title, lower(trim(pi.company_name)) AS company, lower(NULLIF(trim(c.email), '')) AS email
+       FROM outreach_drafts d JOIN plan_items pi ON pi.id = d.plan_item_id LEFT JOIN job_contacts c ON c.id = d.contact_id
+      WHERE d.user_id = $1 AND d.status IN ('approved', 'sent')`,
+    [userId],
+  );
+  const companies = [...new Set(open.map(r => r.company))];
+  const roleRows = await all(
+    `SELECT pi.id::text AS id, pi.title, pi.company_name, lower(trim(pi.company_name)) AS company, pi.score, j.referral_mode, v.callback_after, v.ats_after,
+            EXISTS (SELECT 1 FROM outreach_drafts d WHERE d.plan_item_id = pi.id AND d.status <> 'closed') AS has_rows
+       FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+       LEFT JOIN LATERAL (SELECT callback_after, ats_after FROM resume_versions x WHERE x.plan_item_id = pi.id ORDER BY version DESC LIMIT 1) v ON TRUE
+      WHERE j.user_id = $1 AND j.status IN ('ready', 'revision_requested') AND lower(trim(pi.company_name)) = ANY($2::text[])`,
+    [userId, companies],
+  );
+  const roles = new Map(roleRows.map(r => [r.id, r]));
+  const keyOf = (r) => `${r.company}|${r.email || `c${r.contact_id}`}`;
+  const people = new Map();
+  for (const r of open) {
+    const k = keyOf(r);
+    if (!people.has(k)) people.set(k, { rows: [], extra: new Set(), also: new Set(), company: r.company, email: r.email, audience: r.audience, contactId: r.contact_id });
+    const p = people.get(k);
+    p.rows.push({ id: r.id, planItemId: String(r.plan_item_id) });
+    for (const a of r.also_plan_items || []) p.also.add(String(a));
+  }
+  // Roles at these companies with no outreach of their own: whom would they reach?
+  const byCompanyMode = new Map();
+  for (const r of roleRows.filter(x => !x.has_rows && !NO_EMAILS.includes(x.referral_mode))) {
+    const k = `${r.company}|${r.referral_mode}`;
+    if (!byCompanyMode.has(k)) byCompanyMode.set(k, await outreachTargets(userId, r.company_name, r.referral_mode));
+    for (const t of byCompanyMode.get(k)) {
+      const p = people.get(`${r.company}|${t.email ? String(t.email).trim().toLowerCase() : `c${t.id}`}`) || people.get(`${r.company}|c${t.id}`);
+      if (p) p.extra.add(r.id);
+    }
+  }
+  const plans = [];
+  for (const p of people.values()) {
+    // Already asked at this company in an approved or sent email (same address, or the same contact).
+    const done = asked.find(a => a.company === p.company && ((a.email && a.email === p.email) || String(a.contact_id) === String(p.contactId)));
+    const known = done ? new Map([...roles, [done.plan_item_id, { title: done.title }]]) : roles;
+    const plan = planMerge({ rows: p.rows, extra: [...p.extra], also: [...p.also], approvedOn: done ? done.plan_item_id : null, roles: known });
+    if (plan.keep || plan.close.length) plans.push({ ...plan, company: p.company, audience: p.audience, contactId: p.contactId });
+  }
+  const touched = new Set(plans.flatMap(x => [...x.close.map(c => c.draftId), ...(x.keep?.draftId ? [x.keep.draftId] : [])]));
+  const backup = open.filter(r => touched.has(String(r.id)));
+  const summary = { kept: plans.filter(x => x.keep).length, inserted: plans.filter(x => x.keep && !x.keep.draftId).length, closed: plans.reduce((n, x) => n + x.close.length, 0), plans, backup };
+  if (dryRun) return summary;
+  for (const x of plans) {
+    // Close the copies first, so they no longer count toward the kept role's limit.
+    for (const c of x.close) {
+      await run(`UPDATE outreach_drafts SET status = 'closed', closed_reason = $2, closed_at = NOW(), updated_at = NOW() WHERE id = $1 AND status IN ('draft', 'edited')`, [c.draftId, c.reason]);
+    }
+    if (!x.keep) continue;
+    const also = x.keep.also.length ? x.keep.also.map(Number) : null;
+    if (x.keep.draftId) {
+      await run(
+        `UPDATE outreach_drafts SET email_subject = NULL, email_body = NULL, linkedin_note = NULL, status = 'draft', also_plan_items = $2, updated_at = NOW()
+          WHERE id = $1 AND status IN ('draft', 'edited')`,
+        [x.keep.draftId, also],
+      );
+    } else {
+      await run(
+        `INSERT INTO outreach_drafts (user_id, plan_item_id, contact_id, audience, also_plan_items) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (plan_item_id, contact_id) DO UPDATE SET email_subject = NULL, email_body = NULL, linkedin_note = NULL, status = 'draft', also_plan_items = EXCLUDED.also_plan_items, closed_reason = NULL, closed_at = NULL, updated_at = NOW()`,
+        [userId, x.keep.planItemId, x.contactId, x.audience, also],
+      );
+    }
+    await run('UPDATE tailor_jobs SET outreach_due = TRUE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2', [userId, x.keep.planItemId]);
+  }
+  // Roles whose people are now all asked elsewhere wait for no run.
+  await run(
+    `UPDATE tailor_jobs j SET outreach_due = FALSE, updated_at = NOW() WHERE j.user_id = $1 AND j.outreach_due
+        AND EXISTS (SELECT 1 FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id AND d.status = 'closed')
+        AND NOT EXISTS (SELECT 1 FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id AND d.status <> 'closed')`,
+    [userId],
+  );
+  return summary;
 }
 
 /** One role's empty outreach rows (see queueOutreachForRoles). Returns the rows added. */
@@ -900,7 +1027,7 @@ export async function findRoleContacts(userId, planItemId, { source = 'all' } = 
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (job.status !== 'ready') throw fail(409, 'Only a role ready for review needs contacts.');
   if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody, so it needs no lookups.');
-  if (await one('SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 LIMIT 1', [userId, planItemId])) throw fail(409, 'This role already has outreach.');
+  if (await one("SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 AND status <> 'closed' LIMIT 1", [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
   const found = source === 'apollo' ? await apolloOnly(userId, item) : await findRecruitersFor(userId, item, { engineer: job.referral_mode === 'recruiters_engineers' });
   if (found.recruiters) await queueOutreachDrafts(userId, planItemId);

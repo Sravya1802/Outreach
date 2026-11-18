@@ -253,3 +253,28 @@ test('byFit: callback, then ATS, then score; unknowns last', async () => {
   const list = [{ id: 1 }, { id: 2, score: 9 }, { id: 3, ats_after: 93 }, { id: 4, callback_after: 20 }];
   assert.deepEqual(list.sort(byFit).map(r => r.id), [4, 3, 2, 1]);
 });
+
+test('planMerge: one email per person per company, on the best-fit role, the rest closed', async () => {
+  const { planMerge } = await import('../services/tailorPipeline.js');
+  const roles = new Map([
+    ['1', { id: '1', title: 'SWE Intern', callback_after: 30 }],
+    ['2', { id: '2', title: 'Data Intern', callback_after: 50 }],
+    ['3', { id: '3', title: 'ML Intern', callback_after: 40 }],
+    ['4', { id: '4', title: 'SWE New Grad', callback_after: 60 }],
+  ]);
+  // Rows on 1, 2 and 3; role 4 (no rows of its own) would reach them too and fits best.
+  const p = planMerge({ rows: [{ id: 11, planItemId: '1' }, { id: 12, planItemId: '2' }, { id: 13, planItemId: '3' }], extra: ['4'], roles });
+  assert.deepEqual(p.keep, { planItemId: '4', draftId: null, also: ['2', '3', '1'] });
+  assert.deepEqual(p.close.map(c => c.draftId), ['11', '12', '13']);
+  assert.match(p.close[0].reason, /Merged into the email for SWE New Grad/);
+  // Without role 4, the row on the best-fit role stays (its text is cleared on apply).
+  const q = planMerge({ rows: [{ id: 11, planItemId: '1' }, { id: 12, planItemId: '2' }], roles });
+  assert.deepEqual(q.keep, { planItemId: '2', draftId: '12', also: ['1'] });
+  assert.deepEqual(q.close.map(c => c.draftId), ['11']);
+  // One role and nothing to add: untouched (its written email stays).
+  assert.deepEqual(planMerge({ rows: [{ id: 11, planItemId: '1' }], roles }), { keep: null, close: [] });
+  // Already asked in an approved email there: every unsent copy closes.
+  const r = planMerge({ rows: [{ id: 11, planItemId: '1' }], extra: ['4'], approvedOn: '9', roles: new Map([...roles, ['9', { title: 'Platform Intern' }]]) });
+  assert.equal(r.keep, null);
+  assert.match(r.close[0].reason, /Already asked in the approved email for Platform Intern/);
+});

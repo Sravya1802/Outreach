@@ -605,15 +605,38 @@ export async function recoverApprovals() {
  * revising roles only.
  */
 export async function removeRole(userId, planItemId) {
+  if (finishing.has(String(planItemId))) throw fail(409, 'Still finishing the approval. Try again in a minute.');
+  const [job, item] = await Promise.all([
+    one('SELECT status FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]),
+    one('SELECT stage FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
+  ]);
+  const approved = job?.status === 'approved';
+  if (approved && ['applying', 'applied', 'done'].includes(item?.stage)) throw fail(409, 'This role is already being applied to.');
   const row = await one(
-    `UPDATE tailor_jobs SET status = 'closed', closed_reason = 'removed', locked_at = NULL, locked_by_run = NULL, updated_at = NOW()
-      WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('queued', 'ready', 'revision_requested')
+    `UPDATE tailor_jobs SET status = 'closed', closed_reason = 'removed', locked_at = NULL, locked_by_run = NULL,
+            outreach_due = CASE WHEN status = 'approved' THEN FALSE ELSE outreach_due END, updated_at = NOW()
+      WHERE user_id = $1 AND plan_item_id = $2 AND status IN ('queued', 'ready', 'revision_requested', 'approved') AND status = $3
       RETURNING plan_item_id`,
+    [userId, planItemId, job?.status ?? null],
+  );
+  if (!row) throw fail(409, 'Only a waiting, Ready or approved role can be removed.');
+  if (!approved) {
+    await run("UPDATE plan_items SET stage_note = 'You removed it.' WHERE id = $1 AND user_id = $2", [planItemId, userId]);
+    return { ok: true, emailsWaiting: 0 };
+  }
+  // Out of To apply, the contact search and the digest. Emails stay as they are, as with I applied:
+  // one email can also ask about other roles at the company, so the user decides in Outbox.
+  await run(
+    `UPDATE plan_items SET decision = 'skipped', stage = 'proposed', needs_reason = NULL, wait_until = NULL, apply_after = NULL, stage_note = 'You removed it.'
+      WHERE id = $1 AND user_id = $2`,
+    [planItemId, userId],
+  );
+  const waiting = await one(
+    `SELECT COUNT(*)::int AS n FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id
+      WHERE a.user_id = $1 AND a.plan_item_id = $2 AND o.status IN ('draft', 'scheduled')`,
     [userId, planItemId],
   );
-  if (!row) throw fail(409, 'Only a waiting or Ready role can be removed.');
-  await run("UPDATE plan_items SET stage_note = 'You removed it.' WHERE id = $1 AND user_id = $2", [planItemId, userId]);
-  return { ok: true };
+  return { ok: true, emailsWaiting: waiting.n };
 }
 
 /** Undo a removal: Ready again if it has a resume, else waiting. */

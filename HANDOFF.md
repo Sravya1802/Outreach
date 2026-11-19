@@ -2314,3 +2314,42 @@ Commits: 9859689 (backend), its frontend twin. VM cherry-pick: backend only.
 - Backend 276 tests.
 
 Commit: 6adad92, the same on the VM (backend only).
+
+## 2026-11-18 — Approve all outreach; scheduled sending; People → Scheduled
+
+**Asked:** an "Approve all" for outreach emails Claude has finished writing, on the Review queue and each Role page, skipping empty or unwritten ones and saying how many. Approved emails are scheduled for the next business morning, 8–10 AM recipient time (Chicago if unknown), 2–4 minutes apart, never on weekends, at most 40 a day; the rest roll over. Attach the role's latest tailored resume PDF; before sending, check that Claude wrote the body and it isn't empty. A Scheduled list with Cancel and Send now. Keep the 2-business-day referral wait after emails go out.
+
+**Built:**
+- `sendWindow.planSendTimes` (pure). The next 8–10 AM window that hasn't started, in the recipient's zone, Mon–Fri. Each send lands 2–4 minutes after any other. A day's cap is counted per Chicago day; the rest roll to the next business morning. `openWindow` lets a pushed-back send use a window that has already started.
+- `outbox.planApproved` assigns the times, roles closing soonest first. It's used by approveDraft (the single OK), scheduleEmail (composer) and Approve all.
+- `sendOne`:
+  - `sendBlock` refuses empty text, or text not written by `claude`/`you`. It also catches the old app-template wording even when written_by says otherwise. The row becomes `failed` with "Not sent: …".
+  - A role's email attaches the role's latest *passed* resume PDF, fresh from storage. With no PDF, the email doesn't send. If storage is down, it retries in 30 minutes.
+  - The cap and spacing push an email back through the planner.
+  - After a send, `referralEmailMoved` restarts the role's wait from the send.
+- `outbox.sendNow` + `POST /api/gmail/outbox/:id/send-now`. It skips the spacing but keeps the day's cap.
+- `services/outreachApproval.js`, `GET|POST /api/review/outreach/approve-all` (`?role=` or `{role}`; GET is the dry run). It approves two kinds of email:
+  - Outbox drafts: the Gmail Drafts copies are read in one IMAP fetch (`gmail.folderMessagesSince`), edits made in Gmail are kept, and the copies are deleted (`deleteUids`).
+  - Written outreach_drafts on Ready or approved roles: they become scheduled email_outbox rows, plus referral_asks (email scheduled, LinkedIn note to_send), and the draft is set to approved, all in one batched transaction.
+  - It **doesn't approve the role/resume or start applying**.
+  - Skip reasons: writing, not_claude, no_resume, problem, asked, replied, invalid, not_in_gmail, gmail.
+- Migration 058:
+  - `written_by` on outreach_drafts and email_outbox. A trigger sets it on text change: status `edited` means `you`, otherwise `claude`.
+  - The 055 copy trigger carries written_by.
+  - Backfill: the old template wording becomes `app` (16 closed rows, none live).
+  - `gmail_connections.daily_cap` default is 40; the user's row changed from 20 to 40.
+- recipientTimezone falls back to America/Chicago (was New York).
+- UI:
+  - `ApproveAllEmails` on the Review queue header and the Role page's Apply panel, with a confirm dialog and a skip line.
+  - People → **Scheduled** (`/people/scheduled`): grouped by day, recipient, role, resume version, their time and yours, Cancel / Send now, and a "Held back before sending" list.
+  - The Role page's approved drafts show "Scheduled Thu, Nov 19, 8:02 AM Chicago time" or "Sent".
+  - Wording changed from 8–11 AM and 20/day to 8–10 AM and 40/day.
+
+**Verified:**
+- Backend 285 tests; frontend 207, tsc clean, build OK.
+- E2E on the test account (15/15): trigger writers; preview; approve (2 scheduled Thu 8:00 and 8:02 Chicago, 138 s apart; 1 skipped as writing; the role stays Ready); a repeat press adds nothing; an empty body is held back; Send now refuses app text; Cancel keeps the row; nothing sent.
+- Live UI on scoutnjobs.vercel.app (15/15): Review button and skip line, Role approve, toast, role badges, Scheduled list, Send now confirm, Cancel, nav tab, 390px with no sideways scroll.
+- Read-only checks on the real account: the preview would approve 129 (48 Outbox + 81 role drafts) and skip 4 (2 invalid addresses, 2 failing a check). All 48 Gmail copies were found, none edited. The latest resume PDF downloads.
+- **Nothing was approved or sent on the real account.**
+
+Commits: 1e27f8a and 329238a (backend, cherry-picked onto the VM), 79e9bc8 (frontend).

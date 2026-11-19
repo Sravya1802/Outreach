@@ -804,7 +804,7 @@ export async function startApprovedAsks(userId, item, drafts, attachmentFileId, 
     if (d.email_body) {
       try {
         // The Gmail copy is written after Approve answers (copyDraftsToGmail).
-        const o = await scheduleEmail(userId, { contactId: d.contact_id, subject: d.email_subject, body: d.email_body, purpose: 'referral', draft: true, attachmentFileId, gmailLater: true });
+        const o = await scheduleEmail(userId, { contactId: d.contact_id, subject: d.email_subject, body: d.email_body, purpose: 'referral', draft: true, attachmentFileId, gmailLater: true, writtenBy: d.written_by || null });
         result.outboxIds.push(o.id);
         await run(
           `INSERT INTO referral_asks (user_id, plan_item_id, channel, person_name, person_title, linkedin_url, email, contact_id, outbox_id, subject, message, status)

@@ -7,6 +7,7 @@ import {
   addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf, queueOutreachDrafts,
 } from '../services/tailorPipeline.js';
 import { fillLink, readyRoles } from '../services/readyToSubmit.js';
+import { approveWrittenOutreach } from '../services/outreachApproval.js';
 
 const router = Router();
 
@@ -30,6 +31,15 @@ router.get('/ready', async (req, res) => {
 router.post('/:id/fill-link', withId(async (req, res, id) => {
   res.json(await fillLink(req.user.id, id));
 }));
+
+// Approve all: every outreach email Claude has finished writing (one role with ?role=, else all). GET says what it would do.
+const roleParam = (v) => (v == null || v === '' ? null : parseId(v));
+router.get('/outreach/approve-all', async (req, res) => {
+  try { res.json(await approveWrittenOutreach(req.user.id, { planItemId: roleParam(req.query.role), dryRun: true })); } catch (err) { fail(res, err); }
+});
+router.post('/outreach/approve-all', async (req, res) => {
+  try { res.json(await approveWrittenOutreach(req.user.id, { planItemId: roleParam(req.body?.role) })); } catch (err) { fail(res, err); }
+});
 
 router.get('/', async (req, res) => {
   try {

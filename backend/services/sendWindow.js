@@ -125,3 +125,65 @@ export function businessDaysLater(from, n, tz, opts = {}) {
 export function describeSlot(date, tz) {
   return new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(date);
 }
+
+// ── Outreach send plan ──────────────────────────────────────────────────────
+// Approved outreach goes the next business morning, 8–10 AM in the recipient's
+// zone (Chicago when unknown), at most `cap` a day from the user's Gmail (days
+// counted in `capTz`), each send 2–4 minutes from any other. Weekends never.
+
+export const OUTREACH_WINDOW = { startHour: 8, endHour: 10 };
+export const OUTREACH_TZ = 'America/Chicago';
+export const OUTREACH_CAP = 40;
+export const GAP_MIN_MS = 2 * 60_000;
+export const GAP_MAX_MS = 4 * 60_000;
+
+/** "2026-11-19": an instant's calendar date in a zone. */
+export function dayKey(date, tz = OUTREACH_TZ) {
+  const p = partsIn(new Date(date), isValidTz(tz) ? tz : OUTREACH_TZ);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+/**
+ * Send times for newly approved emails, in the order given. `taken` holds the
+ * times already used (scheduled, sending or sent): new ones keep 2–4 minutes
+ * from all of them and count against each day's cap. `openWindow` lets a
+ * window that has already started take an email (a send pushed back by the
+ * cap or the spacing); approvals use the next window that hasn't started.
+ * Pure: returns Map(id → Date). An email that finds no room in 60 days isn't in it.
+ */
+export function planSendTimes(items, { now = new Date(), taken = [], cap = OUTREACH_CAP, capTz = OUTREACH_TZ, openWindow = false, rand = Math.random, window = OUTREACH_WINDOW } = {}) {
+  const times = taken.map(t => new Date(t).getTime()).filter(Number.isFinite).sort((a, b) => a - b);
+  const perDay = new Map();
+  for (const t of times) perDay.set(dayKey(t, capTz), (perDay.get(dayKey(t, capTz)) || 0) + 1);
+  const gap = () => GAP_MIN_MS + Math.floor(rand() * (GAP_MAX_MS - GAP_MIN_MS));
+  const nowMs = new Date(now).getTime();
+  const out = new Map();
+  for (const item of items) {
+    const zone = isValidTz(item.tz) ? item.tz : OUTREACH_TZ;
+    const local = partsIn(new Date(nowMs), zone);
+    for (let i = 0; i < 60; i++) {
+      const day = addDays(local, i);
+      if (day.dow === 0 || day.dow === 6) continue;
+      const open = zonedToUtc({ ...day, hour: window.startHour }, zone).getTime();
+      const close = zonedToUtc({ ...day, hour: window.endHour }, zone).getTime();
+      if (!openWindow && open <= nowMs) continue;
+      let t = Math.max(open, nowMs + 60_000) + Math.floor(rand() * 60_000);
+      // Step past anything within 2 minutes, landing 2–4 minutes after it.
+      for (let moved = true; moved && t < close;) {
+        moved = false;
+        for (const x of times) {
+          if (Math.abs(x - t) < GAP_MIN_MS) { t = x + gap(); moved = true; }
+        }
+      }
+      if (t >= close) continue;
+      const key = dayKey(t, capTz);
+      if ((perDay.get(key) || 0) >= cap) continue;
+      perDay.set(key, (perDay.get(key) || 0) + 1);
+      times.push(t);
+      times.sort((a, b) => a - b);
+      out.set(item.id, new Date(t));
+      break;
+    }
+  }
+  return out;
+}

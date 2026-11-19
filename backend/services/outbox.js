@@ -1,8 +1,15 @@
 /**
  * outbox.js — outreach email from each user's own Gmail, on a schedule:
- *   • first email at the next 8–11 AM weekday slot in the recipient's zone
- *     (or right away when the user says so)
- *   • at most `daily_cap` (default 20) a day per user, at least 3 minutes apart
+ *   • an approved email goes the next business morning, 8–10 AM in the
+ *     recipient's zone (Chicago when unknown), never on a weekend, or right
+ *     away when the user presses Send now (planSendTimes in sendWindow.js)
+ *   • at most `daily_cap` (default 40) a day per user, counted per Chicago
+ *     day; the rest roll to the next business morning; sends 2–4 minutes apart
+ *   • before each send: the text isn't empty and was written by the user's
+ *     Claude run (or edited by them), never the app (written_by, migration 058);
+ *     a role's email carries that role's latest tailored resume PDF, or waits
+ *   • once a role's email goes, the role's apply waits 2 business days from then
+ *     (referralEmailMoved)
  *   • no follow-ups and no text of its own: every email is written by the
  *     user's Claude run (or the user); any reply (or bounce) cancels what's left
  *   • emails the app writes on its own (referral asks) start as drafts: a copy
@@ -19,12 +26,13 @@
 
 import { all, one, run } from '../db.js';
 import { appendDraft, connectionFor, deleteDrafts, draftHash, messagesTo, putDraft, readDraft, removeDraft, sendAs, specialFolder, withImap } from './gmail.js';
-import { fileBytes, fileForUser } from './resumeFiles.js';
-import { nextSendSlot, timezoneFor, describeSlot } from './sendWindow.js';
+import { fileBytes, fileForUser, resumeFileName } from './resumeFiles.js';
+import { downloadVersionPdf } from './resumeStorage.js';
+import { GAP_MIN_MS, OUTREACH_CAP, OUTREACH_TZ, describeSlot, nextSendSlot, planSendTimes, timezoneFor, zonedToUtc, partsIn } from './sendWindow.js';
 import { marketFor } from './markets.js';
 
-const MIN_GAP_MS = 3 * 60_000;
 const MAX_ATTEMPTS = 3;
+const capOf = (conn) => conn?.daily_cap || OUTREACH_CAP;
 
 const str = (v) => String(v ?? '').trim();
 
@@ -36,7 +44,73 @@ export async function recipientTimezone(userId, contactId) {
   );
   const tz = timezoneFor(r?.location) || timezoneFor([r?.city, r?.state].filter(Boolean).join(', '));
   if (tz) return tz;
-  return (await marketFor(userId)) === 'india' ? 'Asia/Kolkata' : 'America/New_York';
+  return (await marketFor(userId)) === 'india' ? 'Asia/Kolkata' : OUTREACH_TZ;
+}
+
+// The old in-app template's wording (removed 2026-11-17): that text never goes out.
+const APP_TEMPLATE = [
+  /I am completing a Master of Science in Computer Science at the University of Illinois at Chicago \(May 2027\), after two years/i,
+  /is how the posting describes it/i,
+  /My resume shows hands-on work with/i,
+];
+
+/** Why an email can't go out, or null. Pure: the text is there and your Claude run (or you) wrote it. */
+export function sendBlock(row) {
+  if (!str(row.subject) || !str(row.body)) return 'The email is empty.';
+  if (row.written_by === 'app' || APP_TEMPLATE.some(re => re.test(row.body))) return 'This is the app’s old template text, not an email your Claude run wrote.';
+  if (!['claude', 'you'].includes(row.written_by)) return 'There’s no record that your Claude run wrote this email.';
+  return null;
+}
+
+/** Sends already sent, sending or scheduled for this user (they count for spacing and the day's limit). */
+async function takenTimes(userId, exceptIds = []) {
+  const rows = await all(
+    `SELECT COALESCE(sent_at, send_after) AS at FROM email_outbox
+      WHERE user_id = $1 AND NOT (id = ANY($2::bigint[]))
+        AND ((status IN ('scheduled', 'sending') AND send_after > NOW() - INTERVAL '1 day') OR (status = 'sent' AND sent_at > NOW() - INTERVAL '2 days'))`,
+    [userId, exceptIds],
+  );
+  return rows.map(r => r.at);
+}
+
+/**
+ * Give approved rows their send times: next business morning, 8–10 AM their
+ * time, 2–4 minutes apart, the day's limit counted. Roles closing soonest go
+ * first. `openWindow`: a window that has started may take them (a send pushed
+ * back). Returns Map(id → Date).
+ */
+export async function planApproved(userId, ids, { openWindow = false } = {}) {
+  if (!ids.length) return new Map();
+  const [rows, conn, taken] = await Promise.all([
+    all(
+      `SELECT o.id, o.recipient_tz AS tz FROM email_outbox o
+         LEFT JOIN referral_asks a ON a.outbox_id = o.id
+         LEFT JOIN plan_items pi ON pi.id = a.plan_item_id
+         LEFT JOIN scraped_roles sr ON sr.id = pi.scraped_role_id
+        WHERE o.user_id = $1 AND o.id = ANY($2::bigint[]) AND o.status = 'scheduled'
+        ORDER BY COALESCE(pi.apply_deadline, sr.apply_deadline) NULLS LAST, o.approved_at NULLS LAST, o.id`,
+      [userId, ids],
+    ),
+    one('SELECT daily_cap FROM gmail_connections WHERE user_id = $1', [userId]),
+    takenTimes(userId, ids),
+  ]);
+  const plan = planSendTimes(rows, { taken, cap: capOf(conn), openWindow });
+  const placed = [...plan.entries()];
+  if (placed.length) {
+    await run(
+      `UPDATE email_outbox o SET send_after = u.at FROM unnest($2::bigint[], $3::timestamptz[]) AS u(id, at)
+        WHERE o.id = u.id AND o.user_id = $1 AND o.status = 'scheduled'`,
+      [userId, placed.map(([id]) => id), placed.map(([, at]) => at)],
+    );
+  }
+  return plan;
+}
+
+/** How many went out today (Chicago day) from this user's Gmail. */
+async function sentToday(userId, now = new Date()) {
+  const p = partsIn(now, OUTREACH_TZ);
+  const start = zonedToUtc({ year: p.year, month: p.month, day: p.day, hour: 0 }, OUTREACH_TZ);
+  return Number((await one("SELECT COUNT(*)::int AS n FROM email_outbox WHERE user_id = $1 AND status = 'sent' AND sent_at >= $2", [userId, start]))?.n || 0);
 }
 
 /**
@@ -44,7 +118,7 @@ export async function recipientTimezone(userId, contactId) {
  * with a human description of when it goes. `draft` holds it for the user's OK
  * (and puts a copy in their Gmail Drafts); `attachmentFileId` is a resume_files id.
  */
-export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach', draft = false, attachmentFileId = null, gmailLater = false }) {
+export async function scheduleEmail(userId, { contactId, subject, body, when = 'best', purpose = 'outreach', draft = false, attachmentFileId = null, gmailLater = false, writtenBy = 'you' }) {
   const contact = await one(
     `SELECT c.*, j.name AS company_name FROM job_contacts c LEFT JOIN jobs j ON j.id = c.job_id WHERE c.id = $1 AND c.user_id = $2`,
     [contactId, userId],
@@ -68,10 +142,10 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
   // A draft's send time is set when it's approved.
   const sendAfter = when === 'now' || draft ? new Date() : nextSendSlot(tz);
   const row = (await run(
-    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after, purpose, status, attachment_file_id)
-     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO email_outbox (user_id, contact_id, step, to_email, to_name, subject, body, recipient_tz, send_after, purpose, status, attachment_file_id, written_by, approved_at)
+     VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CASE WHEN $10 = 'scheduled' THEN NOW() END) RETURNING *`,
     [userId, contactId, str(contact.email).toLowerCase(), contact.name, str(subject).slice(0, 300), str(body).slice(0, 20000), tz, sendAfter,
-      purpose === 'referral' ? 'referral' : 'outreach', draft ? 'draft' : 'scheduled', attachmentFileId || null],
+      purpose === 'referral' ? 'referral' : 'outreach', draft ? 'draft' : 'scheduled', attachmentFileId || null, writtenBy],
   )).rows[0];
   await run('UPDATE job_contacts SET generated_subject = $1, generated_body = $2 WHERE id = $3 AND user_id = $4', [str(subject), str(body), contactId, userId]);
   if (draft) {
@@ -79,8 +153,32 @@ export async function scheduleEmail(userId, { contactId, subject, body, when = '
     const inGmail = await copyToGmailDrafts(row);
     return { ...row, in_gmail_drafts: inGmail, when: 'draft' };
   }
-  if (when === 'now') return { ...(await sendOne(row.id)), when: 'now' };
-  return { ...row, when: describeSlot(sendAfter, tz) };
+  if (when === 'now') return { ...(await sendOne(row.id, { force: true })), when: 'now' };
+  const at = (await planApproved(userId, [row.id])).get(row.id) || sendAfter;
+  return { ...row, send_after: at, when: describeSlot(at, tz) };
+}
+
+/**
+ * What a role's email carries when it goes: the role's latest tailored resume
+ * that passed its checks, fresh from storage (a revision after approval goes
+ * too). null for an email that isn't a role's; throws when the role has no PDF.
+ */
+async function roleResume(row) {
+  const v = await one(
+    `SELECT v.pdf_path, v.version FROM referral_asks a JOIN resume_versions v ON v.plan_item_id = a.plan_item_id
+      WHERE a.outbox_id = $1 AND v.pdf_path IS NOT NULL AND v.check_status = 'passed' ORDER BY v.version DESC LIMIT 1`,
+    [row.id],
+  );
+  const isRole = v || await one('SELECT 1 AS x FROM referral_asks WHERE outbox_id = $1 LIMIT 1', [row.id]);
+  if (!isRole) return null;
+  if (!v) throw Object.assign(new Error('This role has no tailored resume PDF that passed its checks, so the email waits.'), { noResume: true });
+  const file = row.attachment_file_id ? await fileForUser(row.user_id, row.attachment_file_id) : null;
+  let filename = file?.filename;
+  if (!filename) {
+    const { me } = await import('./referralFlow.js');
+    filename = resumeFileName((await me(row.user_id))?.name);
+  }
+  return [{ filename: filename || 'resume.pdf', content: await downloadVersionPdf(v.pdf_path), contentType: 'application/pdf' }];
 }
 
 /** The row's attachment (the role's tailored resume), ready for nodemailer. `bytes` holds files already downloaded, by id. */
@@ -215,17 +313,20 @@ export async function approveDraft(userId, id, { when = 'best' } = {}) {
     const [problem] = checkOutreach({ email_body: edit ? edit.text : row.body, name: row.to_name, company: role.company_name, quant });
     if (problem) throw Object.assign(new Error(`${problem} Edit it first.`), { status: 409 });
   }
-  const sendAfter = when === 'now' ? new Date() : nextSendSlot(row.recipient_tz);
+  const writtenBy = edit ? 'you' : row.written_by;
+  const block = sendBlock({ subject: edit ? (str(edit.subject) || row.subject) : row.subject, body: edit ? edit.text : row.body, written_by: writtenBy });
+  if (block) throw Object.assign(new Error(block), { status: 409 });
   const updated = (await run(
-    `UPDATE email_outbox SET status = 'scheduled', subject = $3, body = $4, body_html = $5, send_after = $6, approved_at = NOW(), error = NULL
+    `UPDATE email_outbox SET status = 'scheduled', subject = $3, body = $4, body_html = $5, send_after = NOW(), approved_at = NOW(), error = NULL, written_by = $6
       WHERE id = $1 AND user_id = $2 AND status = 'draft' RETURNING *`,
-    [row.id, userId, edit ? (str(edit.subject) || row.subject).slice(0, 300) : row.subject, edit ? str(edit.text).slice(0, 20000) : row.body, edit?.html || null, sendAfter],
+    [row.id, userId, edit ? (str(edit.subject) || row.subject).slice(0, 300) : row.subject, edit ? str(edit.text).slice(0, 20000) : row.body, edit?.html || null, writtenBy],
   )).rows[0];
   if (!updated) throw Object.assign(new Error('This email isn’t waiting for your OK any more.'), { status: 409 });
   // The Gmail copy goes, so it can't be sent twice.
   if (row.gmail_draft_hash) await removeDraft(userId, { to: row.to_email, since: row.created_at }).catch(err => console.warn('[outbox] draft cleanup', row.id, err.message));
-  if (when === 'now') return { ...(await sendOne(row.id)), when: 'now', edited_in_gmail: Boolean(edit) };
-  return { ...updated, when: describeSlot(sendAfter, row.recipient_tz), edited_in_gmail: Boolean(edit) };
+  if (when === 'now') return { ...(await sendNow(userId, row.id)), when: 'now', edited_in_gmail: Boolean(edit) };
+  const at = (await planApproved(userId, [row.id])).get(row.id) || new Date();
+  return { ...updated, send_after: at, when: describeSlot(at, row.recipient_tz), edited_in_gmail: Boolean(edit) };
 }
 
 /** The user sent the Gmail copy themselves: record it as sent (follow-ups as usual). */
@@ -268,20 +369,23 @@ export async function syncDrafts(userId) {
   return changed;
 }
 
-async function sentInLastDay(userId) {
-  return Number((await one("SELECT COUNT(*)::int AS n FROM email_outbox WHERE user_id = $1 AND status = 'sent' AND sent_at > NOW() - INTERVAL '24 hours'", [userId]))?.n || 0);
-}
-
 async function lastSentAt(userId) {
   return (await one("SELECT MAX(sent_at) AS t FROM email_outbox WHERE user_id = $1 AND status = 'sent'", [userId]))?.t || null;
 }
 
-async function reschedule(id, at, reason) {
-  await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, error = $3 WHERE id = $1", [id, at, reason]);
+/** A row pushed back (the day's limit, or too soon after the last send): its next place in the plan. */
+async function pushBack(row, reason) {
+  await run("UPDATE email_outbox SET status = 'scheduled', attempts = GREATEST(attempts - 1, 0) WHERE id = $1", [row.id]);
+  const at = (await planApproved(row.user_id, [row.id], { openWindow: true })).get(row.id);
+  await run('UPDATE email_outbox SET error = $2 WHERE id = $1', [row.id, reason ? `${reason}; moved to ${describeSlot(at || new Date(), row.recipient_tz)}` : null]);
+  return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
 }
 
-/** Send one due row. Safe to call twice: the claim makes the second a no-op. */
-export async function sendOne(id) {
+/**
+ * Send one due row. Safe to call twice: the claim makes the second a no-op.
+ * `force` (Send now) skips the 2-minute spacing; the day's limit still holds.
+ */
+export async function sendOne(id, { force = false } = {}) {
   const row = (await run(
     "UPDATE email_outbox SET status = 'sending', attempts = attempts + 1 WHERE id = $1 AND status = 'scheduled' RETURNING *",
     [id],
@@ -296,20 +400,32 @@ export async function sendOne(id) {
   if (!conn) return cancel(row.id, 'Gmail disconnected');
   if (conn.status === 'error') {
     // Hold until the user reconnects; don't keep logging in with a rejected password.
-    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000) });
+    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000), startHour: 8, endHour: 10 });
     await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, attempts = GREATEST(attempts - 1, 0), error = 'Waiting for you to reconnect Gmail under Integrations → Gmail' WHERE id = $1", [row.id, at]);
     return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
   }
 
-  // Cap and spacing push the email later instead of dropping it.
-  if (await sentInLastDay(row.user_id) >= (conn.daily_cap || 20)) {
-    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 12 * 3600_000) });
-    await reschedule(row.id, at, `Daily limit of ${conn.daily_cap || 20} reached; moved to ${describeSlot(at, row.recipient_tz)}`);
+  // Nothing goes out empty or with text your Claude run didn't write.
+  const block = sendBlock(row);
+  if (block) {
+    await run("UPDATE email_outbox SET status = 'failed', error = $2 WHERE id = $1", [row.id, `Not sent: ${block}`]);
     return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
   }
+  // The day's limit and the spacing push the email later instead of dropping it.
+  if (await sentToday(row.user_id) >= capOf(conn)) return pushBack(row, `Daily limit of ${capOf(conn)} reached`);
   const last = await lastSentAt(row.user_id);
-  if (last && Date.now() - new Date(last).getTime() < MIN_GAP_MS) {
-    await reschedule(row.id, new Date(new Date(last).getTime() + MIN_GAP_MS + Math.floor(Math.random() * 120_000)), null);
+  if (!force && last && Date.now() - new Date(last).getTime() < GAP_MIN_MS) return pushBack(row, null);
+
+  let attachments;
+  try {
+    attachments = (await roleResume(row)) ?? await attachmentsFor(row);
+  } catch (err) {
+    if (err.noResume) {
+      await run("UPDATE email_outbox SET status = 'failed', error = $2 WHERE id = $1", [row.id, `Not sent: ${err.message}`]);
+      return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
+    }
+    // Storage unreachable: try again in 30 minutes rather than send without the resume.
+    await run("UPDATE email_outbox SET status = 'scheduled', send_after = NOW() + INTERVAL '30 minutes', error = $2 WHERE id = $1", [row.id, `Couldn’t get the resume PDF: ${String(err.message).slice(0, 200)}`]);
     return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
   }
 
@@ -321,12 +437,15 @@ export async function sendOne(id) {
   try {
     const messageId = await sendAs(row.user_id, {
       to: row.to_email, toName: row.to_name, subject: row.subject, text: row.body, html: row.body_html || undefined, inReplyTo,
-      attachments: await attachmentsFor(row),
+      attachments,
     });
-    await run("UPDATE email_outbox SET status = 'sent', sent_at = NOW(), message_id = $2, in_reply_to = $3, error = NULL WHERE id = $1", [row.id, messageId, inReplyTo]);
+    const sent = (await run("UPDATE email_outbox SET status = 'sent', sent_at = NOW(), message_id = $2, in_reply_to = $3, error = NULL WHERE id = $1 RETURNING *", [row.id, messageId, inReplyTo])).rows[0];
     if (row.contact_id) {
       await run("UPDATE job_contacts SET status = CASE WHEN status IN ('replied','closed') THEN status ELSE 'sent' END, last_emailed_at = NOW() WHERE id = $1", [row.contact_id]);
     }
+    // The role's apply waits its business days from now, when the email actually went.
+    const { referralEmailMoved } = await import('./referralFlow.js');
+    await referralEmailMoved(row.user_id, sent).catch(err => console.warn('[outbox] referral wait update failed', row.id, err.message));
   } catch (err) {
     // A rejected password isn't the email's fault: it waits for a reconnect instead of counting toward failure.
     const authFailed = /app password/.test(String(err.message));
@@ -337,6 +456,22 @@ export async function sendOne(id) {
     );
   }
   return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
+}
+
+/** The user's Send now on a scheduled email: it goes right away, if today's limit allows. */
+export async function sendNow(userId, id) {
+  const row = await one('SELECT * FROM email_outbox WHERE id = $1 AND user_id = $2', [id, userId]);
+  if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
+  if (row.status !== 'scheduled') throw Object.assign(new Error('This email isn’t scheduled any more.'), { status: 409 });
+  const block = sendBlock(row);
+  if (block) throw Object.assign(new Error(block), { status: 409 });
+  const conn = await one('SELECT daily_cap FROM gmail_connections WHERE user_id = $1', [userId]);
+  if (await sentToday(userId) >= capOf(conn)) {
+    throw Object.assign(new Error(`You’ve sent ${capOf(conn)} today, the most for one day. It stays scheduled for ${describeSlot(new Date(row.send_after), row.recipient_tz)} their time.`), { status: 409 });
+  }
+  const r = await sendOne(row.id, { force: true });
+  if (r?.status !== 'sent') throw Object.assign(new Error(r?.error || 'Couldn’t send it. It stays scheduled.'), { status: 502 });
+  return r;
 }
 
 async function cancel(id, reason) {
@@ -374,14 +509,16 @@ export async function listOutbox(userId, { contactIds = null } = {}) {
   return all(
     `SELECT o.id, o.contact_id, o.step, o.thread_root_id, o.to_email, o.to_name, o.subject, o.body, o.recipient_tz, o.send_after,
             o.status, o.cancel_reason, o.error, o.sent_at, o.created_at, o.purpose, o.approved_at, (o.gmail_draft_hash IS NOT NULL) AS in_gmail_drafts,
-            o.attachment_file_id, f.filename AS attachment_name, a.resume_version,
+            o.attachment_file_id, f.filename AS attachment_name, a.resume_version, a.plan_item_id::text AS role_id, a.role_title, o.written_by,
             j.name AS company_name, j.id AS company_id, c.status AS contact_status, c.title AS contact_title, (c.email_status = 'guessed' AND lower(c.email) = lower(o.to_email)) AS email_guessed
        FROM email_outbox o
        LEFT JOIN job_contacts c ON c.id = o.contact_id
        LEFT JOIN jobs j ON j.id = c.job_id
        LEFT JOIN resume_files f ON f.id = o.attachment_file_id AND f.user_id = o.user_id
-       LEFT JOIN LATERAL (SELECT v.version AS resume_version FROM referral_asks ra JOIN resume_versions v ON v.plan_item_id = ra.plan_item_id AND v.is_final
-                           WHERE ra.outbox_id = o.id LIMIT 1) a ON TRUE
+       LEFT JOIN LATERAL (SELECT ra.plan_item_id, pi.title AS role_title,
+                                 (SELECT v.version FROM resume_versions v WHERE v.plan_item_id = ra.plan_item_id AND v.pdf_path IS NOT NULL AND v.check_status = 'passed'
+                                   ORDER BY v.version DESC LIMIT 1) AS resume_version
+                            FROM referral_asks ra JOIN plan_items pi ON pi.id = ra.plan_item_id WHERE ra.outbox_id = o.id LIMIT 1) a ON TRUE
       WHERE o.user_id = $1 AND ($2::bigint[] IS NULL OR o.contact_id = ANY($2))
       ORDER BY COALESCE(o.thread_root_id, o.id) DESC, o.step
       LIMIT 600`,
@@ -392,7 +529,8 @@ export async function listOutbox(userId, { contactIds = null } = {}) {
 /** Edit an email that hasn't gone out. A draft's Gmail copy is replaced to match. */
 export async function editScheduled(userId, id, { subject, body }) {
   const r = await run(
-    `UPDATE email_outbox SET subject = COALESCE($3, subject), body = COALESCE($4, body), body_html = NULL
+    `UPDATE email_outbox SET subject = COALESCE($3, subject), body = COALESCE($4, body), body_html = NULL,
+            written_by = CASE WHEN COALESCE($3, subject) IS DISTINCT FROM subject OR COALESCE($4, body) IS DISTINCT FROM body THEN 'you' ELSE written_by END
       WHERE id = $1 AND user_id = $2 AND status IN ('draft', 'scheduled') RETURNING *`,
     [id, userId, str(subject) || null, str(body) || null],
   );

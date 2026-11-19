@@ -3,7 +3,7 @@
 import { Router } from 'express';
 import { parseId } from '../services/safePaths.js';
 import { connectGmail, disconnectGmail, gmailStatus, sendToSelf } from '../services/gmail.js';
-import { approveDraft, cancelScheduled, editScheduled, listOutbox, scheduleEmail } from '../services/outbox.js';
+import { approveDraft, cancelScheduled, editScheduled, listOutbox, scheduleEmail, sendNow } from '../services/outbox.js';
 import { checkInbox, listReplies } from '../services/replyWatcher.js';
 import { referralEmailMoved } from '../services/referralFlow.js';
 import { run } from '../db.js';
@@ -84,6 +84,13 @@ router.post('/outbox/:id/approve', async (req, res) => {
     await referralEmailMoved(req.user.id, row).catch(err => console.warn('[gmail] referral wait update failed:', err.message));
     res.json(row);
   } catch (err) { fail(res, err); }
+});
+
+// Send a scheduled email right away (today's limit still holds).
+router.post('/outbox/:id/send-now', async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id' });
+  try { res.json(await sendNow(req.user.id, id)); } catch (err) { fail(res, err); }
 });
 
 router.delete('/outbox/:id', async (req, res) => {

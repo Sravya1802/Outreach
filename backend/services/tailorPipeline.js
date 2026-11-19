@@ -427,10 +427,14 @@ export async function reviewRole(userId, planItemId) {
     all('SELECT id, version_id, body, status, addressed_in_version, created_at FROM resume_comments WHERE user_id = $1 AND plan_item_id = $2 ORDER BY created_at', [userId, planItemId]),
     all(
       `SELECT d.id, d.audience, d.email_subject, d.email_body, d.linkedin_note, d.status, c.name, c.title, c.email, c.email_status, c.linkedin_url,
+              ob.status AS outbox_status, ob.send_after, ob.recipient_tz,
               (SELECT array_agg(p2.title ORDER BY p2.id) FROM plan_items p2 WHERE p2.id = ANY(d.also_plan_items)) AS also_roles,
               (SELECT array_agg(pi.title ORDER BY pi.id) FROM outreach_drafts o JOIN plan_items pi ON pi.id = o.plan_item_id JOIN tailor_jobs j ON j.plan_item_id = o.plan_item_id
                 WHERE o.user_id = d.user_id AND o.contact_id = d.contact_id AND o.plan_item_id <> d.plan_item_id AND j.status <> 'closed' AND o.status <> 'closed') AS also_for
-         FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status <> 'closed' ORDER BY d.audience DESC, d.id`,
+         FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
+         LEFT JOIN LATERAL (SELECT o.status, o.send_after, o.recipient_tz FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id
+                             WHERE a.plan_item_id = d.plan_item_id AND a.contact_id = d.contact_id AND a.channel = 'email' ORDER BY o.id DESC LIMIT 1) ob ON TRUE
+        WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status <> 'closed' ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],
     ),
     // Who the outreach would go to, shown while the role has none yet.
@@ -507,7 +511,7 @@ export async function approveRole(userId, planItemId, { withoutReferral = false,
     one('SELECT id, pdf_path, check_status FROM resume_versions WHERE user_id = $1 AND plan_item_id = $2 ORDER BY version DESC LIMIT 1', [userId, planItemId]),
     one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
     all(
-      `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, c.name, c.title, c.email, c.email_status, c.linkedin_url
+      `SELECT d.id, d.contact_id, d.email_subject, d.email_body, d.linkedin_note, d.written_by, c.name, c.title, c.email, c.email_status, c.linkedin_url
          FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
         WHERE d.user_id = $1 AND d.plan_item_id = $2 AND d.status IN ('draft', 'edited') ORDER BY d.audience DESC, d.id`,
       [userId, planItemId],

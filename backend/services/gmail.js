@@ -297,3 +297,45 @@ export async function readDraft(userId, { to, since }) {
 export async function removeDraft(userId, { to, since }) {
   return withImap(userId, async (client) => deleteDrafts(client, await specialFolder(client, '\\Drafts'), to, since));
 }
+
+/**
+ * Every message in a folder from `since` on, parsed, in one fetch (for many
+ * drafts at once; messagesTo does one person). Each has its uid and To addresses.
+ */
+export async function folderMessagesSince(client, folder, since) {
+  const { simpleParser } = await import('mailparser');
+  const lock = await client.getMailboxLock(folder);
+  try {
+    const query = since ? { since: new Date(new Date(since).getTime() - 86_400_000) } : { all: true };
+    const uids = (await client.search(query, { uid: true })) || [];
+    if (!uids.length) return [];
+    const out = [];
+    for await (const msg of client.fetch(uids.slice(-500).join(','), { source: true, internalDate: true }, { uid: true })) {
+      if (!msg?.source) continue;
+      const p = await simpleParser(msg.source);
+      out.push({
+        uid: msg.uid,
+        to: (p.to?.value || []).map(a => String(a.address || '').toLowerCase()),
+        date: p.date || msg.internalDate || null,
+        subject: String(p.subject || ''),
+        text: String(p.text || '').trim(),
+        html: typeof p.html === 'string' ? p.html : null,
+      });
+    }
+    return out;
+  } finally {
+    lock.release();
+  }
+}
+
+/** Delete these uids from a folder. */
+export async function deleteUids(client, folder, uids) {
+  if (!uids.length) return 0;
+  const lock = await client.getMailboxLock(folder);
+  try {
+    await client.messageDelete(uids.join(','), { uid: true });
+  } finally {
+    lock.release();
+  }
+  return uids.length;
+}

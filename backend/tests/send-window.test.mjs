@@ -57,3 +57,78 @@ test('follow-ups count business days', () => {
   assert.deepEqual([ten.month, ten.day], [10, 29]);
   assert.match(describeSlot(f, 'America/New_York'), /^Wed \d{1,2}:\d{2} AM$/);
 });
+
+// ── Outreach send plan ──
+import { planSendTimes, dayKey } from '../services/sendWindow.js';
+
+const local = (d, tz) => { const p = partsIn(d, tz); return { ...p, mins: p.hour * 60 + p.minute }; };
+
+test('approved emails go the next business morning, 8–10 AM their time, 2–4 minutes apart', () => {
+  // Wed 2026-11-18 9:30 AM Chicago: today's window has started, so Thursday.
+  const now = new Date('2026-11-18T15:30:00Z');
+  const items = Array.from({ length: 10 }, (_, i) => ({ id: i, tz: 'America/Chicago' }));
+  const plan = planSendTimes(items, { now, rand: Math.random });
+  assert.equal(plan.size, 10);
+  const ts = [...plan.values()].map(d => d.getTime()).sort((a, b) => a - b);
+  for (const t of ts) {
+    const p = local(new Date(t), 'America/Chicago');
+    assert.equal(p.dow, 4);
+    assert.ok(p.mins >= 480 && p.mins < 600, `${p.hour}:${p.minute}`);
+  }
+  for (let i = 1; i < ts.length; i++) {
+    const gap = ts[i] - ts[i - 1];
+    assert.ok(gap >= 120_000 && gap <= 240_000, `gap ${gap}`);
+  }
+});
+
+test('before the window opens, it is the same morning; unknown zone means Chicago', () => {
+  const now = new Date('2026-11-18T12:00:00Z'); // Wed 6 AM Chicago
+  const t = planSendTimes([{ id: 1, tz: null }], { now, rand: () => 0 }).get(1);
+  const p = local(t, 'America/Chicago');
+  assert.equal(p.dow, 3);
+  assert.equal(p.hour, 8);
+});
+
+test('never on a weekend: Friday afternoon goes Monday', () => {
+  const now = new Date('2026-11-20T21:00:00Z'); // Fri 3 PM Chicago
+  const t = planSendTimes([{ id: 1, tz: 'America/New_York' }], { now, rand: mid }).get(1);
+  const p = local(t, 'America/New_York');
+  assert.equal(p.dow, 1);
+  assert.ok(p.hour >= 8 && p.hour < 10);
+});
+
+test('at most 40 a day: the rest roll to the next business morning', () => {
+  const now = new Date('2026-11-18T20:00:00Z'); // Wed afternoon
+  // Spread over three zones so the window isn't the limit, only the cap.
+  const zones = ['America/New_York', 'America/Chicago', 'America/Los_Angeles'];
+  const items = Array.from({ length: 50 }, (_, i) => ({ id: i, tz: zones[i % 3] }));
+  const plan = planSendTimes(items, { now, rand: mid });
+  assert.equal(plan.size, 50);
+  const days = new Map();
+  for (const d of plan.values()) days.set(dayKey(d), (days.get(dayKey(d)) || 0) + 1);
+  assert.deepEqual([...days.entries()].sort(), [['2026-11-19', 40], ['2026-11-20', 10]]);
+  for (const [id, d] of plan) {
+    const p = local(d, zones[id % 3]);
+    assert.ok(p.hour >= 8 && p.hour < 10 && p.dow >= 1 && p.dow <= 5);
+  }
+});
+
+test('emails already scheduled or sent count: spacing and the day cap', () => {
+  const now = new Date('2026-11-18T20:00:00Z');
+  const thu = (h, m) => zonedToUtc({ year: 2026, month: 11, day: 19, hour: h, minute: m }, 'America/Chicago');
+  const taken = Array.from({ length: 39 }, (_, i) => thu(8, 0 + i * 3)).filter(t => partsIn(t, 'America/Chicago').hour < 10);
+  const plan = planSendTimes([{ id: 'a', tz: 'America/Los_Angeles' }, { id: 'b', tz: 'America/Los_Angeles' }], { now, taken, rand: mid });
+  const a = plan.get('a');
+  const b = plan.get('b');
+  // 39 taken + a = 40 on Thursday; b goes Friday.
+  assert.equal(dayKey(a), '2026-11-19');
+  assert.equal(dayKey(b), '2026-11-20');
+  for (const t of taken) assert.ok(Math.abs(t - a) >= 120_000);
+});
+
+test('a window that has started can take a pushed-back send when asked', () => {
+  const now = new Date('2026-11-18T15:00:00Z'); // Wed 9:00 AM Chicago
+  const t = planSendTimes([{ id: 1, tz: 'America/Chicago' }], { now, openWindow: true, rand: () => 0 }).get(1);
+  assert.equal(dayKey(t), '2026-11-18');
+  assert.ok(t - now >= 60_000 && t - now < 180_000);
+});

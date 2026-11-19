@@ -14,11 +14,12 @@
  */
 
 import { all, one, run } from '../db.js';
-import { signFillToken, verifyFillToken } from './secretBox.js';
+import { signExtKey, signFillToken, verifyExtKey, verifyFillToken } from './secretBox.js';
 import { normalizeQuestion, pickAnswer } from './answerBank.js';
 import { resolveToBoard } from './boardResolver.js';
 import { downloadVersionPdf } from './resumeStorage.js';
 import { resumeFileName } from './resumeFiles.js';
+import { preparedAnswers } from './formQuestions.js';
 
 const str = (v) => String(v ?? '').trim();
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -83,12 +84,21 @@ export async function readyRoles(userId, { resolve = true } = {}) {
       await run("UPDATE plan_items SET fill_report = COALESCE(fill_report, '{}'::jsonb) || $2::jsonb WHERE id = $1", [r.id, JSON.stringify(patch)]);
     }));
   }
+  // Each role's prepared answers, counted by status.
+  const counts = new Map((await all(
+    `SELECT plan_item_id::text AS id, COUNT(*) FILTER (WHERE status = 'ready')::int AS ready, COUNT(*) FILTER (WHERE status = 'writing')::int AS writing,
+            COUNT(*) FILTER (WHERE status = 'needs_you')::int AS needs_you, COUNT(*) FILTER (WHERE status = 'profile')::int AS profile
+       FROM role_answers WHERE user_id = $1 AND plan_item_id = ANY($2::bigint[]) GROUP BY 1`,
+    [userId, rows.map(r => r.id)],
+  )).map(c => [c.id, c])) ;
   return sortReady(rows.map(r => {
     const f = r.fill_report || {};
     return {
       id: String(r.id), company: r.company_name, title: r.title, location: r.location, deadline: r.deadline, waiting_since: r.waiting_since,
       why: r.stage_note, apply_url: r.apply_url, ...readyKind(r.apply_url, f.board_url),
       filled_at: f.filled_at || null, filled: f.filled ?? null, unanswered: f.unanswered || [], resume_attached: f.resume_attached ?? null,
+      prepared_at: f.prepared_at || null, posting_closed: Boolean(f.posting_closed), form_url: f.form_url || null,
+      answers: counts.get(String(r.id)) || null,
     };
   }));
 }
@@ -141,6 +151,8 @@ export async function fillData(token) {
       veteran: demographics ? str(p?.veteran_status) : '', disability: demographics ? str(p?.disability_status) : '',
     },
     resume: { filename: resumeFileName([first, last].filter(Boolean).join(' ')), base64: Buffer.from(pdf).toString('base64') },
+    // Prepared last night (and by your Claude run): question → answer.
+    answers: await preparedAnswers(planItemId),
   };
 }
 
@@ -151,25 +163,31 @@ export async function fillData(token) {
 export async function fillAnswers(token, questions) {
   const { userId, planItemId } = tokenOrFail(token);
   const qs = [...new Set((Array.isArray(questions) ? questions : []).map(q => str(q).slice(0, 1000)).filter(q => normalizeQuestion(q)))].slice(0, 80);
-  const [rows, item] = await Promise.all([
+  const [saved, prepared] = await Promise.all([
     all('SELECT id, question, question_key, answer, status FROM application_answers WHERE user_id = $1', [userId]),
-    one('SELECT company_name FROM plan_items WHERE id = $1', [planItemId]),
+    all("SELECT id, question, question_key, answer, CASE WHEN status = 'ready' THEN 'answered' ELSE status END AS status FROM role_answers WHERE plan_item_id = $1 AND user_id = $2", [planItemId, userId]),
   ]);
   const answers = {};
   const used = [];
+  const missing = [];
   for (const q of qs) {
-    const hit = pickAnswer(q, rows);
+    // This role's prepared answer first, then your saved ones.
+    const mine = pickAnswer(q, prepared, 0.8);
+    const hit = mine || pickAnswer(q, saved);
     answers[q] = hit ? hit.answer : null;
-    if (hit) used.push(hit.id);
-    else {
-      await run(
-        `INSERT INTO application_answers (user_id, question, question_key, status, asked_by)
-              VALUES ($1, $2, $3, 'pending', $4) ON CONFLICT (user_id, question_key) DO NOTHING`,
-        [userId, q, normalizeQuestion(q), str(item?.company_name).slice(0, 200) || null],
-      );
-    }
+    if (hit && !mine) used.push(hit.id);
+    if (!hit && !prepared.some(p => p.question_key === normalizeQuestion(q))) missing.push(q);
   }
   if (used.length) await run('UPDATE application_answers SET use_count = use_count + 1, last_used_at = NOW() WHERE id = ANY($1::bigint[])', [used]);
+  // A question the form asked that wasn't read ahead (Workday, a step that appears later): your Claude run answers it next.
+  if (missing.length) {
+    await run(
+      `INSERT INTO role_answers (user_id, plan_item_id, question, question_key, status)
+       SELECT $1, $2, q, k, 'writing' FROM unnest($3::text[], $4::text[]) AS u(q, k)
+       ON CONFLICT (plan_item_id, question_key) DO NOTHING`,
+      [userId, planItemId, missing, missing.map(normalizeQuestion)],
+    );
+  }
   return { answers };
 }
 
@@ -194,4 +212,48 @@ export async function fillSubmitted(token) {
   const { markRoleApplied } = await import('./tailorPipeline.js');
   await markRoleApplied(userId, planItemId);
   return { ok: true };
+}
+
+/** The extension's key for this user (the app passes it to the extension; every visit renews it). */
+export function extensionKey(userId) {
+  return { key: signExtKey(userId) };
+}
+
+function keyOrFail(key) {
+  const userId = verifyExtKey(key);
+  if (!userId) throw fail(401, 'The filler isn’t paired. Open Scout’n’Jobs once in this browser.');
+  return userId;
+}
+
+/** Each morning: every ready role the extension can fill, with a fresh link. Closed postings stay out. */
+export async function dailyRoles(key) {
+  const userId = keyOrFail(key);
+  const roles = (await readyRoles(userId, { resolve: false })).filter(r => r.kind === 'fill' && !r.posting_closed);
+  return { roles: roles.map(r => ({ id: r.id, company: r.company, title: r.title, url: r.open_url, token: signFillToken(userId, r.id) })) };
+}
+
+/** Same posting? Host and path, ignoring the trailing /apply or /application and the query. Pure. */
+export function samePosting(a, b) {
+  const key = (x) => {
+    try {
+      const u = new URL(x);
+      if (/greenhouse\.io$/.test(u.hostname)) {
+        const id = u.searchParams.get('token') || u.searchParams.get('gh_jid') || (u.pathname.match(/\/jobs\/(\d+)/) || [])[1];
+        if (id) return `gh:${id}`;
+      }
+      if (u.searchParams.get('gh_jid')) return `gh:${u.searchParams.get('gh_jid')}`;
+      return `${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/\/(apply|application)\/?$/, '').replace(/\/$/, '')}`.toLowerCase();
+    } catch { return null; }
+  };
+  const ka = key(a);
+  return Boolean(ka) && ka === key(b);
+}
+
+/** A job page the user opened themselves: the ready role it is, with a link to fill it, or null. */
+export async function matchRole(key, urls) {
+  const userId = keyOrFail(key);
+  const list = (Array.isArray(urls) ? urls : [urls]).map(str).filter(Boolean).slice(0, 3);
+  const roles = (await readyRoles(userId, { resolve: false })).filter(r => r.kind === 'fill');
+  const hit = roles.find(r => list.some(u => [r.open_url, r.apply_url, r.form_url].filter(Boolean).some(x => samePosting(u, x))));
+  return hit ? { role: { id: hit.id, company: hit.company, title: hit.title, url: hit.open_url, token: signFillToken(userId, hit.id) } } : { role: null };
 }

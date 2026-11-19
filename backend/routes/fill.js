@@ -2,7 +2,7 @@
 // and "submitted", authorised by the signed link from /review/:id/fill-link
 // (no app sign-in in the extension). Mounted before requireAuth.
 import { Router } from 'express';
-import { fillAnswers, fillData, fillReport, fillSubmitted } from '../services/readyToSubmit.js';
+import { dailyRoles, fillAnswers, fillData, fillReport, fillSubmitted, matchRole } from '../services/readyToSubmit.js';
 
 const router = Router();
 
@@ -12,6 +12,10 @@ const handle = (fn) => async (req, res) => {
     res.status(err.status || 500).json({ error: err.message });
   }
 };
+
+// The paired extension (its key in X-SnJ-Key): the morning's roles, and the role for a page opened by hand.
+router.get('/daily', handle(req => dailyRoles(req.get('x-snj-key'))));
+router.post('/match', handle(req => matchRole(req.get('x-snj-key'), req.body?.urls)));
 
 router.get('/:token', handle(req => fillData(req.params.token)));
 router.post('/:token/answers', handle(req => fillAnswers(req.params.token, req.body?.questions)));

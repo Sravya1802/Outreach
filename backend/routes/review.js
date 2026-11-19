@@ -6,7 +6,7 @@ import { addReferrer, listReferrers, removeReferrer } from '../services/referrer
 import {
   addRoleContacts, applyWithoutReferral, approveRole, keepVersion, markRoleApplied, removeRole, restoreRemovedRole, companyQueue, editDraft, findRoleContacts, lastRun, requestRevision, reviewQueue, reviewRole, runConfig, runSummary, saveRunConfig, setReferralMode, versionPdf, queueOutreachDrafts,
 } from '../services/tailorPipeline.js';
-import { fillLink, readyRoles } from '../services/readyToSubmit.js';
+import { extensionKey, fillLink, readyRoles } from '../services/readyToSubmit.js';
 import { approveWrittenOutreach } from '../services/outreachApproval.js';
 
 const router = Router();
@@ -26,6 +26,11 @@ const withId = (fn) => async (req, res) => {
 // Ready to submit: approved roles the app couldn't send (a CAPTCHA, a site it can't fill), for the browser extension.
 router.get('/ready', async (req, res) => {
   try { res.json({ roles: await readyRoles(req.user.id) }); } catch (err) { fail(res, err); }
+});
+
+// The filler extension's key (the app hands it to the extension, so it can open your ready roles each morning).
+router.post('/extension-key', async (req, res) => {
+  try { res.json(extensionKey(req.user.id)); } catch (err) { fail(res, err); }
 });
 
 router.post('/:id/fill-link', withId(async (req, res, id) => {

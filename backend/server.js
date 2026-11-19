@@ -603,6 +603,14 @@ cron.schedule('*/30 * * * *', async () => {
     if (r.sent) console.log(`[whatsapp] sent ${r.sent} waiting message(s)`);
   } catch (err) { console.error('[whatsapp] retry failed:', err.message); }
 }, CRON_OPTS);
+// Every night (1 AM Chicago, 07:00 UTC): each ready role's form questions, with answers prepared before the filler opens it.
+cron.schedule('0 7 * * *', async () => {
+  try {
+    const { prepareAllForms } = await import('./services/formQuestions.js');
+    const r = await prepareAllForms();
+    console.log(`[forms] prepared ${r.filter(x => !x.error).length} forms, ${r.filter(x => x.posting_closed).length} postings closed, ${r.filter(x => x.error).length} failed`);
+  } catch (err) { console.error('[forms] nightly prepare failed:', err.message); }
+}, CRON_OPTS);
 cron.schedule('*/10 * * * *', async () => {
   try {
     const r = await checkAllInboxes();

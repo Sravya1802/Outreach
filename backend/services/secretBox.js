@@ -77,3 +77,28 @@ export function verifyFillToken(token, { now = Date.now(), env } = {}) {
     return null;
   }
 }
+
+/**
+ * The filler extension's key for one user, kept in the extension once it's
+ * paired from the app (every visit renews it): it lists that user's ready
+ * roles each morning and finds the role for a job page. 120 days.
+ */
+export function signExtKey(userId, { ttlMs = 120 * 24 * 3600_000, now = Date.now(), env } = {}) {
+  const body = b64u(JSON.stringify({ u: String(userId), e: now + ttlMs, k: 'ext' }));
+  return `${body}.${hmac(body, env, 'ext-key')}`;
+}
+
+/** The user id inside a valid, unexpired extension key, else null. */
+export function verifyExtKey(key, { now = Date.now(), env } = {}) {
+  const [body, sig] = String(key || '').split('.');
+  if (!body || !sig) return null;
+  const expected = hmac(body, env, 'ext-key');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const { u, e, k } = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (k !== 'ext' || typeof u !== 'string' || !u || typeof e !== 'number' || e < now) return null;
+    return u;
+  } catch {
+    return null;
+  }
+}

@@ -124,7 +124,10 @@ export async function approveWrittenOutreach(userId, { planItemId = null, dryRun
 }
 
 async function approve(userId, planItemId, dryRun) {
-  const { outbox, drafts } = await candidates(userId, planItemId);
+  const [{ outbox, drafts }, active] = await Promise.all([
+    candidates(userId, planItemId),
+    all(`SELECT lower(to_email) AS email FROM email_outbox WHERE user_id = $1 AND step = 0 AND status IN ('draft', 'scheduled', 'sending', 'sent')`, [userId]),
+  ]);
   const skipped = [];
   const skip = (x, reason) => skipped.push({ id: x.id, name: x.name || x.to_name || x.email || x.to_email, company: x.company, reason });
 
@@ -136,14 +139,13 @@ async function approve(userId, planItemId, dryRun) {
     if (why) { skip(d, why); continue; }
     byRole.set(d.plan_item_id, [...(byRole.get(d.plan_item_id) || []), d]);
   }
-  const active = await all(
-    `SELECT contact_id, lower(to_email) AS email FROM email_outbox WHERE user_id = $1 AND step = 0 AND status IN ('draft', 'scheduled', 'sending', 'sent')`,
-    [userId],
-  );
   const seen = new Set(active.map(a => a.email));
   // Outbox drafts approved now are already in `seen` by their address.
-  for (const [roleId, list] of byRole) {
-    const repeats = await askedElsewhere(userId, roleId, list);
+  // Each role's check is a round trip to the database: all at once, then in order.
+  const roles = [...byRole.entries()];
+  const repeatsOf = await Promise.all(roles.map(([roleId, list]) => askedElsewhere(userId, roleId, list)));
+  for (const [i, [, list]] of roles.entries()) {
+    const repeats = repeatsOf[i];
     for (const d of list) {
       const email = str(d.email).toLowerCase();
       if (repeats.some(r => r.id === d.id) || seen.has(email)) { skip(d, 'asked'); continue; }

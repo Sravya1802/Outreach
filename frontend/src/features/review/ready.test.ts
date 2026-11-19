@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiOrigin, closesLabel, daysLeft, fillLine, hasFiller } from './ready'
+import { answersLine as answersLine2, apiOrigin, closesLabel, daysLeft, fillLine, fillerVersion, hasFiller } from './ready'
 
 describe('ready to submit', () => {
   const now = new Date(2026, 10, 17, 18, 0)
@@ -25,5 +25,19 @@ describe('ready to submit', () => {
     expect(hasFiller()).toBe(true)
     expect(apiOrigin('https://outreach-jt.duckdns.org/api', 'https://scoutnjobs.vercel.app/review/ready')).toBe('https://outreach-jt.duckdns.org')
     expect(apiOrigin('/api', 'http://localhost:5173/review/ready')).toBe('http://localhost:5173')
+  })
+})
+
+describe('prepared answers and the extension version', () => {
+  it('counts what last night prepared', () => {
+    expect(answersLine2({ prepared_at: '2026-11-19T07:00:00Z', posting_closed: false, answers: { ready: 4, writing: 2, needs_you: 1, profile: 9 } })).toBe('Answers: 4 ready · Claude is writing 2 · 1 needs you')
+    expect(answersLine2({ prepared_at: '2026-11-19T07:00:00Z', posting_closed: true, answers: { ready: 4, writing: 0, needs_you: 0, profile: 9 } })).toBeNull()
+    expect(answersLine2({ prepared_at: null, posting_closed: false, answers: null })).toBeNull()
+  })
+  it('reads the version the extension stamps on the page', () => {
+    document.documentElement.dataset.snjFiller = '1.1.0'
+    expect(fillerVersion()).toBe('1.1.0')
+    delete document.documentElement.dataset.snjFiller
+    expect(fillerVersion()).toBe('')
   })
 })

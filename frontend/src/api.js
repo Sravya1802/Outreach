@@ -487,6 +487,7 @@ export const api = {
     reviewQueue: () => apiCall('/review'),
     readyToSubmit: () => apiCall('/review/ready'),
     fillLink: (id) => apiCall(`/review/${id}/fill-link`, { method: 'POST' }),
+    extensionKey: () => apiCall('/review/extension-key', { method: 'POST' }),
     reviewRuns: () => apiCall('/review/runs'),
     reviewCompany: (name) => apiCall(`/review/company?name=${encodeURIComponent(name)}`),
     runConfig: () => apiCall('/review/config'),

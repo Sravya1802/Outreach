@@ -5,6 +5,7 @@ import { useAuth } from './auth'
 import { lazyWithRetry } from './lazy'
 import { LEGACY_REDIRECTS } from './nav'
 import { MarketGate } from '@/features/auth/MarketGate'
+import { FillerPairing } from '@/features/review/FillerPairing'
 
 const HomePage = lazyWithRetry(() => import('@/features/home/HomePage'), 'HomePage')
 const SettingsPage = lazyWithRetry(() => import('@/features/settings/SettingsPage'), 'SettingsPage')
@@ -73,6 +74,7 @@ function CategoryRedirect() {
 function SignedInRoutes() {
   return (
     <AppShell>
+      <FillerPairing />
       <Routes>
         <Route path="/home" element={<HomePage />} />
         <Route path="/home/analytics" element={<Navigate to="/dashboard" replace />} />

@@ -6,7 +6,7 @@ import { API } from '@/api.js'
 import { api, type ReadyRole } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Skeleton, useToast } from '@/ui'
-import { apiOrigin, closesLabel, daysLeft, fillLine, hasFiller } from './ready'
+import { answersLine, apiOrigin, askFiller, closesLabel, daysLeft, fillLine, fillerVersion, hasFiller } from './ready'
 
 /** The extension marks the page at load; check again in case it was just installed. */
 function useFiller() {
@@ -90,18 +90,7 @@ function FillRow({ r }: { r: ReadyRole }) {
         toast.error('The filler extension isn’t installed, so the form opened empty. Install it (above) and press Open again.')
         return
       }
-      const id = `${r.id}-${Date.now()}`
-      const answer = new Promise<{ ok: boolean; error?: string }>((ok) => {
-        const on = (e: MessageEvent) => {
-          if (e.source !== window || e.data?.source !== 'snj-ext' || e.data.id !== id) return
-          window.removeEventListener('message', on)
-          ok(e.data)
-        }
-        window.addEventListener('message', on)
-        setTimeout(() => { window.removeEventListener('message', on); ok({ ok: false, error: 'The extension didn’t answer. Reload this page and try again.' }) }, 20_000)
-      })
-      window.postMessage({ source: 'snj-app', type: 'open', id, token: link.token, url: link.url, api: apiOrigin(API) }, window.location.origin)
-      const r2 = await answer
+      const r2 = await askFiller('open', { token: link.token, url: link.url, api: apiOrigin(API) })
       if (!r2.ok) toast.error(r2.error || 'Couldn’t open it.')
     } catch (e) {
       toast.error((e as Error).message)
@@ -113,6 +102,8 @@ function FillRow({ r }: { r: ReadyRole }) {
     <li className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-4">
       <div className="min-w-0 flex-1 basis-64 space-y-1">
         <RoleHead r={r} />
+        {r.posting_closed && <p className="text-[13px] text-danger">The job board says this posting is closed (checked last night), so the morning run skips it. Remove it, or press I applied if you already did.</p>}
+        {answersLine(r) && <p className="text-[13px] text-subtle">{answersLine(r)}</p>}
         {line && <p className="text-[13px] text-subtle">{line}</p>}
         {r.unanswered.length > 0 && (
           <p className="text-[13px] text-warning">Needs you: {r.unanswered.slice(0, 4).join(' · ')}{r.unanswered.length > 4 ? ` and ${r.unanswered.length - 4} more` : ''}</p>
@@ -143,15 +134,53 @@ function LinkedInRow({ r }: { r: ReadyRole }) {
   )
 }
 
-function Install() {
+/** The morning auto-open: on or off, when it last ran, and Open all now. */
+function Morning({ count }: { count: number }) {
+  const toast = useToast()
+  const [state, setState] = useState<{ daily: boolean; lastDaily: string | null; lastDailyResult: { opened: number; errors: string[] } | null } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const pair = async (daily?: boolean) => {
+    const { key } = await api.extensionKey()
+    const r = await askFiller<{ daily: boolean; lastDaily: string | null; lastDailyResult: { opened: number; errors: string[] } | null }>('pair', { key, api: apiOrigin(API), ...(daily == null ? {} : { daily }) })
+    if (r.ok && r.result) setState(r.result)
+    return r
+  }
+  useEffect(() => { void pair().catch(() => {}) }, [])
+  async function openAll() {
+    setBusy(true)
+    try {
+      const r = await askFiller<{ opened: number; errors?: string[] }>('daily-now', {})
+      if (!r.ok) toast.error(r.error || 'Couldn’t open them.')
+      else toast.success(`Opened ${r.result?.opened ?? 0} in a new window. Each one fills as it loads.${r.result?.errors?.length ? ` Couldn’t open: ${r.result.errors.join('; ')}` : ''}`)
+    } finally { setBusy(false) }
+  }
+  if (!state) return null
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[6px] border border-line bg-surface p-4 text-[14px]">
+      <p className="min-w-0 flex-1 basis-72 text-muted">
+        {state.daily
+          ? <>Every morning, the first time Chrome starts (or at 7 AM if it’s open), the filler opens {count === 1 ? 'this role' : `these ${count} roles`} in one window and fills each with your profile, prepared answers and tailored resume.</>
+          : <>Morning auto-open is off. Open fills one role at a time.</>}
+        {state.lastDaily && <span className="text-subtle"> Last opened {state.lastDaily}{state.lastDailyResult ? ` (${state.lastDailyResult.opened})` : ''}.</span>}
+      </p>
+      <span className="flex gap-2">
+        <Button size="sm" variant="primary" loading={busy} disabled={!count} onClick={() => void openAll()}>Open all now</Button>
+        <Button size="sm" variant="ghost" onClick={() => void pair(!state.daily)}>{state.daily ? 'Turn off mornings' : 'Turn on mornings'}</Button>
+      </span>
+    </div>
+  )
+}
+
+function Install({ update = false }: { update?: boolean }) {
   return (
     <div className="mb-6 rounded-[6px] border border-line bg-surface p-4 text-[14px] leading-relaxed">
-      <p className="font-medium text-fg">Install the Scout’n’Jobs filler once (Chrome)</p>
+      <p className="font-medium text-fg">{update ? 'Update the Scout’n’Jobs filler (a new version fills Ashby’s Yes/No questions, forms inside frames, and opens your roles each morning)' : 'Install the Scout’n’Jobs filler once (Chrome)'}</p>
+      {update && <p className="mt-1 text-muted">Download it again, unzip it over the old folder, then press the reload arrow on the filler’s card in chrome://extensions.</p>}
       <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted">
         <li><a href="/scoutnjobs-filler.zip" download className="inline-flex items-center gap-1 text-accent hover:underline"><Download className="size-3.5" /> Download the extension</a> and unzip it.</li>
         <li>Open <code className="text-fg">chrome://extensions</code> and turn on Developer mode (top right).</li>
         <li>Press Load unpacked and choose the unzipped <code className="text-fg">scoutnjobs-filler</code> folder.</li>
-        <li>Reload this page. Open then fills each form in your own browser.</li>
+        <li>Reload this page. From then on, each morning when Chrome starts it opens these roles and fills them; Open fills one now.</li>
       </ol>
     </div>
   )
@@ -169,7 +198,8 @@ export default function ReadyPage() {
         title="Ready to submit"
         description="Approved roles the app couldn’t send for you. Open fills the form with your profile, saved answers and the role’s tailored resume. You do the CAPTCHA and press Submit; the role is marked applied when the confirmation page shows, or press I applied."
       />
-      {!filler && <Install />}
+      {(!filler || fillerVersion() === '1.0.0') && <Install update={filler} />}
+      {filler && fillerVersion() !== '1.0.0' && <Morning count={fill.filter(r => !r.posting_closed).length} />}
       {q.isLoading && <Skeleton className="h-40" />}
       {q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.data && !roles.length && <EmptyState title="Nothing waiting" description="Approved roles the app can’t submit on its own show up here, closing soonest first." />}

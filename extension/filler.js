@@ -14,14 +14,37 @@
   const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
   const norm = (s) => clean(s).toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9+#/' ]+/g, ' ').replace(/\s+/g, ' ').trim();
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  // localStorage.snjDebug = '1' on a job site logs each step to the console.
+  const DEBUG = (() => { try { return localStorage.getItem('snjDebug') === '1'; } catch { return false; } })();
+  const log = (...a) => { if (DEBUG) console.info('[snj]', ...a); };
 
   let data = null;
   let filled = 0;
   let resumeAttached = false;
   let reportedKey = '';
   let running = false;
+  let formSeen = false;
+  const formReady = () => [...document.querySelectorAll('input:not([type="hidden"]), textarea, select')].filter(shown).length >= 2 || looksSubmitted();
   let again = false;
   const answerCache = new Map();
+  /** This role's prepared answer for a question (exact, else most words shared), or null. */
+  function prepared(label) {
+    const list = Object.entries(data?.answers || {});
+    if (!list.length) return null;
+    const key = plain(label);
+    const exact = list.find(([q]) => plain(q) === key);
+    if (exact) return exact[1];
+    let top = null;
+    let score = 0;
+    const lw = new Set(words(label));
+    for (const [q, a] of list) {
+      const qw = new Set(words(q));
+      const shared = [...lw].filter((w) => qw.has(w)).length;
+      const j = shared / new Set([...lw, ...qw]).size;
+      if (j > score) { score = j; top = a; }
+    }
+    return score >= 0.8 ? top : null;
+  }
   // Tries per field: a site may clear what was filled (Greenhouse does after reading the resume), so up to 3, never forever.
   let tries = new WeakMap();
   const tryOnce = (el) => { const n = tries.get(el) || 0; if (n >= 3) return false; tries.set(el, n + 1); return true; };
@@ -95,6 +118,20 @@
     return null;
   }
 
+  // "May 2027" against "Jan - Aug 2027" / "May - Aug 2027": the month falls in the option's range.
+  const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const monthOf = (w) => MONTHS.indexOf(String(w).toLowerCase().slice(0, 3));
+  function inMonthRange(optionText, answer) {
+    const a = String(answer).match(/^\s*([A-Za-z]{3,9})\.?\s+(20\d\d)\s*$/);
+    if (!a || monthOf(a[1]) < 0) return null;
+    const o = String(optionText).match(/([A-Za-z]{3,9})\.?\s*(20\d\d)?\s*(?:-|–|to|through)\s*([A-Za-z]{3,9})\.?\s*(20\d\d)/i);
+    if (!o || monthOf(o[1]) < 0 || monthOf(o[3]) < 0) return null;
+    const at = (+a[2]) * 12 + monthOf(a[1]);
+    const from = (+(o[2] || o[4])) * 12 + monthOf(o[1]);
+    const to = (+o[4]) * 12 + monthOf(o[3]);
+    return at >= from && at <= to;
+  }
+
   /** How well an option fits the answer: 3 the same, 2.5 in range, 2 starts with it, 1.6–2 most words shared, 0 no. */
   function fits(optionText, answer) {
     if (answer instanceof RegExp) return answer.test(clean(optionText)) ? 3 : 0;
@@ -102,6 +139,8 @@
     const a = plain(answer);
     if (!o || !a) return 0;
     if (o === a) return 3;
+    const months = inMonthRange(optionText, answer);
+    if (months != null) return months ? 2.5 : 0;
     const range = inRange(optionText, answer);
     if (range != null) return range ? 2.5 : 0;
     if (o.startsWith(`${a} `) || a.startsWith(`${o} `)) return 2;
@@ -198,6 +237,54 @@
     return false;
   }
 
+  // Ashby and others ask yes/no with two buttons instead of radios.
+  const pressed = (b) => b.getAttribute('aria-pressed') === 'true' || b.getAttribute('aria-checked') === 'true' || b.getAttribute('data-state') === 'on'
+    || /(^|[\s_-])(active|selected|checked|isSelected)([\s_-]|$)/i.test(String(b.className));
+  function buttonGroups() {
+    const out = [];
+    const seen = new Set();
+    for (const b of document.querySelectorAll('button')) {
+      if (!shown(b) || !/^(yes|no)$/i.test(textOf(b))) continue;
+      // A submit-type button only when the site marks it as an answer option (Ashby: aria-pressed, data-option).
+      if (b.type === 'submit' && !(b.hasAttribute('aria-pressed') || b.dataset.option || /yesno/i.test(String(b.className)))) continue;
+      const box = b.parentElement;
+      if (!box || seen.has(box)) continue;
+      const buttons = [...box.querySelectorAll('button')].filter((x) => /^(yes|no)$/i.test(textOf(x)));
+      if (buttons.length !== 2) continue;
+      seen.add(box);
+      let label = '';
+      let node = box;
+      for (let i = 0; i < 5 && node && !label; i += 1, node = node.parentElement) {
+        const l = node.querySelector('label, legend, [class*="label" i], [class*="question" i], [class*="title" i]');
+        if (l && !l.contains(box) && textOf(l)) label = textOf(l);
+      }
+      if (label) out.push({ buttons, label: label.replace(/\s*[*✱]+\s*$/, ''), required: /[*✱]\s*$/.test(label) });
+    }
+    return out;
+  }
+
+  /** Press an answer button without any chance of submitting the form: it's a plain button for the click, and any submit is stopped. */
+  function pressOption(b) {
+    const type = b.getAttribute('type');
+    const stop = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
+    document.addEventListener('submit', stop, true);
+    try {
+      b.setAttribute('type', 'button');
+      press(b);
+    } finally {
+      if (type == null) b.removeAttribute('type'); else b.setAttribute('type', type);
+      setTimeout(() => document.removeEventListener('submit', stop, true), 0);
+    }
+  }
+
+  /** "2027-05-15" in the shape the box asks for (a date input, or text like MM/DD/YYYY). */
+  function dateFor(el, a) {
+    const m = String(a).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m || el.type === 'date') return String(a);
+    return `${m[2]}/${m[3]}/${m[1]}`;
+  }
+  const isDateBox = (el, label) => el.type === 'date' || /pick date|mm\/dd|date/i.test(`${el.getAttribute('placeholder') || ''}`) || (/\bdate\b|when can you start|start date/i.test(label) && el.tagName === 'INPUT');
+
   // ── What to put where ─────────────────────────────────────────────────────
   const yn = (v) => (v == null ? null : v ? 'Yes' : 'No');
 
@@ -275,10 +362,11 @@
   }
 
   // ── Submitted? ────────────────────────────────────────────────────────────
-  const CONFIRM = /thank you for (applying|submitting your application)|thanks for applying|(your )?application (was|has been) (successfully )?(received|submitted)|we('|’)ve received your application|application submitted/i;
+  const CONFIRM = /thank you for (applying|your application|submitting your application|your interest)|thanks for applying|(your )?application (was|has been|is) (successfully )?(received|submitted|complete)|we('|’)ve received your application|we have received your application|application submitted|successfully submitted|submission (was )?successful/i;
   function looksSubmitted() {
     const formy = [...document.querySelectorAll('input[type="text"], input[type="email"], input[type="file"], textarea')].filter(shown).length;
-    return formy < 2 && CONFIRM.test(textOf(document.body).slice(0, 5000));
+    if (/\/confirmation\b|[?&]submitted=true/i.test(location.href) && CONFIRM.test(textOf(document.body).slice(0, 8000))) return true;
+    return formy < 2 && CONFIRM.test(textOf(document.body).slice(0, 8000));
   }
 
   // ── One pass over the page ────────────────────────────────────────────────
@@ -288,6 +376,7 @@
     // The resume first: some sites read it and fill (or clear) fields, which must happen before ours.
     if (!resumeAttached) {
       resumeAttached = attachResume();
+      log('resume', resumeAttached);
       if (resumeAttached) await sleep(4000);
     }
 
@@ -327,7 +416,19 @@
       work.push({
         label, el, required: required(el, label),
         empty: () => (el.tagName === 'SELECT' ? !(el.selectedIndex > 0 && clean(el.value)) : !clean(el.value)) && !(combo && comboValue(el)),
-        apply: async (a) => (el.tagName === 'SELECT' ? fillSelect(el, a) : combo ? fillCombobox(el, a) : (a instanceof RegExp ? false : (setValue(el, String(a)), true))),
+        apply: async (a) => {
+          if (el.tagName === 'SELECT') return fillSelect(el, a);
+          if (combo) return fillCombobox(el, a);
+          if (a instanceof RegExp) return false;
+          if (isDateBox(el, label)) {
+            setValue(el, dateFor(el, a));
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+            return Boolean(clean(el.value));
+          }
+          setValue(el, String(a));
+          return true;
+        },
       });
     }
     for (const inputs of groups.values()) {
@@ -342,14 +443,35 @@
       });
     }
 
+    for (const g of buttonGroups()) {
+      work.push({
+        label: g.label, el: g.buttons[0], required: g.required,
+        empty: () => !g.buttons.some(pressed),
+        apply: async (a) => {
+          const b = best(g.buttons, textOf, a instanceof RegExp ? a : String(a));
+          if (!b) return false;
+          pressOption(b);
+          await sleep(150);
+          return true;
+        },
+      });
+    }
+
+    log('pass', { work: work.length, empty: work.filter((w) => w.empty()).map((w) => w.label).slice(0, 40) });
     const questions = [];
     for (const w of work) {
       if (!w.empty()) continue;
       const v = fromProfile(w.el, w.label);
       if (v instanceof RegExp || (v != null && v !== '')) {
         if (!tryOnce(w.el)) continue;
-        if (await w.apply(v) && tries.get(w.el) === 1) filled += 1;
-      } else if (v === undefined && !answerCache.has(w.label)) questions.push(w.label);
+        const done = await w.apply(v);
+        log('profile', w.label, String(v).slice(0, 40), done ? 'ok' : 'no');
+        if (done && tries.get(w.el) === 1) filled += 1;
+      } else if (v === undefined && !answerCache.has(w.label)) {
+        const p = prepared(w.label);
+        if (p != null) answerCache.set(w.label, p);
+        else questions.push(w.label);
+      }
     }
     if (questions.length) {
       const r = await send({ type: 'snj-answers', questions: [...new Set(questions)] });
@@ -377,7 +499,14 @@
     running = true;
     try {
       if (!data) data = await send({ type: 'snj-fill-data' });
-      if (!data) return;
+      // Not a ready role's page (or not paired): leave it alone for good.
+      if (!data) { observer.disconnect(); return; }
+      if (!formSeen) {
+        // The form renders after the page loads (Ashby, Workday): wait up to 15 seconds for it.
+        for (let t = 0; t < 15000 && !formReady(); t += 300) await sleep(300);
+        formSeen = true;
+        await sleep(500);
+      }
       do { again = false; await pass(); } while (again);
     } catch (err) {
       console.warn('[Scout\'n\'Jobs filler]', err);
@@ -393,7 +522,7 @@
   setTimeout(() => observer.disconnect(), 20 * 60_000);
 
   // ── The panel (top page only) ─────────────────────────────────────────────
-  if (TOP) {
+  {
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;display:none';
     const root = host.attachShadow({ mode: 'closed' });
@@ -419,9 +548,10 @@
         body.innerHTML = `<h1>Scout'n'Jobs</h1><p>Marked applied: ${esc(st.company || '')}. You can close this tab.</p>`;
         return;
       }
+      const need = st.unanswered.length;
       body.innerHTML = `
-        <h1>Scout'n'Jobs · ${esc(st.company || '')}</h1>
-        <p>Filled ${st.filled} field${st.filled === 1 ? '' : 's'}${st.resumeAttached ? ' and attached your tailored resume' : ''}.</p>
+        <h1>Filled ${st.filled} field${st.filled === 1 ? '' : 's'}, ${need} need${need === 1 ? 's' : ''} you</h1>
+        <p>Scout'n'Jobs · ${esc(st.company || '')}${st.resumeAttached ? '. Your tailored resume is attached.' : ''}</p>
         ${st.resumeAttached ? '' : '<p class="warn">Resume not attached yet: attach it from the role page if this form has an upload.</p>'}
         ${st.unanswered.length ? `<p class="warn">Needs you (outlined in red):</p><ul>${st.unanswered.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
         <p>Check the answers, do the CAPTCHA, then press Submit yourself.</p>
@@ -429,9 +559,14 @@
       body.querySelector('.done').onclick = async () => { const r = await send({ type: 'snj-submitted' }); if (r?.error) alert(r.error); };
       body.querySelector('.again').onclick = () => send({ type: 'snj-refill' });
     };
-    chrome.runtime.onMessage.addListener((m) => { if (m?.type === 'snj-panel') draw(m.state); });
+    // The top page shows it; a frame only when the top page has no filler (a form embedded on a company site).
+    chrome.runtime.onMessage.addListener((m, _s, ok) => {
+      if (m?.type !== 'snj-panel' || (!TOP && !m.here)) return;
+      draw(m.state);
+      ok(true);
+    });
     (document.body || document.documentElement).appendChild(host);
-    send({ type: 'snj-panel-state' }).then((st) => { if (st && (st.filled || st.submitted || st.unanswered?.length)) draw(st); });
+    if (TOP) send({ type: 'snj-panel-state' }).then((st) => { if (st && (st.filled || st.submitted || st.unanswered?.length)) draw(st); });
   }
 
   window.__snjFiller = { run };

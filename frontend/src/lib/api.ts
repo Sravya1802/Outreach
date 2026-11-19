@@ -953,6 +953,13 @@ export interface ReadyRole {
   filled: number | null
   unanswered: string[]
   resume_attached: boolean | null
+  /** When last night's pass read this form's questions. */
+  prepared_at?: string | null
+  /** The job board says the posting is gone. */
+  posting_closed?: boolean
+  form_url?: string | null
+  /** This role's prepared answers by status: ready (saved or Claude's), Claude still writing, needs you, from the profile. */
+  answers?: { ready: number; writing: number; needs_you: number; profile: number } | null
 }
 
 export interface FillLink { token: string; url: string; company: string; title: string }
@@ -1296,6 +1303,8 @@ export const api = {
   readyToSubmit: (): Promise<{ roles: ReadyRole[] }> => legacy.career.readyToSubmit(),
   /** A signed 24-hour link for the filler extension to fill one role's application. */
   fillLink: (id: string): Promise<FillLink> => legacy.career.fillLink(id),
+  /** The filler extension's key: lets it open your ready roles each morning and recognise a role's page. */
+  extensionKey: (): Promise<{ key: string }> => legacy.career.extensionKey(),
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */

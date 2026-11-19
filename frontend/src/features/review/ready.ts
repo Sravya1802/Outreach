@@ -1,5 +1,10 @@
 import type { ReadyRole } from '@/lib/api'
 
+/** The installed filler's version ('1.1.0'), or '' when it isn't installed. */
+export function fillerVersion(doc: Document = document): string {
+  return doc.documentElement.dataset.snjFiller || ''
+}
+
 /** Is the Scout'n'Jobs filler extension in this browser? (It marks the page.) */
 export function hasFiller(doc: Document = document): boolean {
   return Boolean(doc.documentElement.dataset.snjFiller)
@@ -39,4 +44,31 @@ export function fillLine(r: Pick<ReadyRole, 'filled_at' | 'filled' | 'unanswered
 /** The origin the extension calls (the API server), from the client's API base. */
 export function apiOrigin(apiBase: string, here = window.location.href): string {
   return new URL(apiBase, here).origin
+}
+
+/** "Answers: 4 ready · Claude is writing 2 · 1 needs you", from last night's read of the form. */
+export function answersLine(r: Pick<ReadyRole, 'answers' | 'prepared_at' | 'posting_closed'>): string | null {
+  if (r.posting_closed || !r.prepared_at || !r.answers) return null
+  const a = r.answers
+  const parts = [
+    a.ready ? `${a.ready} ready` : '',
+    a.writing ? `Claude is writing ${a.writing}` : '',
+    a.needs_you ? `${a.needs_you} need${a.needs_you === 1 ? 's' : ''} you` : '',
+  ].filter(Boolean)
+  return parts.length ? `Answers: ${parts.join(' · ')}` : null
+}
+
+/** Ask the extension something through its bridge on this page; resolves with its answer (or an error after 20 s). */
+export function askFiller<T = unknown>(type: 'open' | 'pair' | 'daily-now', payload: Record<string, unknown>, win: Window = window): Promise<{ ok: boolean; error?: string | null; result?: T }> {
+  const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  return new Promise((ok) => {
+    const on = (e: MessageEvent) => {
+      if (e.source !== win || e.data?.source !== 'snj-ext' || e.data.id !== id) return
+      win.removeEventListener('message', on)
+      ok(e.data)
+    }
+    win.addEventListener('message', on)
+    setTimeout(() => { win.removeEventListener('message', on); ok({ ok: false, error: 'The extension didn’t answer. Reload this page and try again.' }) }, 20_000)
+    win.postMessage({ source: 'snj-app', type, id, ...payload }, win.location.origin)
+  })
 }

@@ -9,6 +9,7 @@ import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/format'
 import { AddOwnJob } from '@/features/toapply/AddOwnJob'
 import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, useToast } from '@/ui'
+import { ApproveAllEmails } from '@/features/outreach/ApproveAllEmails'
 import { resumeFileName, saveBlob, CALLBACK_OPTIONS, callbackMatch, CLOSED_LABEL, canRemove, TYPE_OPTIONS, typeMatch, daysOpen, CLOSES_OPTIONS, OPENED_OPTIONS, OUTREACH_OPTIONS, SORT_OPTIONS, sortRows, TABS, YEAR_OPTIONS, closesMatch, openedLabel, openedMatch, outreachMatch, atsOk, backlog, bulkLine, canApprove, deadlineLabel, isRunning, needsOutreach, outreachLine, reviewTab, runLine, safeToBulk, visaLine, yearMatch, yearsLabel, type ReviewTab } from './review'
 
 // The menus remember the last choice in this browser.
@@ -256,7 +257,7 @@ export default function ReviewPage() {
   return (
     <Page wide>
       <PageHeader title="Review queue" description="Resumes and outreach written by your Claude chat runs. Open a role to read it, ask for changes or approve it." />
-      <div className="mb-4"><AddOwnJob queue /></div>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><AddOwnJob queue /><ApproveAllEmails /></div>
       {queue.error ? <ErrorState error={queue.error} onRetry={() => void queue.refetch()} /> : queue.isLoading ? <Skeleton className="h-72" /> : total === 0 ? (
         <EmptyState title="Nothing in the queue yet" description="Roles appear here as soon as they’re added to the queue." />
       ) : (

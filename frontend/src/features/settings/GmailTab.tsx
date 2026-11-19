@@ -64,7 +64,7 @@ export function GmailTab() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-fg">{s.display_name ? `${s.display_name} <${s.email}>` : s.email}</p>
                 <p className="text-[13px] text-muted">
-                  Connected {timeAgo(s.connected_at)}{s.last_checked_at ? ` · inbox checked ${timeAgo(s.last_checked_at)}` : ''} · up to {s.daily_cap ?? 20} emails a day
+                  Connected {timeAgo(s.connected_at)}{s.last_checked_at ? ` · inbox checked ${timeAgo(s.last_checked_at)}` : ''} · up to {s.daily_cap ?? 40} emails a day
                 </p>
               </div>
               <Badge tone={s.status === 'ok' ? 'success' : 'danger'}>{s.status === 'ok' ? 'Working' : 'Needs attention'}</Badge>
@@ -81,7 +81,7 @@ export function GmailTab() {
                 {f => <Input {...f} value={name} onChange={e => setName(e.target.value)} placeholder={s.display_name || 'Your name'} />}
               </Field>
               <Field label="Emails a day" hint="1 to 40">
-                {f => <Input {...f} type="number" min={1} max={40} value={cap} onChange={e => setCap(e.target.value)} placeholder={String(s.daily_cap ?? 20)} />}
+                {f => <Input {...f} type="number" min={1} max={40} value={cap} onChange={e => setCap(e.target.value)} placeholder={String(s.daily_cap ?? 40)} />}
               </Field>
               <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!name && !cap}>Save</Button>
             </div>

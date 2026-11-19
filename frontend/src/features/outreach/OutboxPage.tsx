@@ -50,7 +50,7 @@ export default function OutboxPage() {
     onSuccess: r => {
       setApprovingAll(null)
       if (r.failed.length) toast.error(`Approved ${r.done}. Couldn’t approve ${r.failed.join(', ')}; try those one by one.`)
-      else toast.success(`Approved ${r.done}. They go out in each person’s morning, at most ${gmail.data?.daily_cap ?? 20} a day.`)
+      else toast.success(`Approved ${r.done}. They go out the next business morning, 8–10 AM each person’s time, at most ${gmail.data?.daily_cap ?? 40} a day. See People → Scheduled.`)
     },
     onError: (e: Error) => toast.error(e.message),
     onSettled: () => { setProgress(null); refresh() },
@@ -172,7 +172,7 @@ export default function OutboxPage() {
       <ConfirmDialog
         open={Boolean(approvingAll)}
         title={approvingAll ? `Approve all ${approvingAll.items.length} emails to ${approvingAll.company}?` : ''}
-        description={approvingAll ? approveAllText(approvingAll.company, approvingAll.items, gmail.data?.daily_cap ?? 20) + (progress ? ` ${progress}` : '') : ''}
+        description={approvingAll ? approveAllText(approvingAll.company, approvingAll.items, gmail.data?.daily_cap ?? 40) + (progress ? ` ${progress}` : '') : ''}
         confirmLabel="Approve all"
         busy={approveAll.isPending}
         onConfirm={() => approvingAll && approveAll.mutate(approvingAll.items)}
@@ -228,7 +228,7 @@ function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdi
         <Button size="sm" variant="primary" loading={approve.isPending} onClick={() => approve.mutate()}>Approve</Button>
         <Button size="sm" variant="ghost" onClick={onEdit}>Edit</Button>
         <Button size="sm" variant="ghost" onClick={onDiscard}>Discard</Button>
-        <span className="text-[13px] text-subtle">Once approved, it goes on {first ? `${first}’s` : 'their'} next weekday morning, 8–11 AM {cityOf(item.recipient_tz)} time.</span>
+        <span className="text-[13px] text-subtle">Once approved, it goes {first ? `${first}’s` : 'their'} next business morning, 8–10 AM {cityOf(item.recipient_tz)} time.</span>
       </div>
     </li>
   )
@@ -237,7 +237,7 @@ function DraftRow({ item, onEdit, onDiscard, onDone }: { item: OutboxItem; onEdi
 function approveAllText(company: string, items: OutboxItem[], cap: number) {
   const guessed = items.filter(i => i.email_guessed).length
   return `${items.length} different people at ${company}${items.every(i => i.attachment_file_id) ? ', each with your tailored resume' : ''}. `
-    + `They go out in each person’s morning, at most ${cap} a day, and stop by themselves if someone replies.`
+    + `They go out the next business morning, 8–10 AM each person’s time, 2 to 4 minutes apart, at most ${cap} a day, and stop by themselves if someone replies.`
     + (guessed ? ` ${guessed === 1 ? '1 goes to a guessed address' : `${guessed} go to guessed addresses`} that may bounce.` : '')
 }
 

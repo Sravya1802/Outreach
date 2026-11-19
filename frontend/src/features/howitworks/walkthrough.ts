@@ -65,6 +65,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
       '/people/contacts': 'Everyone you’ve found at the companies you track, with an email address when one was found.',
       '/people/referrers': 'The people you can ask yourself. Roles at these companies skip recruiter emails and show who to ask.',
       '/people/outbox': 'Emails your Claude run wrote, waiting for your OK or scheduled from your Gmail, and the replies that came back. Needs Gmail connected.',
+      '/people/scheduled': 'Every approved email with its send time: the next business morning, 8–10 AM their time, at most 40 a day. Cancel one, or send it now.',
     },
   },
   profile: {

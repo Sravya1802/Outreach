@@ -72,6 +72,7 @@ export const SECTIONS: NavSection[] = [
       { label: 'Contacts', to: '/people/contacts', keywords: 'outreach referrals emails messages crm' },
       { label: 'My referrers', to: '/people/referrers', keywords: 'referral friend contact who can refer me amazon meta microsoft ask' },
       { label: 'Outbox', to: '/people/outbox', keywords: 'outreach gmail scheduled sent follow-ups replies' },
+      { label: 'Scheduled', to: '/people/scheduled', keywords: 'approved emails send time cancel send now queue morning' },
     ],
   },
   {

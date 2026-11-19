@@ -3,6 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Copy, Download, ExternalLink, PenLine } from 'lucide-react'
 import { api, type OutreachDraft, type ReferralMode, type ReviewComment, type ReviewRole, type ResumeVersion } from '@/lib/api'
+import { ApproveAllEmails } from '@/features/outreach/ApproveAllEmails'
+import { inZone, cityOf } from '@/features/outreach/outbox'
 import { qk } from '@/app/queryClient'
 import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
@@ -159,6 +161,15 @@ function CommentsPanel({ data, onDone }: { data: ReviewRole; onDone: () => void 
   )
 }
 
+/** Where an approved email is: waiting in Outbox, scheduled for a time, or sent. */
+function draftSendState(d: OutreachDraft): string {
+  if (d.outbox_status === 'sent') return 'Sent'
+  if (d.outbox_status === 'scheduled' && d.send_after && d.recipient_tz) return `Scheduled ${inZone(d.send_after, d.recipient_tz)} ${cityOf(d.recipient_tz)} time`
+  if (d.outbox_status === 'cancelled') return 'Cancelled'
+  if (d.outbox_status === 'failed') return 'Not sent'
+  return 'In Outbox'
+}
+
 /** A part of the outreach your Claude run hasn't written yet. */
 function Writing({ what }: { what: string }) {
   return (
@@ -195,7 +206,7 @@ function DraftCard({ d, onDone }: { d: OutreachDraft; onDone: () => void }) {
         <div className="flex items-center gap-2">
           <Badge tone={d.audience === 'engineer' ? 'info' : 'neutral'}>{d.audience === 'engineer' ? 'Engineer' : 'Recruiter'}</Badge>
           {d.status === 'edited' && <Badge tone="accent">Edited</Badge>}
-          {d.status === 'approved' && <Badge tone="info">In Outbox</Badge>}
+          {d.status === 'approved' && <Badge tone={d.outbox_status === 'sent' ? 'success' : 'info'}>{draftSendState(d)}</Badge>}
         </div>
       </header>
       {d.problems.length > 0 && (
@@ -464,12 +475,18 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
           ? (data.role.outreach_due
             ? 'Claude is writing this role’s emails with your next run. Approve it once they’re written, or press Apply without referral.'
             : 'No recruiter found yet. Approving makes this version final; no email goes out, so it applies only when you press Apply without referral.')
-          : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached. Nothing sends until you OK each one in People → Outbox. Applying waits 2 business days after outreach goes out.'}</p>}
+          : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached; each still needs your OK. Approve all emails schedules the finished ones straight away for the next business morning. Applying waits 2 business days after outreach goes out.'}</p>}
+      {['ready', 'approved'].includes(data.role.status) && <ApproveAllEmails role={data.role.id} onDone={onDone} />}
       {data.role.status === 'ready' && data.role.stage_note?.startsWith('Approve didn’t finish') && <p className="text-[14px] text-danger">{data.role.stage_note}</p>}
       {data.role.finishing && <p className="text-[14px] text-muted">Finishing: saving the resume and putting the emails in Outbox and Gmail Drafts. This takes about a minute.</p>}
       {data.role.status === 'approved' && !data.role.finishing && data.role.stage_note && <p className="text-[14px] leading-relaxed text-fg">{data.role.stage_note}</p>}
       {data.role.status === 'approved' && data.role.apply_after && <p className="text-[14px] text-muted">Scheduled to apply {new Date(data.role.apply_after).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}.</p>}
-      {data.role.status === 'approved' && <Link to="/people/outbox" className="text-[14px] text-accent hover:underline">Open Outbox</Link>}
+      {data.role.status === 'approved' && (
+        <p className="flex gap-4 text-[14px]">
+          <Link to="/people/outbox" className="text-accent hover:underline">Open Outbox</Link>
+          <Link to="/people/scheduled" className="text-accent hover:underline">Scheduled emails</Link>
+        </p>
+      )}
       {data.role.status === 'approved' && data.role.referral_mode === 'my_contact' && <MyContact data={data} onDone={onDone} />}
       <ConfirmDialog
         open={confirming}
@@ -583,7 +600,7 @@ export default function RolePage() {
                 ? <NoOutreach data={d} onDone={refresh} />
                 : d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}
               {d.outreach.map(o => <DraftCard key={o.id} d={o} onDone={refresh} />)}
-              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approving puts the emails in Gmail Drafts, and each one still needs your OK in Outbox.</p>}
+              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approve all emails (beside the resume) schedules every finished one for the next business morning; ones still being written are skipped.</p>}
               {d.outreach.length > 0 && d.role.status === 'ready' && !['my_contact', 'none'].includes(d.role.referral_mode) && <PasteContacts data={d} onDone={refresh} />}
             </div>
           )}

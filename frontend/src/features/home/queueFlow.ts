@@ -103,7 +103,7 @@ const REAL_REPLY: ReplyItem['kind'][] = ['reply', 'linkedin_message', 'linkedin_
 export function emailSteps(i: EmailFlowInput): FlowStep[] {
   const connected = Boolean(i.gmail?.connected)
   const broken = connected && i.gmail?.status === 'error'
-  const cap = i.gmail?.daily_cap || 20
+  const cap = i.gmail?.daily_cap || 40
   const out = i.outbox ?? []
   const drafts = out.filter(o => o.step === 0 && o.status === 'draft').length
   const firstScheduled = out.filter(o => o.step === 0 && o.status === 'scheduled').length

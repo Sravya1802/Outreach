@@ -604,8 +604,23 @@ export interface OutboxItem {
   in_gmail_drafts?: boolean
   attachment_file_id?: number | null
   attachment_name?: string | null
-  /** The resume version attached, for a role approved from the Review queue. */
+  /** The role's latest tailored resume version that passed its checks: the one attached when it goes. */
   resume_version?: number | null
+  /** The role this email asks about. */
+  role_id?: string | null
+  role_title?: string | null
+  /** claude = your Claude run, you = your edit; anything else never sends. */
+  written_by?: 'claude' | 'you' | 'app' | null
+}
+/** What Approve all did (or, from the preview, would do). */
+export interface ApproveAllResult {
+  approved: number
+  skipped: number
+  reasons: { reason: string; label: string; count: number; names: string[] }[]
+  first?: string | null
+  last?: string | null
+  unplaced?: number
+  dryRun?: boolean
 }
 export interface ReplyItem {
   id: number
@@ -1060,6 +1075,10 @@ export interface OutreachDraft {
   also_for: string[] | null
   /** Other roles at this company this one email also asks about (one email per person); Claude mentions them in one line. */
   also_roles: string[] | null
+  /** Once approved: the email's place in Outbox (draft, scheduled, sent…) and when it goes. */
+  outbox_status?: OutboxItem['status'] | null
+  send_after?: string | null
+  recipient_tz?: string | null
 }
 
 export interface ApproveResult {
@@ -1203,6 +1222,8 @@ export const api = {
   cancelOutbox: (id: number): Promise<OutboxItem> => legacy.gmail.cancel(id),
   /** The user's OK on a draft; `when` = the recipient's next morning (best) or now. */
   approveOutbox: (id: number, when: 'best' | 'now' = 'best'): Promise<OutboxItem & { when: string; edited_in_gmail?: boolean }> => legacy.gmail.approve(id, { when }),
+  /** A scheduled email, sent right away (today's limit still holds). */
+  sendOutboxNow: (id: number): Promise<OutboxItem> => legacy.gmail.sendNow(id),
   replies: async (): Promise<ReplyItem[]> => (await legacy.gmail.replies()).replies ?? [],
   checkReplies: (): Promise<{ events?: number }> => legacy.gmail.check(),
   startTailoring: async (evalId: number): Promise<Tailoring> => (await legacy.career.startTailoring(evalId)).tailoring,
@@ -1280,6 +1301,10 @@ export const api = {
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
   /** Empty outreach rows for the people found here, for your next Claude run to write. */
   queueOutreach: (id: string): Promise<{ drafts: number }> => legacy.career.queueOutreach(id),
+  /** What Approve all would do: every email Claude has finished writing (one role, or all). */
+  approveAllPreview: (role?: string): Promise<ApproveAllResult> => legacy.career.approveAllPreview(role),
+  /** Schedule every finished email: next business morning, 8–10 AM their time, at most 40 a day. */
+  approveAllOutreach: (role?: string): Promise<ApproveAllResult> => legacy.career.approveAllOutreach(role),
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */
   addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number; drafted?: number }> => legacy.career.addRoleContacts(id, people),

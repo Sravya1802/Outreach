@@ -2353,3 +2353,13 @@ Commit: 6adad92, the same on the VM (backend only).
 - **Nothing was approved or sent on the real account.**
 
 Commits: 1e27f8a and 329238a (backend, cherry-picked onto the VM), 79e9bc8 (frontend).
+
+## 2026-11-18 — Ready to submit: Remove on every row
+
+- **Asked:** a delete option shown on each row, not hidden. Added a Remove button (X icon) beside Open and I applied, on Fill and submit and on Apply on LinkedIn rows, with a confirm dialog. Named Remove to match the Review queue: the role goes to Closed ("Removed by you") and Restore brings it back for review. Nothing is deleted.
+- **Backend:** `removeRole` refused approved roles, and every Ready to submit role is approved. It now takes them, except while approval is still finishing or once applying has started. For an approved role it also sets the plan item to `decision = 'skipped'`, `stage = 'proposed'`, and clears `needs_reason`, `wait_until`, `apply_after` and `outreach_due`. That takes it out of Ready to submit and To apply, out of `prepareContacts` and the digest's needs-you list, and away from the run writing its emails. Restore puts it back to Ready; approving again works from `proposed`.
+- **Emails are left alone,** as with I applied: one email can also ask about other roles at the company (`also_plan_items`), so cancelling here could drop outreach for a role being kept. The response returns `emailsWaiting` (draft or scheduled), and the toast says how many are still in Outbox to cancel there. Scheduled emails the user already approved will still send unless cancelled.
+- **Layout:** row text has `basis-64`, so on a phone the buttons wrap under the role instead of squeezing it.
+- **Commits:** `5d97eb7` (VM `dc677db`, health ok), `f4e285d`. No migration.
+- **Verified:** backend 285, frontend 207, typecheck, lint, build. Both new SQL statements validated with EXPLAIN on the live schema (no rows touched). Browser checks with a stubbed list and remove call, 13 of 13 on local and on scoutnjobs.vercel.app, desktop and phone.
+- **Not verified:** a real removal on a real role; e2e owns none and this would change the user's data. Review queue's own Remove still applies only to waiting and Ready roles (`canRemove` unchanged), so the Approved tab there has no Remove.

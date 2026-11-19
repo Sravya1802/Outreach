@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, ExternalLink } from 'lucide-react'
+import { Download, ExternalLink, X } from 'lucide-react'
 import { API } from '@/api.js'
 import { api, type ReadyRole } from '@/lib/api'
 import { qk } from '@/app/queryClient'
-import { Badge, Button, EmptyState, ErrorState, Page, PageHeader, Skeleton, useToast } from '@/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Page, PageHeader, Skeleton, useToast } from '@/ui'
 import { apiOrigin, closesLabel, daysLeft, fillLine, hasFiller } from './ready'
 
 /** The extension marks the page at load; check again in case it was just installed. */
@@ -48,6 +48,35 @@ function Applied({ r }: { r: ReadyRole }) {
   return <Button size="sm" loading={done.isPending} onClick={() => done.mutate()}>I applied</Button>
 }
 
+/** Out of this list and To apply, to Closed in the Review queue, where Restore brings it back. Never deleted. */
+function Remove({ r }: { r: ReadyRole }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const [asking, setAsking] = useState(false)
+  const remove = useMutation({
+    mutationFn: () => api.removeRole(r.id),
+    onSuccess: ({ emailsWaiting = 0 }) => {
+      const mail = emailsWaiting === 1 ? '1 email for it is' : `${emailsWaiting} emails for it are`
+      toast.success(`Removed ${r.company}. It’s under Closed in the Review queue.${emailsWaiting ? ` ${mail} still in Outbox; cancel them there if you don’t want them sent.` : ''}`)
+      qc.invalidateQueries({ queryKey: qk.ready }); qc.invalidateQueries({ queryKey: qk.review })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  return (
+    <>
+      <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => setAsking(true)} icon={<X className="size-3.5" />}>Remove</Button>
+      <ConfirmDialog
+        open={asking}
+        title={`Remove ${r.company}?`}
+        description="It leaves this list and To apply, and goes to Closed in the Review queue, where Restore brings it back for review. Emails already in Outbox for it stay there for you to cancel or send."
+        confirmLabel="Remove"
+        onConfirm={() => { setAsking(false); remove.mutate() }}
+        onCancel={() => setAsking(false)}
+      />
+    </>
+  )
+}
+
 function FillRow({ r }: { r: ReadyRole }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -82,7 +111,7 @@ function FillRow({ r }: { r: ReadyRole }) {
   }
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-4">
-      <div className="min-w-0 flex-1 space-y-1">
+      <div className="min-w-0 flex-1 basis-64 space-y-1">
         <RoleHead r={r} />
         {line && <p className="text-[13px] text-subtle">{line}</p>}
         {r.unanswered.length > 0 && (
@@ -92,6 +121,7 @@ function FillRow({ r }: { r: ReadyRole }) {
       <div className="flex shrink-0 items-center gap-2">
         <Button size="sm" variant="primary" loading={busy} onClick={open} icon={<ExternalLink className="size-3.5" />}>Open</Button>
         <Applied r={r} />
+        <Remove r={r} />
       </div>
     </li>
   )
@@ -100,13 +130,14 @@ function FillRow({ r }: { r: ReadyRole }) {
 function LinkedInRow({ r }: { r: ReadyRole }) {
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 border-b border-line py-4">
-      <div className="min-w-0 flex-1"><RoleHead r={r} /></div>
+      <div className="min-w-0 flex-1 basis-64"><RoleHead r={r} /></div>
       <div className="flex shrink-0 items-center gap-2">
         <a href={r.open_url} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-[4px] border border-line-strong px-3 text-[13px] font-medium text-fg hover:bg-hover">
           <ExternalLink className="size-3.5" /> LinkedIn
         </a>
         <Link to={`/review/${r.id}`} className="inline-flex h-8 items-center rounded-[4px] px-3 text-[13px] font-medium text-muted hover:bg-hover hover:text-fg">Resume</Link>
         <Applied r={r} />
+        <Remove r={r} />
       </div>
     </li>
   )

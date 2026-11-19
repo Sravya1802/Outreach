@@ -2363,3 +2363,35 @@ Commits: 1e27f8a and 329238a (backend, cherry-picked onto the VM), 79e9bc8 (fron
 - **Commits:** `5d97eb7` (VM `dc677db`, health ok), `f4e285d`. No migration.
 - **Verified:** backend 285, frontend 207, typecheck, lint, build. Both new SQL statements validated with EXPLAIN on the live schema (no rows touched). Browser checks with a stubbed list and remove call, 13 of 13 on local and on scoutnjobs.vercel.app, desktop and phone.
 - **Not verified:** a real removal on a real role; e2e owns none and this would change the user's data. Review queue's own Remove still applies only to waiting and Ready roles (`canRemove` unchanged), so the Approved tab there has no Remove.
+
+## 2026-11-19 — Filler 1.1.0: prepared answers, morning auto-open, real tests
+
+**Asked:** fix the filler (it filled nothing on Netic's Ashby form): run on Ashby, Greenhouse, grnh.se, Lever and Workday including iframes, set React inputs properly, wait for the form, upload the resume with DataTransfer, and show the banner "Filled X fields, Y need you". Every night, read each ready role's questions and prepare answers (profile, saved answers, short Claude-written answers from the master resume). Once a day when Chrome starts, open every ready role and fill it; never touch the CAPTCHA or Submit. Mark the role applied on the confirmation page. Test on Netic and Yext.
+
+**Why "nothing filled":** 1.0 filled only a tab it opened itself through Open. A job link opened any other way got nothing. Ashby's Yes/No answers are `type=submit` buttons, which 1.0 never pressed, and open questions had no answers.
+
+**Built:**
+- `services/formQuestions.js` reads each form's questions: Greenhouse (boards API `?questions=true`; `grnh.se` redirects followed, and `?error=true` means closed), Ashby (public GraphQL `ApiJobPosting`), Lever (the apply page HTML). Workday is read in the form.
+- `planAnswers` sorts each question: the profile's, a saved answer, or `writing` for the Claude run.
+- Migration 059 `role_answers` (RLS on, revoked from anon/authenticated). The nightly cron runs at 07:00 UTC (1 AM Chicago). `fill_report.posting_closed` and `form_url` are recorded.
+- Config v27: an "Application answers rule" tells the hourly run to answer `writing` rows from master_latex. Choice questions get exactly one of the options. Salary, relatives, referrers and anything else not covered go to `needs_you`, never guessed. A run still never submits.
+- `secretBox.signExtKey` (120 days) and `POST /api/review/extension-key`. `GET /api/fill/daily` and `POST /api/fill/match` take the key in the `X-SnJ-Key` header. Fill data now carries `answers`. `fillAnswers` checks the role's prepared answers first and adds unknown questions as `writing`.
+- Extension 1.1.0:
+  - Declared content scripts on the 5 hosts, in all frames; pairing; morning auto-open (onStartup, plus a wake-up check from 7 AM, once a day, at most 15 tabs in one window); matching a ready role's page you open yourself.
+  - Tabs are registered before they navigate.
+  - Waits for the form; Yes/No buttons (a submit-type button only when the site marks it as an option; it becomes `type=button` for the click and `submit` is blocked); dates as MM/DD/YYYY; month-range options; prepared answers.
+  - Banner "Filled X fields, Y need you"; wider confirmation detection; `localStorage.snjDebug='1'` for logs.
+  - The zip is rebuilt.
+- App: `FillerPairing` in the signed-in shell. The Ready page shows answer counts, closed postings, morning on/off with Open all now, and an update prompt for 1.0.
+
+**Verified:**
+- Backend 291 tests; frontend 209, tsc clean.
+- Real extension in Chromium (19/19):
+  - Netic Ashby, on a test-account role: name, email, LinkedIn, phone, resume, date 06/01/2027, years 2, both Yes/No pressed, open question; still on the form; banner "Filled 10 fields, 0 need you".
+  - Verkada Greenhouse, on the real account via Open: 26 fields including resume, school, degree, GPA and self-identification. 2 need her: graduation (no option covers May 2027) and "legally authorized to work" (her profile says F-1 OPT/STEM; that's her answer to save once).
+  - Morning open (two tabs); a page opened by hand recognised; other pages untouched; a fake confirmation page marked the test role applied.
+- Live Ready page with 1.1.0: paired, morning controls, no errors.
+- Tonight's preparation ran now: Anthelion 4, GLS 6 and WhiteWater 3 open questions for the run; Verkada none; Freddie Mac (Workday) read in the form; **Yext posting closed**.
+- She applied to both Netic internships herself overnight, so they're no longer ready.
+
+Commits: 5ea4940 (backend, also on the VM), ca92d0c (extension + frontend). Config v27.

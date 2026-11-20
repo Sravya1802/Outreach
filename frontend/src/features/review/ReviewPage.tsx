@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Download, X } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type ApproveResult, type ReviewRow } from '@/lib/api'
+import { api, type ApproveResult, type ReviewQueue, type ReviewRow } from '@/lib/api'
 import { qk } from '@/app/queryClient'
 import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
@@ -217,6 +217,9 @@ export default function ReviewPage() {
   async function removeRoles(list: ReviewRow[]) {
     const ids = list.map(r => r.id)
     busyOn(ids, true)
+    // They leave the list at once; any the server refuses come back with the refetch below.
+    await qc.cancelQueries({ queryKey: qk.review })
+    qc.setQueryData<ReviewQueue>(qk.review, old => (old ? { ...old, roles: old.roles.map(r => (ids.includes(r.id) ? { ...r, status: 'closed' as const, closed_reason: 'removed' } : r)) } : old))
     let done = 0
     const failed: string[] = []
     for (const r of list) {

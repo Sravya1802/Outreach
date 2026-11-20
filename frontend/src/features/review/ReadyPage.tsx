@@ -37,30 +37,48 @@ function RoleHead({ r }: { r: ReadyRole }) {
   )
 }
 
-function Applied({ r }: { r: ReadyRole }) {
+/** Takes a role out of the list at once (the server is a few hundred ms away); puts it back if the server says no. */
+function useLeaveList(r: ReadyRole) {
   const qc = useQueryClient()
+  return {
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: qk.ready })
+      const before = qc.getQueryData<{ roles: ReadyRole[] }>(qk.ready)
+      qc.setQueryData<{ roles: ReadyRole[] }>(qk.ready, old => (old ? { ...old, roles: old.roles.filter(x => x.id !== r.id) } : old))
+      return { before }
+    },
+    rollback: (ctx: { before?: { roles: ReadyRole[] } } | undefined) => { if (ctx?.before) qc.setQueryData(qk.ready, ctx.before) },
+    settle: () => { void qc.invalidateQueries({ queryKey: qk.ready }); void qc.invalidateQueries({ queryKey: qk.review }) },
+  }
+}
+
+function Applied({ r }: { r: ReadyRole }) {
   const toast = useToast()
+  const leave = useLeaveList(r)
   const done = useMutation({
     mutationFn: () => api.markRoleApplied(r.id),
-    onSuccess: () => { toast.success(`${r.company} marked applied.`); qc.invalidateQueries({ queryKey: qk.ready }); qc.invalidateQueries({ queryKey: qk.review }) },
-    onError: (e: Error) => toast.error(e.message),
+    onMutate: leave.onMutate,
+    onSuccess: () => { toast.success(`${r.company} marked applied.`) },
+    onError: (e: Error, _v, ctx) => { leave.rollback(ctx); toast.error(e.message) },
+    onSettled: leave.settle,
   })
   return <Button size="sm" loading={done.isPending} onClick={() => done.mutate()}>I applied</Button>
 }
 
 /** Out of this list and To apply, to Closed in the Review queue, where Restore brings it back. Never deleted. */
 function Remove({ r }: { r: ReadyRole }) {
-  const qc = useQueryClient()
   const toast = useToast()
   const [asking, setAsking] = useState(false)
+  const leave = useLeaveList(r)
   const remove = useMutation({
     mutationFn: () => api.removeRole(r.id),
+    onMutate: leave.onMutate,
     onSuccess: ({ emailsWaiting = 0 }) => {
       const mail = emailsWaiting === 1 ? '1 email for it is' : `${emailsWaiting} emails for it are`
       toast.success(`Removed ${r.company}. It’s under Closed in the Review queue.${emailsWaiting ? ` ${mail} still in Outbox; cancel them there if you don’t want them sent.` : ''}`)
-      qc.invalidateQueries({ queryKey: qk.ready }); qc.invalidateQueries({ queryKey: qk.review })
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _v, ctx) => { leave.rollback(ctx); toast.error(e.message) },
+    onSettled: leave.settle,
   })
   return (
     <>

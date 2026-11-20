@@ -2456,3 +2456,13 @@ Commits: 275089e, cb2c848, f1d52ed, 222f0fd (backend, on the VM), da70ab4 (front
 - Live UI on the test account (19/19): counts and filtering, the collapsed line, each person's state (written, not verified, replied with the next step, bounced with the next step, being written), Approve all only for the verified written email, Copy notes, Mark notes sent, Open in People and back, Open and fill / I applied, saving a Needs you answer, and 390px with no sideways scroll.
 
 Commits: backend (on the VM) "outreach: up to 12 people per role…"; frontend b40c41f and 999d09b. Migration 061 applied; config v30.
+
+## 2026-11-20 — Send window 8 AM–2 PM; Apollo verification (waiting on her)
+
+- **Window:** `OUTREACH_WINDOW` is 8 AM–2 PM in the recipient's zone, weekdays, 2–4 minutes apart, 450 a day. A day now holds ~120 emails to one zone, ~140 across ET+CT and ~180 across four zones. An approval still uses the next window that hasn't started ("next business day"). Wording updated. Backend 297 tests, frontend 216. Commits 303bc45 (backend, on the VM) and 327e550.
+- **Apollo verification of the unverified addresses: not run.**
+  - The waiting outreach has 57 distinct unverified addresses: 31 unverified, 17 guessed, 9 risky. 2 bounced ones are excluded.
+  - Her Apollo connector account has 0 lead credits (75/75 used; the cycle resets 2026-12-03); checks cost up to 1 lead credit each.
+  - The app's own APOLLO_API_KEY is a different Apollo account (40 credits), but its plan allows neither people match nor email verification through the API.
+  - Hunter's verifier (app key, Free) has 64 checks left (32 credits, 0.5 each; resets 2026-12-09): enough for all 57 at no cost. The 9 "risky" ones are mostly catch-all domains no checker can confirm.
+  - Asked her which to use.

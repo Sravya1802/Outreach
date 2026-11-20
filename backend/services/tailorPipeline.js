@@ -301,7 +301,7 @@ async function loadQueue(userId) {
   // What changed since the last read (2 s of overlap, so nothing committed during it is missed).
   const since = new Date(new Date(c.mark).getTime() - 2000);
   const changed = await one(
-    `SELECT NOW() AS at, (SELECT COUNT(*)::int FROM tailor_jobs WHERE user_id = $1) AS n,
+    `SELECT NOW() AS at, (SELECT COUNT(*)::int FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id WHERE j.user_id = $1) AS n,
             ARRAY(SELECT plan_item_id::text FROM tailor_jobs WHERE user_id = $1 AND changed_at > $2) AS ids`,
     [userId, since],
   );

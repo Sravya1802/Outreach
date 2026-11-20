@@ -45,7 +45,7 @@ export default function ScheduledPage() {
   const days = scheduledDays(items)
   const total = days.reduce((n, d) => n + d.items.length, 0)
   const held = notSent(items)
-  const cap = gmail.data.daily_cap ?? 40
+  const cap = gmail.data.daily_cap ?? 450
 
   return (
     <Page>

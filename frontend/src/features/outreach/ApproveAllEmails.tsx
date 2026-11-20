@@ -42,7 +42,7 @@ export function ApproveAllEmails({ role, onDone }: { role?: string; onDone?: () 
       <ConfirmDialog
         open={open}
         title={`Approve ${p.approved === 1 ? 'this email' : `all ${p.approved} emails`}?`}
-        description={approveAllText(p, gmail.data?.daily_cap ?? 40)}
+        description={approveAllText(p, gmail.data?.daily_cap ?? 450)}
         confirmLabel="Approve and schedule"
         busy={approve.isPending}
         onConfirm={() => approve.mutate()}

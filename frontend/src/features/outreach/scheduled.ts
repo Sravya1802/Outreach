@@ -19,10 +19,10 @@ export function approveAllLabel(r: Pick<ApproveAllResult, 'approved'> | undefine
 }
 
 /** What the confirm dialog says before anything is scheduled. */
-export function approveAllText(r: ApproveAllResult, cap = 40): string {
+export function approveAllText(r: ApproveAllResult, cap = 450): string {
   return `${plural(r.approved, 'email')} your Claude run has finished writing. They’re scheduled, not sent now: each goes the next business morning, `
     + `8–10 AM in the recipient’s time zone (Chicago time if unknown), 2 to 4 minutes apart, at most ${cap} a day; the rest roll to the next business morning. `
-    + 'Each carries its role’s latest tailored resume. You can cancel or send any of them now from People → Scheduled.'
+    + 'Only verified addresses are emailed. Each carries its role’s latest tailored resume. You can cancel or send any of them now from People → Scheduled.'
     + (r.skipped ? ` ${skipLine(r)}` : '')
 }
 

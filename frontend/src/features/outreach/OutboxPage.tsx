@@ -50,7 +50,7 @@ export default function OutboxPage() {
     onSuccess: r => {
       setApprovingAll(null)
       if (r.failed.length) toast.error(`Approved ${r.done}. Couldn’t approve ${r.failed.join(', ')}; try those one by one.`)
-      else toast.success(`Approved ${r.done}. They go out the next business morning, 8–10 AM each person’s time, at most ${gmail.data?.daily_cap ?? 40} a day. See People → Scheduled.`)
+      else toast.success(`Approved ${r.done}. They go out the next business morning, 8–10 AM each person’s time, at most ${gmail.data?.daily_cap ?? 450} a day. See People → Scheduled.`)
     },
     onError: (e: Error) => toast.error(e.message),
     onSettled: () => { setProgress(null); refresh() },
@@ -172,7 +172,7 @@ export default function OutboxPage() {
       <ConfirmDialog
         open={Boolean(approvingAll)}
         title={approvingAll ? `Approve all ${approvingAll.items.length} emails to ${approvingAll.company}?` : ''}
-        description={approvingAll ? approveAllText(approvingAll.company, approvingAll.items, gmail.data?.daily_cap ?? 40) + (progress ? ` ${progress}` : '') : ''}
+        description={approvingAll ? approveAllText(approvingAll.company, approvingAll.items, gmail.data?.daily_cap ?? 450) + (progress ? ` ${progress}` : '') : ''}
         confirmLabel="Approve all"
         busy={approveAll.isPending}
         onConfirm={() => approvingAll && approveAll.mutate(approvingAll.items)}

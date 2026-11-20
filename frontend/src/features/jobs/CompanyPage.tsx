@@ -100,7 +100,7 @@ function Composer({ company, contact, onClose }: { company: CompanyDetail; conta
           </div>
         )}
         {kind === 'email' && contact.email && gmail.data?.connected && text.trim() && (
-          <p className="text-[13px] text-subtle">“Best time” is the next business morning, 8–10 AM in their time zone, at most 40 a day. No follow-ups are sent on their own.</p>
+          <p className="text-[13px] text-subtle">“Best time” is the next business morning, 8–10 AM in their time zone, at most 450 a day, verified addresses only. No follow-ups are sent on their own.</p>
         )}
         {kind === 'email' && gmail.data && !gmail.data.connected && text.trim() && (
           <p className="flex flex-wrap items-center gap-2 text-[13px] text-subtle">

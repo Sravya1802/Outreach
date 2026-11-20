@@ -2422,3 +2422,37 @@ Commits: 5ea4940 (backend, also on the VM), ca92d0c (extension + frontend). Conf
 **The real fix:** put the server and the database in the same region. A Supabase project in ap-south-1 (Mumbai) would make each query ~2 ms instead of 220 ms. That's a migration (new project, data and auth users, env), not done.
 
 Commits: 275089e, cb2c848, f1d52ed, 222f0fd (backend, on the VM), da70ab4 (frontend). Migration 060 applied.
+
+## 2026-11-20 — To apply dashboard; 12 people per role; 450 a day; verified addresses only
+
+**Asked:**
+- The To apply tab as the main dashboard for every tailored role:
+  - counts that filter, search, and type/deadline/ATS filters;
+  - one collapsed card per role, sorted by deadline then callback;
+  - on each card: the resume, the people (email and note status, Approve emails, Copy notes, Mark notes sent, replies and bounces with the next step) and applying (Open and fill or LinkedIn, I applied, Needs you answers);
+  - "Open in People" and People's "Open role dashboard" linking the two.
+- Outreach as individual emails (no BCC) to up to 10–12 people per role, scheduled next business mornings, 2–4 minutes apart.
+- The daily cap from 40 to 450; skip bounced or unverified addresses; the planned send day on each card.
+
+**Built:**
+- `/apply` (`features/apply/RoleDashboardPage.tsx`, helpers in `dashboard.ts`, tested). It's the To apply section's landing tab, "Dashboard".
+  - The API is `GET /review/dashboard`, summaries built from the cached Review queue plus grouped queries (`services/roleDashboard.js`, tested), and `GET /review/:id/card`, loaded when a card opens.
+  - Also `POST /review/:id/answer` (saved as role_answers source 'you', removed from the fill report's unanswered) and `POST /review/:id/notes-sent`.
+  - Cards load 60 at a time. `?role=` opens and scrolls to a card; `?f=` sets a count filter.
+- People → Contacts: `?company=<key>` opens that company. `companyPlan` returns `dashboard` (the tailored roles there) for "Open role dashboard".
+- There was no BCC code anywhere, so nothing to remove; every email goes to one person.
+- Migration 061:
+  - the per-role limit is now 12 people (`recruiters`: no engineers except people she added; `my_contact`/`none`: none), checked only on new or reopened rows;
+  - `gmail_connections.daily_cap` default and her row are 450.
+- `outreachTargets` returns recruiters first (verified before others), then engineers, up to 12. Config v30 step 7 says the same.
+- Only `email_status = 'valid'` addresses are emailed. Approve all skips the rest (`unverified`), and `sendOne` / `sendNow` hold them back ("Not sent: the address isn't verified"). Their LinkedIn notes still go by hand.
+- `OUTREACH_CAP` is 450; settings allow up to 450; wording updated. The pool ceiling is 8, with 5 kept warm (Supavisor allows 15).
+
+**Note:** with the 8–10 AM windows and 2–4 minute spacing, a day sends ~40 to one time zone and ~100 across four. The 450 cap won't be what limits a day unless the window widens.
+
+**Verified:**
+- Backend 296 tests; frontend 216, tsc clean, build OK.
+- Real account (read only): 1,265 tailored roles. 1,138 to review, 20 approved, 8 emailed, 2 replied, 5 to submit, 8 applied, 8 closing soon. The list takes ~1 s; a card ~1.6 s.
+- Live UI on the test account (19/19): counts and filtering, the collapsed line, each person's state (written, not verified, replied with the next step, bounced with the next step, being written), Approve all only for the verified written email, Copy notes, Mark notes sent, Open in People and back, Open and fill / I applied, saving a Needs you answer, and 390px with no sideways scroll.
+
+Commits: backend (on the VM) "outreach: up to 12 people per role…"; frontend b40c41f and 999d09b. Migration 061 applied; config v30.

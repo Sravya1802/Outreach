@@ -2421,4 +2421,4 @@ Commits: 5ea4940 (backend, also on the VM), ca92d0c (extension + frontend). Conf
 
 **The real fix:** put the server and the database in the same region. A Supabase project in ap-south-1 (Mumbai) would make each query ~2 ms instead of 220 ms. That's a migration (new project, data and auth users, env), not done.
 
-Commits: the speed commits from today (backend on the VM), da70ab4 (frontend). Migration 060 applied.
+Commits: 275089e, cb2c848, f1d52ed, 222f0fd (backend, on the VM), da70ab4 (frontend). Migration 060 applied.

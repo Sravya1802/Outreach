@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextScheduledRun, resumeFileName, callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk } from './review'
+import { nextScheduledRun, resumeFileName, callbackMatch, parseContacts, typeMatch, daysOpen, sortRows, closesMatch, openedLabel, openedMatch, outreachMatch, outreachState, appliedLine, canMarkApplied, yearMatch, yearsLabel, approvedLine, atsOk, deadlineLabel, backlog, bulkLine, canApprove, cleanPosting, isRunning, keywordStates, markPosting, needsOutreach, nextRunLine, outreachLine, readReport, reviewTab, runLine, safeToBulk, reportChangeLine as changeLine, reportChanges as changes } from './review'
 
 describe('reviewTab', () => {
   it('puts each status in its tab', () => {
@@ -445,5 +445,20 @@ describe('nextScheduledRun', () => {
     expect(nextScheduledRun(Date.UTC(2026, 10, 16, 19, 20)).toISOString()).toBe('2026-11-16T20:05:00.000Z')
     expect(nextScheduledRun(Date.UTC(2026, 10, 16, 20, 5)).toISOString()).toBe('2026-11-17T00:05:00.000Z')
     expect(nextScheduledRun(Date.UTC(2026, 10, 16, 22, 0)).toISOString()).toBe('2026-11-17T00:05:00.000Z')
+  })
+})
+
+describe('report: what is new since the version before', () => {
+  const v1 = { ats_after: 100, callback_after: 25, report: { gaps: ['No C# work'], changes_made: ['Mercedes reframed'], verdict: 'apply', skills_to_learn: ['PowerShell'], top_5_hiring_needs: ['.NET'], one_more_change: 'Add a C# service' } }
+  const v2 = { ats_after: 100, callback_after: 25, report: { gaps: ['C# in skills only'], changes_made: ['v2: no LaTeX change'], verdict: 'apply', skills_to_learn: ['C#', 'PowerShell'], top_5_hiring_needs: ['.NET'], one_more_change: 'Send the details' } }
+  it('names the sections that changed and the ones that stayed', () => {
+    const c = changes(v2, v1)
+    expect([...c].sort()).toEqual(['changes', 'gaps', 'nextChange', 'skillsToLearn'])
+    expect(changeLine(c, 1, v2)).toBe('New since v1: skills to learn, gaps, changes made and one more change. The scores, verdict and hiring needs are the same as v1.')
+  })
+  it('first version: nothing to compare; an unchanged report says so', () => {
+    expect(changes(v1, null).size).toBe(0)
+    expect(changeLine(changes(v1, v1), 1, v1)).toBe('Nothing in the report changed since v1.')
+    expect(changes({ ...v2, callback_after: 30 }, v1).has('scores')).toBe(true)
   })
 })

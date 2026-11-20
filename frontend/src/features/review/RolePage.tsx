@@ -10,7 +10,7 @@ import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, visaLine, type KeywordState } from './review'
+import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, reportChangeLine, reportChanges, type ReportSection, visaLine, type KeywordState } from './review'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -20,11 +20,11 @@ const STATUS_TONE: Record<ReviewRole['role']['status'], Tone> = {
 const box = 'rounded-[4px] border border-line bg-surface p-4'
 const heading = 'mb-2 text-[13px] font-medium text-fg'
 
-function List({ title, items }: { title: string; items: string[] }) {
+function List({ title, items, badge = null }: { title: string; items: string[]; badge?: React.ReactNode }) {
   if (!items.length) return null
   return (
     <section>
-      <h3 className={heading}>{title}</h3>
+      <h3 className={heading}>{title}{badge}</h3>
       <ul className="list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-muted">{items.map(i => <li key={i}>{i}</li>)}</ul>
     </section>
   )
@@ -43,21 +43,37 @@ function Score({ label, before, after, note, good }: { label: string; before: nu
   )
 }
 
-function ReportPanel({ v }: { v: ResumeVersion }) {
+/** Which version's report this is, and what's new in it since the version before. */
+function ReportFor({ v, prev, latest, changed }: { v: ResumeVersion; prev: ResumeVersion | null; latest: boolean; changed: Set<ReportSection> }) {
+  const day = new Date(v.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  return (
+    <div className="rounded-[4px] border border-line bg-raised px-3 py-2 text-[14px]">
+      <p className="font-medium text-fg">Report for v{v.version}{latest ? ' (latest)' : ''} · written {day}</p>
+      {prev && <p className="mt-0.5 text-muted">{reportChangeLine(changed, prev.version, v)}</p>}
+    </div>
+  )
+}
+
+function ReportPanel({ v, prev = null, latest = true }: { v: ResumeVersion; prev?: ResumeVersion | null; latest?: boolean }) {
   const r = readReport(v.report)
+  const changed = reportChanges(v, prev)
+  // Sections new in this version say so.
+  const tag = (k: ReportSection) => (prev && changed.has(k) ? <Badge tone="accent" className="ml-2 align-middle">New in v{v.version}</Badge> : null)
   return (
     <div className="space-y-5">
-      {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}</p>}
+      <ReportFor v={v} prev={prev} latest={latest} changed={changed} />
+      {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}{tag('eligibility')}</p>}
       <div className="flex flex-wrap gap-4">
         <Score label="ATS" before={v.ats_before} after={v.ats_after} note={r.atsReason} good={atsOk(v.ats_after)} />
         <Score label="Interview callback" before={v.callback_before} after={v.callback_after} note={r.callbackReason} />
       </div>
-      <List title="Added skills to learn before interviews" items={r.skillsToLearn} />
-      {r.verdict && <section><h3 className={heading}>Verdict</h3><p className="text-[14px] text-muted">{r.verdict}</p></section>}
-      <List title="Top 5 hiring needs" items={r.needs} />
+      {tag('scores') && <p className="-mt-3">{tag('scores')}</p>}
+      <List title="Added skills to learn before interviews" items={r.skillsToLearn} badge={tag('skillsToLearn')} />
+      {r.verdict && <section><h3 className={heading}>Verdict{tag('verdict')}</h3><p className="text-[14px] text-muted">{r.verdict}</p></section>}
+      <List title="Top 5 hiring needs" items={r.needs} badge={tag('needs')} />
       {r.keywords.length > 0 && (
         <section>
-          <h3 className={heading}>Keywords</h3>
+          <h3 className={heading}>Keywords{tag('keywords')}</h3>
           {v.keywords && v.keywords.missing.length > 0 && (
             <p className="mb-2 text-[13px] text-muted">{v.keywords.found} of {v.keywords.total} are in the PDF word for word. Not found: {v.keywords.missing.join(', ')}.</p>
           )}
@@ -75,10 +91,10 @@ function ReportPanel({ v }: { v: ResumeVersion }) {
           </div>
         </section>
       )}
-      <List title="Gaps" items={r.gaps} />
-      <List title="Changes made" items={r.changes} />
-      {r.nextChange && <section><h3 className={heading}>One more change that would help</h3><p className="text-[14px] leading-relaxed text-muted">{r.nextChange}</p></section>}
-      {r.posting && <section><h3 className={heading}>Posting check</h3><p className="text-[14px] leading-relaxed text-muted">{r.posting}</p></section>}
+      <List title="Gaps" items={r.gaps} badge={tag('gaps')} />
+      <List title="Changes made" items={r.changes} badge={tag('changes')} />
+      {r.nextChange && <section><h3 className={heading}>One more change that would help{tag('nextChange')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.nextChange}</p></section>}
+      {r.posting && <section><h3 className={heading}>Posting check{tag('posting')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.posting}</p></section>}
     </div>
   )
 }
@@ -590,7 +606,7 @@ export default function RolePage() {
         </div>
         <div className="min-w-0">
           <div className="mb-4 max-w-full overflow-x-auto"><Segmented value={panel} onChange={setPanel} options={panels} label="Section" /></div>
-          {panel === 'report' && (current ? <ReportPanel v={current} /> : <p className="text-[14px] text-muted">The report comes with the resume.</p>)}
+          {panel === 'report' && (current ? <ReportPanel v={current} prev={d.versions.find(x => x.version < current.version) ?? null} latest={current.id === latest?.id} /> : <p className="text-[14px] text-muted">The report comes with the resume.</p>)}
           {panel === 'posting' && <PostingPanel data={d} v={current} />}
           {panel === 'comments' && <CommentsPanel data={d} onDone={refresh} />}
           {panel === 'outreach' && (

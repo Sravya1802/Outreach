@@ -1,4 +1,4 @@
-import type { ApproveResult, PipelineRun, ReferralMode, ReviewRow, ReviewStatus } from '@/lib/api'
+import type { ApproveResult, PipelineRun, ReferralMode, ResumeVersion, ReviewRow, ReviewStatus } from '@/lib/api'
 import { timeAgo } from '@/lib/format'
 
 export type ReviewTab = 'ready' | 'revising' | 'working' | 'waiting' | 'approved' | 'applied' | 'closed'
@@ -499,4 +499,40 @@ export function markPosting(text: string, keywords: { keyword: string; state: Ke
   }
   if (at < text.length) parts.push({ text: text.slice(at) })
   return { parts, placed }
+}
+
+/** A report's sections, in the order the Report panel shows them, with how they're named. */
+export const REPORT_SECTIONS = [
+  ['eligibility', 'eligibility'], ['scores', 'scores'], ['skillsToLearn', 'skills to learn'], ['verdict', 'verdict'], ['needs', 'hiring needs'],
+  ['keywords', 'keywords'], ['gaps', 'gaps'], ['changes', 'changes made'], ['nextChange', 'one more change'], ['posting', 'posting check'],
+] as const
+export type ReportSection = typeof REPORT_SECTIONS[number][0]
+
+/** Which sections of this version's report differ from the version before it. Pure. */
+export function reportChanges(cur: Pick<ResumeVersion, 'report' | 'ats_after' | 'callback_after'>, prev: Pick<ResumeVersion, 'report' | 'ats_after' | 'callback_after'> | null | undefined): Set<ReportSection> {
+  if (!prev) return new Set()
+  const a = readReport(prev.report)
+  const b = readReport(cur.report)
+  const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
+  const out = new Set<ReportSection>()
+  for (const [key] of REPORT_SECTIONS) {
+    if (key === 'scores') {
+      if (!same([prev.ats_after, prev.callback_after, a.atsReason, a.callbackReason], [cur.ats_after, cur.callback_after, b.atsReason, b.callbackReason])) out.add('scores')
+    } else if (!same(a[key], b[key])) out.add(key)
+  }
+  return out
+}
+
+/** "New since v1: gaps and changes made. The scores and verdict are the same as v1." Pure. */
+export function reportChangeLine(changed: Set<ReportSection>, prevVersion: number, cur: Pick<ResumeVersion, 'report'>): string {
+  const r = readReport(cur.report)
+  const has = (k: ReportSection) => k === 'scores' || (Array.isArray(r[k]) ? (r[k] as unknown[]).length > 0 : Boolean(r[k]))
+  const named = (keys: ReportSection[]) => {
+    const names = REPORT_SECTIONS.filter(([k]) => keys.includes(k)).map(([, n]) => n)
+    return names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  }
+  const newOnes = REPORT_SECTIONS.map(([k]) => k).filter(k => changed.has(k) && has(k))
+  const sameOnes = REPORT_SECTIONS.map(([k]) => k).filter(k => !changed.has(k) && has(k))
+  if (!newOnes.length) return `Nothing in the report changed since v${prevVersion}.`
+  return `New since v${prevVersion}: ${named(newOnes)}.${sameOnes.length ? ` The ${named(sameOnes)} ${sameOnes.length === 1 ? 'is' : 'are'} the same as v${prevVersion}.` : ''}`
 }

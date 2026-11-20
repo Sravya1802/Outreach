@@ -2395,3 +2395,30 @@ Commits: 1e27f8a and 329238a (backend, cherry-picked onto the VM), 79e9bc8 (fron
 - She applied to both Netic internships herself overnight, so they're no longer ready.
 
 Commits: 5ea4940 (backend, also on the VM), ca92d0c (extension + frontend). Config v27.
+
+## 2026-11-20 — Buttons slow: database round trips
+
+**Cause:**
+- The database is in Supabase us-east-1 and the server in Mumbai: 220 ms per query, and ~1.5 s to open a connection.
+- Idle connections closed after 30 s, so a click often paid for new ones.
+- The Review queue sent all 2,758 roles (2.3 MB, 1.3 s of SQL) on every load, after every button and every minute: 4–8 s.
+- The new Approve all preview ran one query per role at once and took all 10 pool connections (Supavisor allows 15 per project), stalling every other request while it ran.
+
+**Changed:**
+- Pool: connections kept 10 minutes with keepAlive; `keepWarm()` holds 6 open, at startup and every 4 minutes.
+- Review queue: cached per user. Migration 060 adds `tailor_jobs.changed_at`, moved by triggers on the role, its plan item, resume versions, outreach drafts and comments. A read fetches only the changed roles.
+  - The full read runs in the background every 10 minutes and at startup for users active this week (`warmQueues`).
+  - Claim order (place) is computed in JS (`orderQueue`, tested) and matches the old SQL window for all 515 waiting roles.
+- Approve all preview: `askedElsewhereFor` makes one query for all roles (3 connections at most).
+- Role page: the role and the lookups that don't need it run together. I applied: its last three updates run together.
+- Frontend: I applied and Remove (Ready page) and Remove (Review queue) leave the list at once and come back if the server refuses.
+
+**Measured (server side):**
+- Review queue: 4.9 s → 0.22 s; a role's change shows on the next read (0.4 s).
+- Ready list 0.44 s; Role page 2.2–3.7 s → ~0.9 s.
+- Approve all preview ~3 s, no longer blocking other requests.
+- Browser ↔ Mumbai adds ~250 ms per request.
+
+**The real fix:** put the server and the database in the same region. A Supabase project in ap-south-1 (Mumbai) would make each query ~2 ms instead of 220 ms. That's a migration (new project, data and auth users, env), not done.
+
+Commits: the speed commits from today (backend on the VM), da70ab4 (frontend). Migration 060 applied.

@@ -471,7 +471,8 @@ async function withKeywords({ pdf_path, ...v }) {
 
 /** One role: the versions (newest first), the comments and the outreach. */
 export async function reviewRole(userId, planItemId) {
-  const role = await one(
+  // The role and the lookups that don't need it go together (each is a 220 ms round trip).
+  const rolePending = one(
     `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, ${POSTING_TEXT} AS job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
@@ -480,10 +481,7 @@ export async function reviewRole(userId, planItemId) {
       WHERE j.user_id = $1 AND j.plan_item_id = $2`,
     [userId, planItemId],
   );
-  if (!role) return null;
-  // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
-  run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]).catch(() => {});
-  const [versions, comments, outreach, contacts, coveredBy] = await Promise.all([
+  const [versions, comments, outreach, contacts, coveredBy, role] = await Promise.all([
     all(
       `SELECT id, version, ats_before, ats_after, callback_before, callback_after, report, change_log, is_final, pages, check_status, check_errors,
               keywords, pdf_path, pdf_path IS NOT NULL AS has_pdf, created_at
@@ -504,15 +502,19 @@ export async function reviewRole(userId, planItemId) {
       [userId, planItemId],
     ),
     // Who the outreach would go to, shown while the role has none yet.
-    NO_EMAILS.includes(role.referral_mode) ? [] : outreachTargets(userId, role.company_name, role.referral_mode)
-      .then(list => list.map(c => ({ id: c.id, name: c.name, title: c.title, email: c.email, email_status: c.email_status, linkedin_url: c.linkedin_url, audience: c.audience }))),
+    rolePending.then(r => (!r || NO_EMAILS.includes(r.referral_mode) ? [] : outreachTargets(userId, r.company_name, r.referral_mode)
+      .then(list => list.map(c => ({ id: c.id, name: c.name, title: c.title, email: c.email, email_status: c.email_status, linkedin_url: c.linkedin_url, audience: c.audience }))))),
     // This role's people are asked in another role's email at the company (one email per person).
     all(
       `SELECT d.id, c.name, pi.id::text AS role_id, pi.title, d.status FROM outreach_drafts d JOIN plan_items pi ON pi.id = d.plan_item_id
          LEFT JOIN job_contacts c ON c.id = d.contact_id WHERE d.user_id = $1 AND $2::bigint = ANY(d.also_plan_items) AND d.status <> 'closed' ORDER BY d.id`,
       [userId, planItemId],
     ),
+    rolePending,
   ]);
+  if (!role) return null;
+  // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
+  run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]).catch(() => {});
   const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
   return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, covered_by: coveredBy, outreach: outreach.map(d => ({ ...d, writing: stillWriting(d), problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }

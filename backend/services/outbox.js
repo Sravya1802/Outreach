@@ -54,6 +54,14 @@ const APP_TEMPLATE = [
   /My resume shows hands-on work with/i,
 ];
 
+/** Why a contact's address isn't one we send to. Pure. */
+export function unverifiedLine(status) {
+  if (status === 'invalid') return 'the address bounced.';
+  if (status === 'guessed') return 'the address is a guess from the company’s email pattern, not verified.';
+  if (status === 'risky') return 'the address is marked risky by the email checker, not verified.';
+  return 'the address isn’t verified.';
+}
+
 /** Why an email can't go out, or null. Pure: the text is there and your Claude run (or you) wrote it. */
 export function sendBlock(row) {
   if (!str(row.subject) || !str(row.body)) return 'The email is empty.';
@@ -396,6 +404,11 @@ export async function sendOne(id, { force = false } = {}) {
   if (row.contact_id && !contact) return cancel(row.id, 'Contact deleted');
   if (contact?.status === 'replied') return cancel(row.id, 'They replied');
   if (contact?.email_status === 'invalid') return cancel(row.id, 'Address bounced');
+  // Only verified addresses get email (user, 2026-11-20): a guessed, risky or unchecked one is held back.
+  if (contact && contact.email_status !== 'valid') {
+    await run("UPDATE email_outbox SET status = 'failed', error = $2 WHERE id = $1", [row.id, `Not sent: ${unverifiedLine(contact.email_status)}`]);
+    return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
+  }
   const conn = await one('SELECT daily_cap, status FROM gmail_connections WHERE user_id = $1', [row.user_id]);
   if (!conn) return cancel(row.id, 'Gmail disconnected');
   if (conn.status === 'error') {
@@ -465,6 +478,8 @@ export async function sendNow(userId, id) {
   if (row.status !== 'scheduled') throw Object.assign(new Error('This email isn’t scheduled any more.'), { status: 409 });
   const block = sendBlock(row);
   if (block) throw Object.assign(new Error(block), { status: 409 });
+  const who = row.contact_id ? await one('SELECT email_status FROM job_contacts WHERE id = $1', [row.contact_id]) : null;
+  if (who && who.email_status !== 'valid') throw Object.assign(new Error(`Not sent: ${unverifiedLine(who.email_status)}`), { status: 409 });
   const conn = await one('SELECT daily_cap FROM gmail_connections WHERE user_id = $1', [userId]);
   if (await sentToday(userId) >= capOf(conn)) {
     throw Object.assign(new Error(`You’ve sent ${capOf(conn)} today, the most for one day. It stays scheduled for ${describeSlot(new Date(row.send_after), row.recipient_tz)} their time.`), { status: 409 });

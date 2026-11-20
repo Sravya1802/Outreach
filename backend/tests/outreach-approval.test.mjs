@@ -23,6 +23,8 @@ const base = { ...claude, name: 'Ana Ruiz', company: 'Acme', quant: false, conta
 
 test('approve all: what gets skipped, and why', () => {
   assert.equal(skipReason(base), null);
+  // Only verified addresses get email.
+  for (const st of ['guessed', 'risky', 'unverified', 'unknown', null]) assert.equal(skipReason({ ...base, email_status: st }), 'unverified', String(st));
   assert.equal(skipReason({ ...base, body: '' }), 'writing');
   assert.equal(skipReason({ ...base, subject: null }), 'writing');
   assert.equal(skipReason({ ...base, written_by: 'app' }), 'not_claude');
@@ -31,7 +33,7 @@ test('approve all: what gets skipped, and why', () => {
   assert.equal(skipReason({ ...base, email_status: 'invalid' }), 'invalid');
   assert.equal(skipReason({ ...base, body: `${base.body} We cut latency to 83ns.` }), 'problem');
   assert.equal(skipReason({ ...base, quant: true, body: `${base.body} We cut latency to 83ns.` }), null);
-  for (const r of ['writing', 'not_claude', 'no_resume', 'replied', 'invalid', 'problem', 'asked', 'not_in_gmail', 'gmail']) assert.ok(SKIP_LABEL[r]);
+  for (const r of ['unverified', 'writing', 'not_claude', 'no_resume', 'replied', 'invalid', 'problem', 'asked', 'not_in_gmail', 'gmail']) assert.ok(SKIP_LABEL[r]);
 });
 
 test('approve all: the summary counts skips by reason, most first', () => {

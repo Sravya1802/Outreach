@@ -37,9 +37,10 @@ import { markAppliedYourself } from './resumeFiles.js';
 const SITE = (process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'https://scoutnjobs.vercel.app').replace(/\/+$/, '');
 // The best 2 recruiters per role (the user's call): Gmail sends 20 a day, and more
 // from a personal address risks the spam folder.
-const MAX_PEOPLE_PER_ROLE = 2;
+// Up to 12 people per role, each with their own email (user, 2026-11-20).
+const MAX_PEOPLE_PER_ROLE = 12;
 // People the user pastes in are all written to (a sanity bound, not a pick).
-const MAX_OWN_PEOPLE = 200;
+const MAX_OWN_PEOPLE = 12;
 // Prospeo people search: recruiters and engineers in the US, 1 credit per 25 people.
 const RECRUITING_TITLES = ['recruiter', 'technical recruiter', 'university recruiter', 'campus recruiter', 'talent acquisition'];
 const ENGINEERING_TITLES = ['software engineer', 'software developer', 'engineering manager', 'machine learning engineer', 'data engineer'];
@@ -458,10 +459,11 @@ export async function recruitersAt(userId, companyName) {
 const canEmail = c => c.email && c.email_status !== 'invalid';
 
 /**
- * Who a role's outreach goes to: the best 2 recruiters (a found address before
- * a guess, then anyone with a LinkedIn profile for a note), and in
- * 'recruiters_engineers' mode (the default) the best engineer too. People the
- * user added themselves replace that pick: all of them. → contacts with `audience`.
+ * Who a role's outreach goes to: up to 12 people, each with their own email.
+ * Recruiters first (a verified address before a guess, then anyone with a
+ * LinkedIn profile for a note); in 'recruiters_engineers' mode (the default)
+ * engineers fill the rest. People the user added themselves replace that
+ * pick (up to 12). → contacts with `audience`.
  */
 export async function outreachTargets(userId, company, mode = 'recruiters_engineers') {
   // People the user added themselves (Paste from Apollo) are the list: all of them, whatever the mode's usual 2 + 1.
@@ -473,7 +475,7 @@ export async function outreachTargets(userId, company, mode = 'recruiters_engine
   )).filter(c => (canEmail(c) || isProfile(c.linkedin_url)) && !isCompanyPage(c.name, company));
   if (own.length) return own.slice(0, MAX_OWN_PEOPLE).map(c => ({ ...c, audience: askRank(c) === 2 ? 'engineer' : 'recruiter' }));
   const recs = await recruitersAt(userId, company);
-  const mailable = recs.filter(canEmail).sort((a, b) => Number(a.email_status === 'guessed') - Number(b.email_status === 'guessed'));
+  const mailable = recs.filter(canEmail).sort((a, b) => Number(b.email_status === 'valid') - Number(a.email_status === 'valid'));
   const picked = [...mailable, ...recs.filter(c => !canEmail(c) && isProfile(c.linkedin_url))].slice(0, MAX_PEOPLE_PER_ROLE)
     .map(c => ({ ...c, audience: 'recruiter' }));
   if (mode === 'recruiters_engineers') {
@@ -482,9 +484,10 @@ export async function outreachTargets(userId, company, mode = 'recruiters_engine
         WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')`,
       [userId, company],
     );
-    const engineer = saved.filter(c => askRank(c) === 2 && !isCompanyPage(c.name, company) && (canEmail(c) || isProfile(c.linkedin_url)))
-      .sort((a, b) => Number(b.source === 'manual') - Number(a.source === 'manual') || Number(!canEmail(a)) - Number(!canEmail(b)))[0];
-    if (engineer) picked.push({ ...engineer, audience: 'engineer' });
+    const taken = new Set(picked.map(p => String(p.id)));
+    const engineers = saved.filter(c => askRank(c) === 2 && !taken.has(String(c.id)) && !isCompanyPage(c.name, company) && (canEmail(c) || isProfile(c.linkedin_url)))
+      .sort((a, b) => Number(b.source === 'manual') - Number(a.source === 'manual') || Number(b.email_status === 'valid') - Number(a.email_status === 'valid') || Number(!canEmail(a)) - Number(!canEmail(b)));
+    for (const e of engineers.slice(0, Math.max(0, MAX_PEOPLE_PER_ROLE - picked.length))) picked.push({ ...e, audience: 'engineer' });
   }
   return picked;
 }
@@ -712,7 +715,8 @@ export function rankForAsk(pool) {
 }
 
 /** The recruiters asked, best first: an email where there's an address (a found one beats a guess), else a LinkedIn note. */
-export function pickTargets(pool, { canEmail = true, maxPeople = MAX_PEOPLE_PER_ROLE } = {}) {
+// The old daily-plan picker (nothing calls it now); role outreach uses outreachTargets.
+export function pickTargets(pool, { canEmail = true, maxPeople = 2 } = {}) {
   const ranked = rankForAsk(pool).filter(p => isRecruiterTitle(p.title));
   const email = canEmail
     ? ranked.filter(p => p.email).sort((a, b) => askRank(a) - askRank(b) || Number(Boolean(a.guessed)) - Number(Boolean(b.guessed))).slice(0, maxPeople)

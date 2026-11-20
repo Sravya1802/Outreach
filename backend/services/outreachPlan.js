@@ -77,7 +77,15 @@ export async function companyPlan(userId, key) {
     [userId, k],
   );
   const outbox = contacts.length ? await listOutbox(userId, { contactIds: contacts.map(c => c.id) }) : [];
-  return { key: k, name: contacts[0]?.company_name || asks[0]?.company_name || key, ...groupPlan({ contacts, outbox, asks }) };
+  // The tailored roles at this company, for "Open role dashboard".
+  const dashboard = (await all(
+    `SELECT pi.id::text AS id, pi.title FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
+      WHERE j.user_id = $1 AND lower(trim(pi.company_name)) = $2 AND j.status IN ('ready', 'revision_requested', 'approved', 'applied')
+        AND EXISTS (SELECT 1 FROM resume_versions v WHERE v.plan_item_id = pi.id)
+      ORDER BY j.updated_at DESC LIMIT 12`,
+    [userId, k],
+  ));
+  return { key: k, name: contacts[0]?.company_name || asks[0]?.company_name || key, ...groupPlan({ contacts, outbox, asks }), dashboard };
 }
 
 const EMAIL_ORDER = { draft: 0, failed: 1, scheduled: 2, sending: 2, sent: 3 };

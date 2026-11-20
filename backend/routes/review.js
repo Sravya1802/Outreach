@@ -8,6 +8,7 @@ import {
 } from '../services/tailorPipeline.js';
 import { extensionKey, fillLink, readyRoles } from '../services/readyToSubmit.js';
 import { approveWrittenOutreach } from '../services/outreachApproval.js';
+import { answerQuestion, dashboardRoles, markRoleNotesSent, roleCard } from '../services/roleDashboard.js';
 
 const router = Router();
 
@@ -45,6 +46,20 @@ router.get('/outreach/approve-all', async (req, res) => {
 router.post('/outreach/approve-all', async (req, res) => {
   try { res.json(await approveWrittenOutreach(req.user.id, { planItemId: roleParam(req.body?.role) })); } catch (err) { fail(res, err); }
 });
+
+// The To apply dashboard: a card per tailored role, the opened card, and its quick actions.
+router.get('/dashboard', async (req, res) => {
+  try { res.json(await dashboardRoles(req.user.id)); } catch (err) { fail(res, err); }
+});
+router.get('/:id/card', withId(async (req, res, id) => {
+  res.json(await roleCard(req.user.id, id));
+}));
+router.post('/:id/answer', withId(async (req, res, id) => {
+  res.json(await answerQuestion(req.user.id, id, req.body || {}));
+}));
+router.post('/:id/notes-sent', withId(async (req, res, id) => {
+  res.json(await markRoleNotesSent(req.user.id, id));
+}));
 
 router.get('/', async (req, res) => {
   try {

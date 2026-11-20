@@ -130,10 +130,12 @@ export function describeSlot(date, tz) {
 // Approved outreach goes the next business morning, 8–10 AM in the recipient's
 // zone (Chicago when unknown), at most `cap` a day from the user's Gmail (days
 // counted in `capTz`), each send 2–4 minutes from any other. Weekends never.
+// The spacing makes each zone's 2-hour window the real limit (~40 a zone).
 
 export const OUTREACH_WINDOW = { startHour: 8, endHour: 10 };
 export const OUTREACH_TZ = 'America/Chicago';
-export const OUTREACH_CAP = 40;
+// Gmail allows 500 a day, which covers normal mail too (user, 2026-11-20).
+export const OUTREACH_CAP = 450;
 export const GAP_MIN_MS = 2 * 60_000;
 export const GAP_MAX_MS = 4 * 60_000;
 

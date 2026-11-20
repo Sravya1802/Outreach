@@ -55,7 +55,7 @@ if (!connectionString) {
 // (port 6543) is recommended for lots of short-lived processes like serverless.
 export const pool = new Pool({
   connectionString,
-  max: 10,                   // connection pool ceiling — Supavisor's session pool is 15 for the whole project
+  max: 8,                    // connection pool ceiling — Supavisor's session pool is 15 for the whole project; leave room for scripts and the run
   // The database is in us-east-1 and this server in Mumbai: a new connection
   // costs ~1.6 s (TLS across the ocean), a query on an open one ~220 ms. Keep
   // them for 10 minutes so a click doesn't pay for a reconnect.
@@ -70,7 +70,7 @@ export const pool = new Pool({
  * and each connection opened then costs ~1.5 s. Called at startup and every
  * 4 minutes (well inside idleTimeoutMillis). Supavisor allows 15 per project.
  */
-export async function keepWarm(n = 6) {
+export async function keepWarm(n = 5) {
   const clients = await Promise.all(Array.from({ length: n }, () => pool.connect().catch(() => null)));
   await Promise.all(clients.filter(Boolean).map(c => c.query('SELECT 1').catch(() => {}).finally(() => c.release())));
   return clients.filter(Boolean).length;

@@ -102,7 +102,7 @@ test('at most 40 a day: the rest roll to the next business morning', () => {
   // Spread over three zones so the window isn't the limit, only the cap.
   const zones = ['America/New_York', 'America/Chicago', 'America/Los_Angeles'];
   const items = Array.from({ length: 50 }, (_, i) => ({ id: i, tz: zones[i % 3] }));
-  const plan = planSendTimes(items, { now, rand: mid });
+  const plan = planSendTimes(items, { now, rand: mid, cap: 40 });
   assert.equal(plan.size, 50);
   const days = new Map();
   for (const d of plan.values()) days.set(dayKey(d), (days.get(dayKey(d)) || 0) + 1);
@@ -117,7 +117,7 @@ test('emails already scheduled or sent count: spacing and the day cap', () => {
   const now = new Date('2026-11-18T20:00:00Z');
   const thu = (h, m) => zonedToUtc({ year: 2026, month: 11, day: 19, hour: h, minute: m }, 'America/Chicago');
   const taken = Array.from({ length: 39 }, (_, i) => thu(8, 0 + i * 3)).filter(t => partsIn(t, 'America/Chicago').hour < 10);
-  const plan = planSendTimes([{ id: 'a', tz: 'America/Los_Angeles' }, { id: 'b', tz: 'America/Los_Angeles' }], { now, taken, rand: mid });
+  const plan = planSendTimes([{ id: 'a', tz: 'America/Los_Angeles' }, { id: 'b', tz: 'America/Los_Angeles' }], { now, taken, rand: mid, cap: 40 });
   const a = plan.get('a');
   const b = plan.get('b');
   // 39 taken + a = 40 on Thursday; b goes Friday.
@@ -131,4 +131,18 @@ test('a window that has started can take a pushed-back send when asked', () => {
   const t = planSendTimes([{ id: 1, tz: 'America/Chicago' }], { now, openWindow: true, rand: () => 0 }).get(1);
   assert.equal(dayKey(t), '2026-11-18');
   assert.ok(t - now >= 60_000 && t - now < 180_000);
+});
+
+test('the daily cap is 450 by default: the windows and spacing are what limit a day', async () => {
+  const { OUTREACH_CAP } = await import('../services/sendWindow.js');
+  assert.equal(OUTREACH_CAP, 450);
+  const now = new Date('2026-11-18T20:00:00Z');
+  const zones = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'];
+  const plan = planSendTimes(Array.from({ length: 300 }, (_, i) => ({ id: i, tz: zones[i % 4] })), { now, rand: mid });
+  const days = new Map();
+  for (const d of plan.values()) days.set(dayKey(d), (days.get(dayKey(d)) || 0) + 1);
+  const first = days.get('2026-11-19');
+  // Four zones' 8–10 AM windows, 2–4 minutes apart: well under 450, the rest the next morning.
+  assert.ok(first > 40 && first < 450, String(first));
+  assert.equal(plan.size, 300);
 });

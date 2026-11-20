@@ -28,7 +28,7 @@ router.post('/connect', async (req, res) => {
 router.patch('/settings', async (req, res) => {
   try {
     const { displayName, dailyCap } = req.body || {};
-    const cap = dailyCap == null ? null : Math.max(1, Math.min(40, Math.round(Number(dailyCap)) || 20));
+    const cap = dailyCap == null ? null : Math.max(1, Math.min(450, Math.round(Number(dailyCap)) || 450));
     await run(
       'UPDATE gmail_connections SET display_name = COALESCE($2, display_name), daily_cap = COALESCE($3, daily_cap) WHERE user_id = $1',
       [req.user.id, displayName == null ? null : String(displayName).trim().slice(0, 80), cap],

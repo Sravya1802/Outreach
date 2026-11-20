@@ -35,6 +35,7 @@ export const SKIP_LABEL = {
   asked: 'already emailed or scheduled for another role',
   replied: 'they already replied',
   invalid: 'the address bounced or is invalid',
+  unverified: 'the address isn’t verified (guessed, risky or unchecked)',
   not_in_gmail: 'no longer in your Gmail Drafts (sent or deleted there)',
   gmail: 'couldn’t read your Gmail Drafts to check for edits',
 };
@@ -47,6 +48,8 @@ export const SKIP_LABEL = {
 export function skipReason(d) {
   if (!str(d.subject) || !str(d.body)) return 'writing';
   if (d.email_status === 'invalid') return 'invalid';
+  // Only verified addresses get email (user, 2026-11-20); the LinkedIn note still goes by hand.
+  if (d.email_status !== 'valid') return 'unverified';
   if (d.contact_status === 'replied') return 'replied';
   if (sendBlock(d)) return 'not_claude';
   if (d.resume_ok === false) return 'no_resume';

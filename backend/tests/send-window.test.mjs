@@ -63,7 +63,7 @@ import { planSendTimes, dayKey } from '../services/sendWindow.js';
 
 const local = (d, tz) => { const p = partsIn(d, tz); return { ...p, mins: p.hour * 60 + p.minute }; };
 
-test('approved emails go the next business morning, 8–10 AM their time, 2–4 minutes apart', () => {
+test('approved emails go the next business day, 8 AM–2 PM their time, 2–4 minutes apart', () => {
   // Wed 2026-11-18 9:30 AM Chicago: today's window has started, so Thursday.
   const now = new Date('2026-11-18T15:30:00Z');
   const items = Array.from({ length: 10 }, (_, i) => ({ id: i, tz: 'America/Chicago' }));
@@ -73,7 +73,7 @@ test('approved emails go the next business morning, 8–10 AM their time, 2–4 
   for (const t of ts) {
     const p = local(new Date(t), 'America/Chicago');
     assert.equal(p.dow, 4);
-    assert.ok(p.mins >= 480 && p.mins < 600, `${p.hour}:${p.minute}`);
+    assert.ok(p.mins >= 480 && p.mins < 840, `${p.hour}:${p.minute}`);
   }
   for (let i = 1; i < ts.length; i++) {
     const gap = ts[i] - ts[i - 1];
@@ -94,7 +94,7 @@ test('never on a weekend: Friday afternoon goes Monday', () => {
   const t = planSendTimes([{ id: 1, tz: 'America/New_York' }], { now, rand: mid }).get(1);
   const p = local(t, 'America/New_York');
   assert.equal(p.dow, 1);
-  assert.ok(p.hour >= 8 && p.hour < 10);
+  assert.ok(p.hour >= 8 && p.hour < 14);
 });
 
 test('at most 40 a day: the rest roll to the next business morning', () => {
@@ -109,7 +109,7 @@ test('at most 40 a day: the rest roll to the next business morning', () => {
   assert.deepEqual([...days.entries()].sort(), [['2026-11-19', 40], ['2026-11-20', 10]]);
   for (const [id, d] of plan) {
     const p = local(d, zones[id % 3]);
-    assert.ok(p.hour >= 8 && p.hour < 10 && p.dow >= 1 && p.dow <= 5);
+    assert.ok(p.hour >= 8 && p.hour < 14 && p.dow >= 1 && p.dow <= 5);
   }
 });
 
@@ -145,4 +145,16 @@ test('the daily cap is 450 by default: the windows and spacing are what limit a 
   // Four zones' 8–10 AM windows, 2–4 minutes apart: well under 450, the rest the next morning.
   assert.ok(first > 40 && first < 450, String(first));
   assert.equal(plan.size, 300);
+});
+
+test('the window is 8 AM–2 PM: 100 emails to one zone fit one day, spaced 2–4 minutes', () => {
+  const now = new Date('2026-11-18T20:00:00Z'); // Wed afternoon Chicago
+  const plan = planSendTimes(Array.from({ length: 100 }, (_, i) => ({ id: i, tz: 'America/Chicago' })), { now, rand: mid });
+  const ts = [...plan.values()].map(d => d.getTime()).sort((a, b) => a - b);
+  for (const t of ts) {
+    const p = partsIn(new Date(t), 'America/Chicago');
+    assert.equal(p.dow, 4);
+    assert.ok(p.hour >= 8 && p.hour < 14, `${p.hour}:${p.minute}`);
+  }
+  for (let i = 1; i < ts.length; i++) assert.ok(ts[i] - ts[i - 1] >= 120_000 && ts[i] - ts[i - 1] <= 240_000);
 });

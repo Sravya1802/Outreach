@@ -1,10 +1,10 @@
 /**
  * outbox.js — outreach email from each user's own Gmail, on a schedule:
- *   • an approved email goes the next business morning, 8–10 AM in the
+ *   • an approved email goes the next business day, 8 AM–2 PM in the
  *     recipient's zone (Chicago when unknown), never on a weekend, or right
  *     away when the user presses Send now (planSendTimes in sendWindow.js)
  *   • at most `daily_cap` (default 40) a day per user, counted per Chicago
- *     day; the rest roll to the next business morning; sends 2–4 minutes apart
+ *     day; the rest roll to the next business day; sends 2–4 minutes apart
  *   • before each send: the text isn't empty and was written by the user's
  *     Claude run (or edited by them), never the app (written_by, migration 058);
  *     a role's email carries that role's latest tailored resume PDF, or waits
@@ -82,7 +82,7 @@ async function takenTimes(userId, exceptIds = []) {
 }
 
 /**
- * Give approved rows their send times: next business morning, 8–10 AM their
+ * Give approved rows their send times: next business day, 8 AM–2 PM their
  * time, 2–4 minutes apart, the day's limit counted. Roles closing soonest go
  * first. `openWindow`: a window that has started may take them (a send pushed
  * back). Returns Map(id → Date).
@@ -413,7 +413,7 @@ export async function sendOne(id, { force = false } = {}) {
   if (!conn) return cancel(row.id, 'Gmail disconnected');
   if (conn.status === 'error') {
     // Hold until the user reconnects; don't keep logging in with a rejected password.
-    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000), startHour: 8, endHour: 10 });
+    const at = nextSendSlot(row.recipient_tz, { now: new Date(Date.now() + 3600_000), startHour: 8, endHour: 14 });
     await run("UPDATE email_outbox SET status = 'scheduled', send_after = $2, attempts = GREATEST(attempts - 1, 0), error = 'Waiting for you to reconnect Gmail under Integrations → Gmail' WHERE id = $1", [row.id, at]);
     return one('SELECT * FROM email_outbox WHERE id = $1', [row.id]);
   }

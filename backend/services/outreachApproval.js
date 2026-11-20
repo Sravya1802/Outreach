@@ -14,7 +14,7 @@
  * by your Claude run, the role's resume not ready, a check that fails, the
  * person already asked for another role or replied, a Gmail copy gone or
  * unreadable. Nothing is sent here: send times come from planApproved (next
- * business morning, 8–10 AM their time, 40 a day, 2–4 minutes apart).
+ * business day, 8 AM–2 PM their time, 450 a day, 2–4 minutes apart).
  */
 
 import { all, tx } from '../db.js';

@@ -55,8 +55,12 @@ if (!connectionString) {
 // (port 6543) is recommended for lots of short-lived processes like serverless.
 export const pool = new Pool({
   connectionString,
-  max: 10,                   // connection pool ceiling — 10 is plenty for 4 users
-  idleTimeoutMillis: 30_000, // drop idle connections after 30s
+  max: 10,                   // connection pool ceiling — Supavisor's session pool is 15 for the whole project
+  // The database is in us-east-1 and this server in Mumbai: a new connection
+  // costs ~1.6 s (TLS across the ocean), a query on an open one ~220 ms. Keep
+  // them for 10 minutes so a click doesn't pay for a reconnect.
+  idleTimeoutMillis: 10 * 60_000,
+  keepAlive: true,
   connectionTimeoutMillis: 10_000,
   ssl: { rejectUnauthorized: false }, // Supabase requires SSL
 })

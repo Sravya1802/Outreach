@@ -773,23 +773,36 @@ const holdRole = (itemId) => run('UPDATE plan_items SET apply_after = NULL, wait
  * its wait. Notes left from roles that never went anywhere don't count.
  */
 export async function askedElsewhere(userId, itemId, drafts) {
-  if (!drafts.length) return [];
+  return (await askedElsewhereFor(userId, new Map([[itemId, drafts]]))).get(itemId) || [];
+}
+
+/**
+ * askedElsewhere for many roles in one query (one database round trip, not
+ * one per role): Map(roleId → [{ id, name, title }]).
+ */
+export async function askedElsewhereFor(userId, byRole) {
+  const out = new Map();
+  if (![...byRole.values()].some(d => d.length)) return out;
   const before = await all(
-    `SELECT a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin, pi.title
+    `SELECT a.plan_item_id::text AS role, a.contact_id, lower(a.email) AS email, lower(a.linkedin_url) AS linkedin, pi.title
        FROM referral_asks a JOIN plan_items pi ON pi.id = a.plan_item_id LEFT JOIN email_outbox o ON o.id = a.outbox_id
-      WHERE a.user_id = $1 AND a.plan_item_id <> $2
+      WHERE a.user_id = $1
         AND ((a.channel = 'email' AND o.status IN ('draft', 'scheduled', 'sending', 'sent'))
           OR a.status IN ('sent', 'marked_sent', 'replied')
           OR (a.channel = 'linkedin' AND a.status = 'to_send' AND pi.stage IN ('waiting_referral', 'ready_to_apply')))`,
-    [userId, itemId],
+    [userId],
   );
   const same = (b, d) => (b.contact_id && String(b.contact_id) === String(d.contact_id))
     || (b.email && d.email && b.email === String(d.email).toLowerCase())
     || (b.linkedin && d.linkedin_url && b.linkedin === String(d.linkedin_url).toLowerCase());
-  return drafts.flatMap(d => {
-    const hit = before.find(b => same(b, d));
-    return hit ? [{ id: d.id, name: d.name || 'Someone', title: hit.title }] : [];
-  });
+  for (const [roleId, drafts] of byRole) {
+    const others = before.filter(b => b.role !== String(roleId));
+    out.set(roleId, drafts.flatMap(d => {
+      const hit = others.find(b => same(b, d));
+      return hit ? [{ id: d.id, name: d.name || 'Someone', title: hit.title }] : [];
+    }));
+  }
+  return out;
 }
 
 export async function startApprovedAsks(userId, item, drafts, attachmentFileId, settings) {

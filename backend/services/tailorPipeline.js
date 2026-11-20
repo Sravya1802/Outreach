@@ -233,16 +233,24 @@ export async function markApplied() {
  * Every role in the queue, with its latest version. place is its turn among the
  * waiting roles, in claim_tailor_jobs' order; a waiting role whose posting
  * couldn't be read (no_posting) has none, since a run can't take it.
+ *
+ * The database is a 220 ms round trip away and the whole list (2,700+ roles)
+ * took 4–8 s to read, after every button. So it's kept per user and only the
+ * roles whose tailor_jobs.changed_at moved (migration 060's triggers) are
+ * read again; the whole list is read again every 10 minutes for what the
+ * triggers don't see (a referrer, a scraped posting's dates).
  */
-export async function reviewQueue(userId) {
+const QUEUE_FULL_MS = 10 * 60_000;
+const queueCache = new Map(); // userId → { rows: Map(id → row), mark: Date, fullAt: ms }
+const queueLoading = new Map();
+
+function queueSql(onlySome) {
   const hasPosting = "GREATEST(length(COALESCE(pi.job_description, '')), length(COALESCE(sr.description, ''))) > 200";
-  return all(
-    `SELECT j.plan_item_id AS id, j.status, j.closed_reason, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
+  return `SELECT j.plan_item_id AS id, j.status, j.closed_reason, j.referral_mode, j.outreach_due, j.updated_at, (j.status = 'ready' AND pi.stage_note LIKE 'Approve didn’t finish%') AS approve_failed, j.locked_at, j.locked_by_run AS run,
             COALESCE(sr.posted_at, sr.scraped_at, pi.created_at) AS posted_at, (sr.posted_at IS NOT NULL) AS posted_known, pi.company_name, pi.title, pi.location, pi.score, pi.sponsorship, pi.contacts_at,
             (j.status = 'queued' AND NOT ${hasPosting}) AS no_posting, sr.no_opt_phrase AS no_opt,
             CASE WHEN pi.title ~* '\\m(intern|internship|co-?op|summer analyst|summer associate)\\M' THEN 'intern' WHEN sr.role_type IN ('intern', 'new_grad') THEN sr.role_type ELSE 'new_grad' END AS role_kind,
-            CASE WHEN j.status = 'queued' AND ${hasPosting}
-                 THEN (ROW_NUMBER() OVER (PARTITION BY j.status, ${hasPosting} ORDER BY j.priority DESC, COALESCE(sr.posted_at, pi.created_at) DESC))::int END AS place,
+            j.priority AS _priority, COALESCE(sr.posted_at, pi.created_at) AS _order_at, j.id AS _jid,
             v.id AS version_id, v.version, v.ats_after, v.callback_after, v.check_status, v.report->>'eligibility_flag' AS eligibility, r.contact_name AS referrer,
             (v.edited_at IS NOT NULL AND v.edited_at > COALESCE(v.update_seen_at, 'epoch'::timestamptz)) AS updated,
             CASE WHEN v.edited_at IS NOT NULL THEN regexp_replace(COALESCE(v.change_log, ''), '^.*;\\s*', '') END AS update_note, (v.pdf_path IS NULL) AS pdf_pending,
@@ -259,10 +267,55 @@ export async function reviewQueue(userId) {
        LEFT JOIN scraped_roles sr ON sr.id = j.scraped_role_id
        LEFT JOIN LATERAL (SELECT * FROM resume_versions x WHERE x.plan_item_id = j.plan_item_id ORDER BY x.version DESC LIMIT 1) v ON TRUE
        LEFT JOIN referrers r ON r.user_id = j.user_id AND lower(r.company_name) = lower(trim(pi.company_name))
-      WHERE j.user_id = $1
-      ORDER BY place NULLS LAST, j.updated_at DESC, j.id DESC`,
-    [userId],
+      WHERE j.user_id = $1${onlySome ? ' AND j.plan_item_id = ANY($2::bigint[])' : ''}`;
+}
+
+/**
+ * The list in claim order: waiting roles that have a posting are numbered by
+ * priority, then newest posting (as claim_tailor_jobs takes them); then the
+ * rest, most recently changed first. Pure.
+ */
+export function orderQueue(rows) {
+  const time = (v) => (v ? new Date(v).getTime() : 0);
+  const waiting = rows.filter(r => r.status === 'queued' && !r.no_posting)
+    .sort((a, b) => (Number(b._priority) || 0) - (Number(a._priority) || 0) || time(b._order_at) - time(a._order_at));
+  const place = new Map(waiting.map((r, i) => [String(r.id), i + 1]));
+  return rows.map(r => ({ ...r, place: place.get(String(r.id)) ?? null }))
+    .sort((a, b) => (a.place ?? Infinity) - (b.place ?? Infinity) || time(b.updated_at) - time(a.updated_at) || Number(b._jid) - Number(a._jid));
+}
+
+async function loadQueue(userId) {
+  const c = queueCache.get(userId);
+  if (!c || Date.now() - c.fullAt > QUEUE_FULL_MS) {
+    const mark = (await one('SELECT NOW() AS at')).at;
+    const rows = await all(queueSql(false), [userId]);
+    queueCache.set(userId, { rows: new Map(rows.map(r => [String(r.id), r])), mark, fullAt: Date.now() });
+    return;
+  }
+  // What changed since the last read (2 s of overlap, so nothing committed during it is missed).
+  const since = new Date(new Date(c.mark).getTime() - 2000);
+  const changed = await one(
+    `SELECT NOW() AS at, (SELECT COUNT(*)::int FROM tailor_jobs WHERE user_id = $1) AS n,
+            ARRAY(SELECT plan_item_id::text FROM tailor_jobs WHERE user_id = $1 AND changed_at > $2) AS ids`,
+    [userId, since],
   );
+  const ids = changed.ids || [];
+  if (ids.length > 400) { c.fullAt = 0; return loadQueue(userId); }
+  if (ids.length) {
+    const rows = await all(queueSql(true), [userId, ids]);
+    for (const id of ids) c.rows.delete(String(id));
+    for (const r of rows) c.rows.set(String(r.id), r);
+  }
+  c.mark = changed.at;
+  // A role deleted outright (never in normal use) isn't seen by the triggers: read everything again.
+  if (changed.n !== c.rows.size) { c.fullAt = 0; return loadQueue(userId); }
+}
+
+export async function reviewQueue(userId) {
+  // Two requests at once share one read.
+  if (!queueLoading.has(userId)) queueLoading.set(userId, loadQueue(userId).finally(() => queueLoading.delete(userId)));
+  await queueLoading.get(userId);
+  return orderQueue([...queueCache.get(userId).rows.values()]);
 }
 
 /** The latest run, finished or not. */
@@ -710,18 +763,21 @@ export async function markRoleApplied(userId, planItemId) {
     if (!item.evaluation_id) await run('UPDATE plan_items SET evaluation_id = $2 WHERE id = $1', [planItemId, evaluationId]);
     await markAppliedYourself(userId, evaluationId);
   }
-  await run(
-    `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.',
-            decision = CASE WHEN decision IN ('pending', 'expired') THEN 'approved' ELSE decision END, decided_at = COALESCE(decided_at, NOW())
-      WHERE id = $1 AND user_id = $2 AND stage NOT IN ('applied', 'done')`,
-    [planItemId, userId],
-  );
-  await run("UPDATE tailor_jobs SET status = 'applied', outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]);
-  const waiting = await one(
-    `SELECT COUNT(*)::int AS n FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id
-      WHERE a.user_id = $1 AND a.plan_item_id = $2 AND o.status IN ('draft', 'scheduled')`,
-    [userId, planItemId],
-  );
+  // Independent of each other: at once (each is a 220 ms round trip).
+  const [, , waiting] = await Promise.all([
+    run(
+      `UPDATE plan_items SET stage = 'applied', needs_reason = NULL, applied_at = COALESCE(applied_at, NOW()), stage_note = 'You applied yourself.',
+              decision = CASE WHEN decision IN ('pending', 'expired') THEN 'approved' ELSE decision END, decided_at = COALESCE(decided_at, NOW())
+        WHERE id = $1 AND user_id = $2 AND stage NOT IN ('applied', 'done')`,
+      [planItemId, userId],
+    ),
+    run("UPDATE tailor_jobs SET status = 'applied', outreach_due = FALSE, updated_at = NOW() WHERE user_id = $1 AND plan_item_id = $2", [userId, planItemId]),
+    one(
+      `SELECT COUNT(*)::int AS n FROM referral_asks a JOIN email_outbox o ON o.id = a.outbox_id
+        WHERE a.user_id = $1 AND a.plan_item_id = $2 AND o.status IN ('draft', 'scheduled')`,
+      [userId, planItemId],
+    ),
+  ]);
   return { emailsWaiting: waiting.n };
 }
 

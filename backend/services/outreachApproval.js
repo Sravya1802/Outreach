@@ -20,7 +20,7 @@
 import { all, tx } from '../db.js';
 import { connectionFor, deleteUids, draftHash, folderMessagesSince, specialFolder, withImap } from './gmail.js';
 import { planApproved, sendBlock } from './outbox.js';
-import { askedElsewhere, linkedinSearchUrl, referralEmailMoved } from './referralFlow.js';
+import { askedElsewhereFor, linkedinSearchUrl, referralEmailMoved } from './referralFlow.js';
 import { checkOutreach, isQuantRole } from './tailorPipeline.js';
 import { OUTREACH_TZ, timezoneFor } from './sendWindow.js';
 import { marketFor } from './markets.js';
@@ -141,11 +141,10 @@ async function approve(userId, planItemId, dryRun) {
   }
   const seen = new Set(active.map(a => a.email));
   // Outbox drafts approved now are already in `seen` by their address.
-  // Each role's check is a round trip to the database: all at once, then in order.
-  const roles = [...byRole.entries()];
-  const repeatsOf = await Promise.all(roles.map(([roleId, list]) => askedElsewhere(userId, roleId, list)));
-  for (const [i, [, list]] of roles.entries()) {
-    const repeats = repeatsOf[i];
+  // Every role's check in one query: a query per role took every database connection at once.
+  const repeatsOf = await askedElsewhereFor(userId, byRole);
+  for (const [roleId, list] of byRole) {
+    const repeats = repeatsOf.get(roleId) || [];
     for (const d of list) {
       const email = str(d.email).toLowerCase();
       if (repeats.some(r => r.id === d.id) || seen.has(email)) { skip(d, 'asked'); continue; }

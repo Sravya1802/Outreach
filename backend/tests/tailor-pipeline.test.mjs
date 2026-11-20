@@ -278,3 +278,17 @@ test('planMerge: one email per person per company, on the best-fit role, the res
   assert.equal(r.keep, null);
   assert.match(r.close[0].reason, /Already asked in the approved email for Platform Intern/);
 });
+
+test('review queue order: waiting roles with a posting are numbered by priority then newest posting; the rest by last change', async () => {
+  const { orderQueue } = await import('../services/tailorPipeline.js');
+  const rows = [
+    { id: '1', status: 'ready', updated_at: '2026-11-18T10:00:00Z', _jid: 1 },
+    { id: '2', status: 'queued', no_posting: false, _priority: 0, _order_at: '2026-11-10T00:00:00Z', updated_at: '2026-11-01T00:00:00Z', _jid: 2 },
+    { id: '3', status: 'queued', no_posting: false, _priority: 5, _order_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z', _jid: 3 },
+    { id: '4', status: 'queued', no_posting: true, _priority: 9, _order_at: '2026-11-15T00:00:00Z', updated_at: '2026-11-19T00:00:00Z', _jid: 4 },
+    { id: '5', status: 'queued', no_posting: false, _priority: 0, _order_at: '2026-11-12T00:00:00Z', updated_at: '2026-11-01T00:00:00Z', _jid: 5 },
+    { id: '6', status: 'closed', updated_at: '2026-11-18T10:00:00Z', _jid: 6 },
+  ];
+  const out = orderQueue(rows);
+  assert.deepEqual(out.map(r => [r.id, r.place]), [['3', 1], ['5', 2], ['2', 3], ['4', null], ['6', null], ['1', null]]);
+});

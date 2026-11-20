@@ -46,6 +46,8 @@ export const qk = {
   resumeJobs: ['resume-jobs'] as const,
   review: ['review'] as const,
   ready: ['review', 'ready'] as const,
+  dashboard: ['review', 'dashboard'] as const,
+  roleCard: (id: string) => ['review', 'card', id] as const,
   reviewRole: (id: string) => ['review', id] as const,
   reviewRuns: ['review', 'runs'] as const,
   reviewCompany: (name: string) => ['review', 'company', name] as const,

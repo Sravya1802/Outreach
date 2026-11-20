@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Copy, ExternalLink, Mail, MessageSquare, Paperclip, Search } from 'lucide-react'
 import { api, type OutboxItem, type PlanCompany, type PlanNote, type PlanPerson } from '@/lib/api'
@@ -12,9 +13,12 @@ import { EditEmailDialog } from './EditEmailDialog'
 type Show = 'all' | 'needs'
 
 export default function ContactsPage() {
-  const [search, setSearch] = useState('')
+  // ?company=<key> (from a role's card on the To apply dashboard) opens that company.
+  const [params] = useSearchParams()
+  const linked = params.get('company')
+  const [search, setSearch] = useState(() => linked ?? '')
   const [show, setShow] = useState<Show>('all')
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(() => linked)
   const q = useQuery({ queryKey: qk.planCompanies, queryFn: api.planCompanies })
 
   const all = q.data ?? []
@@ -145,6 +149,15 @@ function CompanyPlan({ companyKey }: { companyKey: string }) {
           <Button size="sm" variant="primary" disabled={approveAll.isPending} onClick={() => setApprovingAll(true)}>Approve all {drafts.length} emails</Button>
         )}
       </div>
+      {(d.dashboard ?? []).length > 0 && (
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+          {(d.dashboard ?? []).map(r => (
+            <Link key={r.id} to={`/apply?role=${r.id}`} className="text-accent hover:underline">
+              Open role dashboard{(d.dashboard ?? []).length > 1 ? `: ${r.title}` : ''}
+            </Link>
+          ))}
+        </p>
+      )}
 
       {d.search && d.planned.length === 0 && <SearchNote note={d.search} companyKey={companyKey} />}
 

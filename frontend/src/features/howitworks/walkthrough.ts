@@ -43,6 +43,7 @@ export const GUIDE: Record<NavSection['id'], SectionGuide> = {
     what: 'Every job the app wrote a resume for, and whether it’s been applied to.',
     when: 'Open it each day to catch anything you missed, and to read the resumes you chose to review.',
     tabs: {
+      '/apply': 'Every role Claude has tailored, one card each: the resume, the people and their emails, and how to apply. Counts at the top filter the list.',
       '/review': 'Resumes and outreach from your Claude chat runs. The tiles show the whole queue, from roles waiting for a run to roles you applied to. Open a role to read the PDF and report, ask for a revision or approve it.',
       '/review/ready': 'Approved roles the app couldn’t submit for you (a CAPTCHA, or a job site it can’t fill). Open fills the application in your own browser with the Scout’n’Jobs filler extension; you do the CAPTCHA and press Submit. LinkedIn-only roles are listed to apply to by hand.',
       '/to-apply': 'Resumes the app wrote itself before the Claude runs, newest list first. To do: roles waiting on you. Missed: roles from earlier lists nobody applied to. App is on it: roles the app is moving along. None of these resumes goes out as it is: Add to queue and a Claude run writes a new one for you to approve.',

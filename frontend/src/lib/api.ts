@@ -439,6 +439,8 @@ export interface PlanCompanyDetail {
   search: PlanNote | null
   planned: PlanPerson[]
   others: Omit<PlanPerson, 'email' | 'note' | 'role'>[]
+  /** The tailored roles at this company, for "Open role dashboard". */
+  dashboard?: { id: string; title: string }[]
 }
 export interface MessageCompanyDetail { key: string; name: string; role: { title: string; url: string } | null; people: MessagePerson[] }
 export type MessageFilter = 'all' | 'roles' | 'connections' | 'emails'
@@ -964,6 +966,79 @@ export interface ReadyRole {
 
 export interface FillLink { token: string; url: string; company: string; title: string }
 
+/** One role on the To apply dashboard (the collapsed card). */
+export type DashboardChip = 'Review' | 'Approved' | 'Emailed' | 'Replied' | 'Applied' | 'Closed'
+export type DashboardGroup = 'review' | 'approved' | 'emailed' | 'replies' | 'submit' | 'applied' | 'closing'
+export interface DashboardRole {
+  id: string
+  company: string
+  title: string
+  location: string | null
+  deadline: string | null
+  posted_at: string | null
+  kind: 'intern' | 'new_grad'
+  status: ReviewStatus
+  stage: string | null
+  closed_reason: string | null
+  ats: number | null
+  callback: number | null
+  version: number | null
+  version_id: string | null
+  check_status: string | null
+  pdf_pending: boolean
+  evaluation_id: string | null
+  apply_url: string | null
+  referral_mode: ReferralMode
+  people: number
+  to_approve: number
+  writing: number
+  in_outbox: number
+  scheduled: number
+  sent: number
+  first_send: string | null
+  last_send: string | null
+  notes_to_send: number
+  notes_sent: number
+  replies: number
+  bounces: number
+  submit: { kind: 'fill' | 'linkedin'; open_url: string; unanswered: string[]; needs_you: number; posting_closed: boolean } | null
+  chip: DashboardChip
+  groups: DashboardGroup[]
+}
+/** One person on an opened card: their email and LinkedIn note, and any reply. */
+export interface RolePerson {
+  draft_id: string
+  contact_id: string | null
+  name: string | null
+  title: string | null
+  audience: 'recruiter' | 'engineer'
+  email: string | null
+  /** valid (verified), guessed, risky, unverified, invalid (bounced)… */
+  email_check: string | null
+  linkedin_url: string | null
+  draft_status: 'draft' | 'edited' | 'approved' | 'sent'
+  writing: boolean
+  subject: string | null
+  body: string | null
+  outbox_status: OutboxItem['status'] | null
+  send_after: string | null
+  recipient_tz: string | null
+  note_text: string | null
+  note_status: 'to_send' | 'marked_sent' | 'replied' | null
+  note_ask_id: string | null
+  reply: { kind: string; snippet: string | null; subject: string | null; at: string } | null
+  problems: string[]
+}
+export interface RoleCardData {
+  role: ReviewRole['role']
+  versions: { id: string; version: number; ats_after: number | null; callback_after: number | null; check_status: string | null; has_pdf: boolean; is_final: boolean }[]
+  comments: number
+  people: RolePerson[]
+  evaluation_id: string | null
+  submit: { kind: 'fill' | 'linkedin'; open_url: string; posting_closed: boolean } | null
+  needs: { question: string; note: string | null }[]
+}
+
 export interface ReviewRow {
   id: string
   status: ReviewStatus
@@ -1305,6 +1380,14 @@ export const api = {
   fillLink: (id: string): Promise<FillLink> => legacy.career.fillLink(id),
   /** The filler extension's key: lets it open your ready roles each morning and recognise a role's page. */
   extensionKey: (): Promise<{ key: string }> => legacy.career.extensionKey(),
+  /** The To apply dashboard: one summary per tailored role. */
+  dashboard: (): Promise<{ roles: DashboardRole[] }> => legacy.career.dashboard(),
+  /** Everything for one opened dashboard card. */
+  roleCard: (id: string): Promise<RoleCardData> => legacy.career.roleCard(id),
+  /** Your answer to a question a role's form asked ("Needs you"). */
+  answerQuestion: (id: string, question: string, answer: string): Promise<{ ok: boolean }> => legacy.career.answerQuestion(id, { question, answer }),
+  /** Mark every LinkedIn note for this role sent (you sent them by hand). */
+  roleNotesSent: (id: string): Promise<{ marked: number }> => legacy.career.roleNotesSent(id),
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */

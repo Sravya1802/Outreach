@@ -48,9 +48,10 @@ export const SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'toapply', label: 'To apply', icon: ListChecks, to: '/review',
-    owns: ['/to-apply'],
+    id: 'toapply', label: 'To apply', icon: ListChecks, to: '/apply',
+    owns: ['/to-apply', '/review'],
     tabs: [
+      { label: 'Dashboard', to: '/apply', keywords: 'roles cards resume people emails linkedin notes replies apply submit deadline ats callback one place' },
       { label: 'Review queue', to: '/review', keywords: 'claude chat runs resumes ready revising comments revision versions outreach approve' },
       { label: 'Ready to submit', to: '/review/ready', keywords: 'captcha submit fill extension open apply by hand linkedin workday deadline' },
       { label: 'Earlier resumes', to: '/to-apply', keywords: 'to apply missed apply review send it approved resumes written not applied follow through' },

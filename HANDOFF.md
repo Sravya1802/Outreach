@@ -2466,3 +2466,11 @@ Commits: backend (on the VM) "outreach: up to 12 people per role…"; frontend b
   - The app's own APOLLO_API_KEY is a different Apollo account (40 credits), but its plan allows neither people match nor email verification through the API.
   - Hunter's verifier (app key, Free) has 64 checks left (32 credits, 0.5 each; resets 2026-12-09): enough for all 57 at no cost. The 9 "risky" ones are mostly catch-all domains no checker can confirm.
   - Asked her which to use.
+
+## 2026-11-20 — Report tab says which version it is
+
+- She couldn't tell DEEL's v2 report from v1's: most sections are word for word the same, and nothing named the version.
+- The Report tab now starts with "Report for v2 (latest) · written Thu, Nov 19", then "New since v1: … The … are the same as v1." Each section that changed carries a "New in v2" badge.
+- Picking an older version labels that one, comparing it with the one before it.
+- `reportChanges` and `reportChangeLine` in review.ts are tested. Live check on the test account 5/5. Commit 6eeedff.
+- Still open: DEEL needs her details for C#/.NET, MySQL, PowerShell and derivatives before a v3 with real bullets (asked).

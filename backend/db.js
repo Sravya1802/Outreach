@@ -65,6 +65,17 @@ export const pool = new Pool({
   ssl: { rejectUnauthorized: false }, // Supabase requires SSL
 })
 
+/**
+ * Keep `n` connections open and warm: a page asks for several things at once,
+ * and each connection opened then costs ~1.5 s. Called at startup and every
+ * 4 minutes (well inside idleTimeoutMillis). Supavisor allows 15 per project.
+ */
+export async function keepWarm(n = 6) {
+  const clients = await Promise.all(Array.from({ length: n }, () => pool.connect().catch(() => null)));
+  await Promise.all(clients.filter(Boolean).map(c => c.query('SELECT 1').catch(() => {}).finally(() => c.release())));
+  return clients.filter(Boolean).length;
+}
+
 pool.on('error', (err) => {
   console.error('[db] Unexpected pool error:', err)
 })

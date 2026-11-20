@@ -18,7 +18,7 @@ validateConfig();
 import companiesRouter  from './routes/companies.js';
 import generateRouter   from './routes/generate.js';
 import prospectsRouter  from './routes/prospects.js';
-import db, { one, all, run, pingDb, setShutdownGate } from './db.js';
+import db, { one, all, run, pingDb, setShutdownGate, keepWarm } from './db.js';
 import jobsRouter from './routes/jobs.js';
 import internRolesRouter from './routes/internRoles.js';
 import unifiedRouter    from './routes/unified.js';
@@ -750,6 +750,10 @@ async function startup() {
   await pingDb();
   resumeInterruptedPlans().catch(err => console.error('[daily-plan] resume pass failed:', err.message));
 
+  // Database connections cost ~1.5 s each to open from here (us-east-1): keep some open.
+  keepWarm().catch(() => {});
+  setInterval(() => { keepWarm().catch(() => {}); }, 4 * 60_000).unref();
+  import('./services/tailorPipeline.js').then(m => m.warmQueues()).catch(err => console.warn('[review] warm-up failed', err.message));
   const server = app.listen(PORT, () => {
     console.log(`Backend on port ${PORT}`);
     // Per-user reclassification now runs on demand via /api/jobs/reclassify-unclassified

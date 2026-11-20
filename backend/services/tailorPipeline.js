@@ -284,13 +284,19 @@ export function orderQueue(rows) {
     .sort((a, b) => (a.place ?? Infinity) - (b.place ?? Infinity) || time(b.updated_at) - time(a.updated_at) || Number(b._jid) - Number(a._jid));
 }
 
+async function fullQueue(userId) {
+  const mark = (await one('SELECT NOW() AS at')).at;
+  const rows = await all(queueSql(false), [userId]);
+  queueCache.set(userId, { rows: new Map(rows.map(r => [String(r.id), r])), mark, fullAt: Date.now() });
+}
+
 async function loadQueue(userId) {
   const c = queueCache.get(userId);
-  if (!c || Date.now() - c.fullAt > QUEUE_FULL_MS) {
-    const mark = (await one('SELECT NOW() AS at')).at;
-    const rows = await all(queueSql(false), [userId]);
-    queueCache.set(userId, { rows: new Map(rows.map(r => [String(r.id), r])), mark, fullAt: Date.now() });
-    return;
+  if (!c) return fullQueue(userId);
+  // The 10-minute full read happens in the background; this request gets the changes only.
+  if (Date.now() - c.fullAt > QUEUE_FULL_MS && !c.refreshing) {
+    c.refreshing = true;
+    fullQueue(userId).catch(err => { c.refreshing = false; console.warn('[review] queue refresh failed', err.message); });
   }
   // What changed since the last read (2 s of overlap, so nothing committed during it is missed).
   const since = new Date(new Date(c.mark).getTime() - 2000);
@@ -300,7 +306,7 @@ async function loadQueue(userId) {
     [userId, since],
   );
   const ids = changed.ids || [];
-  if (ids.length > 400) { c.fullAt = 0; return loadQueue(userId); }
+  if (ids.length > 400) return fullQueue(userId);
   if (ids.length) {
     const rows = await all(queueSql(true), [userId, ids]);
     for (const id of ids) c.rows.delete(String(id));
@@ -308,7 +314,7 @@ async function loadQueue(userId) {
   }
   c.mark = changed.at;
   // A role deleted outright (never in normal use) isn't seen by the triggers: read everything again.
-  if (changed.n !== c.rows.size) { c.fullAt = 0; return loadQueue(userId); }
+  if (changed.n !== c.rows.size) return fullQueue(userId);
 }
 
 export async function reviewQueue(userId) {
@@ -316,6 +322,13 @@ export async function reviewQueue(userId) {
   if (!queueLoading.has(userId)) queueLoading.set(userId, loadQueue(userId).finally(() => queueLoading.delete(userId)));
   await queueLoading.get(userId);
   return orderQueue([...queueCache.get(userId).rows.values()]);
+}
+
+/** At startup: read the queue of everyone active this week, so nobody's first visit waits for it. */
+export async function warmQueues() {
+  const users = await all("SELECT DISTINCT user_id FROM tailor_jobs WHERE updated_at > NOW() - INTERVAL '7 days'");
+  for (const u of users) await reviewQueue(u.user_id).catch(() => {});
+  return users.length;
 }
 
 /** The latest run, finished or not. */

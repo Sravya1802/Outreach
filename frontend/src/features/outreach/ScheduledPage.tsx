@@ -51,7 +51,7 @@ export default function ScheduledPage() {
     <Page>
       <PageHeader
         title="Scheduled"
-        description={`${total} approved ${total === 1 ? 'email' : 'emails'} from ${gmail.data.email}. Each goes on a business morning, 8–10 AM in the recipient’s time zone, 2 to 4 minutes apart, at most ${cap} a day. Each carries its role’s latest tailored resume.`}
+        description={`${total} approved ${total === 1 ? 'email' : 'emails'} from ${gmail.data.email}. Each goes on a business day, 8 AM–2 PM in the recipient’s time zone, 2 to 4 minutes apart, at most ${cap} a day. Each carries its role’s latest tailored resume.`}
       />
       <div className="mb-6"><ApproveAllEmails onDone={refresh} /></div>
 

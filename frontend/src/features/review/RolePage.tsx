@@ -475,7 +475,7 @@ function ApplyPanel({ data, latest, onDone }: { data: ReviewRole; latest: Resume
           ? (data.role.outreach_due
             ? 'Claude is writing this role’s emails with your next run. Approve it once they’re written, or press Apply without referral.'
             : 'No recruiter found yet. Approving makes this version final; no email goes out, so it applies only when you press Apply without referral.')
-          : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached; each still needs your OK. Approve all emails schedules the finished ones straight away for the next business morning. Applying waits 2 business days after outreach goes out.'}</p>}
+          : 'Approving makes this version final and puts its emails in Gmail Drafts with the resume attached; each still needs your OK. Approve all emails schedules the finished ones straight away for the next business day. Applying waits 2 business days after outreach goes out.'}</p>}
       {['ready', 'approved'].includes(data.role.status) && <ApproveAllEmails role={data.role.id} onDone={onDone} />}
       {data.role.status === 'ready' && data.role.stage_note?.startsWith('Approve didn’t finish') && <p className="text-[14px] text-danger">{data.role.stage_note}</p>}
       {data.role.finishing && <p className="text-[14px] text-muted">Finishing: saving the resume and putting the emails in Outbox and Gmail Drafts. This takes about a minute.</p>}
@@ -600,7 +600,7 @@ export default function RolePage() {
                 ? <NoOutreach data={d} onDone={refresh} />
                 : d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}
               {d.outreach.map(o => <DraftCard key={o.id} d={o} onDone={refresh} />)}
-              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approve all emails (beside the resume) schedules every finished one for the next business morning; ones still being written are skipped.</p>}
+              {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approve all emails (beside the resume) schedules every finished one for the next business day; ones still being written are skipped.</p>}
               {d.outreach.length > 0 && d.role.status === 'ready' && !['my_contact', 'none'].includes(d.role.referral_mode) && <PasteContacts data={d} onDone={refresh} />}
             </div>
           )}

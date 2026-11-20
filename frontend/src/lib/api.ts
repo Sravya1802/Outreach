@@ -1395,7 +1395,7 @@ export const api = {
   queueOutreach: (id: string): Promise<{ drafts: number }> => legacy.career.queueOutreach(id),
   /** What Approve all would do: every email Claude has finished writing (one role, or all). */
   approveAllPreview: (role?: string): Promise<ApproveAllResult> => legacy.career.approveAllPreview(role),
-  /** Schedule every finished email: next business morning, 8–10 AM their time, at most 40 a day. */
+  /** Schedule every finished email: next business day, 8 AM–2 PM their time, at most 450 a day. */
   approveAllOutreach: (role?: string): Promise<ApproveAllResult> => legacy.career.approveAllOutreach(role),
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */

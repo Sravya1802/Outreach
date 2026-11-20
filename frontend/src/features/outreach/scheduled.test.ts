@@ -19,11 +19,11 @@ describe('Approve all text', () => {
     expect(approveAllLabel({ approved: 1 })).toBe('Approve all 1 email')
     expect(approveAllLabel({ approved: 0 })).toBe('No finished emails to approve')
   })
-  it('says they are scheduled for the next business morning, not sent now', () => {
-    const t = approveAllText(r, 40)
+  it('says they are scheduled for the next business day, not sent now', () => {
+    const t = approveAllText(r, 450)
     expect(t).toMatch(/scheduled, not sent now/)
-    expect(t).toMatch(/8–10 AM in the recipient’s time zone \(Chicago time if unknown\)/)
-    expect(t).toMatch(/2 to 4 minutes apart, at most 40 a day/)
+    expect(t).toMatch(/8 AM–2 PM in the recipient’s time zone \(Chicago time if unknown\)/)
+    expect(t).toMatch(/2 to 4 minutes apart, at most 450 a day/)
     expect(t).toMatch(/3 skipped/)
   })
   it('after approving: when the first and last go', () => {

@@ -2474,3 +2474,33 @@ Commits: backend (on the VM) "outreach: up to 12 people per role…"; frontend b
 - Picking an older version labels that one, comparing it with the one before it.
 - `reportChanges` and `reportChangeLine` in review.ts are tested. Live check on the test account 5/5. Commit 6eeedff.
 - Still open: DEEL needs her details for C#/.NET, MySQL, PowerShell and derivatives before a v3 with real bullets (asked).
+
+## 2026-11-23 — Gap chat, version history, short report, no-outreach switch, fixing contacts, paste cap, Revising
+
+**Built (migrations 062, 063; backend `services/roleTools.js`, `routes/review.js`):**
+1. **Gap chat:** `gap_chat` (id, user_id, plan_item_id, sender 'claude'|'me', text, options jsonb, answer, status open|answered|applied, created_at, answered_at), with RLS on and access revoked from anon/authenticated.
+   - The dashboard card shows the run's questions as bubbles with option buttons and a free-text box. An answer sets 'answered', with "Claude will update this resume within the hour". Cards with open questions get a badge.
+   - The app writes no question text. **Her hourly run must** insert questions (sender 'claude', options as a JSON array) and act on 'answered' ones, setting 'applied' when done. She said she'd set this up.
+2. **Version history:** on the role page, newest first.
+   - Each version shows its time, its reason (First tailoring / Your comment, quoted / Master update / Fix / Revision), its scores against the version before, 1–3 change lines (change_log + report.changes_made), and in-place edits ("Changed in place: Nov 16: …Azure…").
+   - "Compare vX ↔ vY" shows them side by side (LaTeX → lines; added green, removed red, moved bullets marked).
+   - The report header reads "Report for v3 (Nov 23)". Cards show "v3 · updated 2h ago" with a dot until opened (`resume_versions.seen_at`; existing versions marked seen).
+3. **Short report:** verdict, biggest blocker (eligibility, then the posting's visa line, then the first gap), ATS and callback, then gaps, then "More from the report" folded.
+4. **No outreach for a company:** `company_prefs.no_outreach`, with a switch on cards, the role page, the company page and People → Contacts.
+   - The outreach trigger refuses new rows for that company, the run's included.
+   - Turning it on closes unsent drafts, cancels waiting emails and removes notes still to send.
+   - **On for Applied Intuition** (nothing unsent there; an insert was refused in the test).
+5. **Fixing contacts:** on the card, checkboxes, Select all, Remove from this role, Move to another role (text cleared for the run; `outreach_due` set) and Delete contacts, each with a 10-second Undo (done client-side; flushed on pagehide). "Delete all contacts at X" (card and Contacts) shows the counts and can't be undone.
+   - Only unsent emails and notes are deleted. A contact with a sent email, a reply or a sent note is kept with status 'closed'.
+   - **Fixed:** the company page's old Remove did a plain DELETE, which cascaded sent emails (email_outbox FK ON DELETE CASCADE). It now uses the history-keeping delete.
+6. **Paste cap:** `tailor_jobs.outreach_cap` (12 unless raised). Pasting more than the free places shows "14 pasted, 11 will get emails". She ticks who gets emails (everyone is saved), or raises the cap.
+- **Revising:** a role with an answered gap question shows under Revising (Review queue) and with a "Revising" chip (dashboard, left out of Ready to review). Asking for a revision already sets revision_requested.
+  - Unissant's Nov 5 "comment" is an old automatic eligibility note, left in Ready.
+
+**Skipped:** item 2's "Report for vN" header already existed (now in her format).
+
+**Verified:**
+- Backend 301 tests; frontend 225, tsc clean, build OK.
+- Live UI on the test account 23/23: card line and dot, gap answer, Revising in both lists, Remove + Undo, Remove, Move, Delete (kept for history), the switch on/off, the Delete all counts, history reasons/quote/in-place note/scores, compare (1 moved), report summary and fold, paste 14 → 11 emailed and 14 saved, 390px.
+
+Commits: 15bf781, 8287ded and 2da7fda (backend, on the VM); f2bffaa, 8f4c62a, 0005139 and the switch fix (frontend).

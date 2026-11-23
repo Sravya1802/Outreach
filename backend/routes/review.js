@@ -9,6 +9,7 @@ import {
 import { extensionKey, fillLink, readyRoles } from '../services/readyToSubmit.js';
 import { approveWrittenOutreach } from '../services/outreachApproval.js';
 import { answerQuestion, dashboardRoles, markRoleNotesSent, roleCard } from '../services/roleDashboard.js';
+import { answerGap, companyContactsSummary, companyOutreach, deleteCompanyContacts, deleteContacts, gapChat, moveToRole, removeFromRole, setCompanyOutreach, versionHistory, versionText } from '../services/roleTools.js';
 
 const router = Router();
 
@@ -51,6 +52,36 @@ router.post('/outreach/approve-all', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try { res.json(await dashboardRoles(req.user.id)); } catch (err) { fail(res, err); }
 });
+// Gap questions from your Claude run, and your answers.
+router.get('/:id/gaps', withId(async (req, res, id) => { res.json({ gaps: await gapChat(req.user.id, id) }); }));
+router.post('/gaps/:id/answer', withId(async (req, res, id) => { res.json(await answerGap(req.user.id, id, req.body?.answer)); }));
+// Version history and a version's text (to compare two).
+router.get('/:id/history', withId(async (req, res, id) => { res.json({ versions: await versionHistory(req.user.id, id) }); }));
+router.get('/versions/:id/text', withId(async (req, res, id) => { res.json(await versionText(req.user.id, id)); }));
+// "No outreach for this company".
+router.get('/company-outreach', async (req, res) => {
+  try { res.json(await companyOutreach(req.user.id, req.query.company)); } catch (err) { fail(res, err); }
+});
+router.put('/company-outreach', async (req, res) => {
+  try { res.json(await setCompanyOutreach(req.user.id, req.body?.company, Boolean(req.body?.noOutreach))); } catch (err) { fail(res, err); }
+});
+// Fixing people: remove from a role, move to another role, delete contacts (unsent emails and notes only; sent ones stay).
+router.post('/:id/people/remove', withId(async (req, res, id) => { res.json(await removeFromRole(req.user.id, id, req.body?.contactIds)); }));
+router.post('/:id/people/move', withId(async (req, res, id) => {
+  const to = parseId(req.body?.to);
+  if (!to) return res.status(400).json({ error: 'Pick the role to move them to.' });
+  res.json(await moveToRole(req.user.id, id, req.body?.contactIds, to));
+}));
+router.post('/contacts/delete', async (req, res) => {
+  try { res.json(await deleteContacts(req.user.id, req.body?.contactIds)); } catch (err) { fail(res, err); }
+});
+router.get('/contacts/delete-all', async (req, res) => {
+  try { res.json(await companyContactsSummary(req.user.id, req.query.company)); } catch (err) { fail(res, err); }
+});
+router.post('/contacts/delete-all', async (req, res) => {
+  try { res.json(await deleteCompanyContacts(req.user.id, req.body?.company)); } catch (err) { fail(res, err); }
+});
+
 router.get('/:id/card', withId(async (req, res, id) => {
   res.json(await roleCard(req.user.id, id));
 }));
@@ -152,7 +183,7 @@ router.post('/:id/applied', withId(async (req, res, id) => {
 
 // People the user pasted (from Apollo or anywhere): saved as this role's contacts.
 router.post('/:id/contacts/add', withId(async (req, res, id) => {
-  res.json(await addRoleContacts(req.user.id, id, req.body?.people));
+  res.json(await addRoleContacts(req.user.id, id, req.body?.people, { pick: req.body?.pick ?? null, raiseCap: Boolean(req.body?.raiseCap) }));
 }));
 
 // People already found here: empty rows for the next Claude run to write (the app writes no text).

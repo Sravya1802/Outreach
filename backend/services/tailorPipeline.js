@@ -473,7 +473,7 @@ async function withKeywords({ pdf_path, ...v }) {
 export async function reviewRole(userId, planItemId) {
   // The role and the lookups that don't need it go together (each is a 220 ms round trip).
   const rolePending = one(
-    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, ${POSTING_TEXT} AS job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
+    `SELECT j.plan_item_id AS id, j.status, j.referral_mode, j.outreach_due, j.outreach_cap, (j.status = 'approved' AND pi.decision IS DISTINCT FROM 'approved') AS finishing, pi.company_name, pi.title, pi.location, pi.score, pi.apply_url, ${POSTING_TEXT} AS job_description, pi.stage, pi.stage_note, pi.apply_after, pi.sponsorship, pi.contacts_at,
             r.contact_name AS referrer, r.note AS referrer_note
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN scraped_roles sr ON sr.id = COALESCE(j.scraped_role_id, pi.scraped_role_id)
@@ -513,8 +513,9 @@ export async function reviewRole(userId, planItemId) {
     rolePending,
   ]);
   if (!role) return null;
-  // Opening the role is seeing its in-place edits: the list's "Updated" goes away.
+  // Opening the role is seeing its in-place edits and new versions: the list's "Updated" and the dashboard's dot go away.
   run('UPDATE resume_versions SET update_seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND edited_at IS NOT NULL AND (update_seen_at IS NULL OR update_seen_at < edited_at)', [planItemId, userId]).catch(() => {});
+  run('UPDATE resume_versions SET seen_at = NOW() WHERE plan_item_id = $1 AND user_id = $2 AND seen_at IS NULL', [planItemId, userId]).catch(() => {});
   const quant = isQuantRole({ title: role.title, company: role.company_name, description: role.job_description });
   return { role, versions: await Promise.all(versions.map(withKeywords)), comments, contacts, covered_by: coveredBy, outreach: outreach.map(d => ({ ...d, writing: stillWriting(d), problems: checkOutreach({ ...d, company: role.company_name, quant }) })) };
 }
@@ -874,14 +875,18 @@ export function planOutreach({ roles, targets, existing = new Map() }) {
  * person gets one row (planOutreach). Roles given a row are marked
  * outreach_due for the next run. → { inserted, appended, skipped, roles }
  */
-export async function queueOutreachForRoles(userId, planItemIds, { dryRun = false } = {}) {
-  const roles = await all(
-    `SELECT pi.id, pi.company_name, pi.title, pi.score, j.referral_mode, v.callback_after, v.ats_after
+export async function queueOutreachForRoles(userId, planItemIds, { dryRun = false, only = null } = {}) {
+  const { noOutreachCompanies } = await import('./roleTools.js');
+  const blocked = await noOutreachCompanies(userId);
+  const onlySet = only ? new Set(only.map(String)) : null;
+  const roles = (await all(
+    `SELECT pi.id, pi.company_name, pi.title, pi.score, j.referral_mode, j.outreach_cap, v.callback_after, v.ats_after
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN LATERAL (SELECT callback_after, ats_after FROM resume_versions x WHERE x.plan_item_id = pi.id ORDER BY version DESC LIMIT 1) v ON TRUE
       WHERE j.user_id = $1 AND pi.id = ANY($2::bigint[]) AND j.status IN ('ready', 'revision_requested') AND j.referral_mode NOT IN ('my_contact', 'none')`,
     [userId, planItemIds.map(Number)],
-  );
+  // "No outreach for this company" (your switch): those roles get nobody.
+  )).filter(r => !blocked.has(r.company_name.trim().toLowerCase()));
   const result = { inserted: 0, appended: 0, skipped: [], roles: new Set(), plans: [] };
   const companies = new Map();
   for (const r of roles) {
@@ -891,7 +896,7 @@ export async function queueOutreachForRoles(userId, planItemIds, { dryRun = fals
   }
   for (const group of companies.values()) {
     const targets = new Map();
-    for (const r of group) targets.set(String(r.id), await outreachTargets(userId, r.company_name, r.referral_mode));
+    for (const r of group) targets.set(String(r.id), await outreachTargets(userId, r.company_name, r.referral_mode, { cap: r.outreach_cap || 12, only: onlySet }));
     const contactIds = [...new Set([...targets.values()].flat().map(p => Number(p.id)))];
     if (!contactIds.length) continue;
     const rows = await all(
@@ -1079,7 +1084,7 @@ const PROFILE_RE = /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%
  * and the role's outreach comes next (the next run writes it, or Use template now).
  * Each person needs an email or a LinkedIn profile. → { added, people }
  */
-export async function addRoleContacts(userId, planItemId, people) {
+export async function addRoleContacts(userId, planItemId, people, { pick = null, raiseCap = false } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
   if (!['ready', 'revision_requested', 'approved'].includes(job.status)) throw fail(409, 'Add people once the resume is ready for review.');
@@ -1115,9 +1120,24 @@ export async function addRoleContacts(userId, planItemId, people) {
     [userId, jobId, clean.map(p => p.email).filter(Boolean), clean.map(p => p.linkedin_url.toLowerCase()).filter(Boolean)],
   );
   await run('UPDATE plan_items SET contacts_at = COALESCE(contacts_at, NOW()) WHERE id = $1 AND user_id = $2', [planItemId, userId]);
+  // More pasted than the role takes: you picked who gets emails (the rest stay saved), or raised the role's cap.
+  const taken = Number((await one("SELECT COUNT(*)::int AS n FROM outreach_drafts WHERE plan_item_id = $1 AND status <> 'closed'", [planItemId]))?.n || 0);
+  const cap = (await one('SELECT outreach_cap FROM tailor_jobs WHERE plan_item_id = $1', [planItemId]))?.outreach_cap || 12;
+  if (raiseCap) {
+    const want = Math.min(50, Math.max(cap, taken + clean.length));
+    if (want > cap) await run('UPDATE tailor_jobs SET outreach_cap = $2 WHERE plan_item_id = $1 AND user_id = $3', [planItemId, want, userId]);
+  }
+  let only = null;
+  if (Array.isArray(pick) && pick.length) {
+    const keys = pick.map(k => String(k).trim().toLowerCase()).filter(Boolean);
+    only = (await all(
+      `SELECT id FROM job_contacts WHERE user_id = $1 AND job_id = $2 AND (lower(email) = ANY($3::text[]) OR lower(linkedin_url) = ANY($3::text[]))`,
+      [userId, jobId, keys],
+    )).map(r => String(r.id));
+  }
   // Their emails: empty rows now, written by the next Claude run.
-  const drafted = await queueOutreachDrafts(userId, planItemId);
-  return { added, people: clean.length, drafted };
+  const drafted = only ? (await queueOutreachForRoles(userId, [planItemId], { only })).inserted : await queueOutreachDrafts(userId, planItemId);
+  return { added, people: clean.length, drafted, cap: raiseCap ? Math.min(50, Math.max(cap, taken + clean.length)) : cap };
 }
 
 export async function findRoleContacts(userId, planItemId, { source = 'all' } = {}) {

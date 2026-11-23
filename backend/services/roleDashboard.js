@@ -12,6 +12,7 @@ import { all, one, run } from '../db.js';
 import { normalizeQuestion } from './answerBank.js';
 import { readyRoles } from './readyToSubmit.js';
 import { reviewQueue, reviewRole } from './tailorPipeline.js';
+import { companyKey, gapChat, markVersionsSeen, noOutreachCompanies } from './roleTools.js';
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const str = (v) => String(v ?? '').trim();
@@ -56,7 +57,7 @@ export function sortCards(cards) {
 }
 
 export async function dashboardRoles(userId) {
-  const [queue, outreach, mail, notes, replies, items, ready] = await Promise.all([
+  const [queue, outreach, mail, notes, replies, items, ready, gaps, latest, blocked] = await Promise.all([
     reviewQueue(userId),
     all(
       `SELECT d.plan_item_id::text AS id, COUNT(*)::int AS people,
@@ -95,9 +96,16 @@ export async function dashboardRoles(userId) {
       [userId],
     ),
     readyRoles(userId, { resolve: false }),
+    all("SELECT plan_item_id::text AS id, COUNT(*)::int AS open FROM gap_chat WHERE user_id = $1 AND sender = 'claude' AND status = 'open' GROUP BY 1", [userId]),
+    all(
+      `SELECT DISTINCT ON (plan_item_id) plan_item_id::text AS id, GREATEST(created_at, COALESCE(edited_at, created_at)) AS at, (seen_at IS NULL) AS unseen
+         FROM resume_versions WHERE user_id = $1 ORDER BY plan_item_id, version DESC`,
+      [userId],
+    ),
+    noOutreachCompanies(userId),
   ]);
   const by = (rows) => new Map(rows.map(r => [String(r.id), r]));
-  const [O, M, N, R, I, S] = [by(outreach), by(mail), by(notes), by(replies), by(items), by(ready)];
+  const [O, M, N, R, I, S, G, L] = [by(outreach), by(mail), by(notes), by(replies), by(items), by(ready), by(gaps), by(latest)];
   const now = new Date();
   const cards = queue.filter(r => r.version != null).map((r) => {
     const id = String(r.id);
@@ -117,6 +125,8 @@ export async function dashboardRoles(userId) {
       in_outbox: m.in_outbox || 0, scheduled: m.scheduled || 0, sent: m.sent || 0, first_send: m.first_send || null, last_send: m.last_send || null,
       notes_to_send: n.to_send || 0, notes_sent: n.sent || 0, replies: rp.replies || 0, bounces: rp.bounces || 0,
       submit: s ? { kind: s.kind, open_url: s.open_url, unanswered: s.unanswered || [], needs_you: s.answers?.needs_you || 0, posting_closed: Boolean(s.posting_closed) } : null,
+      open_gaps: G.get(id)?.open || 0, version_at: L.get(id)?.at || null, unseen: Boolean(L.get(id)?.unseen),
+      no_outreach: blocked.has(companyKey(r.company_name)),
     };
     card.chip = chipFor(card);
     card.groups = groupsOf(card, now);
@@ -127,7 +137,8 @@ export async function dashboardRoles(userId) {
 
 /** Everything for one opened card: the role, its versions, each person with their email and note, replies, and what applying needs. */
 export async function roleCard(userId, planItemId) {
-  const [role, notes, replies, needs, ready, item] = await Promise.all([
+  markVersionsSeen(userId, planItemId);
+  const [role, notes, replies, needs, ready, item, gaps, siblings, blocked] = await Promise.all([
     reviewRole(userId, planItemId),
     all(
       `SELECT id, contact_id, person_name, message, status, linkedin_url FROM referral_asks
@@ -149,6 +160,16 @@ export async function roleCard(userId, planItemId) {
     ),
     readyRoles(userId, { resolve: false }).then(list => list.find(r => r.id === String(planItemId)) || null),
     one('SELECT evaluation_id, apply_url, stage FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]),
+    gapChat(userId, planItemId).catch(() => []),
+    // Other roles at the company that can take people ("Move to another role").
+    all(
+      `SELECT pi.id::text AS id, pi.title, j.status FROM plan_items pi JOIN tailor_jobs j ON j.plan_item_id = pi.id
+        WHERE pi.user_id = $1 AND pi.id <> $2 AND lower(trim(pi.company_name)) = (SELECT lower(trim(company_name)) FROM plan_items WHERE id = $2)
+          AND j.status IN ('queued', 'in_progress', 'ready', 'revision_requested', 'approved')
+        ORDER BY pi.title LIMIT 40`,
+      [userId, planItemId],
+    ),
+    noOutreachCompanies(userId),
   ]);
   if (!role) throw fail(404, 'That role isn’t in your list.');
   const noteBy = new Map(notes.filter(n => n.contact_id).map(n => [String(n.contact_id), n]));
@@ -177,6 +198,7 @@ export async function roleCard(userId, planItemId) {
     people, evaluation_id: item?.evaluation_id ? String(item.evaluation_id) : null,
     submit: ready ? { kind: ready.kind, open_url: ready.open_url, posting_closed: Boolean(ready.posting_closed) } : null,
     needs: [...needs, ...leftover].slice(0, 30),
+    gaps, company_roles: siblings, no_outreach: blocked.has(companyKey(role.role.company_name)), outreach_cap: role.role.outreach_cap || 12,
   };
 }
 

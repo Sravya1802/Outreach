@@ -465,18 +465,21 @@ const canEmail = c => c.email && c.email_status !== 'invalid';
  * engineers fill the rest. People the user added themselves replace that
  * pick (up to 12). → contacts with `audience`.
  */
-export async function outreachTargets(userId, company, mode = 'recruiters_engineers') {
+export async function outreachTargets(userId, company, mode = 'recruiters_engineers', { cap = MAX_PEOPLE_PER_ROLE, only = null } = {}) {
+  // `only`: these contact ids and nobody else (you picked them from a paste); `cap`: the role's limit (12 unless raised).
+  const allowed = (c) => !only || only.has(String(c.id));
   // People the user added themselves (Paste from Apollo) are the list: all of them, whatever the mode's usual 2 + 1.
   const own = (await all(
     `SELECT c.id, c.name, c.title, c.email, c.email_status, c.linkedin_url, c.source FROM job_contacts c JOIN jobs j ON j.id = c.job_id
       WHERE c.user_id = $1 AND lower(j.name) = lower($2) AND c.source = 'manual' AND COALESCE(c.status, 'pending') NOT IN ('replied', 'closed')
       ORDER BY c.created_at`,
     [userId, company],
-  )).filter(c => (canEmail(c) || isProfile(c.linkedin_url)) && !isCompanyPage(c.name, company));
-  if (own.length) return own.slice(0, MAX_OWN_PEOPLE).map(c => ({ ...c, audience: askRank(c) === 2 ? 'engineer' : 'recruiter' }));
+  )).filter(c => (canEmail(c) || isProfile(c.linkedin_url)) && !isCompanyPage(c.name, company) && allowed(c));
+  if (own.length) return own.slice(0, Math.max(cap, 1)).map(c => ({ ...c, audience: askRank(c) === 2 ? 'engineer' : 'recruiter' }));
+  if (only) return [];
   const recs = await recruitersAt(userId, company);
   const mailable = recs.filter(canEmail).sort((a, b) => Number(b.email_status === 'valid') - Number(a.email_status === 'valid'));
-  const picked = [...mailable, ...recs.filter(c => !canEmail(c) && isProfile(c.linkedin_url))].slice(0, MAX_PEOPLE_PER_ROLE)
+  const picked = [...mailable, ...recs.filter(c => !canEmail(c) && isProfile(c.linkedin_url))].slice(0, cap)
     .map(c => ({ ...c, audience: 'recruiter' }));
   if (mode === 'recruiters_engineers') {
     const saved = await all(
@@ -487,7 +490,7 @@ export async function outreachTargets(userId, company, mode = 'recruiters_engine
     const taken = new Set(picked.map(p => String(p.id)));
     const engineers = saved.filter(c => askRank(c) === 2 && !taken.has(String(c.id)) && !isCompanyPage(c.name, company) && (canEmail(c) || isProfile(c.linkedin_url)))
       .sort((a, b) => Number(b.source === 'manual') - Number(a.source === 'manual') || Number(b.email_status === 'valid') - Number(a.email_status === 'valid') || Number(!canEmail(a)) - Number(!canEmail(b)));
-    for (const e of engineers.slice(0, Math.max(0, MAX_PEOPLE_PER_ROLE - picked.length))) picked.push({ ...e, audience: 'engineer' });
+    for (const e of engineers.slice(0, Math.max(0, cap - picked.length))) picked.push({ ...e, audience: 'engineer' });
   }
   return picked;
 }

@@ -22,6 +22,7 @@ const DAY = 86_400_000;
 export function chipFor(r) {
   if (r.status === 'closed') return 'Closed';
   if (r.status === 'applied' || ['applied', 'referred', 'done'].includes(r.stage)) return 'Applied';
+  if (r.revising) return 'Revising';
   if (r.replies > 0) return 'Replied';
   if (r.sent > 0) return 'Emailed';
   if (r.status === 'approved') return 'Approved';
@@ -39,7 +40,8 @@ export function daysUntil(deadline, now = new Date()) {
 /** Which of the top counts a card belongs to. Pure. */
 export function groupsOf(card, now = new Date()) {
   const g = [];
-  if (['ready', 'revision_requested'].includes(card.status)) g.push('review');
+  // Being revised: not yours to review until the new version is written.
+  if (card.status === 'ready' && !card.revising) g.push('review');
   if (card.status === 'approved') g.push('approved');
   if (card.sent > 0) g.push('emailed');
   if (card.replies > 0) g.push('replies');
@@ -118,6 +120,7 @@ export async function dashboardRoles(userId) {
     const card = {
       id, company: r.company_name, title: r.title, location: r.location, deadline: r.deadline, posted_at: r.posted_at,
       kind: r.role_kind, status: r.status, stage: it.stage || null, closed_reason: r.closed_reason || null,
+      revising: r.status === 'revision_requested' || (r.status === 'in_progress' && r.open_comments > 0) || (r.status === 'ready' && Boolean(r.revising_pending)),
       ats: r.ats_after ?? null, callback: r.callback_after ?? null, version: r.version, version_id: r.version_id ? String(r.version_id) : null,
       check_status: r.check_status, pdf_pending: Boolean(r.pdf_pending), evaluation_id: it.evaluation_id ? String(it.evaluation_id) : null,
       apply_url: it.apply_url || null, referral_mode: r.referral_mode,

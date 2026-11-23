@@ -258,6 +258,9 @@ function queueSql(onlySome) {
             COALESCE(pi.apply_deadline, sr.apply_deadline)::text AS deadline,
             ${yearsSelect("concat_ws(' ', pi.title, sr.title)", 'COALESCE(sr.description, pi.job_description)')},
             (SELECT COUNT(*)::int FROM resume_comments c WHERE c.plan_item_id = j.plan_item_id AND c.status = 'open') AS open_comments,
+            -- Being revised though still 'ready': you answered a gap question and your run hasn't written the new version yet.
+            -- (A revision you ask for already sets status 'revision_requested'.)
+            EXISTS (SELECT 1 FROM gap_chat g WHERE g.plan_item_id = j.plan_item_id AND g.status = 'answered') AS revising_pending,
             (SELECT COUNT(*)::int FROM outreach_drafts d WHERE d.plan_item_id = j.plan_item_id AND d.status <> 'closed') AS outreach,
             (SELECT COUNT(*)::int FROM outreach_drafts d LEFT JOIN job_contacts c ON c.id = d.contact_id
               WHERE d.plan_item_id = j.plan_item_id AND d.status IN ('draft', 'edited')

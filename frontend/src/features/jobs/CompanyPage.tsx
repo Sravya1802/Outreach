@@ -10,6 +10,7 @@ import { timeAgo } from '@/lib/format'
 import { Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Spinner, Textarea, useToast } from '@/ui'
 import { emailLabel } from '@/features/outreach/contacts'
 import { companyBlurb, gmailComposeUrl, websiteHost } from './company'
+import { CompanyOutreachSwitch } from '@/features/apply/CompanyOutreachSwitch'
 
 const STATUSES: { value: CompanyStatus; label: string }[] = [
   { value: 'new', label: 'New' }, { value: 'researching', label: 'Researching' }, { value: 'contacted', label: 'Contacted' },
@@ -208,7 +209,7 @@ function People({ company, contacts }: { company: CompanyDetail; contacts: Compa
           })}
         </ul>
       )}
-      <ConfirmDialog open={confirmDelete != null} title="Remove this person?" description={confirmDelete ? `${confirmDelete.name} is removed from ${company.name}.` : ''}
+      <ConfirmDialog open={confirmDelete != null} title="Remove this person?" description={confirmDelete ? `${confirmDelete.name} is removed from ${company.name}, with any unsent email or note. Emails already sent and replies stay in your history.` : ''}
         confirmLabel="Remove" danger busy={remove.isPending} onConfirm={() => confirmDelete && remove.mutate(confirmDelete.id)} onCancel={() => setConfirmDelete(null)} />
     </section>
   )
@@ -341,6 +342,7 @@ export default function CompanyPage() {
       </header>
       <div className="grid gap-12 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
         <People company={company} contacts={contacts} />
+        <div className="mb-4"><CompanyOutreachSwitch company={company.name} /></div>
         <QueueRoles company={company.name} />
         <Roles company={company} initial={q.data.roles} />
       </div>

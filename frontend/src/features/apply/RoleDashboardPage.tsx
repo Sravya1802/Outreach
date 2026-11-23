@@ -7,8 +7,11 @@ import { api, type DashboardRole, type RoleCardData, type RolePerson } from '@/l
 import { qk } from '@/app/queryClient'
 import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
-import { Badge, Button, ButtonLink, buttonClass, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, Textarea, useToast } from '@/ui'
+import { Badge, Button, ButtonLink, buttonClass, ConfirmDialog, EmptyState, ErrorState, Input, Page, PageHeader, Select, Skeleton, Textarea, useToast } from '@/ui'
 import { ApproveAllEmails } from '@/features/outreach/ApproveAllEmails'
+import { timeAgo } from '@/lib/format'
+import { CompanyOutreachSwitch } from './CompanyOutreachSwitch'
+import { GapChat } from './GapChat'
 import { approvedLine as reviewApprovedLine, resumeFileName, saveBlob } from '@/features/review/review'
 import { apiOrigin, askFiller, closesLabel, hasFiller } from '@/features/review/ready'
 import { CHIP_TONE, COUNTS, NO_FILTERS, countGroups, daysTo, emailState, matches, nextStep, noteState, notesText, peopleLink, sendLine, type Filters } from './dashboard'
@@ -112,7 +115,13 @@ function RoleCard({ c, startOpen }: { c: DashboardRole; startOpen: boolean }) {
           <Deadline deadline={c.deadline} />
           {c.ats != null && <span className="font-mono">ATS {c.ats}%</span>}
           {c.callback != null && <span className="font-mono">CB {c.callback}%</span>}
-          {c.version != null && <span className="font-mono">v{c.version}</span>}
+          {c.version != null && (
+            <span className="inline-flex items-center gap-1 font-mono" title={c.unseen ? 'A new version you haven’t opened' : undefined}>
+              {c.unseen && <span className="size-2 rounded-full bg-accent" aria-label="New version" />}v{c.version}{c.version_at ? ` · updated ${timeAgo(c.version_at)}` : ''}
+            </span>
+          )}
+          {c.open_gaps > 0 && <Badge tone="warning">{c.open_gaps} question{c.open_gaps === 1 ? '' : 's'}</Badge>}
+          {c.no_outreach && <Badge tone="neutral">No outreach</Badge>}
           <Badge tone={CHIP_TONE[c.chip]}>{c.chip}</Badge>
         </span>
       </button>
@@ -136,6 +145,7 @@ function CardBody({ c }: { c: DashboardRole }) {
   if (!d.data) return <div className="space-y-2 pb-4 pl-7"><Skeleton className="h-8" /><Skeleton className="h-16" /></div>
   return (
     <div className="grid gap-5 pb-5 pl-7 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+      <GapChat roleId={c.id} gaps={d.data.gaps} />
       <ResumeSection c={c} d={d.data} />
       <PeopleSection c={c} d={d.data} />
       <ApplySection c={c} d={d.data} />
@@ -182,7 +192,7 @@ function ResumeSection({ c, d }: { c: DashboardRole; d: RoleCardData }) {
     <section aria-label="Resume">
       <H>Resume</H>
       <p className="mb-2 text-[13px] text-muted">
-        {latest ? `v${latest.version}${latest.is_final ? ' (final)' : ''} · ATS ${latest.ats_after ?? '?'}% · callback ${latest.callback_after ?? '?'}%` : 'Not written yet'}
+        {latest ? `v${latest.version}${latest.is_final ? ' (final)' : ''}${c.version_at ? ` · updated ${timeAgo(c.version_at)}` : ''} · ATS ${latest.ats_after ?? '?'}% · callback ${latest.callback_after ?? '?'}%` : 'Not written yet'}
         {c.status === 'revision_requested' && ' · revision asked for'}
         {d.comments > 0 && ` · ${d.comments} open comment${d.comments === 1 ? '' : 's'}`}
       </p>
@@ -201,6 +211,7 @@ function ResumeSection({ c, d }: { c: DashboardRole; d: RoleCardData }) {
           </span>
         </div>
       )}
+      {d.versions.length > 1 && <p className="mt-2 text-[13px]"><Link to={`/review/${c.id}`} className="text-accent hover:underline">Version history and compare ({d.versions.length} versions)</Link></p>}
       <p className="mt-2 text-[13px]">
         {d.evaluation_id
           ? <Link to={`/resumes/job/${d.evaluation_id}`} className="text-accent hover:underline">Cover letter</Link>
@@ -213,7 +224,13 @@ function ResumeSection({ c, d }: { c: DashboardRole; d: RoleCardData }) {
 function PeopleSection({ c, d }: { c: DashboardRole; d: RoleCardData }) {
   const toast = useToast()
   const refresh = useCardRefresh(c.id)
-  const people = d.people
+  const undo = useUndo()
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  const [moveTo, setMoveTo] = useState('')
+  const [confirmAll, setConfirmAll] = useState<{ contacts: number; unsent_emails: number } | null>(null)
+  const people = d.people.filter(p => !p.contact_id || !undo.hidden.has(p.contact_id))
+  const ids = (list: RolePerson[]) => list.map(p => p.contact_id).filter((x): x is string => Boolean(x))
+  const picked = people.filter(p => p.contact_id && chosen.has(p.contact_id))
   const toSend = people.filter(p => p.note_status === 'to_send').length
   const notes = notesText(people)
   const marked = useMutation({
@@ -223,33 +240,142 @@ function PeopleSection({ c, d }: { c: DashboardRole; d: RoleCardData }) {
   })
   const copy = () => { void navigator.clipboard.writeText(notes).then(() => toast.success('LinkedIn notes copied.'), () => toast.error('Couldn’t copy them.')) }
   const send = sendLine(c)
+  const who = (n: number) => (n === 1 ? '1 person' : `${n} people`)
+  // Remove, move and delete wait 10 seconds for Undo, then go to the server.
+  const act = (verb: string, run: (contactIds: string[]) => Promise<unknown>) => {
+    const list = ids(picked)
+    if (!list.length) return
+    setChosen(new Set())
+    undo.schedule(list, `${verb} ${who(list.length)}.`, async () => {
+      try { await run(list); refresh() } catch (e) { toast.error((e as Error).message); refresh() }
+    })
+  }
+  const allPreview = useMutation({
+    mutationFn: () => api.deleteAllPreview(c.company),
+    onSuccess: r => setConfirmAll({ contacts: r.contacts, unsent_emails: r.unsent_emails }),
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const deleteAll = useMutation({
+    mutationFn: () => api.deleteAllContacts(c.company),
+    onSuccess: r => {
+      setConfirmAll(null)
+      toast.success(`Deleted ${who(r.deleted)}${r.keptForHistory ? `; ${r.keptForHistory} you already emailed stay in your history` : ''}.`)
+      refresh()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const others = d.company_roles.filter(r => r.id !== c.id)
   return (
     <section aria-label="People">
       <H>People{people.length ? ` · ${people.length}` : ''}</H>
+      <div className="mb-2"><CompanyOutreachSwitch company={c.company} onDone={refresh} /></div>
       {send && <p className="mb-2 text-[13px] text-fg">{send}</p>}
       {people.length === 0 ? (
-        <p className="text-[13px] text-muted">{['my_contact', 'none'].includes(c.referral_mode) ? 'This role’s mode emails nobody.' : 'Nobody found yet. Find people from the full role page.'}</p>
+        <p className="text-[13px] text-muted">{d.no_outreach ? `No outreach for ${c.company}.` : ['my_contact', 'none'].includes(c.referral_mode) ? 'This role’s mode emails nobody.' : 'Nobody found yet. Find people from the full role page.'}</p>
       ) : (
-        <ul className="space-y-2">{people.map(p => <PersonRow key={p.draft_id} p={p} />)}</ul>
+        <>
+          <label className="mb-1.5 inline-flex items-center gap-2 text-[13px] text-muted">
+            <input type="checkbox" className="size-4 accent-accent" checked={picked.length > 0 && picked.length === ids(people).length}
+              onChange={e => setChosen(e.target.checked ? new Set(ids(people)) : new Set())} /> Select all
+          </label>
+          <ul className="space-y-2">
+            {people.map(p => (
+              <PersonRow key={p.draft_id} p={p} checked={Boolean(p.contact_id && chosen.has(p.contact_id))}
+                onCheck={p.contact_id ? (on) => setChosen(s => { const n = new Set(s); if (on) n.add(p.contact_id as string); else n.delete(p.contact_id as string); return n }) : undefined} />
+            ))}
+          </ul>
+          {picked.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[4px] border border-line bg-raised px-2 py-2">
+              <span className="text-[13px] text-fg">{who(picked.length)}:</span>
+              <Button size="sm" onClick={() => act('Removed from this role:', list => api.removeFromRole(c.id, list))}>Remove from this role</Button>
+              {others.length > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Select value={moveTo} onChange={e => setMoveTo(e.target.value)} aria-label="Move to role" className="w-auto! max-w-[14rem] py-0.5 text-[13px]">
+                    <option value="">Move to another role…</option>
+                    {others.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+                  </Select>
+                  <Button size="sm" disabled={!moveTo} onClick={() => { const to = moveTo; setMoveTo(''); act('Moved', list => api.moveToRole(c.id, list, to)) }}>Move</Button>
+                </span>
+              )}
+              <Button size="sm" variant="ghost" className="text-danger" onClick={() => act('Deleted', list => api.deleteContacts(list))}>Delete contact{picked.length === 1 ? '' : 's'}</Button>
+            </div>
+          )}
+        </>
       )}
-      {people.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-start gap-2">
-          <ApproveAllEmails role={c.id} onDone={refresh} />
-          {notes && <Button size="sm" icon={<Copy className="size-3.5" />} onClick={copy}>Copy LinkedIn notes</Button>}
-          {toSend > 0 && <Button size="sm" variant="ghost" loading={marked.isPending} onClick={() => marked.mutate()}>Mark {toSend} note{toSend === 1 ? '' : 's'} sent</Button>}
+      {undo.pending && (
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-[4px] bg-accent-soft px-3 py-2 text-[13px] text-fg" role="status">
+          <span>{undo.pending.message} Sent emails and replies stay in your history.</span>
+          <Button size="sm" onClick={undo.cancel}>Undo ({undo.left}s)</Button>
         </div>
       )}
+      <div className="mt-3 flex flex-wrap items-start gap-2">
+        {people.length > 0 && <ApproveAllEmails role={c.id} onDone={refresh} />}
+        {notes && <Button size="sm" icon={<Copy className="size-3.5" />} onClick={copy}>Copy LinkedIn notes</Button>}
+        {toSend > 0 && <Button size="sm" variant="ghost" loading={marked.isPending} onClick={() => marked.mutate()}>Mark {toSend} note{toSend === 1 ? '' : 's'} sent</Button>}
+        <Button size="sm" variant="ghost" className="text-danger" loading={allPreview.isPending} onClick={() => allPreview.mutate()}>Delete all contacts at {c.company}</Button>
+      </div>
+      <ConfirmDialog
+        open={confirmAll != null}
+        title={confirmAll ? `Delete ${confirmAll.contacts} contact${confirmAll.contacts === 1 ? '' : 's'} and ${confirmAll.unsent_emails} unsent email${confirmAll.unsent_emails === 1 ? '' : 's'} from ${c.company}?` : ''}
+        description="This can’t be undone. Emails you already sent and any replies stay in your history."
+        confirmLabel="Delete all"
+        danger
+        busy={deleteAll.isPending}
+        onConfirm={() => deleteAll.mutate()}
+        onCancel={() => { if (!deleteAll.isPending) setConfirmAll(null) }}
+      />
     </section>
   )
 }
 
-function PersonRow({ p }: { p: RolePerson }) {
+/**
+ * Hide now, act in 10 seconds unless Undo is pressed. Leaving the page does
+ * it at once, so nothing waits forever.
+ */
+function useUndo() {
+  const [pending, setPending] = useState<{ ids: string[]; message: string; run: () => Promise<void>; at: number } | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const runRef = useRef<(() => Promise<void>) | null>(null)
+  useEffect(() => {
+    if (!pending) return
+    const tick = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(tick)
+  }, [pending])
+  useEffect(() => {
+    const flush = () => { const r = runRef.current; runRef.current = null; if (r) void r() }
+    window.addEventListener('pagehide', flush)
+    return () => { window.removeEventListener('pagehide', flush); flush() }
+  }, [])
+  const finish = () => {
+    if (timer.current) clearTimeout(timer.current)
+    const r = runRef.current
+    runRef.current = null
+    setPending(null)
+    if (r) void r()
+  }
+  return {
+    pending,
+    left: pending ? Math.max(0, Math.ceil((pending.at + 10_000 - now) / 1000)) : 0,
+    hidden: new Set(pending?.ids ?? []),
+    schedule: (ids: string[], message: string, run: () => Promise<void>) => {
+      if (runRef.current) finish() // one at a time: the earlier one goes now
+      runRef.current = run
+      setPending({ ids, message, run, at: Date.now() })
+      timer.current = setTimeout(finish, 10_000)
+    },
+    cancel: () => { if (timer.current) clearTimeout(timer.current); runRef.current = null; setPending(null) },
+  }
+}
+
+function PersonRow({ p, checked = false, onCheck }: { p: RolePerson; checked?: boolean; onCheck?: (on: boolean) => void }) {
   const mail = emailState(p)
   const note = noteState(p)
   const step = nextStep(p)
   return (
     <li className="rounded-[4px] border border-line px-3 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {onCheck && <input type="checkbox" className="size-4 accent-accent" checked={checked} onChange={e => onCheck(e.target.checked)} aria-label={`Select ${p.name || p.email || 'this person'}`} />}
         <span className="min-w-0 flex-1 basis-40 text-[14px] text-fg">
           {p.linkedin_url ? <a href={p.linkedin_url} target="_blank" rel="noreferrer" className="font-medium hover:underline">{p.name || 'Someone'}</a> : <b className="font-medium">{p.name || 'Someone'}</b>}
           {p.title && <span className="text-muted">, {p.title}</span>}

@@ -1002,9 +1002,41 @@ export interface DashboardRole {
   replies: number
   bounces: number
   submit: { kind: 'fill' | 'linkedin'; open_url: string; unanswered: string[]; needs_you: number; posting_closed: boolean } | null
+  /** Gap questions from your Claude run still waiting for your answer. */
+  open_gaps: number
+  /** When the latest version was written (or edited), and whether you've opened it since. */
+  version_at: string | null
+  unseen: boolean
+  no_outreach: boolean
   chip: DashboardChip
   groups: DashboardGroup[]
 }
+/** A gap question your Claude run asked about a role's resume, and your answer. */
+export interface GapMessage {
+  id: string
+  sender: 'claude' | 'me'
+  text: string
+  options: string[] | null
+  answer: string | null
+  status: 'open' | 'answered' | 'applied'
+  created_at: string
+  answered_at: string | null
+}
+/** One resume version in the role's history. */
+export interface VersionEntry {
+  id: string
+  version: number
+  created_at: string
+  is_final: boolean
+  check_status: string | null
+  reason: { kind: 'first' | 'comment' | 'master' | 'fix' | 'revision'; label: string; quote?: string }
+  /** An in-place edit made to this version later (the Nov 16 Azure fix). */
+  edit: { at: string; text: string } | null
+  bullets: string[]
+  ats: { from: number | null; to: number | null }
+  callback: { from: number | null; to: number | null }
+}
+
 /** One person on an opened card: their email and LinkedIn note, and any reply. */
 export interface RolePerson {
   draft_id: string
@@ -1037,6 +1069,11 @@ export interface RoleCardData {
   evaluation_id: string | null
   submit: { kind: 'fill' | 'linkedin'; open_url: string; posting_closed: boolean } | null
   needs: { question: string; note: string | null }[]
+  gaps: GapMessage[]
+  /** Other roles at the company that can take people. */
+  company_roles: { id: string; title: string; status: string }[]
+  no_outreach: boolean
+  outreach_cap: number
 }
 
 export interface ReviewRow {
@@ -1186,7 +1223,7 @@ export interface RunConfig { version: number; created_at: string; master_latex: 
 export interface Referrer { id: string; company_name: string; contact_name: string; note: string | null; roles: number }
 
 export interface ReviewRole {
-  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; job_description: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null; outreach_due: boolean; contacts_at: string | null; finishing: boolean }
+  role: { id: string; status: ReviewStatus; referral_mode: ReferralMode; company_name: string; title: string; location: string | null; score: string | number | null; apply_url: string | null; job_description: string | null; stage: string | null; stage_note: string | null; apply_after: string | null; sponsorship: string | null; referrer: string | null; referrer_note: string | null; outreach_due: boolean; outreach_cap?: number | null; contacts_at: string | null; finishing: boolean }
   versions: ResumeVersion[]
   comments: ReviewComment[]
   outreach: OutreachDraft[]
@@ -1388,6 +1425,17 @@ export const api = {
   answerQuestion: (id: string, question: string, answer: string): Promise<{ ok: boolean }> => legacy.career.answerQuestion(id, { question, answer }),
   /** Mark every LinkedIn note for this role sent (you sent them by hand). */
   roleNotesSent: (id: string): Promise<{ marked: number }> => legacy.career.roleNotesSent(id),
+  gaps: async (id: string): Promise<GapMessage[]> => (await legacy.career.gaps(id)).gaps ?? [],
+  answerGap: (gapId: string, answer: string): Promise<{ ok: boolean }> => legacy.career.answerGap(gapId, answer),
+  versionHistory: async (id: string): Promise<VersionEntry[]> => (await legacy.career.versionHistory(id)).versions ?? [],
+  versionText: (versionId: string): Promise<{ id: string; version: number; lines: string[] }> => legacy.career.versionText(versionId),
+  companyOutreach: (company: string): Promise<{ company: string; noOutreach: boolean }> => legacy.career.companyOutreach(company),
+  setCompanyOutreach: (company: string, noOutreach: boolean): Promise<{ company: string; noOutreach: boolean; closed?: number; cancelled?: number; notes?: number }> => legacy.career.setCompanyOutreach(company, noOutreach),
+  removeFromRole: (id: string, contactIds: string[]): Promise<{ removed: number; emails: number; notes: number; drafts: number }> => legacy.career.removeFromRole(id, contactIds),
+  moveToRole: (id: string, contactIds: string[], to: string): Promise<{ moved: number; alreadyThere: number; to: { id: string; title: string } }> => legacy.career.moveToRole(id, contactIds, to),
+  deleteContacts: (contactIds: string[]): Promise<{ deleted: number; keptForHistory: number; emails: number; notes: number }> => legacy.career.deleteContacts(contactIds),
+  deleteAllPreview: (company: string): Promise<{ company: string | null; contacts: number; unsent_emails: number }> => legacy.career.deleteAllPreview(company),
+  deleteAllContacts: (company: string): Promise<{ deleted: number; keptForHistory: number; emails: number; notes: number }> => legacy.career.deleteAllContacts(company),
   /** Undo a removal. */
   restoreRemovedRole: (id: string): Promise<{ status: string }> => legacy.career.restoreRemovedRole(id),
   /** 'apollo' asks Apollo alone; otherwise Prospeo, Hunter, then Apollo, each only if the last left a gap. */
@@ -1399,7 +1447,8 @@ export const api = {
   approveAllOutreach: (role?: string): Promise<ApproveAllResult> => legacy.career.approveAllOutreach(role),
   findRoleContacts: (id: string, source: 'all' | 'apollo' = 'all'): Promise<{ recruiters: number; emails: number }> => legacy.career.findRoleContacts(id, source),
   /** People the user pasted (from Apollo or anywhere), saved as this role's contacts. */
-  addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[]): Promise<{ added: number; people: number; drafted?: number }> => legacy.career.addRoleContacts(id, people),
+  /** `pick`: the emails or LinkedIn links of the people who get emails (the rest stay saved); `raiseCap`: let this role take everyone pasted. */
+  addRoleContacts: (id: string, people: { name: string; title: string; email: string; linkedin_url: string }[], opts: { pick?: string[]; raiseCap?: boolean } = {}): Promise<{ added: number; people: number; drafted?: number; cap?: number }> => legacy.career.addRoleContacts(id, people, opts),
   saveOutreachDraft: (id: string, patch: { email_subject: string; email_body: string; linkedin_note: string }): Promise<{ ok: boolean }> => legacy.career.saveOutreachDraft(id, patch),
   /** A 10-minute link that opens the PDF in a browser tab. */
   resumeFileLink: (id: number | string): Promise<{ url: string; filename: string; expiresIn: number }> => legacy.career.resumeFileLink(id),

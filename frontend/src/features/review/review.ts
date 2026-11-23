@@ -536,3 +536,16 @@ export function reportChangeLine(changed: Set<ReportSection>, prevVersion: numbe
   if (!newOnes.length) return `Nothing in the report changed since v${prevVersion}.`
   return `New since v${prevVersion}: ${named(newOnes)}.${sameOnes.length ? ` The ${named(sameOnes)} ${sameOnes.length === 1 ? 'is' : 'are'} the same as v${prevVersion}.` : ''}`
 }
+
+/** The report's first lines: the verdict, the biggest blocker, ATS and callback. Pure. */
+export function reportSummary(v: Pick<ResumeVersion, 'report' | 'ats_after' | 'callback_after'>, sponsorship: string | null | undefined) {
+  const r = readReport(v.report)
+  const visa = sponsorship === 'no_sponsorship' ? 'Won’t sponsor a visa' : sponsorship === 'citizens_only' ? 'US citizens only' : null
+  return {
+    verdict: r.verdict,
+    // An eligibility flag first, then the posting's visa line, then the report's first gap.
+    blocker: r.eligibility || visa || r.gaps[0] || null,
+    ats: v.ats_after,
+    callback: v.callback_after,
+  }
+}

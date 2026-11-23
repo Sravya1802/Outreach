@@ -9,6 +9,7 @@ import { Badge, Button, ButtonLink, ConfirmDialog, EmptyState, ErrorState, Input
 import { emailLabel, needsYou, planSummary, statusLabel } from './contacts'
 import { cityOf, itemStatus } from './outbox'
 import { EditEmailDialog } from './EditEmailDialog'
+import { CompanyOutreachSwitch } from '@/features/apply/CompanyOutreachSwitch'
 
 type Show = 'all' | 'needs'
 
@@ -148,6 +149,10 @@ function CompanyPlan({ companyKey }: { companyKey: string }) {
         {drafts.length > 1 && (
           <Button size="sm" variant="primary" disabled={approveAll.isPending} onClick={() => setApprovingAll(true)}>Approve all {drafts.length} emails</Button>
         )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CompanyOutreachSwitch company={d.name} onDone={refresh} />
+        <DeleteAllContacts company={d.name} onDone={refresh} />
       </div>
       {(d.dashboard ?? []).length > 0 && (
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
@@ -349,5 +354,32 @@ function SearchNote({ note, companyKey }: { note: PlanNote; companyKey: string }
       <p className="mb-2 text-[14px] text-fg">Nobody found here yet. Search LinkedIn for someone at the company and send them this note.</p>
       <NoteBody note={note} companyKey={companyKey} />
     </div>
+  )
+}
+
+/** Everyone at a company, with their unsent emails and notes. Sent emails and replies stay. */
+function DeleteAllContacts({ company, onDone }: { company: string; onDone: () => void }) {
+  const toast = useToast()
+  const [ask, setAsk] = useState<{ contacts: number; unsent_emails: number } | null>(null)
+  const preview = useMutation({ mutationFn: () => api.deleteAllPreview(company), onSuccess: r => setAsk({ contacts: r.contacts, unsent_emails: r.unsent_emails }), onError: (e: Error) => toast.error(e.message) })
+  const remove = useMutation({
+    mutationFn: () => api.deleteAllContacts(company),
+    onSuccess: r => { setAsk(null); toast.success(`Deleted ${r.deleted === 1 ? '1 contact' : `${r.deleted} contacts`}${r.keptForHistory ? `; ${r.keptForHistory} you already emailed stay in your history` : ''}.`); onDone() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  return (
+    <>
+      <Button size="sm" variant="ghost" className="text-danger" loading={preview.isPending} onClick={() => preview.mutate()}>Delete all contacts</Button>
+      <ConfirmDialog
+        open={ask != null}
+        title={ask ? `Delete ${ask.contacts} contact${ask.contacts === 1 ? '' : 's'} and ${ask.unsent_emails} unsent email${ask.unsent_emails === 1 ? '' : 's'} from ${company}?` : ''}
+        description="This can’t be undone. Emails you already sent and any replies stay in your history."
+        confirmLabel="Delete all"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => remove.mutate()}
+        onCancel={() => { if (!remove.isPending) setAsk(null) }}
+      />
+    </>
   )
 }

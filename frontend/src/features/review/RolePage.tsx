@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Copy, Download, ExternalLink, PenLine } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Copy, Download, ExternalLink, PenLine } from 'lucide-react'
 import { api, type OutreachDraft, type ReferralMode, type ReviewComment, type ReviewRole, type ResumeVersion } from '@/lib/api'
 import { ApproveAllEmails } from '@/features/outreach/ApproveAllEmails'
 import { inZone, cityOf } from '@/features/outreach/outbox'
@@ -10,7 +10,10 @@ import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, reportChangeLine, reportChanges, type ReportSection, visaLine, type KeywordState } from './review'
+import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, reportSummary, reportChangeLine, reportChanges, type ReportSection, visaLine, type KeywordState } from './review'
+import { defaultPick, reportTitle } from './versions'
+import { VersionHistory } from './VersionHistory'
+import { CompanyOutreachSwitch } from '@/features/apply/CompanyOutreachSwitch'
 
 type Panel = 'report' | 'posting' | 'comments' | 'outreach' | 'apply'
 
@@ -45,56 +48,67 @@ function Score({ label, before, after, note, good }: { label: string; before: nu
 
 /** Which version's report this is, and what's new in it since the version before. */
 function ReportFor({ v, prev, latest, changed }: { v: ResumeVersion; prev: ResumeVersion | null; latest: boolean; changed: Set<ReportSection> }) {
-  const day = new Date(v.created_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
   return (
     <div className="rounded-[4px] border border-line bg-raised px-3 py-2 text-[14px]">
-      <p className="font-medium text-fg">Report for v{v.version}{latest ? ' (latest)' : ''} · written {day}</p>
+      <p className="font-medium text-fg">{reportTitle(v.version, v.created_at)}{latest && <span className="font-normal text-muted"> · latest version</span>}</p>
       {prev && <p className="mt-0.5 text-muted">{reportChangeLine(changed, prev.version, v)}</p>}
     </div>
   )
 }
 
-function ReportPanel({ v, prev = null, latest = true }: { v: ResumeVersion; prev?: ResumeVersion | null; latest?: boolean }) {
+function ReportPanel({ v, prev = null, latest = true, sponsorship = null }: { v: ResumeVersion; prev?: ResumeVersion | null; latest?: boolean; sponsorship?: string | null }) {
   const r = readReport(v.report)
   const changed = reportChanges(v, prev)
+  const sum = reportSummary(v, sponsorship)
   // Sections new in this version say so.
   const tag = (k: ReportSection) => (prev && changed.has(k) ? <Badge tone="accent" className="ml-2 align-middle">New in v{v.version}</Badge> : null)
   return (
     <div className="space-y-5">
       <ReportFor v={v} prev={prev} latest={latest} changed={changed} />
-      {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}{tag('eligibility')}</p>}
-      <div className="flex flex-wrap gap-4">
-        <Score label="ATS" before={v.ats_before} after={v.ats_after} note={r.atsReason} good={atsOk(v.ats_after)} />
-        <Score label="Interview callback" before={v.callback_before} after={v.callback_after} note={r.callbackReason} />
-      </div>
-      {tag('scores') && <p className="-mt-3">{tag('scores')}</p>}
-      <List title="Added skills to learn before interviews" items={r.skillsToLearn} badge={tag('skillsToLearn')} />
-      {r.verdict && <section><h3 className={heading}>Verdict{tag('verdict')}</h3><p className="text-[14px] text-muted">{r.verdict}</p></section>}
-      <List title="Top 5 hiring needs" items={r.needs} badge={tag('needs')} />
-      {r.keywords.length > 0 && (
-        <section>
-          <h3 className={heading}>Keywords{tag('keywords')}</h3>
-          {v.keywords && v.keywords.missing.length > 0 && (
-            <p className="mb-2 text-[13px] text-muted">{v.keywords.found} of {v.keywords.total} are in the PDF word for word. Not found: {v.keywords.missing.join(', ')}.</p>
-          )}
-          <div className="overflow-x-auto rounded-[4px] border border-line">
-            <table className="w-full border-collapse text-[13px] text-fg">
-              <tbody>
-                {r.keywords.map(k => (
-                  <tr key={k.keyword}>
-                    <td className="border-b border-line px-3 py-1.5 font-medium">{k.keyword}</td>
-                    <td className="border-b border-line px-3 py-1.5 text-muted">{k.where ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
+        <dt className="text-subtle">Verdict</dt><dd className="font-medium text-fg">{sum.verdict ?? '—'}{tag('verdict')}</dd>
+        <dt className="text-subtle">Biggest blocker</dt><dd className={sum.blocker ? 'text-warning' : 'text-muted'}>{sum.blocker ?? 'Nothing found'}</dd>
+        <dt className="text-subtle">ATS</dt><dd className={cn('font-mono', atsOk(sum.ats) ? 'text-success' : 'text-warning')}>{sum.ats != null ? `${sum.ats}%` : '?'}</dd>
+        <dt className="text-subtle">Callback</dt><dd className="font-mono text-fg">{sum.callback != null ? `${sum.callback}%` : '?'}{tag('scores')}</dd>
+      </dl>
       <List title="Gaps" items={r.gaps} badge={tag('gaps')} />
-      <List title="Changes made" items={r.changes} badge={tag('changes')} />
-      {r.nextChange && <section><h3 className={heading}>One more change that would help{tag('nextChange')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.nextChange}</p></section>}
-      {r.posting && <section><h3 className={heading}>Posting check{tag('posting')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.posting}</p></section>}
+      <details className="group rounded-[4px] border border-line">
+        <summary className="cursor-pointer list-none px-3 py-2 text-[14px] text-muted hover:text-fg">
+          <ChevronDown className="mr-1.5 inline size-4 align-text-bottom transition-transform group-open:rotate-180" aria-hidden="true" />More from the report{changed.size && [...changed].some(k => !['verdict', 'scores', 'gaps'].includes(k)) ? ` · new in v${v.version}` : ''}
+        </summary>
+        <div className="space-y-5 border-t border-line px-3 py-3">
+          {r.eligibility && <p className="rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg"><b className="font-medium">Check eligibility:</b> {r.eligibility}{tag('eligibility')}</p>}
+          <div className="flex flex-wrap gap-4">
+            <Score label="ATS" before={v.ats_before} after={v.ats_after} note={r.atsReason} good={atsOk(v.ats_after)} />
+            <Score label="Interview callback" before={v.callback_before} after={v.callback_after} note={r.callbackReason} />
+          </div>
+          <List title="Added skills to learn before interviews" items={r.skillsToLearn} badge={tag('skillsToLearn')} />
+          <List title="Top 5 hiring needs" items={r.needs} badge={tag('needs')} />
+          {r.keywords.length > 0 && (
+            <section>
+              <h3 className={heading}>Keywords{tag('keywords')}</h3>
+              {v.keywords && v.keywords.missing.length > 0 && (
+                <p className="mb-2 text-[13px] text-muted">{v.keywords.found} of {v.keywords.total} are in the PDF word for word. Not found: {v.keywords.missing.join(', ')}.</p>
+              )}
+              <div className="overflow-x-auto rounded-[4px] border border-line">
+                <table className="w-full border-collapse text-[13px] text-fg">
+                  <tbody>
+                    {r.keywords.map(k => (
+                      <tr key={k.keyword}>
+                        <td className="border-b border-line px-3 py-1.5 font-medium">{k.keyword}</td>
+                        <td className="border-b border-line px-3 py-1.5 text-muted">{k.where ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+          <List title="Changes made" items={r.changes} badge={tag('changes')} />
+          {r.nextChange && <section><h3 className={heading}>One more change that would help{tag('nextChange')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.nextChange}</p></section>}
+          {r.posting && <section><h3 className={heading}>Posting check{tag('posting')}</h3><p className="text-[14px] leading-relaxed text-muted">{r.posting}</p></section>}
+        </div>
+      </details>
     </div>
   )
 }
@@ -308,8 +322,15 @@ function PasteContacts({ data, onDone, open: startOpen = false }: { data: Review
   const [open, setOpen] = useState(startOpen)
   const [text, setText] = useState('')
   const [people, setPeople] = useState<PastedPerson[] | null>(null)
+  // A role takes 12 people unless you raise it; more pasted than that: you pick who gets emails, or raise the cap.
+  const cap = data.role.outreach_cap ?? 12
+  const slots = Math.max(0, cap - data.outreach.length)
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [raise, setRaise] = useState(false)
+  const over = Boolean(people && people.length > slots)
+  const read = (list: PastedPerson[]) => { setPeople(list); setPicked(defaultPick(list, slots)); setRaise(false) }
   const save = useMutation({
-    mutationFn: (list: PastedPerson[]) => api.addRoleContacts(data.role.id, list),
+    mutationFn: (list: PastedPerson[]) => api.addRoleContacts(data.role.id, list, !over ? {} : raise ? { raiseCap: true } : { pick: list.filter((_, i) => picked.has(i)).map(p => (p.email || p.linkedin_url || '').toLowerCase()).filter(Boolean) }),
     onSuccess: (r) => {
       toast.success(`Added ${r.people === 1 ? '1 person' : `${r.people} people`}. ${r.drafted ? `Claude is writing ${r.drafted === 1 ? 'their email' : `${r.drafted} emails`}; they show here after your next run.` : 'Your next run writes their outreach.'}`)
       setText(''); setPeople(null); setOpen(false); onDone()
@@ -325,18 +346,30 @@ function PasteContacts({ data, onDone, open: startOpen = false }: { data: Review
       </Field>
       {people === null ? (
         <div className="flex flex-wrap gap-2">
-          <Button disabled={!text.trim()} onClick={() => { const list = parseContacts(text, data.role.company_name); if (!list.length) toast.error('No email address or LinkedIn link found in that text.'); setPeople(list) }}>Read them</Button>
+          <Button disabled={!text.trim()} onClick={() => { const list = parseContacts(text, data.role.company_name); if (!list.length) toast.error('No email address or LinkedIn link found in that text.'); read(list) }}>Read them</Button>
           <Button variant="ghost" onClick={() => { setOpen(false); setText('') }}>Cancel</Button>
         </div>
       ) : people.length ? (
         <div className="space-y-2">
           <p className="text-[13px] text-muted">Check them, fix anything, then add.</p>
+          {over && (
+            <div className="space-y-1 rounded-[4px] bg-warning-soft px-3 py-2 text-[14px] text-fg">
+              <p><b className="font-medium">{people.length} pasted, {raise ? people.length : Math.min(picked.size, slots)} will get emails.</b> This role takes {cap} people{data.outreach.length ? ` and has ${data.outreach.length}` : ''}. Tick who gets an email; everyone is saved at the company.</p>
+              <label className="inline-flex items-center gap-2 text-[13px]"><input type="checkbox" className="size-4 accent-accent" checked={raise} onChange={e => setRaise(e.target.checked)} /> Raise the cap for this role so all {people.length} get emails</label>
+            </div>
+          )}
           {people.map((p, i) => (
-            <div key={i} className="grid grid-cols-1 gap-2 rounded-[4px] border border-border p-2 sm:grid-cols-[1fr_1fr_1.3fr_auto]">
+            <div key={i} className={cn('grid grid-cols-1 gap-2 rounded-[4px] border border-border p-2', over ? 'sm:grid-cols-[auto_1fr_1fr_1.3fr_auto]' : 'sm:grid-cols-[1fr_1fr_1.3fr_auto]')}>
+              {over && (
+                <label className="inline-flex items-center gap-1.5 text-[13px] text-muted">
+                  <input type="checkbox" className="size-4 accent-accent" aria-label={`Email ${p.name || p.email}`} checked={raise || picked.has(i)} disabled={raise || (!picked.has(i) && picked.size >= slots)}
+                    onChange={e => setPicked(s => { const n = new Set(s); if (e.target.checked) n.add(i); else n.delete(i); return n })} /> Email
+                </label>
+              )}
               <Input aria-label={`Name ${i + 1}`} value={p.name} placeholder="Name" onChange={e => edit(i, { name: e.target.value })} />
               <Input aria-label={`Title ${i + 1}`} value={p.title} placeholder="Title" onChange={e => edit(i, { title: e.target.value })} />
               <Input aria-label={`Email ${i + 1}`} value={p.email} placeholder="Email" onChange={e => edit(i, { email: e.target.value })} />
-              <Button variant="ghost" size="sm" aria-label={`Leave out ${p.name || p.email}`} onClick={() => setPeople(list => list && list.filter((_, k) => k !== i))}>Leave out</Button>
+              <Button variant="ghost" size="sm" aria-label={`Leave out ${p.name || p.email}`} onClick={() => { setPeople(list => list && list.filter((_, k) => k !== i)); setPicked(s => new Set([...s].filter(k => k !== i).map(k => (k > i ? k - 1 : k)))) }}>Leave out</Button>
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
@@ -603,15 +636,17 @@ export default function RolePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="min-w-0">
           {current ? <ResumePanel versions={d.versions} current={current} onPick={setPicked} company={d.role.company_name} /> : <EmptyState title="No resume yet" description="It shows up here once a run writes it." />}
+          {d.versions.length > 0 && <VersionHistory roleId={d.role.id} current={current?.id ?? null} onPick={setPicked} />}
         </div>
         <div className="min-w-0">
           <div className="mb-4 max-w-full overflow-x-auto"><Segmented value={panel} onChange={setPanel} options={panels} label="Section" /></div>
-          {panel === 'report' && (current ? <ReportPanel v={current} prev={d.versions.find(x => x.version < current.version) ?? null} latest={current.id === latest?.id} /> : <p className="text-[14px] text-muted">The report comes with the resume.</p>)}
+          {panel === 'report' && (current ? <ReportPanel v={current} prev={d.versions.find(x => x.version < current.version) ?? null} latest={current.id === latest?.id} sponsorship={d.role.sponsorship} /> : <p className="text-[14px] text-muted">The report comes with the resume.</p>)}
           {panel === 'posting' && <PostingPanel data={d} v={current} />}
           {panel === 'comments' && <CommentsPanel data={d} onDone={refresh} />}
           {panel === 'outreach' && (
             <div className="space-y-4">
               <ModeSelect data={d} onDone={refresh} />
+              <CompanyOutreachSwitch company={d.role.company_name} onDone={refresh} />
               {d.outreach.length === 0 && d.role.status === 'ready' && needsOutreach({ referral_mode: d.role.referral_mode, outreach: 0 })
                 ? <NoOutreach data={d} onDone={refresh} />
                 : d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}

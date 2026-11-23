@@ -462,3 +462,14 @@ describe('report: what is new since the version before', () => {
     expect(changes({ ...v2, callback_after: 30 }, v1).has('scores')).toBe(true)
   })
 })
+
+describe('report summary: verdict, biggest blocker, ATS, callback', () => {
+  it('the blocker is eligibility, then the visa line, then the first gap', async () => {
+    const { reportSummary } = await import('./review')
+    const v = { ats_after: 96, callback_after: 13, report: { verdict: 'apply', gaps: ['No C# work bullet'], eligibility_flag: null } }
+    expect(reportSummary(v, null)).toEqual({ verdict: 'apply', blocker: 'No C# work bullet', ats: 96, callback: 13 })
+    expect(reportSummary(v, 'no_sponsorship').blocker).toBe('Won’t sponsor a visa')
+    expect(reportSummary({ ...v, report: { ...v.report, eligibility_flag: 'US citizens only (ITAR)' } }, 'no_sponsorship').blocker).toBe('US citizens only (ITAR)')
+    expect(reportSummary({ ...v, report: { verdict: 'apply' } }, null).blocker).toBeNull()
+  })
+})

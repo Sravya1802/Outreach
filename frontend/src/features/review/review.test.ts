@@ -473,3 +473,13 @@ describe('report summary: verdict, biggest blocker, ATS, callback', () => {
     expect(reportSummary({ ...v, report: { verdict: 'apply' } }, null).blocker).toBeNull()
   })
 })
+
+describe('a role being revised is not "Ready for you"', () => {
+  it('an answered gap question or an unmade change moves it to Revising', async () => {
+    const { reviewTab: tab } = await import('./review')
+    expect(tab({ status: 'ready', open_comments: 0 })).toBe('ready')
+    expect(tab({ status: 'ready', open_comments: 1, revising_pending: true })).toBe('revising')
+    expect(tab({ status: 'revision_requested', open_comments: 1 })).toBe('revising')
+    expect(tab({ status: 'in_progress', open_comments: 1 })).toBe('revising')
+  })
+})

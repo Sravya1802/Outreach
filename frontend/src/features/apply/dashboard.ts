@@ -74,7 +74,7 @@ export function sendLine(c: Pick<DashboardRole, 'scheduled' | 'first_send' | 'la
 }
 
 export const CHIP_TONE: Record<DashboardChip, 'accent' | 'info' | 'success' | 'warning' | 'neutral'> = {
-  Review: 'accent', Approved: 'info', Emailed: 'info', Replied: 'warning', Applied: 'success', Closed: 'neutral',
+  Review: 'accent', Revising: 'warning', Approved: 'info', Emailed: 'info', Replied: 'warning', Applied: 'success', Closed: 'neutral',
 }
 
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'info' | 'accent'

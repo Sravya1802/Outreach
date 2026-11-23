@@ -33,8 +33,10 @@ export const MODE_LABEL: Record<ReferralMode, string> = {
 export const NOTE_LIMIT = 300
 
 /** The tab a role sits in. A role a run is revising stays in Revising. */
-export function reviewTab(r: Pick<ReviewRow, 'status' | 'open_comments'>): ReviewTab {
+export function reviewTab(r: Pick<ReviewRow, 'status' | 'open_comments'> & { revising_pending?: boolean }): ReviewTab {
   if (r.status === 'queued') return 'waiting'
+  // Being revised (you answered a gap question; the run writes the new version): not ready for you until it has.
+  if (r.status === 'ready' && r.revising_pending) return 'revising'
   if (r.status === 'in_progress') return r.open_comments > 0 ? 'revising' : 'working'
   if (r.status === 'revision_requested') return 'revising'
   return r.status

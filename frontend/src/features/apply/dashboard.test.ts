@@ -7,7 +7,7 @@ const card = (over: Partial<DashboardRole> = {}): DashboardRole => ({
   status: 'ready', stage: null, closed_reason: null, ats: 92, callback: 40, version: 1, version_id: '9', check_status: 'passed', pdf_pending: false,
   evaluation_id: null, apply_url: null, referral_mode: 'recruiters_engineers', people: 0, to_approve: 0, writing: 0, in_outbox: 0, scheduled: 0, sent: 0,
   first_send: null, last_send: null, notes_to_send: 0, notes_sent: 0, replies: 0, bounces: 0, submit: null, chip: 'Review', groups: ['review'],
-  open_gaps: 0, version_at: null, unseen: false, no_outreach: false, ...over,
+  open_gaps: 0, version_at: null, unseen: false, no_outreach: false, revising: false, ...over,
 })
 const now = new Date('2026-11-20T12:00:00')
 

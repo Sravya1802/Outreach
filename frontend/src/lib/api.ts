@@ -967,7 +967,7 @@ export interface ReadyRole {
 export interface FillLink { token: string; url: string; company: string; title: string }
 
 /** One role on the To apply dashboard (the collapsed card). */
-export type DashboardChip = 'Review' | 'Approved' | 'Emailed' | 'Replied' | 'Applied' | 'Closed'
+export type DashboardChip = 'Review' | 'Revising' | 'Approved' | 'Emailed' | 'Replied' | 'Applied' | 'Closed'
 export type DashboardGroup = 'review' | 'approved' | 'emailed' | 'replies' | 'submit' | 'applied' | 'closing'
 export interface DashboardRole {
   id: string
@@ -980,6 +980,8 @@ export interface DashboardRole {
   status: ReviewStatus
   stage: string | null
   closed_reason: string | null
+  /** A new version is being written (a revision you asked for, or your answer to a gap question). */
+  revising: boolean
   ats: number | null
   callback: number | null
   version: number | null
@@ -1120,6 +1122,8 @@ export interface ReviewRow {
   deadline: string | null
   eligibility: string | null
   open_comments: number
+  /** Ready, but a new version is coming: you answered a gap question and your run hasn't written it yet. */
+  revising_pending?: boolean
   outreach: number
   /** Drafts your Claude run hasn't written yet (an email or a LinkedIn note); Approve waits for them. */
   writing: number

@@ -1356,11 +1356,14 @@ router.put('/contacts/:contactId', async (req, res) => {
 
 // ── Delete a contact ──────────────────────────────────────────────────────────
 
+// A plain DELETE would take their sent emails with it (email_outbox cascades): the
+// history-keeping delete removes only what's unsent, and keeps someone already emailed.
 router.delete('/contacts/:contactId', async (req, res) => {
   try {
-    const r = await run('DELETE FROM job_contacts WHERE id = $1 AND user_id = $2', [req.params.contactId, req.user.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'Contact not found' });
-    res.json({ success: true });
+    const { deleteContacts } = await import('../services/roleTools.js');
+    const r = await deleteContacts(req.user.id, [req.params.contactId]);
+    if (!r.deleted && !r.keptForHistory) return res.status(404).json({ error: 'Contact not found' });
+    res.json({ success: true, ...r });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

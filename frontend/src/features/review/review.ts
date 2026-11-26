@@ -551,3 +551,6 @@ export function reportSummary(v: Pick<ResumeVersion, 'report' | 'ats_after' | 'c
     callback: v.callback_after,
   }
 }
+
+/** Outreach can be found, pasted and written while the resume is being revised: only applied and closed roles are done with it. */
+export const outreachOpen = (status: ReviewStatus) => ['ready', 'revision_requested', 'in_progress', 'approved'].includes(status)

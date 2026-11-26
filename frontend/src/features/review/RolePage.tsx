@@ -10,7 +10,7 @@ import { useProfile } from '@/app/queries'
 import { cn } from '@/lib/cn'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Page, Segmented, Select, Skeleton, Textarea, VoiceInput, appendSpoken, useToast, type Tone } from '@/ui'
 import { PdfPages } from '@/features/profile/PdfViewer'
-import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, reportSummary, reportChangeLine, reportChanges, type ReportSection, visaLine, type KeywordState } from './review'
+import { nextScheduledRun, resumeFileName, saveBlob, parseContacts, type PastedPerson, MODE_LABEL, NOTE_LIMIT, STATUS_LABEL, appliedLine, approvedLine, canMarkApplied, atsOk, cleanPosting, keywordStates, markPosting, needsOutreach, readReport, reportSummary, outreachOpen, reportChangeLine, reportChanges, type ReportSection, visaLine, type KeywordState } from './review'
 import { defaultPick, reportTitle } from './versions'
 import { VersionHistory } from './VersionHistory'
 import { CompanyOutreachSwitch } from '@/features/apply/CompanyOutreachSwitch'
@@ -282,7 +282,7 @@ function ModeSelect({ data, onDone }: { data: ReviewRole; onDone: () => void }) 
     onError: (e: Error) => toast.error(e.message),
   })
   return (
-    <Field label="Referral mode" hint="Recruiters and engineers by default: the best 2 recruiters and 1 engineer. Recruiters only leaves the engineer out. Applies from the next run.">
+    <Field label="Referral mode" hint="Recruiters and engineers by default: up to 12 people, recruiters first, each with their own email. Recruiters only leaves engineers out. Applies from the next run.">
       {p => (
         <Select {...p} value={data.role.referral_mode} disabled={set.isPending} onChange={e => set.mutate(e.target.value as ReferralMode)}>
           {(Object.keys(MODE_LABEL) as ReferralMode[]).map(m => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
@@ -647,12 +647,12 @@ export default function RolePage() {
             <div className="space-y-4">
               <ModeSelect data={d} onDone={refresh} />
               <CompanyOutreachSwitch company={d.role.company_name} onDone={refresh} />
-              {d.outreach.length === 0 && d.role.status === 'ready' && needsOutreach({ referral_mode: d.role.referral_mode, outreach: 0 })
+              {d.outreach.length === 0 && outreachOpen(d.role.status) && needsOutreach({ referral_mode: d.role.referral_mode, outreach: 0 })
                 ? <NoOutreach data={d} onDone={refresh} />
                 : d.outreach.length === 0 && <p className="text-[14px] text-muted">No outreach for this role. Either no recruiters were found or the mode doesn’t send any.</p>}
               {d.outreach.map(o => <DraftCard key={o.id} d={o} onDone={refresh} />)}
               {d.outreach.length > 0 && <p className="text-[13px] text-subtle">Runs never rewrite these, so your edits stay. Approve all emails (beside the resume) schedules every finished one for the next business day; ones still being written are skipped.</p>}
-              {d.outreach.length > 0 && d.role.status === 'ready' && !['my_contact', 'none'].includes(d.role.referral_mode) && <PasteContacts data={d} onDone={refresh} />}
+              {d.outreach.length > 0 && outreachOpen(d.role.status) && !['my_contact', 'none'].includes(d.role.referral_mode) && <PasteContacts data={d} onDone={refresh} />}
             </div>
           )}
           {panel === 'apply' && <ApplyPanel data={d} latest={latest} onDone={refresh} />}

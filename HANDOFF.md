@@ -2504,3 +2504,14 @@ Commits: backend (on the VM) "outreach: up to 12 people per role…"; frontend b
 - Live UI on the test account 23/23: card line and dot, gap answer, Revising in both lists, Remove + Undo, Remove, Move, Delete (kept for history), the switch on/off, the Delete all counts, history reasons/quote/in-place note/scores, compare (1 moved), report summary and fold, paste 14 → 11 emailed and 14 saved, 390px.
 
 Commits: 15bf781, 8287ded and 2da7fda (backend, on the VM); f2bffaa, 8f4c62a, 0005139 and the switch fix (frontend).
+
+## 2026-11-26 — Outreach no longer blocked while a resume is revised
+
+- Requesting a revision set the role to revision_requested, and the Outreach tab only offered Find contacts / Paste from Apollo for 'ready' roles. Finding contacts was also refused on the server ("Only a role ready for review needs contacts").
+- Outreach now stays open while the role is revision_requested, in_progress (a run rewriting it) or approved:
+  - backend `OUTREACH_OPEN` in findRoleContacts, addRoleContacts and queueOutreachForRoles;
+  - frontend `outreachOpen()`.
+- Config v32 (from her v31): step 9 writes outreach for `status IN ('ready', 'revision_requested', 'approved')`, plus a Nov 26 line saying so.
+- The mode hint now says up to 12 people.
+- Live test on the test account: pasting 2 people on a revision_requested role saved both with email rows and set outreach_due.
+- Commits 831453e (backend, on the VM) and 47f022d.

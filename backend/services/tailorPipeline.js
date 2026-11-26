@@ -886,7 +886,7 @@ export async function queueOutreachForRoles(userId, planItemIds, { dryRun = fals
     `SELECT pi.id, pi.company_name, pi.title, pi.score, j.referral_mode, j.outreach_cap, v.callback_after, v.ats_after
        FROM tailor_jobs j JOIN plan_items pi ON pi.id = j.plan_item_id
        LEFT JOIN LATERAL (SELECT callback_after, ats_after FROM resume_versions x WHERE x.plan_item_id = pi.id ORDER BY version DESC LIMIT 1) v ON TRUE
-      WHERE j.user_id = $1 AND pi.id = ANY($2::bigint[]) AND j.status IN ('ready', 'revision_requested') AND j.referral_mode NOT IN ('my_contact', 'none')`,
+      WHERE j.user_id = $1 AND pi.id = ANY($2::bigint[]) AND j.status IN ('ready', 'revision_requested', 'in_progress', 'approved') AND j.referral_mode NOT IN ('my_contact', 'none')`,
     [userId, planItemIds.map(Number)],
   // "No outreach for this company" (your switch): those roles get nobody.
   )).filter(r => !blocked.has(r.company_name.trim().toLowerCase()));
@@ -1090,7 +1090,7 @@ const PROFILE_RE = /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%
 export async function addRoleContacts(userId, planItemId, people, { pick = null, raiseCap = false } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
-  if (!['ready', 'revision_requested', 'approved'].includes(job.status)) throw fail(409, 'Add people once the resume is ready for review.');
+  if (!OUTREACH_OPEN.includes(job.status)) throw fail(409, 'This role is applied or closed, so it takes no new people.');
   const clean = (Array.isArray(people) ? people : []).slice(0, 200).map(p => ({
     name: String(p?.name || '').trim().slice(0, 80),
     title: String(p?.title || '').trim().slice(0, 120),
@@ -1143,10 +1143,13 @@ export async function addRoleContacts(userId, planItemId, people, { pick = null,
   return { added, people: clean.length, drafted, cap: raiseCap ? Math.min(50, Math.max(cap, taken + clean.length)) : cap };
 }
 
+// Outreach can be worked on while a resume is being revised (it's separate from the resume): not only when Ready.
+export const OUTREACH_OPEN = ['ready', 'revision_requested', 'in_progress', 'approved'];
+
 export async function findRoleContacts(userId, planItemId, { source = 'all' } = {}) {
   const job = await one('SELECT status, referral_mode FROM tailor_jobs WHERE user_id = $1 AND plan_item_id = $2', [userId, planItemId]);
   if (!job) throw fail(404, 'That role isn’t in the queue.');
-  if (job.status !== 'ready') throw fail(409, 'Only a role ready for review needs contacts.');
+  if (!OUTREACH_OPEN.includes(job.status)) throw fail(409, 'This role is applied or closed, so it needs no contacts.');
   if (NO_EMAILS.includes(job.referral_mode)) throw fail(409, 'This role’s mode emails nobody, so it needs no lookups.');
   if (await one("SELECT 1 AS x FROM outreach_drafts WHERE user_id = $1 AND plan_item_id = $2 AND status <> 'closed' LIMIT 1", [userId, planItemId])) throw fail(409, 'This role already has outreach.');
   const item = await one('SELECT * FROM plan_items WHERE id = $1 AND user_id = $2', [planItemId, userId]);
